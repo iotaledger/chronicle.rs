@@ -5,9 +5,7 @@ pub struct Validator<T> {
 
 impl<T> Validator<T> {
     pub fn new(r: crossbeam_channel::Receiver<T>) -> Validator<T> {
-        Validator {
-            receiver: r,
-        }
+        Validator { receiver: r }
     }
 }
 
