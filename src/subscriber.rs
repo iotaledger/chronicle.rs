@@ -5,9 +5,7 @@ pub struct Subscriber<T> {
 
 impl<T> Subscriber<T> {
     pub fn new(s: crossbeam_channel::Sender<T>) -> Subscriber<T> {
-        Subscriber {
-            sender: s,
-        }
+        Subscriber { sender: s }
     }
 }
 
