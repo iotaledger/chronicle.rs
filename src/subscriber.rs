@@ -1,17 +1,17 @@
 #[derive(Debug)]
 pub struct Subscriber<T> {
-    pub sender: crossbeam_channel::Sender<T>,
+    pub tx: crossbeam_channel::Sender<T>,
 }
 
 impl<T> Subscriber<T> {
     pub fn new(s: crossbeam_channel::Sender<T>) -> Subscriber<T> {
-        Subscriber { sender: s }
+        Subscriber { tx: s }
     }
 }
 
 impl<T> Clone for Subscriber<T> {
     fn clone(&self) -> Self {
-        Subscriber::new(self.sender.clone())
+        Subscriber::new(self.tx.clone())
     }
 }
 
@@ -24,7 +24,7 @@ mod tests {
         let (s, r) = crossbeam_channel::unbounded();
         let sub = Subscriber::new(s);
 
-        sub.sender.send("Hello World").unwrap();
+        sub.tx.send("Hello World").unwrap();
 
         assert_eq!(r.recv(), Ok("Hello World"));
     }
@@ -35,8 +35,8 @@ mod tests {
         let sub = Subscriber::new(s);
         let sub2 = sub.clone();
 
-        sub.sender.send("Hello").unwrap();
-        sub2.sender.send("World").unwrap();
+        sub.tx.send("Hello").unwrap();
+        sub2.tx.send("World").unwrap();
 
         assert_eq!(r.recv(), Ok("Hello"));
         assert_eq!(r.recv(), Ok("World"));

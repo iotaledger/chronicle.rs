@@ -1,9 +1,4 @@
 use futures::channel::mpsc;
-use futures::executor::block_on;
-use futures::stream::StreamExt;
-use futures::sink::SinkExt;
-use std::thread;
-
 
 #[derive(Debug)]
 pub struct Bvalidator<T> {
@@ -19,6 +14,10 @@ impl<T> Bvalidator<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::executor::block_on;
+    use futures::stream::StreamExt;
+    use futures::sink::SinkExt;
+    use std::thread;
 
     #[test]
     fn sequence() {
