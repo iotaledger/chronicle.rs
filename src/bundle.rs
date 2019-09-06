@@ -15,8 +15,8 @@ impl<T> Bvalidator<T> {
 mod tests {
     use super::*;
     use futures::executor::block_on;
-    use futures::stream::StreamExt;
     use futures::sink::SinkExt;
+    use futures::stream::StreamExt;
     use std::thread;
 
     #[test]
@@ -25,9 +25,7 @@ mod tests {
         let val = Bvalidator::new(rx);
 
         let amt = 20;
-        let t = thread::spawn(move || {
-            block_on(send_sequence(amt, tx))
-        });
+        let t = thread::spawn(move || block_on(send_sequence(amt, tx)));
         let list: Vec<_> = block_on(val.rx.collect());
         let mut list = list.into_iter();
         for i in (1..amt + 1).rev() {

@@ -3,13 +3,13 @@
 
 use futures::channel::mpsc;
 
+pub mod bundle;
 pub mod subscriber;
 pub mod transaction;
-pub mod bundle;
 
+use bundle::Bvalidator;
 use subscriber::Subscriber;
 use transaction::Tvalidator;
-use bundle::Bvalidator;
 
 #[cfg(test)]
 mod tests {
@@ -44,7 +44,7 @@ mod tests {
         let txn = Tvalidator::new(r, t2);
         let bundle = Bvalidator::new(r2);
 
-        let t = thread::spawn(move|| {
+        let t = thread::spawn(move || {
             let result: Vec<_> = block_on(bundle.rx.collect());
             assert_eq!(result.len(), (AMT * NTHREADS) as usize);
             for item in result {
@@ -55,7 +55,7 @@ mod tests {
         for _ in 0..NTHREADS {
             let mut txn = txn.clone();
 
-            thread::spawn(move|| {
+            thread::spawn(move || {
                 for _ in 0..AMT {
                     block_on(txn.tx.send(1)).unwrap();
                 }
@@ -65,5 +65,4 @@ mod tests {
         drop(txn);
         t.join().ok().unwrap();
     }
-
 }
