@@ -1,20 +1,20 @@
 use futures::channel::mpsc;
 
 #[derive(Debug)]
-pub struct Validator<T> {
+pub struct Tvalidator<T> {
     pub rx: crossbeam_channel::Receiver<T>,
     pub tx: mpsc::Sender<T>,
 }
 
-impl<T> Validator<T> {
-    pub fn new(r: crossbeam_channel::Receiver<T>, t: mpsc::Sender<T>) -> Validator<T> {
-        Validator { rx: r, tx: t }
+impl<T> Tvalidator<T> {
+    pub fn new(r: crossbeam_channel::Receiver<T>, t: mpsc::Sender<T>) -> Tvalidator<T> {
+        Tvalidator { rx: r, tx: t }
     }
 }
 
-impl<T> Clone for Validator<T> {
+impl<T> Clone for Tvalidator<T> {
     fn clone(&self) -> Self {
-        Validator::new(self.rx.clone(), self.tx.clone())
+        Tvalidator::new(self.rx.clone(), self.tx.clone())
     }
 }
 
@@ -23,10 +23,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_validator_create() {
+    fn test_create() {
         let (t, r) = crossbeam_channel::unbounded();
         let (t2, _) = mpsc::channel(1);
-        let val = Validator::new(r, t2);
+        let val = Tvalidator::new(r, t2);
 
         t.send("Hello World").unwrap();
 
@@ -34,10 +34,10 @@ mod tests {
     }
 
     #[test]
-    fn test_validator_clone() {
+    fn test_clone() {
         let (t, r) = crossbeam_channel::unbounded();
         let (t2, _) = mpsc::channel(1);
-        let val = Validator::new(r, t2);
+        let val = Tvalidator::new(r, t2);
         let val2 = val.clone();
 
         t.send("Hello").unwrap();

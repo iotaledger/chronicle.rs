@@ -4,11 +4,11 @@
 use futures::channel::mpsc;
 
 pub mod subscriber;
-pub mod validator;
+pub mod transaction;
 pub mod bundle;
 
 use subscriber::Subscriber;
-use validator::Validator;
+use transaction::Tvalidator;
 use bundle::Bvalidator;
 
 #[cfg(test)]
@@ -24,7 +24,7 @@ mod tests {
         let (t, r) = crossbeam_channel::unbounded();
         let (t2, _) = mpsc::channel(1);
         let sub = Subscriber::new(t);
-        let val = Validator::new(r, t2);
+        let val = Tvalidator::new(r, t2);
         let sub2 = sub.clone();
         let val2 = val.clone();
 
@@ -41,7 +41,7 @@ mod tests {
         const NTHREADS: u32 = 8;
         let (_, r) = crossbeam_channel::unbounded();
         let (t2, r2) = mpsc::channel(0);
-        let txn = Validator::new(r, t2);
+        let txn = Tvalidator::new(r, t2);
         let bundle = Bvalidator::new(r2);
 
         let t = thread::spawn(move|| {
