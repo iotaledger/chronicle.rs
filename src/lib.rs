@@ -3,6 +3,7 @@
 
 pub mod subscriber;
 pub mod validator;
+pub mod bundle;
 
 use subscriber::Subscriber;
 use validator::Validator;
@@ -19,10 +20,10 @@ mod tests {
         let sub2 = sub.clone();
         let val2 = val.clone();
 
-        sub.sender.send("Hello World!").unwrap();
-        sub2.sender.send("Chronicle start Scribing!").unwrap();
+        sub.tx.send("Hello World!").unwrap();
+        sub2.tx.send("Chronicle start Scribing!").unwrap();
 
-        assert_eq!(val2.receiver.recv(), Ok("Hello World!"));
-        assert_eq!(val.receiver.recv(), Ok("Chronicle start Scribing!"));
+        assert_eq!(val2.rx.recv(), Ok("Hello World!"));
+        assert_eq!(val.rx.recv(), Ok("Chronicle start Scribing!"));
     }
 }
