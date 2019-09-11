@@ -18,6 +18,23 @@ impl<T> Clone for Tvalidator<T> {
     }
 }
 
+#[derive(Debug)]
+pub struct Tgenerator<T> {
+    pub tx: crossbeam_channel::Sender<T>,
+}
+
+impl<T> Tgenerator<T> {
+    pub fn new(s: crossbeam_channel::Sender<T>) -> Tgenerator<T> {
+        Tgenerator { tx: s }
+    }
+}
+
+impl<T> Clone for Tgenerator<T> {
+    fn clone(&self) -> Self {
+        Tgenerator::new(self.tx.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,5 +62,28 @@ mod tests {
 
         assert_eq!(val.rx.recv(), Ok("Hello"));
         assert_eq!(val2.rx.recv(), Ok("World"));
+    }
+
+    #[test]
+    fn test_tgenerator_create() {
+        let (s, r) = crossbeam_channel::unbounded();
+        let txg = Tgenerator::new(s);
+
+        txg.tx.send("Hello World").unwrap();
+
+        assert_eq!(r.recv(), Ok("Hello World"));
+    }
+
+    #[test]
+    fn test_tgenerator_clone() {
+        let (s, r) = crossbeam_channel::unbounded();
+        let txg = Tgenerator::new(s);
+        let txg2 = txg.clone();
+
+        txg.tx.send("Hello").unwrap();
+        txg2.tx.send("World").unwrap();
+
+        assert_eq!(r.recv(), Ok("Hello"));
+        assert_eq!(r.recv(), Ok("World"));
     }
 }
