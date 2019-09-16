@@ -10,23 +10,36 @@ use futures::sink::SinkExt;
 use futures::stream::StreamExt;
 use std::thread;
 
+static NTHREADS: i32 = 100;
+
 fn mpmc() {
     let (t, r) = crossbeam_channel::unbounded();
     let (t2, _) = mpsc::channel(1);
     let sub = Subscriber::new(t);
     let val = Tvalidator::new(r, t2);
-    let sub_2 = sub.clone();
-    let val_2 = val.clone();
+    let mut children = Vec::new();
+    let mut vals = Vec::new();
 
-    sub.tx.send("Hello World!").unwrap();
-    sub_2.tx.send("Chronicle start Scribing!").unwrap();
-    assert_eq!(val_2.rx.recv(), Ok("Hello World!"));
-    assert_eq!(val.rx.recv(), Ok("Chronicle start Scribing!"));
+    for id in 0..NTHREADS {
+        let sub_k = sub.clone();
+        let val_k = val.clone();
+        let child = thread::spawn(move || {
+            sub_k.tx.send(id).unwrap();
+        });
+        children.push(child);
+        vals.push(val_k);
+    }
+    let mut ids = Vec::with_capacity(NTHREADS as usize);
+    for i in 0..NTHREADS {
+        ids.push(vals[i as usize].rx.recv());
+    }
+    for child in children {
+        child.join().expect("oops! the child thread panicked");
+    }
 }
 
 fn mpsc_multi_thread() {
-    const AMT: u32 = 100;
-    const NTHREADS: u32 = 8;
+    const AMT: u32 = 1;
     let (_, r) = crossbeam_channel::unbounded();
     let (t2, r2) = mpsc::channel(0);
     let txn = Tvalidator::new(r, t2);
@@ -52,10 +65,13 @@ fn mpsc_multi_thread() {
     t.join().ok().unwrap();
 }
 
-fn bench_chronicle(c: &mut Criterion) {
+fn bench_mpmc(c: &mut Criterion) {
     c.bench_function("mpmc", |b| b.iter(|| mpmc()));
+}
+
+fn bench_mpsc_multi_thread(c: &mut Criterion) {
     c.bench_function("mpsc_multi_thread", |b| b.iter(|| mpsc_multi_thread()));
 }
 
-criterion_group!(benches, bench_chronicle);
+criterion_group!(benches, bench_mpmc, bench_mpsc_multi_thread);
 criterion_main!(benches);
