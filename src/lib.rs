@@ -75,6 +75,7 @@ mod tests {
         t.join().ok().unwrap();
     }
 
+    /*
     #[test]
     fn scylladb_access() {
         fn connect_to_db() -> db::CurrentSession {
@@ -113,4 +114,5 @@ mod tests {
         // assert_eq!("Psedo Bundle 2", bundles[0].bundle);
         // assert_eq!("Psedo Bundle 1", bundles[1].bundle);
     }
+    */
 }
