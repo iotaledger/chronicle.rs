@@ -1,6 +1,4 @@
-use std::cell::RefCell;
-use time::Timespec;
-
+#[allow(dead_code)]
 use cdrs::{
     authenticators::NoneAuthenticator,
     cluster::{
@@ -19,6 +17,8 @@ use cdrs::{
     types::prelude::*,
     Error as CDRSError, Result as CDRSResult,
 };
+use std::cell::RefCell;
+use time::Timespec;
 
 use crate::psedo_bundle::PseudoBundle;
 

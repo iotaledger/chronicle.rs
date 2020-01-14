@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use cdrs::{
   query::QueryValues,
   query_values,

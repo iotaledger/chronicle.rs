@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use futures::channel::mpsc;
 
 #[derive(Debug)]
