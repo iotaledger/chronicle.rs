@@ -8,10 +8,4 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossbeam-channel = "0.3"
-futures-preview = "0.3.0-alpha"
-criterion = "0.3"
-
-[[bench]]
-name = "chronicle_benchmark"
-harness = false
+async-trait = "0.1"
