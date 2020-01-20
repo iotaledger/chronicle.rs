@@ -1,5 +1,7 @@
 use std::{collections::HashMap, collections::HashSet, rc::Rc};
 
+pub mod conn;
+
 /// A transaction hash. To be replaced later with whatever implementation is required.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TxHash(u64);

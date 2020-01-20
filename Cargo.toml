@@ -9,3 +9,4 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 async-trait = "0.1"
+cdrs = "2.2.4"
