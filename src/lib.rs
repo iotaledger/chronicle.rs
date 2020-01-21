@@ -62,9 +62,11 @@ type StateDeltaMap = HashMap<TxAddress, i64>;
 use async_trait::async_trait;
 
 #[async_trait]
-pub trait Connection<Conn> {
-    async fn establish_connection(url: &str) -> Result<Conn, ConnectionError>;
-    async fn destroy_connection(connection: Conn) -> Result<(), ConnectionError>;
+pub trait Connection {
+    type Session;
+
+    async fn establish_connection(url: &str) -> Result<Self::Session, ConnectionError>;
+    async fn destroy_connection(connection: Self::Session) -> Result<(), ConnectionError>;
 }
 
 
@@ -110,12 +112,11 @@ pub trait StorageBackend {
 
     async fn load_state_delta(&self, index: u32) -> Result<StateDeltaMap, StorageError>;
 }
-
+/*
 pub struct Storage<Conn: Connection<Conn>> {
     pub connection:   Conn,
 }
 
-/*
 impl Storage<DummyConnection> {
     async fn establish_connection(&mut self, url: &str) -> Result<(), ConnectionError> {
         self.connection = DummyConnection::establish_connection(url)?;
