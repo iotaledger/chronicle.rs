@@ -1,6 +1,7 @@
 use std::{collections::HashMap, collections::HashSet, rc::Rc};
 
-pub mod conn;
+pub mod cql;
+mod statements;
 
 /// A transaction hash. To be replaced later with whatever implementation is required.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
