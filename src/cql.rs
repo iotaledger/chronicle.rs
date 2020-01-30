@@ -9,7 +9,7 @@ use cdrs::{
 
 use async_trait::async_trait;
 
-use crate::{ConnectionError, Connection, statements::*};
+use crate::{Connection, statements::*};
 
 pub struct CQLSession(Session<RoundRobinSync<TcpConnectionPool<NoneAuthenticator>>>);
 
@@ -17,28 +17,31 @@ pub struct CQLSession(Session<RoundRobinSync<TcpConnectionPool<NoneAuthenticator
 #[async_trait]
 impl Connection for CQLSession {
     type Session = CQLSession;
+    type StorageError = CDRSError;
 
-    async fn establish_connection(url: &str) -> Result<CQLSession, ConnectionError> {
+    async fn establish_connection(url: &str) -> Result<CQLSession, CDRSError> {
         let node = NodeTcpConfigBuilder::new(url, NoneAuthenticator {}).build();
         let cluster = ClusterTcpConfig(vec![node]);
         let balance = RoundRobinSync::new();
         let conn = CQLSession(new_session(&cluster, balance).expect("session should be created"));
+        conn.create_keyspace()?;
+        conn.create_table()?;
 
         Ok(conn)
     }
 
-    async fn destroy_connection(_connection: CQLSession) -> Result<(), ConnectionError> {
+    async fn destroy_connection(_connection: CQLSession) -> Result<(), CDRSError> {
         Ok(())
     }
 }
 
 impl CQLSession {
-    pub fn create_keyspace(&self) -> Result<(), CDRSError> {
+    fn create_keyspace(&self) -> Result<(), CDRSError> {
         self.0.query(CREATE_KEYSPACE_QUERY)?;
         Ok(())
     }
 
-    pub fn create_table(&self) -> Result<(), CDRSError> {
+    fn create_table(&self) -> Result<(), CDRSError> {
         self.0.query(CREATE_TX_TABLE_QUERY)?;
         Ok(())
     }
@@ -49,15 +52,11 @@ mod tests {
     use super::*;
     use futures::executor::block_on;
 
+    // TODO: Current test required working scylladb on local. We should have a setup script for this.
     #[test]
     fn test_connection() {
         let session = CQLSession::establish_connection("0.0.0.0:9042");
-        if let Ok(s) = block_on(session) {
-            s.create_keyspace().unwrap();
-            s.create_table().unwrap();
-            CQLSession::destroy_connection(s);
-        } else {
-            panic!("fail!");
-        }
+        let s = block_on(session).unwrap();
+        CQLSession::destroy_connection(s);
     }
 }

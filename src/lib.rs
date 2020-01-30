@@ -65,9 +65,10 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait Connection {
     type Session;
+    type StorageError;
 
-    async fn establish_connection(url: &str) -> Result<Self::Session, ConnectionError>;
-    async fn destroy_connection(connection: Self::Session) -> Result<(), ConnectionError>;
+    async fn establish_connection(url: &str) -> Result<Self::Session, Self::StorageError>;
+    async fn destroy_connection(connection: Self::Session) -> Result<(), Self::StorageError>;
 }
 
 
