@@ -7,22 +7,58 @@ WITH REPLICATION = {
 "#;
 
 pub const CREATE_TX_TABLE_QUERY: &str = r#"
-  CREATE TABLE IF NOT EXISTS chronicle.transaction (
-    transaction text,
-    time timestamp,
-    info text,
-    PRIMARY KEY(transaction, time)
-  );
+CREATE TABLE IF NOT EXISTS chronicle.transaction (
+  hash blob PRIMARY KEY,
+  payload blob,
+  address blob,
+  value int,
+  obsolete_tag blob,
+  timestamp int,
+  index smallint,
+  last_index smallint,
+  bundle blob,
+  trunk blob,
+  branch blob,
+  tag blob,
+  attachment_timestamp int,
+  attachment_timestamp_lower int,
+  attachment_timestamp_upper int,
+  nonce blob,
+);
 "#;
 
-pub const ADD_BUNDLE_QUERY: &str = r#"
-  INSERT INTO chronicle.bundle (bundle, time, info)
-    VALUES (?, ?, ?);
+pub const CREATE_EDGE_TABLE_QUERY: &str = r#"
+CREATE TABLE IF NOT EXISTS chronicle.edge (
+  hash blob,
+  label tinyint,
+  timestamp timestamp,
+  tx blob,
+  PRIMARY KEY(bundle, timestamp)
+);
 "#;
 
-pub const SELECT_BUNDLES_BY_TIME_RANGE_QUERY: &str = r#"
-  SELECT * FROM chronicle.bundle
-    WHERE time > ?
-      AND time < ?
-      ALLOW FILTERING;
+pub const INSERT_TX_QUERY: &str = r#"
+  INSERT INTO chronicle.transaction (
+    hash,
+    payload,
+    address,
+    value,
+    obsolete_tag,
+    timestamp,
+    index,
+    last_index,
+    bundle,
+    trunk,
+    branch,
+    tag,
+    attachment_timestamp,
+    attachment_timestamp_lower,
+    attachment_timestamp_upper,
+    nonce)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+"#;
+
+const SELECT_TX_QUERY: &str = r#"
+  SELECT * FROM chronicle.transaction
+  WHERE hash = ?;
 "#;
