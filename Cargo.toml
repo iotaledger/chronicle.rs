@@ -14,3 +14,4 @@ futures = "0.3.1"
 async-trait = "0.1"
 bundle = { git = "https://github.com/Alex6323/bee-p" }
 cdrs = "2.2.4"
+cdrs_helpers_derive = "0.1.0"

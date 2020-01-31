@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS chronicle.transaction (
   value int,
   obsolete_tag blob,
   timestamp int,
-  index smallint,
+  current_index smallint,
   last_index smallint,
   bundle blob,
   trunk blob,
@@ -30,10 +30,10 @@ CREATE TABLE IF NOT EXISTS chronicle.transaction (
 pub const CREATE_EDGE_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS chronicle.edge (
   hash blob,
-  label tinyint,
+  type tinyint,
   timestamp timestamp,
   tx blob,
-  PRIMARY KEY(bundle, timestamp)
+  PRIMARY KEY(hash, timestamp)
 );
 "#;
 
@@ -45,7 +45,7 @@ pub const INSERT_TX_QUERY: &str = r#"
     value,
     obsolete_tag,
     timestamp,
-    index,
+    current_index,
     last_index,
     bundle,
     trunk,
@@ -54,11 +54,11 @@ pub const INSERT_TX_QUERY: &str = r#"
     attachment_timestamp,
     attachment_timestamp_lower,
     attachment_timestamp_upper,
-    nonce)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    nonce
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
-const SELECT_TX_QUERY: &str = r#"
+pub const SELECT_TX_QUERY: &str = r#"
   SELECT * FROM chronicle.transaction
   WHERE hash = ?;
 "#;
