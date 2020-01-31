@@ -23,6 +23,7 @@ use crate::{
 };
 
 #[async_trait]
+/// Methods for initilize and destroy database connection session. User should know they type of which database session is used.
 pub trait Connection {
     type Session;
     type StorageError;
@@ -32,6 +33,7 @@ pub trait Connection {
 }
 
 #[async_trait]
+/// Methods of database query collections.
 pub trait StorageBackend {
     type StorageError;
 
@@ -40,7 +42,7 @@ pub trait StorageBackend {
     // TODO: find transactions by bundle/address/tag/approvee
 }
 
-
+/// Session works for any CQL database like Cassandra and ScyllaDB.
 pub struct CQLSession(Session<RoundRobinSync<TcpConnectionPool<NoneAuthenticator>>>);
 
 #[derive(Debug, TryFromRow)]
