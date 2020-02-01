@@ -1,26 +1,21 @@
-use std::str::from_utf8;
 use async_trait::async_trait;
 use bundle::{
-    Hash,
-    Transaction,
-    TransactionBuilder,
-    Payload, Address, Tag, Index, Value, Nonce, Timestamp,
+    Address, Hash, Index, Nonce, Payload, Tag, Timestamp, Transaction, TransactionBuilder, Value,
 };
 use cdrs::{
     authenticators::NoneAuthenticator,
     cluster::session::{new as new_session, Session},
     cluster::{ClusterTcpConfig, NodeTcpConfigBuilder, TcpConnectionPool},
-    load_balancing::RoundRobinSync,
-    query::{QueryExecutor},
-    query_values,
-    types::{blob::Blob, rows::Row, from_cdrs::FromCDRSByName, IntoRustByName},
     frame::traits::TryFromRow,
+    load_balancing::RoundRobinSync,
+    query::QueryExecutor,
+    query_values,
+    types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row, IntoRustByName},
     Error as CDRSError,
 };
+use std::{str::from_utf8, sync::Arc};
 
-use crate::{
-    statements::*,
-};
+use crate::statements::*;
 
 #[async_trait]
 /// Methods for initilize and destroy database connection session. User should know they type of which database session is used.
@@ -37,13 +32,22 @@ pub trait Connection {
 pub trait StorageBackend {
     type StorageError;
 
-    async fn insert_transaction(&self, tx_hash: &Hash, tx: &Transaction) -> Result<(), Self::StorageError>;
-    async fn find_transaction(&self, tx_hash: &Hash) -> Result<Transaction, Self::StorageError>;
-    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<Vec<Hash>, Self::StorageError>;
+    async fn insert_transaction(
+        &self,
+        tx_hash: &Hash,
+        tx: &Transaction,
+    ) -> Result<(), Self::StorageError>;
+    async fn select_transaction(&self, tx_hash: &Hash) -> Result<Transaction, Self::StorageError>;
+    async fn select_transaction_hashes(
+        &self,
+        hash: &Hash,
+        kind: EdgeKind,
+    ) -> Result<Vec<Hash>, Self::StorageError>;
 }
 
 /// Session works for any CQL database like Cassandra and ScyllaDB.
-pub struct CQLSession(Session<RoundRobinSync<TcpConnectionPool<NoneAuthenticator>>>);
+#[derive(Clone)]
+pub struct CQLSession(Arc<Session<RoundRobinSync<TcpConnectionPool<NoneAuthenticator>>>>);
 
 #[derive(Debug, TryFromRow)]
 struct CQLTx {
@@ -62,7 +66,7 @@ struct CQLTx {
     attachment_timestamp: i32,
     attachment_timestamp_lower: i32,
     attachment_timestamp_upper: i32,
-    nonce: Blob
+    nonce: Blob,
 }
 
 #[derive(Debug, TryFromRow)]
@@ -92,7 +96,9 @@ impl Connection for CQLSession {
         let node = NodeTcpConfigBuilder::new(url, NoneAuthenticator {}).build();
         let cluster = ClusterTcpConfig(vec![node]);
         let balance = RoundRobinSync::new();
-        let conn = CQLSession(new_session(&cluster, balance).expect("session should be created"));
+        let conn = CQLSession(Arc::new(
+            new_session(&cluster, balance).expect("session should be created"),
+        ));
         conn.create_keyspace()?;
         conn.create_table()?;
 
@@ -139,7 +145,7 @@ impl StorageBackend for CQLSession {
             "attachment_timestamp_lower" => tx.attachment_lbts().0 as i32,
             "attachment_timestamp_upper" => tx.attachment_ubts().0 as i32,
             "nonce" => tx.nonce().to_string()
-        );        
+        );
         let bundle = query_values!(
             "hash" => tx.bundle().to_string(),
             "kind" => 0i8,
@@ -182,47 +188,63 @@ impl StorageBackend for CQLSession {
         Ok(())
     }
 
-    async fn find_transaction(&self, tx_hash: &Hash) -> Result<Transaction, CDRSError> {
+    async fn select_transaction(&self, tx_hash: &Hash) -> Result<Transaction, CDRSError> {
         let mut builder = TransactionBuilder::new();
-        if let Some(rows) = self.0.query_with_values(SELECT_TX_QUERY, query_values!(tx_hash.to_string()))?
-        .get_body()?
-        .into_rows() {
+        if let Some(rows) = self
+            .0
+            .query_with_values(SELECT_TX_QUERY, query_values!(tx_hash.to_string()))?
+            .get_body()?
+            .into_rows()
+        {
             for row in rows {
                 // TODO: parse into better transaction builder
                 let tx = CQLTx::try_from_row(row)?;
                 builder
-                .payload(Payload::from_str(from_utf8(&tx.payload.into_vec()).unwrap()))
-                .address(Address::from_str(from_utf8(&tx.address.into_vec()).unwrap()))
-                .value(Value(tx.value as i64))
-                .obsolete_tag(Tag::from_str(from_utf8(&tx.obsolete_tag.into_vec()).unwrap()))
-                .timestamp(Timestamp(tx.timestamp as u64))
-                .index(Index(tx.current_index as usize))
-                .last_index(Index(tx.last_index as usize))
-                .bundle(Hash::from_str(from_utf8(&tx.bundle.into_vec()).unwrap()))
-                .trunk(Hash::from_str(from_utf8(&tx.trunk.into_vec()).unwrap()))
-                .branch(Hash::from_str(from_utf8(&tx.branch.into_vec()).unwrap()))
-                .tag(Tag::from_str(from_utf8(&tx.tag.into_vec()).unwrap()))
-                .attachment_ts(Timestamp(tx.attachment_timestamp as u64))
-                .attachment_lbts(Timestamp(tx.attachment_timestamp_lower as u64))
-                .attachment_ubts(Timestamp(tx.attachment_timestamp_upper as u64))
-                .nonce(Nonce::from_str(from_utf8(&tx.nonce.into_vec()).unwrap()));
+                    .payload(Payload::from_str(
+                        from_utf8(&tx.payload.into_vec()).unwrap(),
+                    ))
+                    .address(Address::from_str(
+                        from_utf8(&tx.address.into_vec()).unwrap(),
+                    ))
+                    .value(Value(tx.value as i64))
+                    .obsolete_tag(Tag::from_str(
+                        from_utf8(&tx.obsolete_tag.into_vec()).unwrap(),
+                    ))
+                    .timestamp(Timestamp(tx.timestamp as u64))
+                    .index(Index(tx.current_index as usize))
+                    .last_index(Index(tx.last_index as usize))
+                    .bundle(Hash::from_str(from_utf8(&tx.bundle.into_vec()).unwrap()))
+                    .trunk(Hash::from_str(from_utf8(&tx.trunk.into_vec()).unwrap()))
+                    .branch(Hash::from_str(from_utf8(&tx.branch.into_vec()).unwrap()))
+                    .tag(Tag::from_str(from_utf8(&tx.tag.into_vec()).unwrap()))
+                    .attachment_ts(Timestamp(tx.attachment_timestamp as u64))
+                    .attachment_lbts(Timestamp(tx.attachment_timestamp_lower as u64))
+                    .attachment_ubts(Timestamp(tx.attachment_timestamp_upper as u64))
+                    .nonce(Nonce::from_str(from_utf8(&tx.nonce.into_vec()).unwrap()));
             }
         };
 
         Ok(builder.build())
     }
 
-    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<Vec<Hash>, Self::StorageError> {
-        let mut hashes: Vec<Hash> = vec!();
+    async fn select_transaction_hashes(
+        &self,
+        hash: &Hash,
+        kind: EdgeKind,
+    ) -> Result<Vec<Hash>, Self::StorageError> {
+        let mut hashes: Vec<Hash> = vec![];
         let values = query_values!(
             "hash" => hash.to_string(),
             "kind" => kind as i8
         );
 
         // TODO: Refactor to paged query.
-        if let Some(rows) = self.0.query_with_values(SELECT_EDGE_QUERY, values)?
-        .get_body()?
-        .into_rows() {
+        if let Some(rows) = self
+            .0
+            .query_with_values(SELECT_EDGE_QUERY, values)?
+            .get_body()?
+            .into_rows()
+        {
             for row in rows {
                 let s: Blob = row.get_r_by_name("tx")?;
                 hashes.push(Hash::from_str(from_utf8(&s.into_vec()).unwrap()));
@@ -247,8 +269,8 @@ mod tests {
         let s = block_on(CQLSession::establish_connection("0.0.0.0:9042")).unwrap();
 
         block_on(s.insert_transaction(&tx_hash, &tx)).unwrap();
-        block_on(s.find_transaction(&tx_hash)).unwrap();
-        block_on(s.find_transaction_hashes(&tx_hash, EdgeKind::Address)).unwrap();
+        block_on(s.select_transaction(&tx_hash)).unwrap();
+        block_on(s.select_transaction_hashes(&tx_hash, EdgeKind::Address)).unwrap();
 
         CQLSession::destroy_connection(s);
     }
