@@ -13,7 +13,7 @@ use cdrs::{
     load_balancing::RoundRobinSync,
     query::{QueryExecutor},
     query_values,
-    types::{blob::Blob, rows::Row, from_cdrs::FromCDRSByName},
+    types::{blob::Blob, rows::Row, from_cdrs::FromCDRSByName, IntoRustByName},
     frame::traits::TryFromRow,
     Error as CDRSError,
 };
@@ -39,7 +39,7 @@ pub trait StorageBackend {
 
     async fn insert_transaction(&self, tx_hash: &Hash, tx: &Transaction) -> Result<(), Self::StorageError>;
     async fn find_transaction(&self, tx_hash: &Hash) -> Result<Transaction, Self::StorageError>;
-    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<(), Self::StorageError>;
+    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<Vec<Hash>, Self::StorageError>;
 }
 
 /// Session works for any CQL database like Cassandra and ScyllaDB.
@@ -76,10 +76,10 @@ struct CQLEdge {
 #[repr(i8)]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum EdgeKind {
-    bundle = 0,
-    address = 1,
-    tag = 2,
-    approvee = 3,
+    Bundle = 0,
+    Address = 1,
+    Tag = 2,
+    Approvee = 3,
 }
 
 // TODO: Error handling
@@ -212,9 +212,24 @@ impl StorageBackend for CQLSession {
         Ok(builder.build())
     }
 
-    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<(), Self::StorageError> {
+    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<Vec<Hash>, Self::StorageError> {
+        let mut hashes: Vec<Hash> = vec!();
+        let values = query_values!(
+            "hash" => hash.to_string(),
+            "kind" => kind as i8
+        );
 
-        todo!()
+        // TODO: Refactor to paged query.
+        if let Some(rows) = self.0.query_with_values(SELECT_EDGE_QUERY, values)?
+        .get_body()?
+        .into_rows() {
+            for row in rows {
+                let s: Blob = row.get_r_by_name("tx")?;
+                hashes.push(Hash::from_str(from_utf8(&s.into_vec()).unwrap()));
+            }
+        }
+
+        Ok(hashes)
     }
 }
 
@@ -233,6 +248,7 @@ mod tests {
 
         block_on(s.insert_transaction(&tx_hash, &tx)).unwrap();
         block_on(s.find_transaction(&tx_hash)).unwrap();
+        block_on(s.find_transaction_hashes(&tx_hash, EdgeKind::Address)).unwrap();
 
         CQLSession::destroy_connection(s);
     }

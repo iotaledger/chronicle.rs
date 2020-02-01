@@ -71,3 +71,9 @@ pub const SELECT_TX_QUERY: &str = r#"
   SELECT * FROM chronicle.transaction
   WHERE hash = ?;
 "#;
+
+pub const SELECT_EDGE_QUERY: &str = r#"
+  SELECT * FROM chronicle.edge
+  WHERE hash = ?
+  AND kind = ?;
+"#;
