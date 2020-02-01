@@ -30,10 +30,10 @@ CREATE TABLE IF NOT EXISTS chronicle.transaction (
 pub const CREATE_EDGE_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS chronicle.edge (
   hash blob,
-  type tinyint,
-  timestamp timestamp,
+  kind tinyint,
+  timestamp int,
   tx blob,
-  PRIMARY KEY(hash, timestamp)
+  PRIMARY KEY(hash, kind, timestamp)
 );
 "#;
 
@@ -56,6 +56,15 @@ pub const INSERT_TX_QUERY: &str = r#"
     attachment_timestamp_upper,
     nonce
   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+"#;
+
+pub const INSERT_EDGE_QUERY: &str = r#"
+  INSERT INTO chronicle.edge (
+    hash,
+    kind,
+    timestamp,
+    tx
+  ) VALUES (?,?,?,?);
 "#;
 
 pub const SELECT_TX_QUERY: &str = r#"

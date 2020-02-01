@@ -11,7 +11,7 @@ use cdrs::{
     cluster::session::{new as new_session, Session},
     cluster::{ClusterTcpConfig, NodeTcpConfigBuilder, TcpConnectionPool},
     load_balancing::RoundRobinSync,
-    query::QueryExecutor,
+    query::{QueryExecutor},
     query_values,
     types::{blob::Blob, rows::Row, from_cdrs::FromCDRSByName},
     frame::traits::TryFromRow,
@@ -39,7 +39,7 @@ pub trait StorageBackend {
 
     async fn insert_transaction(&self, tx_hash: &Hash, tx: &Transaction) -> Result<(), Self::StorageError>;
     async fn find_transaction(&self, tx_hash: &Hash) -> Result<Transaction, Self::StorageError>;
-    // TODO: find transactions by bundle/address/tag/approvee
+    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<(), Self::StorageError>;
 }
 
 /// Session works for any CQL database like Cassandra and ScyllaDB.
@@ -63,6 +63,23 @@ struct CQLTx {
     attachment_timestamp_lower: i32,
     attachment_timestamp_upper: i32,
     nonce: Blob
+}
+
+#[derive(Debug, TryFromRow)]
+struct CQLEdge {
+    hash: Blob,
+    kind: i8,
+    timestamp: i32,
+    tx: Blob,
+}
+
+#[repr(i8)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum EdgeKind {
+    bundle = 0,
+    address = 1,
+    tag = 2,
+    approvee = 3,
 }
 
 // TODO: Error handling
@@ -122,9 +139,45 @@ impl StorageBackend for CQLSession {
             "attachment_timestamp_lower" => tx.attachment_lbts().0 as i32,
             "attachment_timestamp_upper" => tx.attachment_ubts().0 as i32,
             "nonce" => tx.nonce().to_string()
+        );        
+        let bundle = query_values!(
+            "hash" => tx.bundle().to_string(),
+            "kind" => 0i8,
+            "timestamp" => tx.timestamp().0 as i32,
+            "tx" => tx_hash.to_string()
         );
+        let address = query_values!(
+            "hash" => tx.address().to_string(),
+            "kind" => 1i8,
+            "timestamp" => tx.timestamp().0 as i32,
+            "tx" => tx_hash.to_string()
+        );
+        let tag = query_values!(
+            "hash" => tx.tag().to_string(),
+            "kind" => 2i8,
+            "timestamp" => tx.timestamp().0 as i32,
+            "tx" => tx_hash.to_string()
+        );
+        let approvee1 = query_values!(
+            "hash" => tx_hash.to_string(),
+            "kind" => 3i8,
+            "timestamp" => tx.timestamp().0 as i32,
+            "tx" => tx.trunk().to_string()
+        );
+        let approvee2 = query_values!(
+            "hash" => tx_hash.to_string(),
+            "kind" => 3i8,
+            "timestamp" => tx.timestamp().0 as i32,
+            "tx" => tx.branch().to_string()
+        );
+
+        // TODO: Batch query instead, but it seems curretn btach executor is not compatible to scylla.
         self.0.query_with_values(INSERT_TX_QUERY, values)?;
-        //TODO: Also insert to edge table (bundle, address, tag, approvee)
+        self.0.query_with_values(INSERT_EDGE_QUERY, bundle)?;
+        self.0.query_with_values(INSERT_EDGE_QUERY, address)?;
+        self.0.query_with_values(INSERT_EDGE_QUERY, tag)?;
+        self.0.query_with_values(INSERT_EDGE_QUERY, approvee1)?;
+        self.0.query_with_values(INSERT_EDGE_QUERY, approvee2)?;
 
         Ok(())
     }
@@ -156,8 +209,12 @@ impl StorageBackend for CQLSession {
             }
         };
 
-
         Ok(builder.build())
+    }
+
+    async fn find_transaction_hashes(&self, hash: &Hash, kind: EdgeKind) -> Result<(), Self::StorageError> {
+
+        todo!()
     }
 }
 
