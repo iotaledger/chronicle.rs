@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use warp::Filter;
 use bundle::Hash;
 
-use crate::cql::{StorageBackend, Connection};
+use crate::storage::{StorageBackend, Connection};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct ReqBody {
@@ -11,7 +11,7 @@ struct ReqBody {
     hashes: String,
 }
 
-pub fn router(
+pub fn post(
     session: impl StorageBackend + Connection
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     warp::post()
@@ -26,7 +26,7 @@ async fn select_trytes(
     session: impl StorageBackend
 ) -> Result<impl warp::Reply, Infallible> {
     if let Ok(tx) = session.select_transaction(&Hash::from_str(&command.hashes)).await {
-        return Ok(tx.address().to_string());
+        return Ok(warp::reply::json(&format!("{}", tx.address().to_string())));
     }
-    Ok(String::new())
+    Ok(warp::reply::json(&""))
 }

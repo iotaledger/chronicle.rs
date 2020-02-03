@@ -4,11 +4,11 @@ extern crate cdrs_helpers_derive;
 use std::env;
 use warp::Filter;
 
-pub mod cql;
+pub mod storage;
 mod router;
 mod statements;
 
-use cql::{CQLSession, Connection};
+use storage::{CQLSession, Connection};
 
 #[tokio::main]
 async fn main() {
@@ -19,7 +19,7 @@ async fn main() {
 
     let session = CQLSession::establish_connection("0.0.0.0:9042").await.expect("Storage connection failed");
 
-    let api = router::router(session);
+    let api = router::post(session);
 
     let routes = api.with(warp::log("chronicle"));
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
