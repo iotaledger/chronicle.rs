@@ -8,6 +8,8 @@ pub mod cql;
 mod router;
 mod statements;
 
+use cql::{CQLSession, Connection};
+
 #[tokio::main]
 async fn main() {
     if env::var_os("RUST_LOG").is_none() {
@@ -15,7 +17,9 @@ async fn main() {
     }
     pretty_env_logger::init();
 
-    let api = warp::any().map(|| "Hello, World!");
+    let session = CQLSession::establish_connection("0.0.0.0:9042").await.expect("Storage connection failed");
+
+    let api = router::router(session);
 
     let routes = api.with(warp::log("chronicle"));
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;

@@ -19,7 +19,7 @@ use crate::statements::*;
 
 #[async_trait]
 /// Methods for initilize and destroy database connection session. User should know they type of which database session is used.
-pub trait Connection {
+pub trait Connection: Clone + Send + Sync {
     type Session;
     type StorageError;
 
