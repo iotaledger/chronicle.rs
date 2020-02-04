@@ -1,14 +1,13 @@
+mod router;
+mod statements;
+mod storage;
+
 #[macro_use]
 extern crate cdrs_helpers_derive;
 
+use crate::storage::{CQLSession, Connection};
 use std::env;
 use warp::Filter;
-
-mod storage;
-mod router;
-mod statements;
-
-use storage::{CQLSession, Connection};
 
 #[tokio::main]
 async fn main() {
@@ -17,7 +16,9 @@ async fn main() {
     }
     pretty_env_logger::init();
 
-    let session = CQLSession::establish_connection("0.0.0.0:9042").await.expect("Storage connection failed");
+    let session = CQLSession::establish_connection("0.0.0.0:9042")
+        .await
+        .expect("Storage connection failed");
 
     let routes = router::post(session).with(warp::log("chronicle"));
 

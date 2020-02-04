@@ -1,9 +1,13 @@
-use std::convert::Infallible;
-use serde::{Deserialize, Serialize};
-use warp::Filter;
 use bundle::Hash;
+use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
+use warp::{
+    any, body,
+    reply::{json, Json},
+    Filter, Rejection, Reply,
+};
 
-use crate::storage::{StorageBackend, Connection, EdgeKind};
+use crate::storage::{Connection, EdgeKind, StorageBackend};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct ReqBody {
@@ -19,39 +23,32 @@ struct ReqBody {
 struct ResTrytes(Vec<String>);
 
 pub fn post(
-    session: impl StorageBackend + Connection
-) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    session: impl StorageBackend + Connection,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::post()
-    .and(warp::body::content_length_limit(1024 * 16))
-    .and(warp::body::json())
-    .and(warp::any().map(move || session.clone()))
-    .and_then(body_filter)
+        .and(body::content_length_limit(1024 * 16))
+        .and(body::json())
+        .and(any().map(move || session.clone()))
+        .and_then(body_filter)
 }
 
-async fn body_filter(
-    req: ReqBody,
-    session: impl StorageBackend
-) -> Result<warp::reply::Json, Infallible> {
-
+async fn body_filter(req: ReqBody, session: impl StorageBackend) -> Result<Json, Infallible> {
     match &req.command[..] {
         "getTrytes" => {
             if let Some(hashes) = req.hashes {
                 return get_trytes(hashes, session).await;
             }
-        },
+        }
         "findTransactions" => {
             return find_transactions(req, session).await;
-        },
-        _ => ()
+        }
+        _ => (),
     }
 
-    Ok(warp::reply::json(&""))
+    Ok(json(&""))
 }
 
-async fn get_trytes(
-    hashes: Vec<String>,
-    session: impl StorageBackend
-) -> Result<warp::reply::Json, Infallible> {
+async fn get_trytes(hashes: Vec<String>, session: impl StorageBackend) -> Result<Json, Infallible> {
     let mut res = ResTrytes(Vec::new());
 
     for hash in hashes.iter() {
@@ -61,44 +58,61 @@ async fn get_trytes(
         }
     }
 
-    Ok(warp::reply::json(&res))
+    Ok(json(&res))
 }
 
-async fn find_transactions(
-    req: ReqBody,
-    session: impl StorageBackend
-) -> Result<warp::reply::Json, Infallible> {
+async fn find_transactions(req: ReqBody, session: impl StorageBackend) -> Result<Json, Infallible> {
     let mut res = ResTrytes(Vec::new());
 
     if let Some(bundles) = req.bundle {
         for bundle in bundles.iter() {
-            if let Ok(hashes) = session.select_transaction_hashes(&Hash::from_str(&bundle), EdgeKind::Bundle).await {
+            if let Ok(hashes) = session
+                .select_transaction_hashes(&Hash::from_str(&bundle), EdgeKind::Bundle)
+                .await
+            {
                 // TODO: transaction model for serde
-                hashes.iter().for_each(|hash|(res.0.push(hash.to_string())));
+                hashes
+                    .iter()
+                    .for_each(|hash| (res.0.push(hash.to_string())));
             }
         }
     } else if let Some(addresses) = req.address {
         for address in addresses.iter() {
-            if let Ok(hashes) = session.select_transaction_hashes(&Hash::from_str(&address), EdgeKind::Address).await {
+            if let Ok(hashes) = session
+                .select_transaction_hashes(&Hash::from_str(&address), EdgeKind::Address)
+                .await
+            {
                 // TODO: transaction model for serde
-                hashes.iter().for_each(|hash|(res.0.push(hash.to_string())));
+                hashes
+                    .iter()
+                    .for_each(|hash| (res.0.push(hash.to_string())));
             }
         }
     } else if let Some(tags) = req.tag {
         for tag in tags.iter() {
-            if let Ok(hashes) = session.select_transaction_hashes(&Hash::from_str(&tag), EdgeKind::Tag).await {
+            if let Ok(hashes) = session
+                .select_transaction_hashes(&Hash::from_str(&tag), EdgeKind::Tag)
+                .await
+            {
                 // TODO: transaction model for serde
-                hashes.iter().for_each(|hash|(res.0.push(hash.to_string())));
+                hashes
+                    .iter()
+                    .for_each(|hash| (res.0.push(hash.to_string())));
             }
         }
     } else if let Some(approvees) = req.approvee {
         for approvee in approvees.iter() {
-            if let Ok(hashes) = session.select_transaction_hashes(&Hash::from_str(&approvee), EdgeKind::Approvee).await {
+            if let Ok(hashes) = session
+                .select_transaction_hashes(&Hash::from_str(&approvee), EdgeKind::Approvee)
+                .await
+            {
                 // TODO: transaction model for serde
-                hashes.iter().for_each(|hash|(res.0.push(hash.to_string())));
+                hashes
+                    .iter()
+                    .for_each(|hash| (res.0.push(hash.to_string())));
             }
         }
     }
 
-    Ok(warp::reply::json(&res))
+    Ok(json(&res))
 }
