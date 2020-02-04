@@ -93,7 +93,7 @@ async fn find_transactions(
         }
     } else if let Some(approvees) = req.approvee {
         for approvee in approvees.iter() {
-            if let Ok(hashes) = session.select_transaction_hashes(&Hash::from_str(&approvee), EdgeKind::Tag).await {
+            if let Ok(hashes) = session.select_transaction_hashes(&Hash::from_str(&approvee), EdgeKind::Approvee).await {
                 // TODO: transaction model for serde
                 hashes.iter().for_each(|hash|(res.0.push(hash.to_string())));
             }

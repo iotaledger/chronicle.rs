@@ -4,7 +4,7 @@ extern crate cdrs_helpers_derive;
 use std::env;
 use warp::Filter;
 
-pub mod storage;
+mod storage;
 mod router;
 mod statements;
 
