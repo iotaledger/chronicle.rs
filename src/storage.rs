@@ -258,20 +258,27 @@ impl StorageBackend for CQLSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::executor::block_on;
 
     // TODO: Current test required working scylladb on local. We should have a setup script for this.
-    #[test]
-    fn test_connection() {
+    #[tokio::test]
+    async fn test_connection() {
         let tx = TransactionBuilder::default().build();
         let tx_hash = Hash::default();
 
-        let s = block_on(CQLSession::establish_connection("0.0.0.0:9042")).unwrap();
+        let s = CQLSession::establish_connection("0.0.0.0:9042")
+            .await
+            .expect("storage connection");
 
-        block_on(s.insert_transaction(&tx_hash, &tx)).unwrap();
-        block_on(s.select_transaction(&tx_hash)).unwrap();
-        block_on(s.select_transaction_hashes(&tx_hash, EdgeKind::Address)).unwrap();
+        s.insert_transaction(&tx_hash, &tx)
+            .await
+            .expect("insert tx");
+        s.select_transaction(&tx_hash).await.expect("select tx");
+        s.select_transaction_hashes(&tx_hash, EdgeKind::Address)
+            .await
+            .expect("select tx hashes");
 
-        CQLSession::destroy_connection(s);
+        CQLSession::destroy_connection(s)
+            .await
+            .expect("storage disconnect");
     }
 }

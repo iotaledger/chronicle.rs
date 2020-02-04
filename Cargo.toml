@@ -5,11 +5,6 @@ authors = ["Yu-Wei Wu <wusyong9104@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dev-dependencies]
-futures = "0.3.1"
-
 [dependencies]
 async-trait = "0.1"
 bundle = { git = "https://github.com/Alex6323/bee-p" }
