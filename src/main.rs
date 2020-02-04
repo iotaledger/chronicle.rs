@@ -19,8 +19,7 @@ async fn main() {
 
     let session = CQLSession::establish_connection("0.0.0.0:9042").await.expect("Storage connection failed");
 
-    let api = router::post(session);
+    let routes = router::post(session).with(warp::log("chronicle"));
 
-    let routes = api.with(warp::log("chronicle"));
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
