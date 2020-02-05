@@ -5,10 +5,12 @@ use bundle::{
 use cdrs::{
     authenticators::NoneAuthenticator,
     cluster::session::{new as new_session, Session},
-    cluster::{ClusterTcpConfig, NodeTcpConfigBuilder, TcpConnectionPool},
+    cluster::{ClusterTcpConfig, NodeTcpConfigBuilder, PagerState, TcpConnectionPool},
+    error,
+    frame::frame_result::{RowsMetadata, RowsMetadataFlag},
     frame::traits::TryFromRow,
     load_balancing::RoundRobinSync,
-    query::QueryExecutor,
+    query::{QueryExecutor, QueryParamsBuilder, QueryValues},
     query_values,
     types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row, IntoRustByName},
     Error as CDRSError,
@@ -120,6 +122,49 @@ impl CQLSession {
         self.0.query(CREATE_TX_TABLE_QUERY)?;
         self.0.query(CREATE_EDGE_TABLE_QUERY)?;
         Ok(())
+    }
+
+    fn paged_query(
+        &self,
+        query: &str,
+        values: QueryValues,
+        page_size: i32,
+    ) -> Result<Vec<Row>, CDRSError> {
+        let mut rows: Vec<Row> = Vec::new();
+        let mut pager_state: PagerState = PagerState::new();
+        loop {
+            let mut params = QueryParamsBuilder::new().page_size(page_size);
+            if pager_state.get_cursor().is_some() {
+                params = params.paging_state(pager_state.get_cursor().clone().unwrap());
+            }
+            params = params.values(values.clone());
+
+            let body = self
+                .0
+                .query_with_params(query.clone(), params.finalize())
+                .and_then(|frame| frame.get_body())?;
+
+            let metadata_res: error::Result<RowsMetadata> = body
+                .as_rows_metadata()
+                .ok_or("Pager query should yield a vector of rows".into());
+            let metadata = metadata_res?;
+
+            if let Some(has_more_pages) =
+                Some(RowsMetadataFlag::has_has_more_pages(metadata.flags.clone()))
+            {
+                let mut new_rows = body.into_rows().unwrap();
+                rows.append(&mut new_rows);
+                if !has_more_pages {
+                    break;
+                }
+                let cursor = metadata.paging_state.clone();
+                if cursor.is_some() {
+                    pager_state =
+                        PagerState::with_cursor_and_more_flag(cursor.unwrap(), has_more_pages);
+                }
+            }
+        }
+        Ok(rows)
     }
 }
 
@@ -239,16 +284,10 @@ impl StorageBackend for CQLSession {
         );
 
         // TODO: Refactor to paged query.
-        if let Some(rows) = self
-            .0
-            .query_with_values(SELECT_EDGE_QUERY, values)?
-            .get_body()?
-            .into_rows()
-        {
-            for row in rows {
-                let s: Blob = row.get_r_by_name("tx")?;
-                hashes.push(Hash::from_str(from_utf8(&s.into_vec()).unwrap()));
-            }
+        let rows = self.paged_query(SELECT_EDGE_QUERY, values, 2)?;
+        for row in rows {
+            let s: Blob = row.get_r_by_name("tx")?;
+            hashes.push(Hash::from_str(from_utf8(&s.into_vec()).unwrap()));
         }
 
         Ok(hashes)
