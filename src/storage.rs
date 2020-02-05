@@ -126,7 +126,7 @@ impl CQLSession {
 
     fn paged_query(
         &self,
-        query: String,
+        query: &str,
         values: QueryValues,
         page_size: i32,
     ) -> Result<Vec<Row>, CDRSError> {
@@ -283,7 +283,7 @@ impl StorageBackend for CQLSession {
         );
 
         // TODO: Refactor to paged query.
-        let rows = self.paged_query(SELECT_EDGE_QUERY.to_string(), values, 2)?;
+        let rows = self.paged_query(SELECT_EDGE_QUERY, values, 2)?;
         for row in rows {
             let s: Blob = row.get_r_by_name("tx")?;
             hashes.push(Hash::from_str(from_utf8(&s.into_vec()).unwrap()));
