@@ -6,7 +6,6 @@ use cdrs::{
     authenticators::NoneAuthenticator,
     cluster::session::{new as new_session, Session},
     cluster::{ClusterTcpConfig, NodeTcpConfigBuilder, PagerState, TcpConnectionPool},
-    error,
     frame::frame_result::{RowsMetadata, RowsMetadataFlag},
     frame::traits::TryFromRow,
     load_balancing::RoundRobinSync,
@@ -144,7 +143,7 @@ impl CQLSession {
                 .query_with_params(query.clone(), params.finalize())
                 .and_then(|frame| frame.get_body())?;
 
-            let metadata_res: error::Result<RowsMetadata> = body
+            let metadata_res: Result<RowsMetadata, CDRSError> = body
                 .as_rows_metadata()
                 .ok_or("Pager query should yield a vector of rows".into());
             let metadata = metadata_res?;
