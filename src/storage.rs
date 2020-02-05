@@ -149,18 +149,19 @@ impl CQLSession {
                 .ok_or("Pager query should yield a vector of rows".into());
             let metadata = metadata_res?;
 
-            let has_more_pages =
-                Some(RowsMetadataFlag::has_has_more_pages(metadata.flags.clone())).unwrap();
-            let new_rows = body.into_rows().unwrap();
-            rows = [&rows[..], &new_rows[..]].concat();
-            if !has_more_pages {
-                break;
-            }
-
-            let cursor = metadata.paging_state.clone();
-            if cursor.is_some() {
-                pager_state =
-                    PagerState::with_cursor_and_more_flag(cursor.unwrap(), has_more_pages);
+            if let Some(has_more_pages) =
+                Some(RowsMetadataFlag::has_has_more_pages(metadata.flags.clone()))
+            {
+                let mut new_rows = body.into_rows().unwrap();
+                rows.append(&mut new_rows);
+                if !has_more_pages {
+                    break;
+                }
+                let cursor = metadata.paging_state.clone();
+                if cursor.is_some() {
+                    pager_state =
+                        PagerState::with_cursor_and_more_flag(cursor.unwrap(), has_more_pages);
+                }
             }
         }
         Ok(rows)
