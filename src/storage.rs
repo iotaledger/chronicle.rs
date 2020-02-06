@@ -9,7 +9,7 @@ use cdrs::{
     frame::frame_result::{RowsMetadata, RowsMetadataFlag},
     frame::traits::TryFromRow,
     load_balancing::RoundRobinSync,
-    query::{QueryExecutor, QueryParamsBuilder, QueryValues},
+    query::{BatchExecutor, BatchQueryBuilder, QueryExecutor, QueryParamsBuilder, QueryValues},
     query_values,
     types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row, IntoRustByName},
     Error as CDRSError,
@@ -173,62 +173,63 @@ impl StorageBackend for CQLSession {
 
     async fn insert_transaction(&self, tx_hash: &Hash, tx: &Transaction) -> Result<(), CDRSError> {
         let values = query_values!(
-            "hash" => tx_hash.to_string(),
-            "payload" => tx.payload().to_string(),
-            "address" => tx.address().to_string(),
-            "value" => tx.value().0 as i32,
-            "obsolete_tag" => tx.obsolete_tag().to_string(),
-            "timestamp" => tx.timestamp().0 as i32,
-            "current_index" => tx.index().0 as i16,
-            "last_index" => tx.last_index().0 as i16,
-            "bundle" => tx.bundle().to_string(),
-            "trunk" => tx.trunk().to_string(),
-            "branch" => tx.branch().to_string(),
-            "tag" => tx.tag().to_string(),
-            "attachment_timestamp" => tx.attachment_ts().0 as i32,
-            "attachment_timestamp_lower" => tx.attachment_lbts().0 as i32,
-            "attachment_timestamp_upper" => tx.attachment_ubts().0 as i32,
-            "nonce" => tx.nonce().to_string()
+            tx_hash.to_string(),
+            tx.payload().to_string(),
+            tx.address().to_string(),
+            tx.value().0 as i32,
+            tx.obsolete_tag().to_string(),
+            tx.timestamp().0 as i32,
+            tx.index().0 as i16,
+            tx.last_index().0 as i16,
+            tx.bundle().to_string(),
+            tx.trunk().to_string(),
+            tx.branch().to_string(),
+            tx.tag().to_string(),
+            tx.attachment_ts().0 as i32,
+            tx.attachment_lbts().0 as i32,
+            tx.attachment_ubts().0 as i32,
+            tx.nonce().to_string()
         );
         let bundle = query_values!(
-            "hash" => tx.bundle().to_string(),
-            "kind" => 0i8,
-            "timestamp" => tx.timestamp().0 as i32,
-            "tx" => tx_hash.to_string()
+            tx.bundle().to_string(),
+            0i8,
+            tx.timestamp().0 as i32,
+            tx_hash.to_string()
         );
         let address = query_values!(
-            "hash" => tx.address().to_string(),
-            "kind" => 1i8,
-            "timestamp" => tx.timestamp().0 as i32,
-            "tx" => tx_hash.to_string()
+            tx.address().to_string(),
+            1i8,
+            tx.timestamp().0 as i32,
+            tx_hash.to_string()
         );
         let tag = query_values!(
-            "hash" => tx.tag().to_string(),
-            "kind" => 2i8,
-            "timestamp" => tx.timestamp().0 as i32,
-            "tx" => tx_hash.to_string()
+            tx.tag().to_string(),
+            2i8,
+            tx.timestamp().0 as i32,
+            tx_hash.to_string()
         );
         let approvee1 = query_values!(
-            "hash" => tx_hash.to_string(),
-            "kind" => 3i8,
-            "timestamp" => tx.timestamp().0 as i32,
-            "tx" => tx.trunk().to_string()
+            tx_hash.to_string(),
+            3i8,
+            tx.timestamp().0 as i32,
+            tx.trunk().to_string()
         );
         let approvee2 = query_values!(
-            "hash" => tx_hash.to_string(),
-            "kind" => 3i8,
-            "timestamp" => tx.timestamp().0 as i32,
-            "tx" => tx.branch().to_string()
+            tx_hash.to_string(),
+            3i8,
+            tx.timestamp().0 as i32,
+            tx.branch().to_string()
         );
 
-        // TODO: Batch query instead, but it seems curretn btach executor is not compatible to scylla.
-        self.0.query_with_values(INSERT_TX_QUERY, values)?;
-        self.0.query_with_values(INSERT_EDGE_QUERY, bundle)?;
-        self.0.query_with_values(INSERT_EDGE_QUERY, address)?;
-        self.0.query_with_values(INSERT_EDGE_QUERY, tag)?;
-        self.0.query_with_values(INSERT_EDGE_QUERY, approvee1)?;
-        self.0.query_with_values(INSERT_EDGE_QUERY, approvee2)?;
-
+        let batch = BatchQueryBuilder::new()
+            .add_query(INSERT_TX_QUERY, values)
+            .add_query(INSERT_EDGE_QUERY, bundle)
+            .add_query(INSERT_EDGE_QUERY, address)
+            .add_query(INSERT_EDGE_QUERY, tag)
+            .add_query(INSERT_EDGE_QUERY, approvee1)
+            .add_query(INSERT_EDGE_QUERY, approvee2)
+            .finalize()?;
+        self.0.batch_with_params(batch)?;
         Ok(())
     }
 
