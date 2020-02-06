@@ -1,4 +1,4 @@
-use bundle::Hash;
+use bee_bundle::Hash;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use warp::{

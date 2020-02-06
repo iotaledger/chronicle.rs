@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use bundle::{
+use bee_bundle::{
     Address, Hash, Index, Nonce, Payload, Tag, Timestamp, Transaction, TransactionBuilder, Value,
 };
 use cdrs::{
@@ -228,8 +228,12 @@ impl StorageBackend for CQLSession {
             .add_query(INSERT_EDGE_QUERY, tag)
             .add_query(INSERT_EDGE_QUERY, approvee1)
             .add_query(INSERT_EDGE_QUERY, approvee2)
+<<<<<<< HEAD
             .finalize()
             .expect("batch builder");
+=======
+            .finalize()?;
+>>>>>>> 94930ca049332bb80ccd3b5957b072dff082c723
         self.0.batch_with_params(batch)?;
         Ok(())
     }
