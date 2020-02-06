@@ -227,8 +227,7 @@ impl StorageBackend for CQLSession {
             .add_query(INSERT_EDGE_QUERY, address)
             .add_query(INSERT_EDGE_QUERY, tag)
             .add_query(INSERT_EDGE_QUERY, approvee1)
-            .add_query(INSERT_EDGE_QUERY, approvee2)
-            .finalize()?;
+            .add_query(INSERT_EDGE_QUERY, approvee2);
         self.0.batch_with_params(batch)?;
         Ok(())
     }
