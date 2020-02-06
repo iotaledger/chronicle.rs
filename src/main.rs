@@ -1,3 +1,4 @@
+mod collector;
 mod router;
 mod statements;
 mod storage;

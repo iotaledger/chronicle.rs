@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use bundle::{
+use bee_bundle::{
     Address, Hash, Index, Nonce, Payload, Tag, Timestamp, Transaction, TransactionBuilder, Value,
 };
 use cdrs::{
