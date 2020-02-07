@@ -44,35 +44,12 @@ impl SupervisorBuilder {
         }
     }
 
-    pub fn address(mut self, address: Address) -> Self {
-        self.address.replace(address);
-        self
-    }
-
-    pub fn reporters_num(mut self, reporters_num: ReporterNum) -> Self {
-        self.reporters_num.replace(reporters_num);
-        self
-    }
-
-    pub fn shard(mut self, shard: u8) -> Self {
-        self.shard.replace(shard);
-        self
-    }
-
-    pub fn tx(mut self, tx: Sender) -> Self {
-        self.tx.replace(tx);
-        self
-    }
-
-    pub fn rx(mut self, rx: Receiver) -> Self {
-        self.rx.replace(rx);
-        self
-    }
-
-    pub fn supervisor_tx(mut self, supervisor_tx: node::supervisor::Sender) -> Self {
-        self.supervisor_tx.replace(supervisor_tx);
-        self
-    }
+    set_builder_option_field!(address, Address);
+    set_builder_option_field!(reporters_num, ReporterNum);
+    set_builder_option_field!(shard, u8);
+    set_builder_option_field!(tx, Sender);
+    set_builder_option_field!(rx, Receiver);
+    set_builder_option_field!(supervisor_tx, node::supervisor::Sender);
 
     pub fn build(self) -> Supervisor {
         Supervisor {

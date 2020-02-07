@@ -122,50 +122,15 @@ impl ReporterBuilder {
         }
     }
 
-    pub fn tx(mut self, tx: Sender) -> Self {
-        self.tx.replace(tx);
-        self
-    }
-    
-    pub fn rx(mut self, rx: Receiver) -> Self {
-        self.rx.replace(rx);
-        self
-    }
-
-    pub fn sender_tx(mut self, sender_tx: sender::Sender) -> Self {
-        self.sender_tx.replace(sender_tx);
-        self
-    }
-
-    pub fn session_id(mut self, session_id: usize) -> Self {
-        self.session_id.replace(session_id);
-        self
-    }
-
-    pub fn supervisor_tx(mut self, supervisor_tx: supervisor::Sender) -> Self {
-        self.supervisor_tx.replace(supervisor_tx);
-        self
-    }
-
-    pub fn reporter_num(mut self, reporter_num: u8) -> Self {
-        self.reporter_num.replace(reporter_num);
-        self
-    }
-
-    pub fn stream_ids(mut self, stream_ids: StreamIds) -> Self {
-        self.stream_ids.replace(stream_ids);
-        self
-    }
-
-    pub fn address(mut self, address: String) -> Self {
-        self.address.replace(address);
-        self
-    }
-
-    pub fn shard(mut self, shard: u8) -> Self {
-        self.shard.replace(shard);
-        self
-    }
+    set_builder_option_field!(tx, Sender);
+    set_builder_option_field!(rx, Receiver);
+    set_builder_option_field!(sender_tx, sender::Sender);
+    set_builder_option_field!(session_id, usize);
+    set_builder_option_field!(supervisor_tx, supervisor::Sender);
+    set_builder_option_field!(reporter_num, u8);
+    set_builder_option_field!(stream_ids, StreamIds);
+    set_builder_option_field!(address, String);
+    set_builder_option_field!(shard, u8);
 
     pub fn build(self) -> Reporter {
         Reporter {

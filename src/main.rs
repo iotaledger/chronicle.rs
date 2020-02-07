@@ -4,6 +4,7 @@ mod statements;
 mod storage;
 
 // Scale of these module is from up to down
+#[macro_use]
 pub mod engine;
 pub mod cluster;
 pub mod node;

@@ -27,25 +27,10 @@ impl ReceiverBuidler {
         }
     }
 
-    pub fn supervisor_tx(mut self, supervisor_tx: supervisor::Sender) -> Self {
-        self.supervisor_tx.replace(supervisor_tx);
-        self
-    }
-
-    pub fn reporters(mut self, reporters: supervisor::Reporters) -> Self {
-        self.reporters.replace(reporters);
-        self
-    }
-
-    pub fn socket_rx(mut self, socket_rx: ReadHalf<TcpStream>) -> Self {
-        self.socket_rx.replace(socket_rx);
-        self
-    }
-
-    pub fn session_id(mut self, session_id: usize) -> Self {
-        self.session_id.replace(session_id);
-        self
-    }
+    set_builder_option_field!(socket_rx, ReadHalf<TcpStream>);
+    set_builder_option_field!(session_id, usize);
+    set_builder_option_field!(supervisor_tx, supervisor::Sender);
+    set_builder_option_field!(reporters, supervisor::Reporters);
 
     pub fn build(self) -> Receiver {
         Receiver {
@@ -57,7 +42,7 @@ impl ReceiverBuidler {
             header: false,
             buffer: Vec::new(),
             i: 0,
-            session_id: 0,
+            session_id: self.session_id.unwrap(),
             events: Vec::with_capacity(1000),
         }
     }

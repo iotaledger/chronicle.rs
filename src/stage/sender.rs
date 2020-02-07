@@ -46,40 +46,13 @@ impl SenderBuilder {
         }
     }
 
-    pub fn tx(mut self, tx: Sender) -> Self {
-        self.tx.replace(tx);
-        self
-    }
-
-    pub fn rx(mut self, rx: Receiver) -> Self {
-        self.rx.replace(rx);
-        self
-    }
-
-    pub fn supervisor_tx(mut self, supervisor_tx: supervisor::Sender) -> Self {
-        self.supervisor_tx.replace(supervisor_tx);
-        self
-    }
-
-    pub fn socket_tx(mut self, socket_tx: WriteHalf<TcpStream>) -> Self {
-        self.socket_tx.replace(socket_tx);
-        self
-    }
-
-    pub fn reporters(mut self, reporters: supervisor::Reporters) -> Self {
-        self.reporters.replace(reporters);
-        self
-    }
-
-    pub fn session_id(mut self, session_id: usize) -> Self {
-        self.session_id.replace(session_id);
-        self
-    }
-
-    pub fn reconnect(mut self, reconnect: bool) -> Self {
-        self.reconnect = reconnect;
-        self
-    }
+    set_builder_option_field!(tx, Sender);
+    set_builder_option_field!(rx, Receiver);
+    set_builder_option_field!(supervisor_tx, supervisor::Sender);
+    set_builder_option_field!(socket_tx, WriteHalf<TcpStream>);
+    set_builder_option_field!(reporters, supervisor::Reporters);
+    set_builder_option_field!(session_id, usize);
+    set_builder_field!(reconnect, bool);
 
     pub fn build(self) -> SenderState {
         let state = SenderState{
