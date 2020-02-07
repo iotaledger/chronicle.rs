@@ -12,46 +12,62 @@ pub type NodesReporters = Vec<(Address,node::supervisor::NodeReporters)>;
 
 static mut S: u8 = 0;
 
-// suerpvisor state struct
-struct State {
-    tx: Sender,
-    rx: Receiver,
-}
-
-// Arguments struct
-pub struct Args {
-    pub address: Address,
-    pub reporters_num: ReporterNum,
-    // pub supervisor_tx:
-}
-
 enum Event {
     AddNode(Address),
     RemoveNode(Address),
 }
 
+// Arguments struct
+pub struct SupervisorBuilder {
+    address: Option<Address>,
+    reporters_num: Option<ReporterNum>,
+    // pub supervisor_tx:
+}
 
-pub async fn supervisor(args: Args) -> () {
-    let State {tx, mut rx} = init(args).await;
+impl SupervisorBuilder {
+    pub fn new() -> Self {
+        SupervisorBuilder {
+            address: None,
+            reporters_num: None,
+        }
+    }
 
-    while let Some(event) = rx.recv().await {
-        match event {
-            Event::AddNode(address) => { // TODO
-                // this is a change toplogy event.
-                // first exposing the node to registry (ex evmap for now)
-                // then rebuilding the global ring to make it accessable through shard-awareness lookup.
+    set_builder_option_field!(address, Address);
+    set_builder_option_field!(reporters_num, ReporterNum);
 
-            }
-            _ => {} // TODO
+    pub fn build(self) -> Supervisor {
+        let (tx, rx) = mpsc::unbounded_channel::<Event>();
+
+        Supervisor {
+            address: self.address.unwrap(),
+            reporters_num: self.reporters_num.unwrap(),
+            tx,
+            rx,
         }
     }
 }
 
 
-async fn init(args: Args) -> State {
-    // init the channel
-    let (tx, rx) = mpsc::unbounded_channel::<Event>();
-    let nodes: Nodes = HashMap::new();
-    let nodes_reporters: NodesReporters = Vec::new();
-    State {tx, rx}
+// suerpvisor state struct
+pub struct Supervisor {
+    address: Address,
+    reporters_num: ReporterNum,
+    tx: Sender,
+    rx: Receiver,
+}
+
+impl Supervisor {
+    pub async fn run(mut self) {
+        while let Some(event) = self.rx.recv().await {
+            match event {
+                Event::AddNode(address) => { // TODO
+                    // this is a change toplogy event.
+                    // first exposing the node to registry (ex evmap for now)
+                    // then rebuilding the global ring to make it accessable through shard-awareness lookup.
+
+                }
+                _ => {} // TODO
+            }
+        }
+    }
 }
