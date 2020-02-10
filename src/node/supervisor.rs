@@ -1,10 +1,10 @@
 // node supervisor .. spawn stages // WIP
-use crate::stage::supervisor::ReporterNum;
-use crate::cluster::supervisor::Address;
-use std::collections::HashMap;
 use super::stage;
-use tokio::sync::mpsc;
+use crate::cluster::supervisor::Address;
+use crate::stage::supervisor::ReporterNum;
+use std::collections::HashMap;
 use tokio;
+use tokio::sync::mpsc;
 
 // types
 pub type StageNum = u8;
@@ -57,7 +57,6 @@ impl SupervisorBuilder {
     }
 }
 
-
 // suerpvisor state struct
 pub struct Supervisor {
     address: Address,
@@ -81,10 +80,18 @@ impl Supervisor {
                     // TODO connect to scylla-shard-zero and get_cql_opt to finally get the shards_num
                     // for testing purposes, we will manually define it.
                     self.shards_num = 1; // shard(shard-0)
-                    // ready to spawn stages
+                                         // ready to spawn stages
                     for shard in 0..self.shards_num {
-                        let (stage_tx, stage_rx) = mpsc::unbounded_channel::<stage::supervisor::Event>();
-                        let stage = stage::stage(self.tx.clone(),self.address.clone(), shard, self.reporters_num.clone(), stage_tx.clone(), stage_rx);
+                        let (stage_tx, stage_rx) =
+                            mpsc::unbounded_channel::<stage::supervisor::Event>();
+                        let stage = stage::stage(
+                            self.tx.clone(),
+                            self.address.clone(),
+                            shard,
+                            self.reporters_num.clone(),
+                            stage_tx.clone(),
+                            stage_rx,
+                        );
                         tokio::spawn(stage);
                         self.stages.insert(shard, stage_tx);
                     }
@@ -93,7 +100,7 @@ impl Supervisor {
                 Event::Shutdown => {
                     if self.spawned {
                         // this mean the stages are still running, therefore we send shutdown events
-                        for (_,stage) in self.stages.drain() {
+                        for (_, stage) in self.stages.drain() {
                             let event = stage::supervisor::Event::Shutdown;
                             stage.send(event);
                         }
@@ -104,12 +111,9 @@ impl Supervisor {
                     self.node_reporters.push((stage_num, reporters));
                     if self.shards_num == (self.node_reporters.len() as u8) {
                         // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
-
                     }
                 }
             }
         }
-
-
     }
 }

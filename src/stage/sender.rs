@@ -1,28 +1,30 @@
 // uses
 use super::reporter;
 use super::supervisor;
-use tokio::sync::mpsc;
 use tokio::io::WriteHalf;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
+use tokio::sync::mpsc;
 
 // types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
+// Payload type is vector<unsigned-integer-8bit>.
+pub type Payload = Vec<u8>;
 
 #[derive(Debug)]
 pub enum Event {
     Payload {
-            stream_id: u16,
-            payload: Vec<u8>,
-            reporter: mpsc::UnboundedSender<reporter::Event>
-        },
+        stream_id: reporter::StreamId,
+        payload: Payload,
+        reporter: mpsc::UnboundedSender<reporter::Event>,
+    },
 }
 
 // args struct, each actor must have public Arguments struct,
 // to pass options when starting the actor.
 pub struct SenderBuilder {
-    // sender's tx to send self events if needed
+    // sender's tx only to pass it to reporters (if recoonect == true).
     tx: Option<Sender>,
     // sender's rx to recv events
     rx: Option<Receiver>,
@@ -55,7 +57,7 @@ impl SenderBuilder {
     set_builder_field!(reconnect, bool);
 
     pub fn build(self) -> SenderState {
-        let state = SenderState{
+        let state = SenderState {
             supervisor_tx: self.supervisor_tx.unwrap(),
             reporters: self.reporters.unwrap(),
             session_id: self.session_id.unwrap(),
@@ -65,8 +67,13 @@ impl SenderBuilder {
         };
 
         if self.reconnect {
-            for (_,reporter_tx) in &state.reporters {
-                reporter_tx.send(reporter::Event::Session(reporter::Session::New(state.session_id, state.tx.clone()))).unwrap();
+            for (_, reporter_tx) in &state.reporters {
+                reporter_tx
+                    .send(reporter::Event::Session(reporter::Session::New(
+                        state.session_id,
+                        state.tx.clone(),
+                    )))
+                    .unwrap();
             }
         }
 
@@ -88,28 +95,45 @@ pub struct SenderState {
 impl SenderState {
     pub async fn run(mut self) {
         // loop to process event by event.
-        while let Some(Event::Payload{stream_id, payload, reporter}) = self.rx.recv().await {
+        while let Some(Event::Payload {
+            stream_id,
+            payload,
+            reporter,
+        }) = self.rx.recv().await
+        {
             // write the payload to the socket, make sure the result is valid
             match self.socket.write_all(&payload).await {
-                Ok(_) => {
+                Ok(()) => {
                     // send to reporter send_status::Ok(stream_id)
-                    reporter.send(reporter::Event::SendStatus(reporter::SendStatus::Ok(stream_id))).unwrap();
-                },
+                    reporter
+                        .send(reporter::Event::SendStatus(reporter::SendStatus::Ok(
+                            stream_id,
+                        )))
+                        .unwrap();
+                }
                 Err(_) => {
                     // send to reporter send_status::Err(stream_id)
-                    reporter.send(reporter::Event::SendStatus(reporter::SendStatus::Err(stream_id))).unwrap();
+                    reporter
+                        .send(reporter::Event::SendStatus(reporter::SendStatus::Err(
+                            stream_id,
+                        )))
+                        .unwrap();
                     // close channel to prevent any further Payloads to be sent from reporters
                     self.rx.close();
-                    // break while loop
-                    break;
-                },
+                }
             }
-        }
-        // clean shutdown, we drain the channel first TODO (Not needed, but prefered)
+        } // if sender reached this line, then either write_all returned IO Err(err) or reporter(s) droped sender_tx(s)
 
-        // send checkpoint to all reporters because the socket is mostly closed (todo confirm)
-        for (_,reporter_tx) in &self.reporters {
-            reporter_tx.send(reporter::Event::Session(reporter::Session::CheckPoint(self.session_id))).unwrap();
+        // probably not needed
+        self.socket.shutdown().await;
+
+        // send checkpoint to all reporters because the socket is mostly closed
+        for (_, reporter_tx) in &self.reporters {
+            reporter_tx
+                .send(reporter::Event::Session(reporter::Session::CheckPoint(
+                    self.session_id,
+                )))
+                .unwrap();
         }
     }
 }

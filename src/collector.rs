@@ -1,7 +1,5 @@
+use tmq::{subscribe, Context, Result};
 use tokio::stream::StreamExt;
-use tmq::{
-    subscribe, Context, Result,
-};
 
 async fn sn_subscribe() -> Result<()> {
     // TODO: Subscribe sn_trytes event
@@ -10,7 +8,8 @@ async fn sn_subscribe() -> Result<()> {
         .subscribe(b"tx_trytes")?;
 
     if let Some(msg) = sub.next().await {
-        let message = msg?.iter()
+        let message = msg?
+            .iter()
             .map(|hash| hash.as_str().unwrap_or("invalid text").to_string())
             .collect::<Vec<String>>();
         dbg!(message);

@@ -1,14 +1,14 @@
 // cluster supervisor WIP
-use std::collections::HashMap;
-use tokio::sync::mpsc;
 use super::node;
 use crate::stage::supervisor::ReporterNum;
+use std::collections::HashMap;
+use tokio::sync::mpsc;
 //types
 pub type Address = String;
 type Nodes = HashMap<Address, node::supervisor::Sender>; // childern
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
-pub type NodesReporters = Vec<(Address,node::supervisor::NodeReporters)>;
+pub type NodesReporters = Vec<(Address, node::supervisor::NodeReporters)>;
 
 static mut S: u8 = 0;
 
@@ -47,7 +47,6 @@ impl SupervisorBuilder {
     }
 }
 
-
 // suerpvisor state struct
 pub struct Supervisor {
     address: Address,
@@ -61,10 +60,9 @@ impl Supervisor {
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::AddNode(address) => { // TODO
-                    // this is a change toplogy event.
-                    // first exposing the node to registry (ex evmap for now)
-                    // then rebuilding the global ring to make it accessable through shard-awareness lookup.
-
+                     // this is a change toplogy event.
+                     // first exposing the node to registry (ex evmap for now)
+                     // then rebuilding the global ring to make it accessable through shard-awareness lookup.
                 }
                 _ => {} // TODO
             }
