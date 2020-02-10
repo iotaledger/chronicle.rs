@@ -300,8 +300,25 @@ mod tests {
     // TODO: Current test required working scylladb on local. We should have a setup script for this.
     #[tokio::test]
     async fn test_connection() {
-        let tx = TransactionBuilder::default().build();
-        let tx_hash = Hash::default();
+        let tx = TransactionBuilder::new()
+            .with_payload(Payload::zeros())
+            .with_address(Address::zeros())
+            .with_value(Value(0))
+            .with_obsolete_tag(Tag::zeros())
+            .with_timestamp(Timestamp(0))
+            .with_index(Index(0))
+            .with_last_index(Index(0))
+            .with_tag(Tag::zeros())
+            .with_attachment_ts(Timestamp(0))
+            .with_bundle(Hash::zeros())
+            .with_trunk(Hash::zeros())
+            .with_branch(Hash::zeros())
+            .with_attachment_lbts(Timestamp(0))
+            .with_attachment_ubts(Timestamp(0))
+            .with_nonce(Nonce::zeros())
+            .build()
+            .unwrap();
+        let tx_hash = Hash::zeros();
 
         let s = CQLSession::establish_connection("0.0.0.0:9042")
             .await
