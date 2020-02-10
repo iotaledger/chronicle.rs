@@ -244,32 +244,31 @@ impl StorageBackend for CQLSession {
             for row in rows {
                 // TODO: parse into better transaction builder
                 let tx = CQLTx::try_from_row(row)?;
-                builder
-                    .payload(Payload::from_str(
+                builder = builder
+                    .with_payload(Payload::from_str(
                         from_utf8(&tx.payload.into_vec()).unwrap(),
                     ))
-                    .address(Address::from_str(
+                    .with_address(Address::from_str(
                         from_utf8(&tx.address.into_vec()).unwrap(),
                     ))
-                    .value(Value(tx.value as i64))
-                    .obsolete_tag(Tag::from_str(
+                    .with_value(Value(tx.value as i64))
+                    .with_obsolete_tag(Tag::from_str(
                         from_utf8(&tx.obsolete_tag.into_vec()).unwrap(),
                     ))
-                    .timestamp(Timestamp(tx.timestamp as u64))
-                    .index(Index(tx.current_index as usize))
-                    .last_index(Index(tx.last_index as usize))
-                    .bundle(Hash::from_str(from_utf8(&tx.bundle.into_vec()).unwrap()))
-                    .trunk(Hash::from_str(from_utf8(&tx.trunk.into_vec()).unwrap()))
-                    .branch(Hash::from_str(from_utf8(&tx.branch.into_vec()).unwrap()))
-                    .tag(Tag::from_str(from_utf8(&tx.tag.into_vec()).unwrap()))
-                    .attachment_ts(Timestamp(tx.attachment_timestamp as u64))
-                    .attachment_lbts(Timestamp(tx.attachment_timestamp_lower as u64))
-                    .attachment_ubts(Timestamp(tx.attachment_timestamp_upper as u64))
-                    .nonce(Nonce::from_str(from_utf8(&tx.nonce.into_vec()).unwrap()));
+                    .with_timestamp(Timestamp(tx.timestamp as u64))
+                    .with_index(Index(tx.current_index as usize))
+                    .with_last_index(Index(tx.last_index as usize))
+                    .with_bundle(Hash::from_str(from_utf8(&tx.bundle.into_vec()).unwrap()))
+                    .with_trunk(Hash::from_str(from_utf8(&tx.trunk.into_vec()).unwrap()))
+                    .with_branch(Hash::from_str(from_utf8(&tx.branch.into_vec()).unwrap()))
+                    .with_tag(Tag::from_str(from_utf8(&tx.tag.into_vec()).unwrap()))
+                    .with_attachment_ts(Timestamp(tx.attachment_timestamp as u64))
+                    .with_attachment_lbts(Timestamp(tx.attachment_timestamp_lower as u64))
+                    .with_attachment_ubts(Timestamp(tx.attachment_timestamp_upper as u64))
+                    .with_nonce(Nonce::from_str(from_utf8(&tx.nonce.into_vec()).unwrap()));
             }
         };
-
-        Ok(builder.build())
+        Ok(builder.build().unwrap())
     }
 
     async fn select_transaction_hashes(
