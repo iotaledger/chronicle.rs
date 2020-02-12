@@ -1,12 +1,12 @@
 // uses
+use super::supervisor::Reporters;
+use super::reporter::StreamId;
 use super::reporter;
 use super::supervisor;
 use tokio::io::ReadHalf;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 
-// types
-type Events = Vec<(reporter::StreamId, reporter::Event)>;
 // consts
 const HEADER_LENGTH: usize = 9;
 const BUFFER_LENGTH: usize = 1024000;
@@ -34,9 +34,11 @@ impl ReceiverBuidler {
     set_builder_option_field!(reporters, supervisor::Reporters);
 
     pub fn build(self) -> Receiver {
+        let reporters = self.reporters.unwrap();
+        let reporters_len = reporters.len();
         Receiver {
             supervisor_tx: self.supervisor_tx.unwrap(),
-            reporters: self.reporters.unwrap(),
+            reporters: reporters,
             socket: self.socket_rx.unwrap(),
             stream_id: 0,
             total_length: 0,
@@ -44,7 +46,7 @@ impl ReceiverBuidler {
             buffer: Vec::new(),
             i: 0,
             session_id: self.session_id.unwrap(),
-            events: Vec::with_capacity(1000),
+            appends_num: 32767/reporters_len as i16,
         }
     }
 }
@@ -60,23 +62,11 @@ pub struct Receiver {
     buffer: Vec<u8>,
     i: usize,
     session_id: usize,
-    events: Events,
-}
-
-macro_rules! create_ring_mod {
-    ($module:ident, $reporters:expr) => {
-        pub mod $module {
-            fn get_reporter_by_stream_id() {
-                unimplemented!()
-            }
-        }
-    };
+    appends_num: i16,
 }
 
 impl Receiver {
     pub async fn run(mut self) {
-        // create range lookup (TODO)
-        create_ring_mod!(ring, reporters);
         // receiver event loop
         while let Ok(n) = self.socket.read(&mut self.buffer[self.i..]).await {
             // if n != 0 then the socket is not closed
@@ -104,7 +94,7 @@ impl Receiver {
                             giveload: self.buffer,
                             stream_id: self.stream_id,
                         };
-                        let reporter_tx = self.reporters.get(&0).unwrap();
+                        let reporter_tx = self.reporters.get(&compute_reporter_num(self.stream_id, self.appends_num)).unwrap();
                         let _ = reporter_tx.send(event);
                         // decrease total_length from current_length
                         current_length -= self.total_length;
@@ -113,19 +103,7 @@ impl Receiver {
                         // reset i to new current_length
                         self.i = current_length;
                         // process any events in the remaining_buffer.
-                        self.buffer = process_remaining(
-                            remaining_buffer,
-                            &mut self.stream_id,
-                            &mut self.total_length,
-                            &mut self.header,
-                            &mut self.i,
-                            &mut self.events,
-                        );
-                        // drain acc events
-                        for (s_id, event) in self.events.drain(..) {
-                            let reporter_tx = self.reporters.get(&0).unwrap();
-                            let _ = reporter_tx.send(event);
-                        }
+                        self.buffer = process_remaining(remaining_buffer, &mut self.stream_id, &mut self.total_length, &mut self.header, &mut self.i, &self.appends_num, &self.reporters);
                     } else {
                         self.i = current_length; // update i to n.
                         self.header = true; // as now we got the frame-header including knowing its body-length
@@ -146,14 +124,7 @@ impl Receiver {
 }
 
 // private functions
-fn process_remaining(
-    mut buffer: Vec<u8>,
-    stream_id: &mut reporter::StreamId,
-    total_length: &mut usize,
-    header: &mut bool,
-    current_length: &mut usize,
-    acc: &mut Events,
-) -> Vec<u8> {
+fn process_remaining(mut buffer:  Vec<u8>, stream_id: &mut reporter::StreamId, total_length: &mut usize, header: &mut bool, current_length:&mut usize, appends_num: &i16, reporters: &Reporters) -> Vec<u8> {
     // first check if current_length hold header at least
     if *current_length >= HEADER_LENGTH {
         // decode and update total_length
@@ -167,17 +138,11 @@ fn process_remaining(
                 giveload: buffer,
                 stream_id: *stream_id,
             };
-            acc.push((*stream_id, event));
+            let reporter_tx = reporters.get(&compute_reporter_num(*stream_id, *appends_num)).unwrap();
+            let _ = reporter_tx.send(event);
             // reset before loop
             *current_length -= *total_length;
-            process_remaining(
-                remaining_buffer,
-                stream_id,
-                total_length,
-                header,
-                current_length,
-                acc,
-            )
+            process_remaining(remaining_buffer, stream_id, total_length, header, current_length, appends_num, reporters)
         } else {
             if *total_length > BUFFER_LENGTH {
                 buffer.resize(*total_length, 0);
@@ -207,4 +172,8 @@ fn get_total_length_usize(buffer: &[u8]) -> usize {
 
 fn get_stream_id(buffer: &[u8]) -> reporter::StreamId {
     ((buffer[2] as reporter::StreamId) << 8) | buffer[3] as reporter::StreamId
+}
+
+fn compute_reporter_num(stream_id: StreamId, appends_num: i16)  -> u8 {
+    (stream_id/appends_num) as u8
 }

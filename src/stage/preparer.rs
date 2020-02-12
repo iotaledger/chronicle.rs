@@ -1,6 +1,7 @@
 // please note: preparer is not a real actor instead is a resumption actor (without its own mailbox/channel).
-use super::reporter::{WorkerId, Status,SendStatus, Error, Sender,Giveload, Event};
+use super::reporter::{WorkerId, Status,SendStatus, Error, Sender,Giveload, Event, Id};
 
+#[derive(Debug)]
 pub struct QueryRef {status: Status}
 
 // QueryRef new
@@ -10,7 +11,7 @@ impl QueryRef {
     }
 }
 
-// worker's WorkerId struct
+#[derive(Debug)]
 pub struct PreparerId {query_reference: QueryRef}
 
 impl WorkerId for PreparerId {
@@ -35,12 +36,12 @@ pub fn try_prepare(prepare_payload:  &[u8],tx: &Sender, giveload: &Giveload)  {
         // create preparer
         let preparer = PreparerId {query_reference: QueryRef::new()};
         // create event query
-        let event = Event::Query{payload: prepare_payload.to_vec(), worker: Box::new(preparer)};
+        let event = Event::Request{payload: prepare_payload.to_vec(), id: Id::Worker(Box::new(preparer))};
         // send to reporter(self as this function is invoked inside reporter)
         let _ = tx.send(event);
     }
 }
 
 fn check_unprepared(giveload: &Giveload) -> bool {
-    giveload[3] == 0 && giveload[7..11] == [0,0,37,0]
+    giveload[3] == 0 && giveload[7..11] == [0,0,37,0] // cql specs
 }

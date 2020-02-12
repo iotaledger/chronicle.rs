@@ -97,33 +97,23 @@ impl Supervisor {
             // Add reporter to reporters map
             self.reporters.insert(reporter_num, reporter_tx.clone());
             // Start reporter
-            let reporter_builder = if reporter_num != self.reporters_num - 1 {
-                let last_range = start_range + appends_num;
-                let stream_ids: StreamIds = (start_range..last_range).collect();
-                start_range = last_range;
-                reporter::ReporterBuilder::new()
-                    .reporter_num(reporter_num)
-                    .session_id(self.session_id)
-                    .sender_tx(sender_tx.clone())
-                    .supervisor_tx(self.tx.clone())
-                    .stream_ids(stream_ids)
-                    .tx(reporter_tx)
-                    .rx(reporter_rx)
-                    .shard(self.shard.clone())
-                    .address(self.address.clone())
+            let last_range = start_range+appends_num;
+            let stream_ids: StreamIds = ((if reporter_num == 0 {
+                1 // we force first reporter_num to start range from 1, as we reversing stream_id=0 for future uses.
             } else {
-                let stream_ids: StreamIds = (start_range..32767).collect();
-                reporter::ReporterBuilder::new()
-                    .reporter_num(reporter_num)
-                    .session_id(self.session_id)
-                    .sender_tx(sender_tx.clone())
-                    .supervisor_tx(self.tx.clone())
-                    .stream_ids(stream_ids)
-                    .tx(reporter_tx)
-                    .rx(reporter_rx)
-                    .shard(self.shard.clone())
-                    .address(self.address.clone())
-            };
+                start_range // otherwise we keep the start_range as it's
+            })..last_range).collect();
+            start_range = last_range;
+            let reporter_builder = reporter::ReporterBuilder::new()
+                .reporter_num(reporter_num)
+                .session_id(self.session_id)
+                .sender_tx(sender_tx.clone())
+                .supervisor_tx(self.tx.clone())
+                .stream_ids(stream_ids)
+                .tx(reporter_tx)
+                .rx(reporter_rx)
+                .shard(self.shard.clone())
+                .address(self.address.clone());
             let reporter = reporter_builder.build();
             tokio::spawn(reporter.run());
         }

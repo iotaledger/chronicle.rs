@@ -17,7 +17,7 @@ pub enum Event {
     Payload {
         stream_id: reporter::StreamId,
         payload: Payload,
-        reporter: mpsc::UnboundedSender<reporter::Event>,
+        reporter_num: supervisor::ReporterNum,
     },
 }
 
@@ -98,14 +98,14 @@ impl SenderState {
         while let Some(Event::Payload {
             stream_id,
             payload,
-            reporter,
+            reporter_num,
         }) = self.rx.recv().await
         {
             // write the payload to the socket, make sure the result is valid
             match self.socket.write_all(&payload).await {
                 Ok(()) => {
                     // send to reporter send_status::Ok(stream_id)
-                    reporter
+                    self.reporters.get(&reporter_num).unwrap()
                         .send(reporter::Event::SendStatus(reporter::SendStatus::Ok(
                             stream_id,
                         )))
@@ -113,7 +113,7 @@ impl SenderState {
                 }
                 Err(_) => {
                     // send to reporter send_status::Err(stream_id)
-                    reporter
+                    self.reporters.get(&reporter_num).unwrap()
                         .send(reporter::Event::SendStatus(reporter::SendStatus::Err(
                             stream_id,
                         )))
