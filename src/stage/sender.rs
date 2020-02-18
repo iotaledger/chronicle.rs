@@ -58,7 +58,7 @@ impl SenderBuilder {
 
     pub fn build(self) -> SenderState {
         let state = SenderState {
-            supervisor_tx: self.supervisor_tx.unwrap(),
+            // supervisor_tx: self.supervisor_tx.unwrap(),
             reporters: self.reporters.unwrap(),
             session_id: self.session_id.unwrap(),
             socket: self.socket_tx.unwrap(),
@@ -83,7 +83,7 @@ impl SenderBuilder {
 
 // sender's state struct.
 pub struct SenderState {
-    supervisor_tx: supervisor::Sender,
+    // supervisor_tx: supervisor::Sender,
     reporters: supervisor::Reporters,
     session_id: usize,
     // the socket_writehalf side to that given shard
@@ -105,7 +105,9 @@ impl SenderState {
             match self.socket.write_all(&payload).await {
                 Ok(()) => {
                     // send to reporter send_status::Ok(stream_id)
-                    self.reporters.get(&reporter_num).unwrap()
+                    self.reporters
+                        .get(&reporter_num)
+                        .unwrap()
                         .send(reporter::Event::SendStatus(reporter::SendStatus::Ok(
                             stream_id,
                         )))
@@ -113,7 +115,9 @@ impl SenderState {
                 }
                 Err(_) => {
                     // send to reporter send_status::Err(stream_id)
-                    self.reporters.get(&reporter_num).unwrap()
+                    self.reporters
+                        .get(&reporter_num)
+                        .unwrap()
                         .send(reporter::Event::SendStatus(reporter::SendStatus::Err(
                             stream_id,
                         )))
@@ -125,7 +129,7 @@ impl SenderState {
         } // if sender reached this line, then either write_all returned IO Err(err) or reporter(s) droped sender_tx(s)
 
         // probably not needed
-        self.socket.shutdown().await;
+        self.socket.shutdown().await.unwrap();
 
         // send checkpoint to all reporters because the socket is mostly closed
         for (_, reporter_tx) in &self.reporters {

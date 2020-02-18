@@ -3,8 +3,8 @@ use super::reporter;
 use super::sender;
 use crate::cluster::supervisor::Address;
 use crate::node;
-use crate::stage::reporter::{StreamId, StreamIds};
 use crate::node::supervisor::StageNum;
+use crate::stage::reporter::{StreamId, StreamIds};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -89,7 +89,8 @@ impl Supervisor {
         // Create sender's channel
         let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
         // Prepare range to later create stream_ids vector per reporter
-        let (mut start_range, appends_num): (StreamId, StreamId) = (0,32767/(self.reporters_num as i16));
+        let (mut start_range, appends_num): (StreamId, StreamId) =
+            (0, 32767 / (self.reporters_num as i16));
         // Start reporters
         for reporter_num in 0..self.reporters_num {
             // Create reporter's channel
@@ -97,12 +98,13 @@ impl Supervisor {
             // Add reporter to reporters map
             self.reporters.insert(reporter_num, reporter_tx.clone());
             // Start reporter
-            let last_range = start_range+appends_num;
+            let last_range = start_range + appends_num;
             let stream_ids: StreamIds = ((if reporter_num == 0 {
                 1 // we force first reporter_num to start range from 1, as we reversing stream_id=0 for future uses.
             } else {
                 start_range // otherwise we keep the start_range as it's
-            })..last_range).collect();
+            })..last_range)
+                .collect();
             start_range = last_range;
             let reporter_builder = reporter::ReporterBuilder::new()
                 .reporter_num(reporter_num)
