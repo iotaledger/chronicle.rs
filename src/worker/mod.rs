@@ -1,4 +1,7 @@
-use super::reporter::{
+pub mod broker;
+mod preparer;
+
+use crate::stage::reporter::{
     Giveload,
     Sender,
     Stream
@@ -8,7 +11,7 @@ pub type StreamStatus = Result<Stream, Stream>;
 
 // WorkerId trait type which will be implemented by worker in order to send their channel_tx.
 pub trait Worker: Send + std::fmt::Debug {
-    fn send_streamstatus(&mut self, send_status: StreamStatus) -> Status;
+    fn send_streamstatus(&mut self, stream_status: StreamStatus) -> Status;
     fn send_response(&mut self, tx: &Sender, giveload: Giveload) -> Status;
     fn send_error(&mut self, error: Error) -> Status;
 }
@@ -28,8 +31,8 @@ pub enum Status {
 }
 
 // query status
-/*impl Status {
-    pub fn return_sendstatus_ok(self: &mut Status) -> Status {
+impl Status {
+    pub fn return_streamstatus(self: &mut Status) -> Status {
         match self {
             Status::New => *self = Status::Sent,
             _ => *self = Status::Done,
@@ -47,4 +50,4 @@ pub enum Status {
         };
         return *self;
     }
-}*/
+}

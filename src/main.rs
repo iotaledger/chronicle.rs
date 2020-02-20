@@ -2,6 +2,7 @@
 mod router;
 mod statements;
 mod storage;
+pub mod worker;
 
 // Scale of these module is from up to down
 #[macro_use]
