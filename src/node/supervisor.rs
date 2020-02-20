@@ -1,17 +1,15 @@
 // node supervisor .. spawn stages // WIP
 use super::stage;
 use crate::cluster::supervisor::Address;
-use crate::stage::supervisor::ReporterNum;
 use std::collections::HashMap;
 use tokio;
 use tokio::sync::mpsc;
 
 // types
-pub type StageNum = u8;
-type Stages = HashMap<u8, stage::supervisor::Sender>; // childern
+type Stages = HashMap<u8, stage::supervisor::Sender>;
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
-pub type NodeReporters = Vec<(StageNum, stage::supervisor::Reporters)>;
+pub type NodeReporters = Vec<(u8, stage::supervisor::Reporters)>;
 
 // event Enum
 #[derive(Debug)]
@@ -24,7 +22,7 @@ pub enum Event {
 // Arguments struct
 pub struct SupervisorBuilder {
     address: Option<Address>,
-    reporters_num: Option<ReporterNum>,
+    reporters: u8,
     // pub supervisor_tx:
 }
 
@@ -32,12 +30,12 @@ impl SupervisorBuilder {
     pub fn new() -> Self {
         SupervisorBuilder {
             address: None,
-            reporters_num: None,
+            reporters: 1,
         }
     }
 
     set_builder_option_field!(address, Address);
-    set_builder_option_field!(reporters_num, ReporterNum);
+    set_builder_field!(reporters, u8);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
@@ -46,9 +44,9 @@ impl SupervisorBuilder {
 
         Supervisor {
             address: self.address.unwrap(),
-            reporters_num: self.reporters_num.unwrap(),
+            reporters: self.reporters,
             spawned: false,
-            shards_num: 0,
+            shards: 0,
             tx,
             rx,
             stages,
@@ -60,11 +58,11 @@ impl SupervisorBuilder {
 // suerpvisor state struct
 pub struct Supervisor {
     address: Address,
-    reporters_num: ReporterNum,
+    reporters: u8,
     spawned: bool,
     tx: Sender,
     rx: Receiver,
-    shards_num: u8,
+    shards: u8,
     stages: Stages,
     node_reporters: NodeReporters,
 }
@@ -80,16 +78,16 @@ impl Supervisor {
                 Event::GetShardsNum => {
                     // TODO connect to scylla-shard-zero and get_cql_opt to finally get the shards_num
                     // for testing purposes, we will manually define it.
-                    self.shards_num = 1; // shard(shard-0)
+                    self.shards = 1; // shard(shard-0)
                                          // ready to spawn stages
-                    for shard in 0..self.shards_num {
+                    for shard in 0..self.shards {
                         let (stage_tx, stage_rx) =
                             mpsc::unbounded_channel::<stage::supervisor::Event>();
                         let stage = stage::supervisor::SupervisorBuilder::new()
                             .supervisor_tx(self.tx.clone())
                             .address(self.address.clone())
-                            .shard(shard)
-                            .reporters_num(self.reporters_num)
+                            .shards(shard)
+                            .reporters(self.reporters)
                             .tx(stage_tx.clone())
                             .rx(stage_rx)
                             .build();
@@ -111,7 +109,7 @@ impl Supervisor {
                 }
                 Event::Expose(stage_num, reporters) => {
                     self.node_reporters.push((stage_num, reporters));
-                    if self.shards_num == (self.node_reporters.len() as u8) {
+                    if self.shards == (self.node_reporters.len() as u8) {
                         // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
                     }
                 }
@@ -126,10 +124,10 @@ async fn run_node() {
     use crate::cluster::supervisor::Address;
 
     let address: Address = String::from("172.17.0.2:9042");
-    let reporters_num: u8 = 1;
+    let reporters = 1;
     SupervisorBuilder::new()
         .address(address)
-        .reporters_num(reporters_num)
+        .reporters(reporters)
         .build()
         .run()
         .await;

@@ -18,12 +18,12 @@ macro_rules! set_builder_field {
     };
 }
 
-pub async fn run(address: &'static str, reporters_num: u8) -> Result<(), std::io::Error> {
+pub async fn run(address: &'static str, reporters: u8) -> Result<(), std::io::Error> {
     // TODO: Create registry
     let address: String = String::from(address);
     node::SupervisorBuilder::new()
         .address(address)
-        .reporters_num(reporters_num)
+        .reporters(reporters)
         .build()
         .run()
         .await;

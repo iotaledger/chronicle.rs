@@ -17,7 +17,7 @@ pub enum Event {
     Payload {
         stream_id: reporter::StreamId,
         payload: Payload,
-        reporter_num: supervisor::ReporterNum,
+        reporter_num: u8,
     },
 }
 

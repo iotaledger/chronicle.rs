@@ -1,6 +1,5 @@
 // cluster supervisor WIP
 use super::node;
-use crate::stage::supervisor::ReporterNum;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 //types
@@ -20,7 +19,7 @@ enum Event {
 // Arguments struct
 pub struct SupervisorBuilder {
     address: Option<Address>,
-    reporters_num: Option<ReporterNum>,
+    reporters: u8,
     // pub supervisor_tx:
 }
 
@@ -28,19 +27,19 @@ impl SupervisorBuilder {
     pub fn new() -> Self {
         SupervisorBuilder {
             address: None,
-            reporters_num: None,
+            reporters: 1,
         }
     }
 
     set_builder_option_field!(address, Address);
-    set_builder_option_field!(reporters_num, ReporterNum);
+    set_builder_field!(reporters, u8);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
 
         Supervisor {
             address: self.address.unwrap(),
-            reporters_num: self.reporters_num.unwrap(),
+            reporters: self.reporters,
             tx,
             rx,
         }
@@ -50,7 +49,7 @@ impl SupervisorBuilder {
 // suerpvisor state struct
 pub struct Supervisor {
     address: Address,
-    reporters_num: ReporterNum,
+    reporters: u8,
     tx: Sender,
     rx: Receiver,
 }
