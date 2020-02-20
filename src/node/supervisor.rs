@@ -71,9 +71,10 @@ pub struct Supervisor {
 
 impl Supervisor {
     pub async fn run(mut self) {
-        // send self GetShardsNum
-        self.tx.send(Event::GetShardsNum);
-        // event loop
+        // Send self GetShardsNum
+        self.tx.send(Event::GetShardsNum).unwrap();
+
+        // Event loop
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::GetShardsNum => {
@@ -84,15 +85,16 @@ impl Supervisor {
                     for shard in 0..self.shards_num {
                         let (stage_tx, stage_rx) =
                             mpsc::unbounded_channel::<stage::supervisor::Event>();
-                        let stage = stage::stage(
-                            self.tx.clone(),
-                            self.address.clone(),
-                            shard,
-                            self.reporters_num.clone(),
-                            stage_tx.clone(),
-                            stage_rx,
-                        );
-                        tokio::spawn(stage);
+                        let stage = stage::supervisor::SupervisorBuilder::new()
+                            .supervisor_tx(self.tx.clone())
+                            .address(self.address.clone())
+                            .shard(shard)
+                            .reporters_num(self.reporters_num)
+                            .tx(stage_tx.clone())
+                            .rx(stage_rx)
+                            .build();
+
+                        tokio::spawn(stage.run());
                         self.stages.insert(shard, stage_tx);
                     }
                     self.spawned = true;
@@ -102,7 +104,7 @@ impl Supervisor {
                         // this mean the stages are still running, therefore we send shutdown events
                         for (_, stage) in self.stages.drain() {
                             let event = stage::supervisor::Event::Shutdown;
-                            stage.send(event);
+                            stage.send(event).unwrap();
                         }
                     }
                     self.rx.close();
@@ -116,4 +118,19 @@ impl Supervisor {
             }
         }
     }
+}
+
+#[tokio::test]
+#[ignore]
+async fn run_node() {
+    use crate::cluster::supervisor::Address;
+
+    let address: Address = String::from("172.17.0.2:9042");
+    let reporters_num: u8 = 1;
+    SupervisorBuilder::new()
+        .address(address)
+        .reporters_num(reporters_num)
+        .build()
+        .run()
+        .await;
 }

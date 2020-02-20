@@ -85,7 +85,7 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    pub async fn run(&mut self) {
+    pub async fn run(mut self) {
         // Create sender's channel
         let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
         // Prepare range to later create stream_ids vector per reporter
