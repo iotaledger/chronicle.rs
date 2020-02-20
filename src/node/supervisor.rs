@@ -1,6 +1,5 @@
 // node supervisor .. spawn stages // WIP
 use super::stage;
-use crate::cluster::supervisor::Address;
 use std::collections::HashMap;
 use tokio;
 use tokio::sync::mpsc;
@@ -21,7 +20,7 @@ pub enum Event {
 
 // Arguments struct
 pub struct SupervisorBuilder {
-    address: Option<Address>,
+    address: Option<String>,
     reporters: u8,
     // pub supervisor_tx:
 }
@@ -34,7 +33,7 @@ impl SupervisorBuilder {
         }
     }
 
-    set_builder_option_field!(address, Address);
+    set_builder_option_field!(address, String);
     set_builder_field!(reporters, u8);
 
     pub fn build(self) -> Supervisor {
@@ -57,7 +56,7 @@ impl SupervisorBuilder {
 
 // suerpvisor state struct
 pub struct Supervisor {
-    address: Address,
+    address: String,
     reporters: u8,
     spawned: bool,
     tx: Sender,
@@ -121,9 +120,8 @@ impl Supervisor {
 #[tokio::test]
 #[ignore]
 async fn run_node() {
-    use crate::cluster::supervisor::Address;
 
-    let address: Address = String::from("172.17.0.2:9042");
+    let address = String::from("172.17.0.2:9042");
     let reporters = 1;
     SupervisorBuilder::new()
         .address(address)

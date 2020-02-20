@@ -1,7 +1,6 @@
 use super::receiver;
 use super::reporter;
 use super::sender;
-use crate::cluster::supervisor::Address;
 use crate::node;
 use crate::stage::reporter::{Stream, Streams};
 use std::collections::HashMap;
@@ -23,7 +22,7 @@ pub enum Event {
 }
 
 pub struct SupervisorBuilder {
-    address: Option<Address>,
+    address: Option<String>,
     reporters: u8,
     shard: u8,
     tx: Option<Sender>,
@@ -43,7 +42,7 @@ impl SupervisorBuilder {
         }
     }
 
-    set_builder_option_field!(address, Address);
+    set_builder_option_field!(address, String);
     set_builder_field!(reporters, u8);
     set_builder_field!(shard, u8);
     set_builder_option_field!(tx, Sender);
@@ -72,7 +71,7 @@ pub struct Supervisor {
     reconnect_requests: u8,
     connected: bool,
     shutting_down: bool,
-    address: Address,
+    address: String,
     shards: u8,
     tx: Sender,
     rx: Receiver,
