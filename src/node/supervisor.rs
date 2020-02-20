@@ -46,7 +46,7 @@ impl SupervisorBuilder {
             address: self.address.unwrap(),
             reporters: self.reporters,
             spawned: false,
-            shards: 0,
+            shard: 0,
             tx,
             rx,
             stages,
@@ -62,7 +62,7 @@ pub struct Supervisor {
     spawned: bool,
     tx: Sender,
     rx: Receiver,
-    shards: u8,
+    shard: u8,
     stages: Stages,
     node_reporters: NodeReporters,
 }
@@ -78,15 +78,15 @@ impl Supervisor {
                 Event::GetShardsNum => {
                     // TODO connect to scylla-shard-zero and get_cql_opt to finally get the shards_num
                     // for testing purposes, we will manually define it.
-                    self.shards = 1; // shard(shard-0)
+                    self.shard = 1; // shard(shard-0)
                                          // ready to spawn stages
-                    for shard in 0..self.shards {
+                    for shard in 0..self.shard {
                         let (stage_tx, stage_rx) =
                             mpsc::unbounded_channel::<stage::supervisor::Event>();
                         let stage = stage::supervisor::SupervisorBuilder::new()
                             .supervisor_tx(self.tx.clone())
                             .address(self.address.clone())
-                            .shards(shard)
+                            .shard(shard)
                             .reporters(self.reporters)
                             .tx(stage_tx.clone())
                             .rx(stage_rx)
@@ -109,7 +109,7 @@ impl Supervisor {
                 }
                 Event::Expose(stage_num, reporters) => {
                     self.node_reporters.push((stage_num, reporters));
-                    if self.shards == (self.node_reporters.len() as u8) {
+                    if self.shard == (self.node_reporters.len() as u8) {
                         // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
                     }
                 }

@@ -1,6 +1,7 @@
 // uses
 use super::reporter;
 use super::supervisor;
+use super::worker::StreamStatus;
 use tokio::io::WriteHalf;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
@@ -15,9 +16,9 @@ pub type Payload = Vec<u8>;
 #[derive(Debug)]
 pub enum Event {
     Payload {
-        stream_id: reporter::StreamId,
+        stream_id: reporter::Stream,
         payload: Payload,
-        reporter_num: u8,
+        reporter: u8,
     },
 }
 
@@ -98,7 +99,7 @@ impl SenderState {
         while let Some(Event::Payload {
             stream_id,
             payload,
-            reporter_num,
+            reporter,
         }) = self.rx.recv().await
         {
             // write the payload to the socket, make sure the result is valid
@@ -106,21 +107,17 @@ impl SenderState {
                 Ok(()) => {
                     // send to reporter send_status::Ok(stream_id)
                     self.reporters
-                        .get(&reporter_num)
+                        .get(&reporter)
                         .unwrap()
-                        .send(reporter::Event::SendStatus(reporter::SendStatus::Ok(
-                            stream_id,
-                        )))
+                        .send(reporter::Event::StreamStatus(StreamStatus::Ok(stream_id)))
                         .unwrap();
                 }
                 Err(_) => {
                     // send to reporter send_status::Err(stream_id)
                     self.reporters
-                        .get(&reporter_num)
+                        .get(&reporter)
                         .unwrap()
-                        .send(reporter::Event::SendStatus(reporter::SendStatus::Err(
-                            stream_id,
-                        )))
+                        .send(reporter::Event::StreamStatus(StreamStatus::Err(stream_id)))
                         .unwrap();
                     // close channel to prevent any further Payloads to be sent from reporters
                     self.rx.close();

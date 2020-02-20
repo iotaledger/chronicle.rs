@@ -1,6 +1,6 @@
 // uses
 use super::reporter;
-use super::reporter::StreamId;
+use super::reporter::Stream;
 use super::supervisor;
 use super::supervisor::Reporters;
 use tokio::io::ReadHalf;
@@ -56,7 +56,7 @@ pub struct Receiver {
     // supervisor_tx: supervisor::Sender,
     reporters: supervisor::Reporters,
     socket: ReadHalf<TcpStream>,
-    stream_id: reporter::StreamId,
+    stream_id: reporter::Stream,
     total_length: usize,
     header: bool,
     buffer: Vec<u8>,
@@ -137,7 +137,7 @@ impl Receiver {
 // private functions
 fn process_remaining(
     mut buffer: Vec<u8>,
-    stream_id: &mut reporter::StreamId,
+    stream_id: &mut reporter::Stream,
     total_length: &mut usize,
     header: &mut bool,
     current_length: &mut usize,
@@ -199,10 +199,10 @@ fn get_total_length_usize(buffer: &[u8]) -> usize {
     ((buffer[8] as usize) <<  0)
 }
 
-fn get_stream_id(buffer: &[u8]) -> reporter::StreamId {
-    ((buffer[2] as reporter::StreamId) << 8) | buffer[3] as reporter::StreamId
+fn get_stream_id(buffer: &[u8]) -> reporter::Stream {
+    ((buffer[2] as reporter::Stream) << 8) | buffer[3] as reporter::Stream
 }
 
-fn compute_reporter_num(stream_id: StreamId, appends_num: i16) -> u8 {
+fn compute_reporter_num(stream_id: Stream, appends_num: i16) -> u8 {
     (stream_id / appends_num) as u8
 }

@@ -3,7 +3,7 @@ use super::reporter;
 use super::sender;
 use crate::cluster::supervisor::Address;
 use crate::node;
-use crate::stage::reporter::{StreamId, StreamIds};
+use crate::stage::reporter::{Stream, Streams};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -25,7 +25,7 @@ pub enum Event {
 pub struct SupervisorBuilder {
     address: Option<Address>,
     reporters: u8,
-    shards: u8,
+    shard: u8,
     tx: Option<Sender>,
     rx: Option<Receiver>,
     supervisor_tx: Option<node::supervisor::Sender>,
@@ -36,7 +36,7 @@ impl SupervisorBuilder {
         SupervisorBuilder {
             address: None,
             reporters: 1,
-            shards: 1,
+            shard: 1,
             tx: None,
             rx: None,
             supervisor_tx: None,
@@ -45,7 +45,7 @@ impl SupervisorBuilder {
 
     set_builder_option_field!(address, Address);
     set_builder_field!(reporters, u8);
-    set_builder_field!(shards, u8);
+    set_builder_field!(shard, u8);
     set_builder_option_field!(tx, Sender);
     set_builder_option_field!(rx, Receiver);
     set_builder_option_field!(supervisor_tx, node::supervisor::Sender);
@@ -59,7 +59,7 @@ impl SupervisorBuilder {
             connected: false,
             shutting_down: false,
             address: self.address.unwrap(),
-            shards: self.shards,
+            shards: self.shard,
             tx: self.tx.unwrap(),
             rx: self.rx.unwrap(),
             supervisor_tx: self.supervisor_tx.unwrap(),
@@ -86,7 +86,7 @@ impl Supervisor {
         // Create sender's channel
         let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
         // Prepare range to later create stream_ids vector per reporter
-        let (mut start_range, appends_num): (StreamId, StreamId) =
+        let (mut start_range, appends_num): (Stream, Stream) =
             (0, 32767 / (reporters_num as i16));
         // Start reporters
         for reporter_num in 0..reporters_num {
@@ -96,7 +96,7 @@ impl Supervisor {
             self.reporters.insert(reporter_num, reporter_tx.clone());
             // Start reporter
             let last_range = start_range + appends_num;
-            let stream_ids: StreamIds = ((if reporter_num == 0 {
+            let streams: Streams = ((if reporter_num == 0 {
                 1 // we force first reporter_num to start range from 1, as we reversing stream_id=0 for future uses.
             } else {
                 start_range // otherwise we keep the start_range as it's
@@ -104,15 +104,15 @@ impl Supervisor {
                 .collect();
             start_range = last_range;
             let reporter_builder = reporter::ReporterBuilder::new()
-                .reporter_num(reporter_num)
-                .session_id(self.session)
-                .sender_tx(sender_tx.clone())
-                .supervisor_tx(self.tx.clone())
-                .stream_ids(stream_ids)
+                .reporter(reporter_num)
+                .session(self.session)
+                .streams(streams)
+                .shard(self.shards.clone())
+                .address(self.address.clone())
                 .tx(reporter_tx)
                 .rx(reporter_rx)
-                .shard(self.shards.clone())
-                .address(self.address.clone());
+                .supervisor_tx(self.tx.clone())
+                .sender_tx(sender_tx.clone());
             let reporter = reporter_builder.build();
             tokio::spawn(reporter.run());
         }
