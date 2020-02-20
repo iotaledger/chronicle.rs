@@ -162,12 +162,12 @@ impl Supervisor {
                                         self.reporters.clone(),
                                     );
                                     self.supervisor_tx.send(event).unwrap();
-                                    println!("just exposed stage reporters of shard: {}, to node supervisor", self.shards);
+                                    dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shards);
                                 }
                             }
                             Err(err) => {
                                 // TODO erro handling
-                                println!("trying to connect every 5 seconds: err {}", err);
+                                dbg!("trying to connect every 5 seconds: err {}", err);
                                 delay_for(Duration::from_millis(5000)).await;
                                 // Try again to connect
                                 self.tx

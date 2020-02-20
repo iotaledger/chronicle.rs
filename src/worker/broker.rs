@@ -12,7 +12,7 @@ type Sender = mpsc::UnboundedSender<BrokerEvent>;
 
 #[derive(Clone, Copy, Debug)]
 pub struct QueryRef {
-    pub query_id: usize,
+    query_id: usize,
     prepare_payload: &'static [u8],
     status: Status,
 }

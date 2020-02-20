@@ -158,7 +158,7 @@ impl Reporter {
                     match send_status {
                         StreamStatus::Ok(stream_id) => {
                             // get_mut worker from workers map.
-                            println!("stream_id {:?}", stream_id);
+                            dbg!("stream_id {:?}", stream_id);
                             let worker = self.workers.get_mut(&stream_id).unwrap();
                             // tell the worker and mutate its status,
                             if let Status::Done = worker.send_streamstatus(send_status) {
