@@ -59,7 +59,7 @@ pub struct Supervisor {
     address: String,
     reporters: u8,
     spawned: bool,
-    tx: Sender,
+    pub tx: Sender,
     rx: Receiver,
     shard: u8,
     stages: Stages,
@@ -118,15 +118,19 @@ impl Supervisor {
 }
 
 #[tokio::test]
-#[ignore]
 async fn run_node() {
-
-    let address = String::from("172.17.0.2:9042");
+    let address = String::from("0.0.0.0:9042");
     let reporters = 1;
-    SupervisorBuilder::new()
+    let node = SupervisorBuilder::new()
         .address(address)
         .reporters(reporters)
-        .build()
-        .run()
-        .await;
+        .build();
+    let tx = node.tx.clone();
+
+    let node_exec = tokio::spawn(node.run());
+    // Remove this line should make whole test stuck.
+    tx.send(Event::Shutdown).unwrap();
+
+    let (result,..) = tokio::join!(node_exec);
+    result.unwrap();
 }
