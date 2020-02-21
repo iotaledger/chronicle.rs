@@ -81,7 +81,7 @@ pub struct Supervisor {
 
 impl Supervisor {
     pub async fn run(mut self) {
-        let reporters_num = self.reporters.len() as u8;
+        let reporters_num = self.reporters.capacity() as u8;
         // Create sender's channel
         let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
         // Prepare range to later create stream_ids vector per reporter

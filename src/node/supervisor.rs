@@ -12,7 +12,7 @@ pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 type Registry = evmap::WriteHandle<u8, RegistryReporter>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RegistryReporter {
     id: u8,
     tx: mpsc::UnboundedSender<stage::reporter::Event>,
@@ -83,7 +83,7 @@ pub struct Supervisor {
     address: String,
     reporters: u8,
     spawned: bool,
-    tx: Sender,
+    pub tx: Sender,
     rx: Receiver,
     shard: u8,
     stages: Stages,
