@@ -1,6 +1,8 @@
 // node supervisor .. spawn stages // WIP
 use super::stage;
 use std::collections::HashMap;
+use std::cmp::{Eq, PartialEq};
+use evmap::shallow_copy::ShallowCopy;
 use tokio;
 use tokio::sync::mpsc;
 
@@ -8,7 +10,27 @@ use tokio::sync::mpsc;
 type Stages = HashMap<u8, stage::supervisor::Sender>;
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
-pub type NodeReporters = Vec<(u8, stage::supervisor::Reporters)>;
+type Registry = evmap::WriteHandle<u8, RegistryReporter>;
+
+#[derive(Clone)]
+pub struct RegistryReporter {
+    id: u8,
+    tx: mpsc::UnboundedSender<stage::reporter::Event>,
+}
+
+impl PartialEq for RegistryReporter {
+    fn eq(&self, other: &RegistryReporter) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for RegistryReporter {}
+
+impl ShallowCopy for RegistryReporter {
+    unsafe fn shallow_copy(&mut self) -> Self {
+        self.clone()
+    }
+}
 
 // event Enum
 #[derive(Debug)]
@@ -22,6 +44,7 @@ pub enum Event {
 pub struct SupervisorBuilder {
     address: Option<String>,
     reporters: u8,
+    registry: Option<Registry>,
     // pub supervisor_tx:
 }
 
@@ -30,16 +53,17 @@ impl SupervisorBuilder {
         SupervisorBuilder {
             address: None,
             reporters: 1,
+            registry: None,
         }
     }
 
     set_builder_option_field!(address, String);
     set_builder_field!(reporters, u8);
+    set_builder_option_field!(registry, Registry);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let stages: Stages = HashMap::new();
-        let node_reporters: NodeReporters = Vec::new();
 
         Supervisor {
             address: self.address.unwrap(),
@@ -49,7 +73,7 @@ impl SupervisorBuilder {
             tx,
             rx,
             stages,
-            node_reporters,
+            registry: self.registry.unwrap(),
         }
     }
 }
@@ -59,11 +83,11 @@ pub struct Supervisor {
     address: String,
     reporters: u8,
     spawned: bool,
-    pub tx: Sender,
+    tx: Sender,
     rx: Receiver,
     shard: u8,
     stages: Stages,
-    node_reporters: NodeReporters,
+    registry: Registry,
 }
 
 impl Supervisor {
@@ -106,11 +130,13 @@ impl Supervisor {
                     }
                     self.rx.close();
                 }
-                Event::Expose(stage_num, reporters) => {
-                    self.node_reporters.push((stage_num, reporters));
-                    if self.shard == (self.node_reporters.len() as u8) {
-                        // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
+                Event::Expose(stage, reporters) => {
+                    // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
+                    for (id, tx) in reporters {
+                        self.registry.insert(stage, RegistryReporter{id, tx});
                     }
+                    self.registry.refresh();
+                    //if self.shard == (self.node_reporters.len() as u8) {}
                 }
             }
         }
@@ -119,11 +145,13 @@ impl Supervisor {
 
 #[tokio::test]
 async fn run_node() {
+    let (_, register) = evmap::new();
     let address = String::from("0.0.0.0:9042");
     let reporters = 1;
     let node = SupervisorBuilder::new()
         .address(address)
         .reporters(reporters)
+        .registry(register)
         .build();
     let tx = node.tx.clone();
 

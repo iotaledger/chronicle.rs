@@ -17,3 +17,4 @@ serde_json = "1.0"
 tmq = { git = "https://github.com/Kobzol/tmq", branch = "future" }
 tokio = { version = "0.2", features = ["macros", "stream", "sync", "net", "io-util"] }
 warp = "0.2"
+evmap = "7.1.3"
