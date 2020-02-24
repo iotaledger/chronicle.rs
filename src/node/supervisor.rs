@@ -1,8 +1,6 @@
 // node supervisor .. spawn stages // WIP
 use super::stage;
 use std::collections::HashMap;
-use std::cmp::{Eq, PartialEq};
-use evmap::shallow_copy::ShallowCopy;
 use tokio;
 use tokio::sync::mpsc;
 
@@ -10,27 +8,7 @@ use tokio::sync::mpsc;
 type Stages = HashMap<u8, stage::supervisor::Sender>;
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
-type Registry = evmap::WriteHandle<u8, RegistryReporter>;
-
-#[derive(Clone, Debug)]
-pub struct RegistryReporter {
-    id: u8,
-    tx: mpsc::UnboundedSender<stage::reporter::Event>,
-}
-
-impl PartialEq for RegistryReporter {
-    fn eq(&self, other: &RegistryReporter) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for RegistryReporter {}
-
-impl ShallowCopy for RegistryReporter {
-    unsafe fn shallow_copy(&mut self) -> Self {
-        self.clone()
-    }
-}
+pub type Registry = HashMap<u8, mpsc::UnboundedSender<stage::reporter::Event>>;
 
 // event Enum
 #[derive(Debug)]
@@ -130,12 +108,12 @@ impl Supervisor {
                     }
                     self.rx.close();
                 }
-                Event::Expose(stage, reporters) => {
+                Event::Expose(_stage, reporters) => {
                     // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
+                    // TODO Explore actual expose method, current we expose tx as public field
                     for (id, tx) in reporters {
-                        self.registry.insert(stage, RegistryReporter{id, tx});
+                        self.registry.insert(id, tx);
                     }
-                    self.registry.refresh();
                     //if self.shard == (self.node_reporters.len() as u8) {}
                 }
             }
@@ -145,7 +123,7 @@ impl Supervisor {
 
 #[tokio::test]
 async fn run_node() {
-    let (_, register) = evmap::new();
+    let register = HashMap::new();
     let address = String::from("0.0.0.0:9042");
     let reporters = 1;
     let node = SupervisorBuilder::new()
@@ -159,6 +137,5 @@ async fn run_node() {
     // Remove this line should make whole test stuck.
     tx.send(Event::Shutdown).unwrap();
 
-    let (result,..) = tokio::join!(node_exec);
-    result.unwrap();
+    node_exec.await.unwrap();
 }
