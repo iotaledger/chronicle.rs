@@ -19,7 +19,7 @@ enum Event {
 // Arguments struct
 pub struct SupervisorBuilder {
     address: Option<Address>,
-    reporters: u8,
+    reporter_count: u8,
     // pub supervisor_tx:
 }
 
@@ -27,7 +27,7 @@ impl SupervisorBuilder {
     pub fn new() -> Self {
         SupervisorBuilder {
             address: None,
-            reporters: 1,
+            reporter_count: 1,
         }
     }
 
@@ -39,7 +39,7 @@ impl SupervisorBuilder {
 
         Supervisor {
             address: self.address.unwrap(),
-            reporters: self.reporters,
+            reporter_count: self.reporter_count,
             tx,
             rx,
         }
