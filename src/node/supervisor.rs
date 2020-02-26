@@ -61,7 +61,7 @@ pub struct Supervisor {
     address: String,
     reporter_count: u8,
     spawned: bool,
-    pub tx: Sender,
+    pub tx: Sender, // TODO: remove the pub in the future. pub is just for ease of testing right now
     rx: Receiver,
     shard_count: u8,
     stages: Stages,
