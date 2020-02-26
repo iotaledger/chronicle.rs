@@ -8,21 +8,21 @@ use tokio::sync::mpsc;
 type Stages = HashMap<u8, stage::supervisor::Sender>;
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
-pub type Registry = HashMap<u8, mpsc::UnboundedSender<stage::reporter::Event>>;
+pub type ReporterRegistries = HashMap<u8, mpsc::UnboundedSender<stage::reporter::Event>>;
 
 // event Enum
 #[derive(Debug)]
 pub enum Event {
     GetShardsNum,
     Shutdown,
-    Expose(u8, stage::supervisor::Reporters),
+    RegisterReporters(u8, stage::supervisor::Reporters),
 }
 
 // Arguments struct
 pub struct SupervisorBuilder {
     address: Option<String>,
-    reporters: u8,
-    registry: Option<Registry>,
+    reporter_count: u8,
+    reporter_registries: Option<ReporterRegistries>,
     // pub supervisor_tx:
 }
 
@@ -30,14 +30,14 @@ impl SupervisorBuilder {
     pub fn new() -> Self {
         SupervisorBuilder {
             address: None,
-            reporters: 1,
-            registry: None,
+            reporter_count: 1,
+            reporter_registries: None,
         }
     }
 
     set_builder_option_field!(address, String);
-    set_builder_field!(reporters, u8);
-    set_builder_option_field!(registry, Registry);
+    set_builder_field!(reporter_count, u8);
+    set_builder_option_field!(reporter_registries, ReporterRegistries);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
@@ -45,13 +45,13 @@ impl SupervisorBuilder {
 
         Supervisor {
             address: self.address.unwrap(),
-            reporters: self.reporters,
+            reporter_count: self.reporter_count,
             spawned: false,
-            shard: 0,
+            shard_count: 0,
             tx,
             rx,
             stages,
-            registry: self.registry.unwrap(),
+            reporter_registries: self.reporter_registries.unwrap(),
         }
     }
 }
@@ -59,13 +59,13 @@ impl SupervisorBuilder {
 // suerpvisor state struct
 pub struct Supervisor {
     address: String,
-    reporters: u8,
+    reporter_count: u8,
     spawned: bool,
     pub tx: Sender,
     rx: Receiver,
-    shard: u8,
+    shard_count: u8,
     stages: Stages,
-    registry: Registry,
+    reporter_registries: ReporterRegistries,
 }
 
 impl Supervisor {
@@ -79,22 +79,22 @@ impl Supervisor {
                 Event::GetShardsNum => {
                     // TODO connect to scylla-shard-zero and get_cql_opt to finally get the shards_num
                     // for testing purposes, we will manually define it.
-                    self.shard = 1; // shard(shard-0)
-                                         // ready to spawn stages
-                    for shard in 0..self.shard {
+                    self.shard_count = 1; // shard(shard-0)
+                                          // ready to spawn stages
+                    for shard_id in 0..self.shard_count {
                         let (stage_tx, stage_rx) =
                             mpsc::unbounded_channel::<stage::supervisor::Event>();
                         let stage = stage::supervisor::SupervisorBuilder::new()
-                            .supervisor_tx(self.tx.clone())
+                            .node_tx(self.tx.clone())
                             .address(self.address.clone())
-                            .shard(shard)
-                            .reporters(self.reporters)
+                            .shard_id(shard_id)
+                            .reporter_count(self.reporter_count)
                             .tx(stage_tx.clone())
                             .rx(stage_rx)
                             .build();
 
                         tokio::spawn(stage.run());
-                        self.stages.insert(shard, stage_tx);
+                        self.stages.insert(shard_id, stage_tx);
                     }
                     self.spawned = true;
                 }
@@ -108,11 +108,11 @@ impl Supervisor {
                     }
                     self.rx.close();
                 }
-                Event::Expose(_stage, reporters) => {
+                Event::RegisterReporters(_stage, reporters) => {
                     // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
                     // TODO Explore actual expose method, current we expose tx as public field
                     for (id, tx) in reporters {
-                        self.registry.insert(id, tx);
+                        self.reporter_registries.insert(id, tx);
                     }
                     //if self.shard == (self.node_reporters.len() as u8) {}
                 }
@@ -123,13 +123,13 @@ impl Supervisor {
 
 #[tokio::test]
 async fn run_node() {
-    let register = HashMap::new();
+    let reporter_registers = HashMap::new();
     let address = String::from("0.0.0.0:9042");
-    let reporters = 1;
+    let reporter_count = 1;
     let node = SupervisorBuilder::new()
         .address(address)
-        .reporters(reporters)
-        .registry(register)
+        .reporter_count(reporter_count)
+        .reporter_registries(reporter_registers)
         .build();
     let tx = node.tx.clone();
 

@@ -23,59 +23,59 @@ pub enum Event {
 
 pub struct SupervisorBuilder {
     address: Option<String>,
-    reporters: u8,
-    shard: u8,
+    reporter_count: u8,
+    shard_id: u8,
     tx: Option<Sender>,
     rx: Option<Receiver>,
-    supervisor_tx: Option<node::supervisor::Sender>,
+    node_tx: Option<node::supervisor::Sender>,
 }
 
 impl SupervisorBuilder {
     pub fn new() -> Self {
         SupervisorBuilder {
             address: None,
-            reporters: 1,
-            shard: 1,
+            reporter_count: 1,
+            shard_id: 1,
             tx: None,
             rx: None,
-            supervisor_tx: None,
+            node_tx: None,
         }
     }
 
     set_builder_option_field!(address, String);
-    set_builder_field!(reporters, u8);
-    set_builder_field!(shard, u8);
+    set_builder_field!(reporter_count, u8);
+    set_builder_field!(shard_id, u8);
     set_builder_option_field!(tx, Sender);
     set_builder_option_field!(rx, Receiver);
-    set_builder_option_field!(supervisor_tx, node::supervisor::Sender);
+    set_builder_option_field!(node_tx, node::supervisor::Sender);
 
     pub fn build(self) -> Supervisor {
         Supervisor {
-            session: 0,
+            session_id: 0,
             // Generate vector with capcity of reporters number
-            reporters: HashMap::with_capacity(self.reporters as usize),
+            reporters: HashMap::with_capacity(self.reporter_count as usize),
             reconnect_requests: 0,
             connected: false,
             shutting_down: false,
             address: self.address.unwrap(),
-            shards: self.shard,
+            shard_id: self.shard_id,
             tx: self.tx.unwrap(),
             rx: self.rx.unwrap(),
-            supervisor_tx: self.supervisor_tx.unwrap(),
+            node_tx: self.node_tx.unwrap(),
         }
     }
 }
 
 pub struct Supervisor {
-    session: usize,
+    session_id: usize,
     reconnect_requests: u8,
     connected: bool,
     shutting_down: bool,
     address: String,
-    shards: u8,
+    shard_id: u8,
     tx: Sender,
     rx: Receiver,
-    supervisor_tx: node::supervisor::Sender,
+    node_tx: node::supervisor::Sender,
     reporters: Reporters,
 }
 
@@ -85,8 +85,7 @@ impl Supervisor {
         // Create sender's channel
         let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
         // Prepare range to later create stream_ids vector per reporter
-        let (mut start_range, appends_num): (Stream, Stream) =
-            (0, 32767 / (reporters_num as i16));
+        let (mut start_range, appends_num): (Stream, Stream) = (0, 32767 / (reporters_num as i16));
         // Start reporters
         for reporter_num in 0..reporters_num {
             // Create reporter's channel
@@ -103,14 +102,14 @@ impl Supervisor {
                 .collect();
             start_range = last_range;
             let reporter_builder = reporter::ReporterBuilder::new()
-                .reporter(reporter_num)
-                .session(self.session)
+                .reporter_id(reporter_num)
+                .session_id(self.session_id)
                 .streams(streams)
-                .shard(self.shards.clone())
+                .shard_id(self.shard_id.clone())
                 .address(self.address.clone())
                 .tx(reporter_tx)
                 .rx(reporter_rx)
-                .supervisor_tx(self.tx.clone())
+                .stage_tx(self.tx.clone())
                 .sender_tx(sender_tx.clone());
             let reporter = reporter_builder.build();
             tokio::spawn(reporter.run());
@@ -132,7 +131,7 @@ impl Supervisor {
                                 // Change the connected status to true
                                 self.connected = true;
                                 // TODO convert the session_id to a meaningful (timestamp + count)
-                                self.session += 1;
+                                self.session_id += 1;
                                 // Split the stream
                                 let (socket_rx, socket_tx) = tokio::io::split(stream);
                                 // Spawn/restart sender
@@ -140,29 +139,29 @@ impl Supervisor {
                                     .reconnect(reconnect)
                                     .tx(sender_tx)
                                     .rx(sender_rx)
-                                    .session_id(self.session)
+                                    .session_id(self.session_id)
                                     .socket_tx(socket_tx)
                                     .reporters(self.reporters.clone())
-                                    .supervisor_tx(self.tx.clone())
+                                    .stage_tx(self.tx.clone())
                                     .build();
                                 tokio::spawn(sender_state.run());
                                 // Spawn/restart receiver
                                 let receiver = receiver::ReceiverBuidler::new()
                                     .socket_rx(socket_rx)
                                     .reporters(self.reporters.clone())
-                                    .supervisor_tx(self.tx.clone())
-                                    .session_id(self.session)
+                                    .stage_tx(self.tx.clone())
+                                    .session_id(self.session_id)
                                     .build();
                                 tokio::spawn(receiver.run());
                                 if !reconnect {
                                     // TODO now reporters are ready to be exposed to workers.. (ex evmap ring.)
                                     // create key which could be address:shard (ex "127.0.0.1:9042:5")
-                                    let event = node::supervisor::Event::Expose(
-                                        self.shards,
+                                    let event = node::supervisor::Event::RegisterReporters(
+                                        self.shard_id,
                                         self.reporters.clone(),
                                     );
-                                    self.supervisor_tx.send(event).unwrap();
-                                    dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shards);
+                                    self.node_tx.send(event).unwrap();
+                                    dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shard_id);
                                 }
                             }
                             Err(err) => {

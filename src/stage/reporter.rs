@@ -1,11 +1,6 @@
 use super::sender::{self, Payload};
 use super::supervisor;
-use crate::worker::{
-    Error,
-    Status,
-    StreamStatus,
-    Worker,
-};
+use crate::worker::{Error, Status, StreamStatus, Worker};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
@@ -43,14 +38,14 @@ pub enum Session {
 }
 
 pub struct ReporterBuilder {
-    session: Option<usize>,
-    reporter: Option<u8>,
+    session_id: Option<usize>,
+    reporter_id: Option<u8>,
     streams: Option<Streams>,
     address: Option<String>,
-    shard: Option<u8>,
+    shard_id: Option<u8>,
     tx: Option<Sender>,
     rx: Option<Receiver>,
-    supervisor_tx: Option<supervisor::Sender>,
+    stage_tx: Option<supervisor::Sender>,
     sender_tx: Option<sender::Sender>,
 }
 
@@ -59,38 +54,38 @@ impl ReporterBuilder {
         ReporterBuilder {
             tx: None,
             rx: None,
-            supervisor_tx: None,
+            stage_tx: None,
             sender_tx: None,
-            session: None,
-            reporter: None,
+            session_id: None,
+            reporter_id: None,
             streams: None,
             address: None,
-            shard: None,
+            shard_id: None,
         }
     }
 
     set_builder_option_field!(tx, Sender);
     set_builder_option_field!(rx, Receiver);
     set_builder_option_field!(sender_tx, sender::Sender);
-    set_builder_option_field!(session, usize);
-    set_builder_option_field!(supervisor_tx, supervisor::Sender);
-    set_builder_option_field!(reporter, u8);
+    set_builder_option_field!(session_id, usize);
+    set_builder_option_field!(stage_tx, supervisor::Sender);
+    set_builder_option_field!(reporter_id, u8);
     set_builder_option_field!(streams, Streams);
     set_builder_option_field!(address, String);
-    set_builder_option_field!(shard, u8);
+    set_builder_option_field!(shard_id, u8);
 
     pub fn build(self) -> Reporter {
         Reporter {
-            session: self.session.unwrap(),
-            reporter: self.reporter.unwrap(),
+            session_id: self.session_id.unwrap(),
+            reporter_id: self.reporter_id.unwrap(),
             streams: self.streams.unwrap(),
             address: self.address.unwrap(),
-            shard: self.shard.unwrap(),
+            shard_id: self.shard_id.unwrap(),
             workers: HashMap::new(),
             checkpoints: 0,
             tx: self.tx.unwrap(),
             rx: self.rx.unwrap(),
-            supervisor_tx: self.supervisor_tx.unwrap(),
+            stage_tx: self.stage_tx.unwrap(),
             sender_tx: self.sender_tx,
         }
     }
@@ -98,16 +93,16 @@ impl ReporterBuilder {
 
 // reporter state struct holds Streams and Workers and the reporter's Sender
 pub struct Reporter {
-    session: usize,
-    reporter: u8,
+    session_id: usize,
+    reporter_id: u8,
     streams: Streams,
     address: String,
-    shard: u8,
+    shard_id: u8,
     workers: Workers,
     checkpoints: u8,
     tx: Sender,
     rx: Receiver,
-    supervisor_tx: supervisor::Sender,
+    stage_tx: supervisor::Sender,
     sender_tx: Option<sender::Sender>,
 }
 
@@ -115,7 +110,10 @@ impl Reporter {
     pub async fn run(mut self) -> () {
         while let Some(event) = self.rx.recv().await {
             match event {
-                Event::Request { mut worker, mut payload } => {
+                Event::Request {
+                    mut worker,
+                    mut payload,
+                } => {
                     if let Some(stream) = self.streams.pop() {
                         // Assign stream_id to the payload
                         assign_stream_to_payload(stream, &mut payload);
@@ -123,7 +121,7 @@ impl Reporter {
                         let event = sender::Event::Payload {
                             stream: stream,
                             payload: payload,
-                            reporter: self.reporter,
+                            reporter_id: self.reporter_id,
                         };
                         // Send the event
                         match &self.sender_tx {
@@ -185,9 +183,15 @@ impl Reporter {
                     self.sender_tx = None;
                     match session {
                         Session::New(new_session, new_sender_tx) => {
-                            self.session = new_session;
+                            self.session_id = new_session;
                             self.sender_tx = Some(new_sender_tx);
-                            dbg!("address: {}, shard: {}, reporter: {}, received new session: {:?}", &self.address, self.shard, self.reporter, self.session);
+                            dbg!(
+                                "address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}",
+                                &self.address,
+                                self.shard_id,
+                                self.reporter_id,
+                                self.session_id
+                            );
                         }
                         Session::CheckPoint(old_session) => {
                             // check how many checkpoints we have.
@@ -196,10 +200,10 @@ impl Reporter {
                                 force_consistency(&mut self.streams, &mut self.workers);
                                 // reset checkpoints to 0
                                 self.checkpoints = 0;
-                                dbg!("address: {}, shard: {}, reporter: {}, received new session: {:?}", &self.address, self.shard, self.reporter, old_session);
-                                // tell supervisor_tx to reconnect
+                                dbg!("address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}", &self.address, self.shard_id, self.reporter_id, old_session);
+                                // tell stage_tx to reconnect
                                 let event = supervisor::Event::Reconnect(old_session);
-                                self.supervisor_tx.send(event).unwrap();
+                                self.stage_tx.send(event).unwrap();
                             } else {
                                 self.checkpoints = 1;
                             }
@@ -215,8 +219,10 @@ impl Reporter {
           // therefore it must drains workers map from stucked requests(if any) to force_consistency.
         force_consistency(&mut self.streams, &mut self.workers);
         dbg!(
-            "reporter: {} of shard: {} in node: {}, gracefully shutting down.",
-            self.reporter, self.shard, &self.address
+            "reporter_id: {} of shard_id: {} in node: {}, gracefully shutting down.",
+            self.reporter_id,
+            self.shard_id,
+            &self.address
         );
     }
 }
