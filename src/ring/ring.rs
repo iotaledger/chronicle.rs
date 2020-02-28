@@ -1,123 +1,148 @@
-// uses
+// uses (WIP)
+use rand::prelude::ThreadRng;
 use crate::stage::reporter::Event;
+use crate::stage::supervisor::Reporters;
 use std::collections::HashMap;
 use std::cell::RefCell;
+use rand::{Rng, thread_rng};
+use rand::distributions::Uniform;
 use std::i64::{MIN, MAX};
 // types
 type Token = i64;
 type Msb = u8;
 type ShardsNum = u8;
-type NodeId = u16;
+type NodeId = [u8; 5]; // four-bytes ip and last byte for shard num.
 type DC = String;
-type Replicas = HashMap< DC,Vec<(NodeId,Msb,ShardsNum)> >;
+type Replicas = HashMap< DC,Vec<Replica>>;
+type Replica = (NodeId,Msb,ShardsNum);
 type Vcell = Box<dyn Vnode>;
-type RingVector =  Vec<Vcell> ;
+type RingVector =  Vec<Vcell>;
+type Registry = HashMap<NodeId, Reporters>;
 
-// thread local ring
-thread_local!{
-    static RING: RefCell<Vec<Vcell>> = RefCell::new(Vec::new());
+struct Ring {
+    registry: Registry,
+    root: Option<Box<dyn Vnode>>,
+    uniform: Uniform<u8>,
+    rng: ThreadRng,
 }
 
-// trait
-trait Vnode {
-    fn search(&self, ring_vector: &RingVector,data_center: DC,replica_index: u8, token: Token, request: Event);
-    fn next(&self,index: usize, ring_vector: &RingVector,data_center: DC,replica_index: u8, token: Token, request: Event) {
-        ring_vector[index].search(ring_vector,data_center,replica_index, token, request);
+thread_local!{
+    static RING: RefCell<Ring> = {
+        let rng = rand::thread_rng();
+        let uniform: Uniform<u8> = Uniform::new(0,1);
+        let registry: Registry = HashMap::new();
+        let root: Option<Box<dyn Vnode>> = None;
+        RefCell::new(Ring{registry ,root, uniform, rng})
+    };
+}
+
+impl Ring {
+    fn send(data_center: DC,replica_index: usize,token: Token,request: Event) {
+        RING.with(|local| {
+            local.borrow_mut().sending(data_center, replica_index, token, request)
+        }
+        )
+    }
+    fn sending(&mut self,data_center: DC,replica_index: usize,token: Token,request: Event) {
+        self.root.as_mut().unwrap()
+        .search(token)
+        .send(data_center, replica_index, token, request, &mut self.registry, &mut self.rng, self.uniform)
     }
 }
-trait Ring {
-    fn send(&self,data_center: DC,replica_index: u8,  token: Token, request: Event) ;
+trait SmartId {
+    fn send_reporter(&mut self, token: Token, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>, request: Event) ;
 }
-impl Ring for RingVector {
-    fn send(&self,data_center: DC, replica_index: u8, token: Token, request: Event) {
-        // we do binary search from center of the ringvector
-        self[self.len()/2].search(self,data_center,replica_index, token, request)
+impl SmartId for Replica {
+    fn send_reporter(&mut self, token: Token, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>, request: Event) {
+        // shard awareness algo, (todo: to be tested)
+        self.0[4] = ( (( ((token - MIN) << self.1) as u128 )* (self.2 as u128)) >> 64 ) as u8;
+        registry.get_mut(&self.0).unwrap()
+        .get_mut(&rng.sample(uniform)).unwrap()
+        .send(request);
     }
 }
 
 trait Endpoints {
-    fn send(&self,data_center: DC, replica_index: u8, token: Token, request: Event)  {
-        unimplemented!()
-    }
+    fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>);
 }
 impl Endpoints for Replicas {
-    fn send(&self,data_center: DC, replica_index: u8, token: Token, request: Event) {
-        unimplemented!()
+    fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, mut registry: &mut Registry, mut rng: &mut ThreadRng, uniform: Uniform<u8>) {
+        self.get_mut(&data_center).unwrap()[replica_index].send_reporter(token, &mut registry, &mut rng, uniform, request);
     }
+}
+
+
+trait Vnode {
+    fn search(&mut self, token: Token) -> &mut Replicas ;
 }
 
 impl Vnode for Low {
-    fn search(&self, _ring_vector: &RingVector,data_center: DC,replica_index: u8, token: Token, request: Event) {
-        if token >= MIN && token <= self.right { // must be true TODO remove if condition
-            self.replicas.send(data_center, replica_index, token, request);
-        }
+    fn search(&mut self, token: Token) -> &mut Replicas  {
+        &mut self.replicas
     }
+
 }
 
+
 impl Vnode for Mild {
-    fn search(&self, ring_vector: &RingVector,data_center: DC,replica_index: u8, token: Token, request: Event) {
+    fn search(&mut self,token: Token) -> &mut Replicas {
         if token > self.left && token <= self.right {
-            self.replicas.send(data_center, replica_index, token, request);
+            &mut self.replicas
         } else if token <= self.left {
-            // proceed binary search; shift left
-            self.next(self.left_index, ring_vector,data_center,replica_index, token, request);
-        } else if token > self.right {
+            // proceed binary search; shift left .
+            self.left_child.search(token)
+        } else {
             // proceed binary search; shift right
-            self.next(self.right_index, ring_vector,data_center,replica_index, token, request);
+            self.right_child.search(token)
         }
     }
 }
 
 impl Vnode for High {
-    fn search(&self, ring_vector: &RingVector,data_center: DC,replica_index: u8, token: Token, request: Event) {
-        // todo reorder if conditions
+    fn search(&mut self,token: Token) -> &mut Replicas {
         if token > self.left && token <= MAX {
-            self.replicas.send(data_center, replica_index, token, request);
-        } else if token <= self.left {
+            &mut self.replicas
+        } else {
             // proceed binary search; shift left
-            self.next(self.left_index, ring_vector,data_center,replica_index, token, request);
+            self.left_child.search(token)
         }
     }
 }
 
 impl Vnode for All {
-    fn search(&self,ring_vector: &RingVector,data_center: DC,replica_index: u8, token: Token, request: Event) {
-        self.replicas.send(data_center, replica_index, token, request);
+    fn search(&mut self,token: Token) -> &mut Replicas {
+        &mut self.replicas
     }
 }
 
 // this struct represent the lowest possible vnode(min..)
 // condition: token >= MIN, and token <= right
 struct Low {
-    index: usize,
     right: Token,
-    right_index: usize,
+    right_child: Box<dyn Vnode>,
     replicas: Replicas,
 }
 
 // this struct represent the mild possible vnode(..)
 // condition: token > left, and token <= right
 struct Mild {
-    index: usize,
     left: Token,
     right: Token,
-    left_index: usize,
-    right_index: usize,
+    left_child: Box<dyn Vnode>,
+    right_child: Box<dyn Vnode>,
     replicas: Replicas,
 }
 
 // this struct represent the highest possible vnode(..max)
 // condition: token > left, and token <= MAX
 struct High {
-    index: usize,
     left: Token,
-    left_index: usize,
+    left_child: Box<dyn Vnode>,
     replicas: Replicas,
 }
 
 // this struct represent all possible vnode(min..max)
 // condition: token >= MIN, and token <= right = MAX
 struct All {
-    index: usize,
     replicas: Replicas,
 }
