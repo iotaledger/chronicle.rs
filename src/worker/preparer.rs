@@ -1,12 +1,12 @@
 // please note: preparer is not a real actor instead is a resumption actor (without its own mailbox/channel).
-use super::reporter::{Error, Event, Giveload, Id, SendStatus, Sender, Status, WorkerId};
+use super::{Error, StreamStatus, Status, Worker};
+use crate::stage::reporter::{Event, Giveload, Sender};
 
 #[derive(Debug)]
 pub struct QueryRef {
     status: Status,
 }
 
-// QueryRef new
 impl QueryRef {
     fn new() -> Self {
         QueryRef {
@@ -16,22 +16,23 @@ impl QueryRef {
 }
 
 #[derive(Debug)]
-pub struct PreparerId {
-    query_reference: QueryRef,
+pub struct Preparer {
+    query: QueryRef,
 }
 
-impl WorkerId for PreparerId {
-    fn send_sendstatus_ok(&mut self, _send_status: SendStatus) -> Status {
-        self.query_reference.status.return_sendstatus_ok()
+impl Worker for Preparer {
+    fn send_streamstatus(&mut self, stream_status: StreamStatus) -> Status {
+        match stream_status {
+            Ok(_) => self.query.status.return_streamstatus(),
+            Err(_) => self.query.status.return_error()
+        }
     }
-    fn send_sendstatus_err(&mut self, _send_status: SendStatus) -> Status {
-        self.query_reference.status.return_error()
-    }
+
     fn send_response(&mut self, _tx: &Sender, _giveload: Vec<u8>) -> Status {
-        self.query_reference.status.return_response()
+        self.query.status.return_response()
     }
     fn send_error(&mut self, _error: Error) -> Status {
-        self.query_reference.status.return_error()
+        self.query.status.return_error()
     }
 }
 
@@ -39,13 +40,13 @@ pub fn try_prepare(prepare_payload: &[u8], tx: &Sender, giveload: &Giveload) {
     // check if the giveload is unprepared_error.
     if check_unprepared(giveload) {
         // create preparer
-        let preparer = PreparerId {
-            query_reference: QueryRef::new(),
+        let preparer = Preparer {
+            query: QueryRef::new(),
         };
         // create event query
         let event = Event::Request {
             payload: prepare_payload.to_vec(),
-            id: Id::Worker(Box::new(preparer)),
+            worker: Box::new(preparer),
         };
         // send to reporter(self as this function is invoked inside reporter)
         let _ = tx.send(event);

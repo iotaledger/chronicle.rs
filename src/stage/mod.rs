@@ -1,4 +1,3 @@
-mod preparer;
 mod receiver;
 pub mod reporter;
 mod sender;

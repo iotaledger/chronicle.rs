@@ -1,6 +1,6 @@
 // uses
 use super::reporter;
-use super::reporter::StreamId;
+use super::reporter::Stream;
 use super::supervisor;
 use super::supervisor::Reporters;
 use tokio::io::ReadHalf;
@@ -12,7 +12,7 @@ const HEADER_LENGTH: usize = 9;
 const BUFFER_LENGTH: usize = 1024000;
 
 pub struct ReceiverBuidler {
-    supervisor_tx: Option<supervisor::Sender>,
+    stage_tx: Option<supervisor::Sender>,
     reporters: Option<supervisor::Reporters>,
     socket_rx: Option<ReadHalf<TcpStream>>,
     session_id: Option<usize>,
@@ -21,7 +21,7 @@ pub struct ReceiverBuidler {
 impl ReceiverBuidler {
     pub fn new() -> Self {
         ReceiverBuidler {
-            supervisor_tx: None,
+            stage_tx: None,
             reporters: None,
             socket_rx: None,
             session_id: None,
@@ -30,14 +30,14 @@ impl ReceiverBuidler {
 
     set_builder_option_field!(socket_rx, ReadHalf<TcpStream>);
     set_builder_option_field!(session_id, usize);
-    set_builder_option_field!(supervisor_tx, supervisor::Sender);
+    set_builder_option_field!(stage_tx, supervisor::Sender);
     set_builder_option_field!(reporters, supervisor::Reporters);
 
     pub fn build(self) -> Receiver {
         let reporters = self.reporters.unwrap();
         let reporters_len = reporters.len();
         Receiver {
-            // supervisor_tx: self.supervisor_tx.unwrap(),
+            // stage_tx: self.stage_tx.unwrap(),
             reporters: reporters,
             socket: self.socket_rx.unwrap(),
             stream_id: 0,
@@ -53,10 +53,10 @@ impl ReceiverBuidler {
 
 // suerpvisor state struct
 pub struct Receiver {
-    // supervisor_tx: supervisor::Sender,
+    // stage_tx: supervisor::Sender,
     reporters: supervisor::Reporters,
     socket: ReadHalf<TcpStream>,
-    stream_id: reporter::StreamId,
+    stream_id: reporter::Stream,
     total_length: usize,
     header: bool,
     buffer: Vec<u8>,
@@ -137,7 +137,7 @@ impl Receiver {
 // private functions
 fn process_remaining(
     mut buffer: Vec<u8>,
-    stream_id: &mut reporter::StreamId,
+    stream_id: &mut reporter::Stream,
     total_length: &mut usize,
     header: &mut bool,
     current_length: &mut usize,
@@ -199,10 +199,10 @@ fn get_total_length_usize(buffer: &[u8]) -> usize {
     ((buffer[8] as usize) <<  0)
 }
 
-fn get_stream_id(buffer: &[u8]) -> reporter::StreamId {
-    ((buffer[2] as reporter::StreamId) << 8) | buffer[3] as reporter::StreamId
+fn get_stream_id(buffer: &[u8]) -> reporter::Stream {
+    ((buffer[2] as reporter::Stream) << 8) | buffer[3] as reporter::Stream
 }
 
-fn compute_reporter_num(stream_id: StreamId, appends_num: i16) -> u8 {
+fn compute_reporter_num(stream_id: Stream, appends_num: i16) -> u8 {
     (stream_id / appends_num) as u8
 }
