@@ -156,7 +156,6 @@ impl Reporter {
                     match send_status {
                         StreamStatus::Ok(stream_id) => {
                             // get_mut worker from workers map.
-                            dbg!("stream_id {:?}", stream_id);
                             let worker = self.workers.get_mut(&stream_id).unwrap();
                             // tell the worker and mutate its status,
                             if let Status::Done = worker.send_streamstatus(send_status) {
@@ -209,8 +208,10 @@ impl Reporter {
                             }
                         }
                         Session::Shutdown => {
-                            // closing rx is enough to shutdown the reporter
-                            self.rx.close();
+                            // don't need to do anything , as we are already dropped the sender_tx
+                            // dropping the sender_tx will drop the sender and eventaully drop receiver , this means our reporter_tx in both sender&reciever will be dropped.. finally the only reporter_tx left is in Rings which will eventaully be dropped.
+                            // techincally reporters are active till the last Ring::send(..) call.
+                            // this make sure we don't leave any requests behind and enabling the workers to async send requests with guarantee to be processed back
                         }
                     }
                 }

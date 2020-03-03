@@ -9,13 +9,20 @@ pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type NodesReporters = Vec<(Address, node::supervisor::NodeReporters)>;
 
-static mut S: u8 = 0;
-
 enum Event {
-    AddNode(Address),
-    RemoveNode(Address),
+    Topology(Topology)
+    Status(Status),
+    // Schema(..),
 }
 
+enum Topology {
+    NewNode(Address),
+    RemovedNode(Address),
+}
+enum Status {
+    Up(Address),
+    Down(Address),
+}
 // Arguments struct
 pub struct SupervisorBuilder {
     address: Option<Address>,
@@ -49,7 +56,7 @@ impl SupervisorBuilder {
 // suerpvisor state struct
 pub struct Supervisor {
     address: Address,
-    reporters: u8,
+    reporters_count: u8,
     tx: Sender,
     rx: Receiver,
 }
@@ -58,12 +65,27 @@ impl Supervisor {
     pub async fn run(mut self) {
         while let Some(event) = self.rx.recv().await {
             match event {
-                Event::AddNode(address) => { // TODO
-                     // this is a change toplogy event.
-                     // first exposing the node to registry (ex evmap for now)
-                     // then rebuilding the global ring to make it accessable through shard-awareness lookup.
+                Event::Topology(topology) => {
+                    match topology {
+                        Topology::NewNode => {
+                            // TOPOLOGY_CHANGE event as a result of a new_node
+                        }
+                        Topology::RemovedNode => {
+                            // TOPOLOGY_CHANGE event as a result of a removed_node
+                        }
+                    }
                 }
-                _ => {} // TODO
+                Event::Status(status) => {
+                    match status {
+                        Event::Up(address) => {
+                            // STATUS_CHANGE event "UP" as a result of a node returned online
+                        }
+                        Event::Down(address) => {
+                            // STATUS_CHANGE event "DOWN" as a result of a node went offline
+                        }
+                    }
+                }
+
             }
         }
     }

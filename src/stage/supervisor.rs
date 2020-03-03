@@ -160,7 +160,7 @@ impl Supervisor {
                                         self.shard_id,
                                         self.reporters.clone(),
                                     );
-                                    self.node_tx.send(event).unwrap();
+                                    let _ = self.node_tx.send(event); // node_tx might be closed
                                     dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shard_id);
                                 }
                             }
@@ -189,27 +189,17 @@ impl Supervisor {
                     self.connected = false;
                     // Create sender's channel
                     let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
-                    self.tx
-                        .send(Event::Connect(sender_tx, sender_rx, true))
-                        .unwrap();
+                    self.tx.send(Event::Connect(sender_tx, sender_rx, true)).unwrap();
                 }
                 Event::Shutdown => {
                     self.shutting_down = true;
-                    // this will make sure both sender and receiver of the stage are dead.
-                    if !self.connected {
-                        // therefore now we tell reporters to gracefully shutdown
-                        for (_, reporter_tx) in self.reporters.drain() {
-                            reporter_tx
-                                .send(reporter::Event::Session(reporter::Session::Shutdown))
-                                .unwrap();
-                        }
-                        // finally close rx channel
-                        self.rx.close();
-                    } else {
-                        // wait for 5 second
-                        delay_for(Duration::from_secs(5)).await;
-                        // trap self with shutdown event.
-                        self.tx.send(Event::Shutdown).unwrap();
+                    // therefore now we tell reporters to gracefully shutdown by droping
+                    // sender_tx and eventaully stage_tx, draining reporters is important
+                    // otherwise we have to close the rx channel.
+                    for (_, reporter_tx) in self.reporters.drain() {
+                        reporter_tx
+                            .send(reporter::Event::Session(reporter::Session::Shutdown))
+                            .unwrap();
                     }
                 }
             }

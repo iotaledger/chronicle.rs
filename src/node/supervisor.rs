@@ -106,15 +106,16 @@ impl Supervisor {
                             stage.send(event).unwrap();
                         }
                     }
-                    self.rx.close();
+                    break; // we break to prevent pushing RegisterReporters to cluster,
+                    // because it asked node to shutdown and doesn't expect it to push anything further
                 }
                 Event::RegisterReporters(_stage, reporters) => {
-                    // now we have all stage's reporters, therefore we expose the node_reporters to cluster supervisor
-                    // TODO Explore actual expose method, current we expose tx as public field
+                    // TODO.. collect them and make sure the reporter_registries len == shard_count,
+                    // only then we push it to cluster to use them to build the RING and
+                    // exposed to the public 
                     for (id, tx) in reporters {
                         self.reporter_registries.insert(id, tx);
                     }
-                    //if self.shard == (self.node_reporters.len() as u8) {}
                 }
             }
         }
