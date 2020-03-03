@@ -59,6 +59,11 @@ impl Ring {
                 self.registry = registry.clone();
                 // update self root and drop the old one
                 self.root = root.clone();
+                // consume the old arc as it's stored in *const raw format
+                if let Some(old_raw) = self.arc {
+                    // convert it back to arc to prevent memory leak and
+                    Arc::from_raw(old_raw);
+                }; // at this line old_raw_arc should be drop it
                 // update self arc by invoking into_raw to consume it
                 self.arc = Some(Arc::into_raw(arc)); // now arc supposed to point to same location as ARC_RING, and strong_count should had increased by one.
             }
