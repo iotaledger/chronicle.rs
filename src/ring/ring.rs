@@ -80,7 +80,8 @@ trait SmartId {
 impl SmartId for Replica {
     fn send_reporter(&mut self, token: Token, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>, request: Event) {
         // shard awareness algo, (todo: to be tested)
-        self.0[4] = ( (( ((token - MIN) << self.1) as u128 )* (self.2 as u128)) >> 64 ) as u8;
+        self.0[4] = (((((token as i128 + MIN as i128) as u64)
+         << self.1) as u128 * self.2 as u128) >> 64) as u8;
         registry.get_mut(&self.0).unwrap()
         .get_mut(&rng.sample(uniform)).unwrap()
         .send(request);
@@ -192,7 +193,7 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
     }
 }
 
-fn walk_clockwise(starting_index: usize, end_index: usize, vnodes: &Vec<(Token,     Token,[u8;5],&'static str)>,replicas: &mut Replicas) {
+fn walk_clockwise(starting_index: usize, end_index: usize,vnodes: &Vec<(Token,Token,[u8;5],&'static str)>,replicas: &mut Replicas) {
     for i in starting_index..end_index {
         // fetch replica
         let (_, _, node_id, dc) = vnodes[i];
