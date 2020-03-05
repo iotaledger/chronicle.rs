@@ -53,9 +53,10 @@ impl SupervisorBuilder {
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let stages: Stages = HashMap::new();
-        let node_id: NodeId = gen_node_id(self.address.clone().unwrap());
+        let address: String = self.address.unwrap();
+        let node_id: NodeId = gen_node_id(address.clone());
         Supervisor {
-            address: self.address.unwrap(),
+            address,
             node_id,
             data_center: self.data_center.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
@@ -170,6 +171,7 @@ async fn run_node() {
         .address(address)
         .reporter_count(reporter_count)
         .node_reporters(node_reporters)
+        .data_center("US")
         .build();
     let tx = node.tx.clone();
 
