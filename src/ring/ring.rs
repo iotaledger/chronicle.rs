@@ -2,6 +2,7 @@
 use std::sync::Arc;
 use rand::prelude::ThreadRng;
 use crate::stage::reporter::Event;
+use crate::worker::Error;
 use crate::stage::supervisor::Reporters;
 use std::collections::HashMap;
 use std::cell::RefCell;
@@ -12,30 +13,29 @@ use std::i64::{MIN, MAX};
 type Token = i64;
 type Msb = u8;
 type ShardsNum = u8;
-type NodeId = [u8; 5]; // four-bytes ip and last byte for shard num.
-type DC = &'static str;
+pub type NodeId = [u8; 5]; // four-bytes ip and last byte for shard num.
+pub type DC = &'static str;
 type Replicas = HashMap< DC,Vec<Replica>>;
 type Replica = (NodeId,Msb,ShardsNum);
 type Vcell = Box<dyn Vnode>;
-type Registry = HashMap<NodeId, Reporters>;
-type Root = Option<Vcell>; // todo remove option
+pub type Registry = HashMap<NodeId, Reporters>;
 struct Ring {
-    arc: Option<*const (Registry, Root)>, // option temp
+    arc: Option<*const (Registry, Vcell)>, // option temp
     registry: Registry,
-    root: Root,
+    root: Vcell,
     uniform: Uniform<u8>,
     rng: ThreadRng,
 }
 
-static mut ARC_RING: Option<*const (Registry, Root)> = None; // to be moved to cluster
+static mut ARC_RING: Option<*const (Registry, Vcell)> = None;
 
 thread_local!{
     static RING: RefCell<Ring> = {
         let arc = None; // arc will help the cluster to know if the ring propagated to all threads
         let rng = rand::thread_rng();
-        let uniform: Uniform<u8> = Uniform::new(0,1);
+        let uniform: Uniform<u8> = Uniform::new(0,1); // move this to global const
         let registry: Registry = HashMap::new();
-        let root: Option<Vcell> = None;
+        let root: Vcell = Ring::initial_ring();
         RefCell::new(Ring{arc, registry ,root, uniform, rng})
     };
 }
@@ -69,9 +69,12 @@ impl Ring {
             }
         }
         // send request.
-        self.root.as_mut().unwrap()
+        self.root.as_mut()
         .search(token)
         .send(data_center, replica_index, token, request, &mut self.registry, &mut self.rng, self.uniform);
+    }
+    fn initial_ring() -> Vcell {
+        DeadEnd::initial_vnode()
     }
 }
 trait SmartId {
@@ -79,7 +82,7 @@ trait SmartId {
 }
 impl SmartId for Replica {
     fn send_reporter(&mut self, token: Token, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>, request: Event) {
-        // shard awareness algo, (todo: to be tested)
+        // shard awareness algo,
         self.0[4] = (((((token as i128 + MIN as i128) as u64)
          << self.1) as u128 * self.2 as u128) >> 64) as u8;
         registry.get_mut(&self.0).unwrap()
@@ -96,17 +99,27 @@ impl Endpoints for Replicas {
         self.get_mut(&data_center).unwrap()[replica_index].send_reporter(token, &mut registry, &mut rng, uniform, request);
     }
 }
+impl Endpoints for Option<Replicas> {
+    // this method will be invoked when we store Replicas as None.
+    // used for initial ring to simulate the reporter and respond to worker(self) with NoRing error
+    fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, mut registry: &mut Registry, mut rng: &mut ThreadRng, uniform: Uniform<u8>) {
+        // simulate reporter behivour,
+        if let Event::Request{worker: mut worker, payload: _} = request{
+            worker.send_error(Error::NoRing);
+        };
+    }
+}
 
 impl Clone for Vcell {
     fn clone(&self) -> Self { self.clone() }
 }
 
 trait Vnode {
-    fn search(&mut self, token: Token) -> &mut Replicas ;
+    fn search(&mut self, token: Token) -> &mut Box<dyn Endpoints> ;
 }
 
 impl Vnode for Mild {
-    fn search(&mut self,token: Token) -> &mut Replicas {
+    fn search(&mut self,token: Token) -> &mut Box<dyn Endpoints> {
         if token > self.left && token <= self.right {
             &mut self.replicas
         } else if token <= self.left {
@@ -120,7 +133,7 @@ impl Vnode for Mild {
 }
 
 impl Vnode for LeftMild {
-    fn search(&mut self,token: Token) -> &mut Replicas {
+    fn search(&mut self,token: Token) -> &mut Box<dyn Endpoints> {
         if token > self.left && token <= self.right {
             &mut self.replicas
         } else {
@@ -131,7 +144,7 @@ impl Vnode for LeftMild {
 }
 
 impl Vnode for DeadEnd {
-    fn search(&mut self,_token: Token) -> &mut Replicas {
+    fn search(&mut self,_token: Token) -> &mut Box<dyn Endpoints> {
         &mut self.replicas
     }
 }
@@ -140,9 +153,14 @@ impl Vnode for DeadEnd {
 // we don't need to set conditions because it's a deadend during search(),
 // and condition must be true.
 struct DeadEnd {
-    replicas: Replicas,
+    replicas: Box<dyn Endpoints>,
 }
 
+impl DeadEnd {
+    fn initial_vnode() -> Vcell {
+        Box::new(DeadEnd{replicas: Box::new(None)})
+    }
+}
 // this struct represent the mild possible vnode(..)
 // condition: token > left, and token <= right
 struct Mild {
@@ -150,7 +168,7 @@ struct Mild {
     right: Token,
     left_child: Vcell,
     right_child: Vcell,
-    replicas: Replicas,
+    replicas: Box<dyn Endpoints>,
 }
 
 // as mild but with left child.
@@ -158,7 +176,7 @@ struct LeftMild {
     left: Token,
     right: Token,
     left_child: Vcell,
-    replicas: Replicas,
+    replicas: Box<dyn Endpoints>,
 }
 
 // Ring Builder Work in progress
@@ -168,7 +186,7 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
     let (vnode, right) = right.split_first().unwrap();
     if right.is_empty() && left.is_empty() {
         // then the parent_vnode without any child so consider it deadend
-        Box::new(DeadEnd{replicas: vnode.2.to_owned()})
+        Box::new(DeadEnd{replicas: Box::new(vnode.2.to_owned())})
     } else if !right.is_empty() && !left.is_empty() {
         // parent_vnode is mild with left /right childern
         // compute both left and right
@@ -179,7 +197,7 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
                 right: vnode.1,
                 left_child: left_child,
                 right_child: right_child,
-                replicas: vnode.2.to_owned()}
+                replicas: Box::new(vnode.2.to_owned())}
             )
     } else { // if !left.is_empty() && right.is_empty()
         // parent_vnode is leftmild
@@ -188,7 +206,7 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
                 left:vnode.0,
                 right:vnode.1,
                 left_child: compute_vnode(left),
-                replicas: vnode.2.to_owned()}
+                replicas: Box::new(vnode.2.to_owned())}
             )
     }
 }
