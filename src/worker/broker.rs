@@ -110,7 +110,7 @@ impl Worker for Broker {
         self.tx.send(event).unwrap();
         self.query.status.return_response()
     }
-    
+
     fn send_error(&mut self, error: Error) -> Status {
         let event = BrokerEvent::Error {
             kind: error,

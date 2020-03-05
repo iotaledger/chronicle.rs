@@ -20,6 +20,7 @@ pub trait Worker: Send + std::fmt::Debug {
 pub enum Error {
     Overload,
     Lost,
+    NoRing,
 }
 
 #[derive(Clone, Copy, Debug)]
