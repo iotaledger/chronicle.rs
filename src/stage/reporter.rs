@@ -126,7 +126,7 @@ impl Reporter {
                         // Send the event
                         match &self.sender_tx {
                             Some(sender) => {
-                                sender.send(event).unwrap();
+                                let _ = sender.send(event); // as the sender might be closed durring closing a session, and thats fine as force_consistency will respond Error::Lost where the query status is new.
                                 // Insert worker into workers map using stream_id as key
                                 self.workers.insert(stream, worker);
                             }

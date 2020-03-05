@@ -84,10 +84,8 @@ impl SenderBuilder {
 
 // sender's state struct.
 pub struct SenderState {
-    // supervisor_tx: supervisor::Sender,
     reporters: supervisor::Reporters,
     session_id: usize,
-    // the socket_writehalf side to that given shard
     socket: WriteHalf<TcpStream>,
     tx: Sender,
     rx: Receiver,
