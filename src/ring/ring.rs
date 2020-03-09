@@ -94,9 +94,30 @@ impl SmartId for Replica {
     }
 }
 
-trait Endpoints {
+trait Endpoints: EndpointsClone {
     fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>);
 }
+
+trait EndpointsClone {
+    fn clone_box(&self) -> Box<dyn Endpoints>;
+}
+
+impl<T> EndpointsClone for T
+where
+    T: 'static + Endpoints + Clone,
+{
+    fn clone_box(&self) -> Box<dyn Endpoints> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn Endpoints> {
+    fn clone(&self) -> Box<dyn Endpoints> {
+        self.clone_box()
+    }
+}
+
+
 impl Endpoints for Replicas {
     fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, mut registry: &mut Registry, mut rng: &mut ThreadRng, uniform: Uniform<u8>) {
         self.get_mut(&data_center).unwrap()[replica_index].send_reporter(token, &mut registry, &mut rng, uniform, request);
@@ -113,12 +134,27 @@ impl Endpoints for Option<Replicas> {
     }
 }
 
-trait Vnode {
+trait Vnode: VnodeClone {
     fn search(&mut self, token: Token) -> &mut Box<dyn Endpoints> ;
+
+}
+trait VnodeClone {
+    fn clone_box(&self) -> Box<dyn Vnode>;
 }
 
-impl Clone for Vcell {
-    fn clone(&self) -> Self { self.clone() }
+impl<T> VnodeClone for T
+where
+    T: 'static + Vnode + Clone,
+{
+    fn clone_box(&self) -> Box<dyn Vnode> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn Vnode> {
+    fn clone(&self) -> Box<dyn Vnode> {
+        self.clone_box()
+    }
 }
 
 impl Vnode for Mild {
@@ -155,6 +191,7 @@ impl Vnode for DeadEnd {
 // this struct represent a vnode without left or right child,
 // we don't need to set conditions because it's a deadend during search(),
 // and condition must be true.
+#[derive(Clone)]
 struct DeadEnd {
     replicas: Box<dyn Endpoints>,
 }
@@ -166,6 +203,7 @@ impl DeadEnd {
 }
 // this struct represent the mild possible vnode(..)
 // condition: token > left, and token <= right
+#[derive(Clone)]
 struct Mild {
     left: Token,
     right: Token,
@@ -175,6 +213,7 @@ struct Mild {
 }
 
 // as mild but with left child.
+#[derive(Clone)]
 struct LeftMild {
     left: Token,
     right: Token,
