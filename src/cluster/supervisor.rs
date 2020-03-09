@@ -1,12 +1,14 @@
-// cluster supervisor WIP
-use crate::ring::ring::Registry;
-use crate::node::supervisor::NodeRegistry;
-use crate::ring::ring::DC;
-use crate::ring::ring::NodeId;
+// cluster supervisor
+use crate::ring::ring::{
+    DC,
+    NodeId,
+    Registry,
+    build_ring};
 use super::node;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use crate::node::supervisor::gen_node_id;
+use std::i64::{MIN, MAX};
 //types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -14,18 +16,17 @@ type Tokens = Vec<(i64,NodeId, DC, u8, u8)>;
 pub type Address = String;
 pub type Nodes = HashMap<Address, NodeInfo>;
 
-struct NodeInfo {
+pub struct NodeInfo {
     node_tx: node::supervisor::Sender,
-    tokens: Tokens,
+    pub tokens: Tokens,
     node_id: NodeId,
     shard_count: u8,
-    msb: u8, // most significant bit, ignore_msb in shard-awareness-algo
     data_center: DC,
 }
 
 #[derive(Debug)]
 pub enum Event {
-    RegisterReporters(NodeRegistry),
+    RegisterReporters(node::supervisor::NodeRegistry),
     SpawnNode(DC, Address),
     ShutDownNode(DC, Address),
     TryBuild,
@@ -84,12 +85,13 @@ impl Supervisor {
                         .reporter_count(self.reporter_count)
                         .shard_count(shard_count)
                         .data_center(dc)
+                        .supervisor_tx(self.tx.clone())
                         .build();
                     let node_tx = node.tx();
                     let node_id = gen_node_id(&address);
                     // generate nodeinfo
                     let node_info = NodeInfo{data_center: dc,
-                        node_id, shard_count, node_tx, tokens, msb};
+                        node_id, shard_count, node_tx, tokens};
                     // add node_info to nodes
                     self.nodes.insert(address, node_info);
                     // increase ready and only decrease it on RegisterReporters events
@@ -119,10 +121,9 @@ impl Supervisor {
                 Event::TryBuild => {
                     if self.ready == 0 {
                         // ready to build
-                        // build
-
+                        // re/build
+                        build_ring(&self.nodes, self.registry.clone());
                         // reply to ring-supervisor
-
                     } else {
                         // reply to ring-suerpvisor
                         // not ready to build
@@ -131,20 +132,4 @@ impl Supervisor {
             }
         }
     }
-}
-
-// private functions
-// work in progress
-fn gen_chain(nodes: &Nodes) {
-    let mut tokens = Vec::new(); // complete tokens-range
-    // iter nodes
-    for (address, node_info) in nodes {
-        // we generate the tokens li
-        for t in &node_info.tokens  {
-            tokens.push(t.clone())
-        }
-    }
-    // sort_unstable_by token
-    tokens.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-    // convert tokens to vnodes tuple
 }

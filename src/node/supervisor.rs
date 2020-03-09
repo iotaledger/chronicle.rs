@@ -162,16 +162,18 @@ pub fn gen_node_id(address: &String) -> NodeId {
 async fn run_node() {
     let address = String::from("0.0.0.0:9042");
     let reporter_count = 1;
+    let shard_count = 1;
     let node = SupervisorBuilder::new()
         .address(address)
         .reporter_count(reporter_count)
+        .shard_count(shard_count)
         .data_center("US")
         .build();
     let tx = node.tx.clone();
+    println!("test");
 
     let node_exec = tokio::spawn(node.run());
     // Remove this line should make whole test stuck.
     tx.send(Event::Shutdown).unwrap();
-
     node_exec.await.unwrap();
 }
