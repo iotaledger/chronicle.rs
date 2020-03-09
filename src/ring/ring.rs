@@ -13,11 +13,13 @@ use std::i64::{MIN, MAX};
 // types
 type Token = i64;
 type Msb = u8;
-type ShardsNum = u8;
+type ShardCount = u8;
+pub type VnodeTuple = (Token,Token,[u8;5],&'static str, Msb, ShardCount);
+pub type VnodeWithReplicas = (Token, Token, Replicas); // VnodeWithReplicas
 pub type NodeId = [u8; 5]; // four-bytes ip and last byte for shard num.
 pub type DC = &'static str;
 type Replicas = HashMap< DC,Vec<Replica>>;
-type Replica = (NodeId,Msb,ShardsNum);
+type Replica = (NodeId,Msb,ShardCount);
 type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
 pub struct Ring {
@@ -103,20 +105,20 @@ impl Endpoints for Replicas {
 impl Endpoints for Option<Replicas> {
     // this method will be invoked when we store Replicas as None.
     // used for initial ring to simulate the reporter and respond to worker(self) with NoRing error
-    fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, mut registry: &mut Registry, mut rng: &mut ThreadRng, uniform: Uniform<u8>) {
+    fn send(&mut self,_: DC, _: usize,_: Token, request: Event, _: &mut Registry, _: &mut ThreadRng, _uniform: Uniform<u8>) {
         // simulate reporter behivour,
-        if let Event::Request{worker: mut worker, payload: _} = request{
+        if let Event::Request{mut worker, payload: _} = request{
             worker.send_error(Error::NoRing);
         };
     }
 }
 
-impl Clone for Vcell {
-    fn clone(&self) -> Self { self.clone() }
-}
-
 trait Vnode {
     fn search(&mut self, token: Token) -> &mut Box<dyn Endpoints> ;
+}
+
+impl Clone for Vcell {
+    fn clone(&self) -> Self { self.clone() }
 }
 
 impl Vnode for Mild {
@@ -212,11 +214,11 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
     }
 }
 
-fn walk_clockwise(starting_index: usize, end_index: usize,vnodes: &Vec<(Token,Token,[u8;5],&'static str)>,replicas: &mut Replicas) {
+fn walk_clockwise(starting_index: usize, end_index: usize,vnodes: &Vec<VnodeTuple>,replicas: &mut Replicas) {
     for i in starting_index..end_index {
         // fetch replica
-        let (_, _, node_id, dc) = vnodes[i];
-        let replica: Replica = (node_id, 12, 8); // use fake msb shardsnum for now.
+        let (_, _, node_id, dc, msb, shard_count) = vnodes[i];
+        let replica: Replica = (node_id, msb, shard_count);
         // now push it to Replicas
         match replicas.get_mut(dc) {
             Some(vec_replicas_in_dc) => {
@@ -267,7 +269,7 @@ fn generate_and_compute_fake_ring() {
     let mut recent_left = MIN;
     for (right, node_id, dc) in &tokens {
         // create vnode(starting from min)
-        let vnode = (recent_left,*right, *node_id, dc.clone());
+        let vnode = (recent_left,*right, *node_id, dc.clone(), 12, 8); // fake msb/shardcount
         // push to vnodes
         vnodes.push(vnode);
         // update recent_left to right
@@ -276,13 +278,13 @@ fn generate_and_compute_fake_ring() {
     // we don't forget to add max vnode to our token range
     let recent_node_id = tokens.last().unwrap().1;
     let recent_dc = tokens.last().unwrap().2;
-    let max_vnode = (recent_left, MAX, recent_node_id, recent_dc);
+    let max_vnode = (recent_left, MAX, recent_node_id, recent_dc, 12, 8); //
     vnodes.push(max_vnode);
     // compute all possible replicas in advance for each vnode in vnodes
     // prepare ring chain
     let mut chain = Vec::new();
     let mut starting_index = 0;
-    for (left, right, _, _) in &vnodes {
+    for (left, right, _, _, _, _) in &vnodes {
         let mut replicas: Replicas = HashMap::new();
         // first walk clockwise phase (start..end)
         walk_clockwise(starting_index, vnodes.len(), &vnodes, &mut replicas);
@@ -298,4 +300,81 @@ fn generate_and_compute_fake_ring() {
     // for example if chain length is 3 then the root vnode is at 3/2 = 1
     // and it will be mild where both of its childern are deadends.
     let _root = compute_vnode(&chain);
+}
+
+pub fn build_ring(nodes: &Nodes, registry: Registry) {
+    let mut tokens = Vec::new(); // complete tokens-range
+    // iter nodes
+    for (_, node_info) in nodes {
+        // we generate the tokens li
+        for t in &node_info.tokens  {
+            tokens.push(t)
+        }
+    }
+    // sort_unstable_by token
+    tokens.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    // create vnodes tuple from tokens
+    let mut vnodes = Vec::new();
+    let mut recent_left = MIN;
+    for (right, node_id, dc, msb, shard_count) in &tokens {
+        // create vnode tuple (starting from min)
+        let vnode = (recent_left,*right, *node_id, *dc, *msb, *shard_count);
+        // push to vnodes
+        vnodes.push(vnode);
+        // update recent_left to right
+        recent_left = *right;
+    }
+    // the check bellow is only to make sure if scylla-node didn't already
+    // randmoly didn't gen the MIN token by luck.
+    // confirm if the vnode_min is not already exist in our token range
+    if vnodes.first().unwrap().1 == MIN { //
+        // remove it, otherwise the first vnode will be(MIN, MIN, ..) and invalidate vnode conditions
+        vnodes.remove(0);
+    };
+    // we don't forget to add max vnode to our token range only if not already presented,
+    // the check bellow is only to make sure if scylla-node didn't already
+    // randmoly gen the MAX token by luck.
+    // the MAX to our last vnode(the largest token )
+    let last_vnode = vnodes.last().unwrap();
+    // confirm if the vnode max is not present in our token-range
+    if last_vnode.1 != MAX {
+        let max_vnode = (recent_left, MAX, last_vnode.2, last_vnode.3,last_vnode.4, last_vnode.5);
+        // now push it
+        vnodes.push(max_vnode);
+    }
+    // compute_ring
+    let root_vnode = compute_ring(&vnodes);
+    // update the global arc_ring
+    // create arc ring
+    let arc_ring = Arc::new((registry, root_vnode));
+    unsafe {
+        // store arc_ring as raw in global shared state
+        ARC_RING = Some(Arc::into_raw(arc_ring));
+    }
+}
+
+fn compute_ring(vnodes: &Vec<VnodeTuple>) -> Vcell {
+    // compute chain (vnodes with replicas)
+    let chain = compute_chain(vnodes);
+    // compute balanced binary tree
+    compute_vnode(&chain)
+}
+
+fn compute_chain(vnodes: &Vec<VnodeTuple>) -> Vec<(Token, Token, Replicas)> {
+    // compute all possible replicas in advance for each vnode in vnodes
+    // prepare ring chain
+    let mut chain = Vec::new();
+    let mut starting_index = 0;
+    for (left, right, _, _, _, _) in vnodes {
+        let mut replicas: Replicas = HashMap::new();
+        // first walk clockwise phase (start..end)
+        walk_clockwise(starting_index, vnodes.len(), &vnodes, &mut replicas);
+        // second walk clockwise phase (0..start)
+        walk_clockwise(0, starting_index, &vnodes, &mut replicas);
+        // update starting_index
+        starting_index += 1;
+        // create vnode
+        chain.push((*left, *right, replicas));
+    }
+    chain
 }
