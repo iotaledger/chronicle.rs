@@ -1,4 +1,5 @@
 // uses (WIP)
+use crate::cluster::supervisor::Nodes;
 use std::sync::Arc;
 use rand::prelude::ThreadRng;
 use crate::stage::reporter::Event;
@@ -19,7 +20,7 @@ type Replicas = HashMap< DC,Vec<Replica>>;
 type Replica = (NodeId,Msb,ShardsNum);
 type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
-struct Ring {
+pub struct Ring {
     arc: Option<*const (Registry, Vcell)>, // option temp
     registry: Registry,
     root: Vcell,
@@ -41,7 +42,7 @@ thread_local!{
 }
 
 impl Ring {
-    fn send(data_center: DC,replica_index: usize,token: Token,request: Event) {
+    pub fn send(data_center: DC,replica_index: usize,token: Token,request: Event) {
         RING.with(|local| {
             local.borrow_mut().sending(data_center, replica_index, token, request)
         }
@@ -230,6 +231,7 @@ fn walk_clockwise(starting_index: usize, end_index: usize,vnodes: &Vec<(Token,To
         }
     }
 }
+
 
 
 #[test]
