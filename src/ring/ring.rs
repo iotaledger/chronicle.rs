@@ -387,6 +387,11 @@ pub fn build_ring(nodes: &Nodes, registry: Registry) {
     // create arc ring
     let arc_ring = Arc::new((registry, root_vnode));
     unsafe {
+        // drop the old_raw, this is unsafe if it's done while other threads still propogating the ring.
+        if let Some(old_raw) = ARC_RING {
+            // consume the old_raw
+            Arc::from_raw(old_raw);
+        }
         // store arc_ring as raw in global shared state
         ARC_RING = Some(Arc::into_raw(arc_ring));
     }
