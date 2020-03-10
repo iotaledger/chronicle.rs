@@ -8,7 +8,6 @@ use super::node;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use crate::node::supervisor::gen_node_id;
-use std::i64::{MIN, MAX};
 //types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -77,7 +76,6 @@ impl Supervisor {
                     // connect to node and get shard count and tokens
                     // require cql conn ----------------------
                     let shard_count = 1;
-                    let msb = 12;
                     let tokens: Tokens = vec![]; // fake tokens for now
                     // require cql conn ----------------------
                     let node = node::SupervisorBuilder::new()
@@ -99,7 +97,7 @@ impl Supervisor {
                     // spawn node,
                     tokio::spawn(node.run());
                 }
-                Event::ShutDownNode(dc, address) => {
+                Event::ShutDownNode(_, address) => {
                     // get and remove node_info
                     let mut node_info =  self.nodes.remove(&address).unwrap();
                     // update(remove from) registry

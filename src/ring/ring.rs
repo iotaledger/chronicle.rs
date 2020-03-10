@@ -35,7 +35,7 @@ static mut ARC_RING: Option<*const (Registry, Vcell)> = None;
 thread_local!{
     static RING: RefCell<Ring> = {
         let arc = None; // arc will help the cluster to know if the ring propagated to all threads
-        let rng = rand::thread_rng();
+        let rng = thread_rng();
         let uniform: Uniform<u8> = Uniform::new(0,1); // move this to global const
         let registry: Registry = HashMap::new();
         let root: Vcell = Ring::initial_ring();
