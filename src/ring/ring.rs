@@ -12,9 +12,9 @@ use rand::distributions::Uniform;
 use std::i64::{MIN, MAX};
 use std::mem::MaybeUninit;
 // types
-type Token = i64;
-type Msb = u8;
-type ShardCount = u8;
+pub type Token = i64;
+pub type Msb = u8;
+pub type ShardCount = u8;
 pub type VnodeTuple = (Token,Token,[u8;5],&'static str, Msb, ShardCount);
 pub type VnodeWithReplicas = (Token, Token, Replicas); // VnodeWithReplicas
 pub type NodeId = [u8; 5]; // four-bytes ip and last byte for shard num.

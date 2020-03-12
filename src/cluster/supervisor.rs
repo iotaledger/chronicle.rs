@@ -1,10 +1,12 @@
 // cluster supervisor
 use crate::ring::ring::ArcRing;
-use std::sync::Arc;
 use crate::ring::ring::{
     DC,
     NodeId,
     Registry,
+    Token,
+    Msb,
+    ShardCount,
     build_ring};
 use super::node;
 use std::collections::HashMap;
@@ -13,7 +15,7 @@ use crate::node::supervisor::gen_node_id;
 //types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
-type Tokens = Vec<(i64,NodeId, DC, u8, u8)>;
+pub type Tokens = Vec<(Token,NodeId, DC, Msb, ShardCount)>;
 pub type Address = String;
 pub type Nodes = HashMap<Address, NodeInfo>;
 
@@ -21,7 +23,7 @@ pub struct NodeInfo {
     node_tx: node::supervisor::Sender,
     pub tokens: Tokens,
     node_id: NodeId,
-    shard_count: u8,
+    shard_count: ShardCount,
     data_center: DC,
 }
 

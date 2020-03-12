@@ -6,3 +6,4 @@ pub mod cluster;
 pub mod node;
 pub mod stage;
 pub mod worker;
+pub mod connection;
