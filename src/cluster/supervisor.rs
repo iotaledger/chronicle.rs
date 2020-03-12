@@ -1,4 +1,5 @@
 // cluster supervisor
+use crate::connection::cql::{fetch_tokens,connect};
 use crate::ring::ring::ArcRing;
 use crate::ring::ring::{
     DC,
@@ -79,29 +80,41 @@ impl Supervisor {
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::SpawnNode(dc, address) => {
-                    // connect to node and get shard count and tokens
-                    // require cql conn ----------------------
-                    let shard_count = 1;
-                    let tokens: Tokens = vec![]; // fake tokens for now
-                    // require cql conn ----------------------
-                    let node = node::SupervisorBuilder::new()
-                        .address(address.clone())
-                        .reporter_count(self.reporter_count)
-                        .shard_count(shard_count)
-                        .data_center(dc)
-                        .supervisor_tx(self.tx.clone())
-                        .build();
-                    let node_tx = node.tx();
-                    let node_id = gen_node_id(&address);
-                    // generate nodeinfo
-                    let node_info = NodeInfo{data_center: dc,
-                        node_id, shard_count, node_tx, tokens};
-                    // add node_info to nodes
-                    self.nodes.insert(address, node_info);
-                    // increase ready and only decrease it on RegisterReporters events
-                    self.ready += 1;
-                    // spawn node,
-                    tokio::spawn(node.run());
+                    match fetch_tokens(
+                        connect(&address).await
+                    ).await {
+                        Ok(cqlconn) => {
+                            let shard_count = cqlconn.get_shard_count();
+                            let tokens = cqlconn.take_tokens();
+                            let node = node::SupervisorBuilder::new()
+                                .address(address.clone())
+                                .reporter_count(self.reporter_count)
+                                .shard_count(shard_count)
+                                .data_center(dc)
+                                .supervisor_tx(self.tx.clone())
+                                .build();
+                            let node_tx = node.tx();
+                            let node_id = gen_node_id(&address);
+                            // generate nodeinfo
+                            let node_info = NodeInfo{
+                                data_center: dc,
+                                node_id,
+                                shard_count,
+                                node_tx,
+                                tokens};
+                            // add node_info to nodes
+                            self.nodes.insert(address, node_info);
+                            // increase ready and only decrease it on RegisterReporters events
+                            self.ready += 1;
+                            // spawn node,
+                            tokio::spawn(node.run());
+                            // todo reply to ring supervisor
+
+                        },
+                        err => {
+                            // todo reply to ring supervisor with unable to reach
+                        },
+                    };
                 }
                 Event::ShutDownNode(_, address) => {
                     // get and remove node_info
