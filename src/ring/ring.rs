@@ -387,12 +387,12 @@ pub fn build_ring(nodes: &Nodes, registry: Registry) -> ArcRing {
     // update the global arc_ring
     // create arc ring
     let arc_ring = Arc::new((registry, root_vnode));
-    let weak_five = Arc::downgrade(&arc_ring);
+    let weak_ring = Arc::downgrade(&arc_ring);
     unsafe {
         // overwrite new weak_ring in global shared state,
         // note: this will not drop the old strong_arc_ring(in self.arc_ring)
         // the cluster supervisor should drop it by replacing(self.arc_ring) once this function return new arc_ring
-        WEAK_RING.as_mut_ptr().write(weak_five);
+        WEAK_RING.as_mut_ptr().write(weak_ring);
     }
     // return new arc_ring
     arc_ring
