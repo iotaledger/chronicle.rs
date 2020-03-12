@@ -1,4 +1,6 @@
 // cluster supervisor
+use crate::ring::ring::ArcRing;
+use std::sync::Arc;
 use crate::ring::ring::{
     DC,
     NodeId,
@@ -50,6 +52,7 @@ impl SupervisorBuilder {
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
             registry: HashMap::new(),
+            arc_ring: None,
             nodes: HashMap::new(),
             ready: 0,
             tx,
@@ -62,6 +65,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     reporter_count: u8,
     registry: Registry,
+    arc_ring: Option<ArcRing>,
     nodes: Nodes,
     ready: u8,
     tx: Sender,
@@ -120,7 +124,9 @@ impl Supervisor {
                     if self.ready == 0 {
                         // ready to build
                         // re/build
-                        build_ring(&self.nodes, self.registry.clone());
+                        let new_arc_ring = build_ring(&self.nodes, self.registry.clone());
+                        // replacing self.arc_ring will result to drop the old one.
+                        self.arc_ring.replace(new_arc_ring);
                         // reply to ring-supervisor
                     } else {
                         // reply to ring-suerpvisor
