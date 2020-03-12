@@ -154,8 +154,6 @@ impl Supervisor {
                                     .build();
                                 tokio::spawn(receiver.run());
                                 if !reconnect {
-                                    // TODO now reporters are ready to be exposed to workers.. (ex evmap ring.)
-                                    // create key which could be address:shard (ex "127.0.0.1:9042:5")
                                     let event = node::supervisor::Event::RegisterReporters(
                                         self.shard_id,
                                         self.reporters.clone(),

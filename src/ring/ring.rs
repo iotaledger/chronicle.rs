@@ -1,6 +1,6 @@
 // uses (WIP)
 use crate::cluster::supervisor::Nodes;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use rand::prelude::ThreadRng;
 use crate::stage::reporter::Event;
 use crate::worker::Error;
@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use rand::{Rng, thread_rng};
 use rand::distributions::Uniform;
 use std::i64::{MIN, MAX};
+use std::mem::MaybeUninit;
 // types
 type Token = i64;
 type Msb = u8;
@@ -22,24 +23,27 @@ type Replicas = HashMap< DC,Vec<Replica>>;
 type Replica = (NodeId,Msb,ShardCount);
 type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
+pub type ArcRing = Arc<(Registry, Vcell)>;
+type WeakRing = Weak<(Registry,Vcell)>;
 pub struct Ring {
-    arc: Option<*const (Registry, Vcell)>, // option temp
+    weak: WeakRing, // option temp
     registry: Registry,
     root: Vcell,
     uniform: Uniform<u8>,
     rng: ThreadRng,
 }
 
-static mut ARC_RING: Option<*const (Registry, Vcell)> = None;
+static mut WEAK_RING: MaybeUninit<WeakRing> = MaybeUninit::<WeakRing>::uninit();
 
 thread_local!{
     static RING: RefCell<Ring> = {
-        let arc = None; // arc will help the cluster to know if the ring propagated to all threads
         let rng = thread_rng();
         let uniform: Uniform<u8> = Uniform::new(0,1); // move this to global const
         let registry: Registry = HashMap::new();
         let root: Vcell = Ring::initial_ring();
-        RefCell::new(Ring{arc, registry ,root, uniform, rng})
+        // create useless weak pointer
+        let weak = Weak::new();
+        RefCell::new(Ring{weak, registry ,root, uniform, rng})
     };
 }
 
@@ -53,22 +57,19 @@ impl Ring {
     fn sending(&mut self,data_center: DC,replica_index: usize,token: Token,request: Event) {
         // check if global ARC_RING not up to date.. TODO confirm contract design here.
         unsafe {
-            if ARC_RING != self.arc {
-                // access the global raw and clone it to increase the strong_count
-                let mut arc = Arc::from_raw(ARC_RING.unwrap()).clone();
-                // clone the new registry and root
-                let (registry, root) = Arc::make_mut(&mut arc);
-                // update self registry and drop the old one
-                self.registry = registry.clone();
-                // update self root and drop the old one
-                self.root = root.clone();
-                // consume the old arc as it's stored in *const raw format
-                if let Some(old_raw) = self.arc {
-                    // convert it back to arc to prevent memory leak and
-                    Arc::from_raw(old_raw);
-                }; // at this line old_raw_arc should be drop it
-                // update self arc by invoking into_raw to consume it
-                self.arc = Some(Arc::into_raw(arc)); // now arc supposed to point to same location as ARC_RING, and strong_count should had increased by one.
+            if  !Weak::ptr_eq(&*WEAK_RING.as_ptr(), &self.weak) {
+                // access the global weak and upgrade it and make sure is not NONE
+                if let Some(mut arc) = Weak::upgrade(&*WEAK_RING.as_ptr()) {
+                    // clone the new registry and root
+                    let (registry, root) = Arc::make_mut(&mut arc);
+                    // update self registry and drop the old one
+                    self.registry = registry.clone();
+                    // update self root and drop the old one
+                    self.root = root.clone();
+                    // we create a weak update self weak,
+                    self.weak = Arc::downgrade(&arc); // now weak supposed to point to same location as WEAK_RING.
+                } // at this line the upgraded Some(arc) should go out of scope and be dropped
+                // else if Weak::upgrade(..) == None. then we don't have to do anything for now.
             }
         }
         // send request.
@@ -94,11 +95,11 @@ impl SmartId for Replica {
     }
 }
 
-trait Endpoints: EndpointsClone {
+pub trait Endpoints: EndpointsClone {
     fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>);
 }
 
-trait EndpointsClone {
+pub trait EndpointsClone {
     fn clone_box(&self) -> Box<dyn Endpoints>;
 }
 
@@ -134,11 +135,11 @@ impl Endpoints for Option<Replicas> {
     }
 }
 
-trait Vnode: VnodeClone {
+pub trait Vnode: VnodeClone {
     fn search(&mut self, token: Token) -> &mut Box<dyn Endpoints> ;
 
 }
-trait VnodeClone {
+pub trait VnodeClone {
     fn clone_box(&self) -> Box<dyn Vnode>;
 }
 
@@ -341,7 +342,7 @@ fn generate_and_compute_fake_ring() {
     let _root = compute_vnode(&chain);
 }
 
-pub fn build_ring(nodes: &Nodes, registry: Registry) {
+pub fn build_ring(nodes: &Nodes, registry: Registry) -> ArcRing {
     let mut tokens = Vec::new(); // complete tokens-range
     // iter nodes
     for (_, node_info) in nodes {
@@ -386,15 +387,15 @@ pub fn build_ring(nodes: &Nodes, registry: Registry) {
     // update the global arc_ring
     // create arc ring
     let arc_ring = Arc::new((registry, root_vnode));
+    let weak_five = Arc::downgrade(&arc_ring);
     unsafe {
-        // drop the old_raw, this is unsafe if it's done while other threads still propogating the ring.
-        if let Some(old_raw) = ARC_RING {
-            // consume the old_raw
-            Arc::from_raw(old_raw);
-        }
-        // store arc_ring as raw in global shared state
-        ARC_RING = Some(Arc::into_raw(arc_ring));
+        // overwrite new weak_ring in global shared state,
+        // note: this will not drop the old strong_arc_ring(in self.arc_ring)
+        // the cluster supervisor should drop it by replacing(self.arc_ring) once this function return new arc_ring
+        WEAK_RING.as_mut_ptr().write(weak_five);
     }
+    // return new arc_ring
+    arc_ring
 }
 
 fn compute_ring(vnodes: &Vec<VnodeTuple>) -> Vcell {
