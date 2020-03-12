@@ -12,6 +12,14 @@ pub struct CqlConn {
     msb: Msb,
 }
 
+impl CqlConn {
+    pub fn get_shard_count(&self) -> ShardCount {
+        self.shard_count
+    }
+    pub fn take_tokens(self) -> Tokens {
+        self.tokens.unwrap()
+    }
+}
 pub struct Error; // todo: change it to tokio error
 
 pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
