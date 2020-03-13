@@ -3,6 +3,7 @@ use super::reporter;
 use super::sender;
 use crate::node;
 use crate::stage::reporter::{Stream, Streams};
+use crate::connection::cql::connect_to_shard_id;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -126,14 +127,14 @@ impl Supervisor {
                 Event::Connect(sender_tx, sender_rx, reconnect) => {
                     // Only try to connect if the stage not shutting_down
                     if !self.shutting_down {
-                        match TcpStream::connect(self.address.clone()).await {
-                            Ok(stream) => {
+                        match connect_to_shard_id(&self.address, self.shard_id).await {
+                            Ok(mut cqlconn) => {
                                 // Change the connected status to true
                                 self.connected = true;
                                 // TODO convert the session_id to a meaningful (timestamp + count)
                                 self.session_id += 1;
                                 // Split the stream
-                                let (socket_rx, socket_tx) = tokio::io::split(stream);
+                                let (socket_rx, socket_tx) = tokio::io::split(cqlconn.take_stream());
                                 // Spawn/restart sender
                                 let sender_state = sender::SenderBuilder::new()
                                     .reconnect(reconnect)

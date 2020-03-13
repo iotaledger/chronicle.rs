@@ -23,6 +23,7 @@ impl CqlConn {
         self.stream.take().unwrap()
     }
 }
+#[derive(Debug)]
 pub struct Error; // todo: change it to tokio error
 
 pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
