@@ -1,4 +1,6 @@
 // uses (WIP)
+use std::ptr::NonNull;
+use std::sync::atomic::{AtomicPtr, Ordering};
 use crate::cluster::supervisor::Nodes;
 use std::sync::{Arc, Weak};
 use rand::prelude::ThreadRng;
@@ -10,7 +12,6 @@ use std::cell::RefCell;
 use rand::{Rng, thread_rng};
 use rand::distributions::Uniform;
 use std::i64::{MIN, MAX};
-use std::mem::MaybeUninit;
 // types
 pub type Token = i64;
 pub type Msb = u8;
@@ -23,17 +24,19 @@ type Replicas = HashMap< DC,Vec<Replica>>;
 type Replica = (NodeId,Msb,ShardCount);
 type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
-pub type ArcRing = Arc<(Registry, Vcell)>;
-type WeakRing = Weak<(Registry,Vcell)>;
+pub type GlobalRing = (u8 ,Registry, Vcell);
 pub struct Ring {
-    weak: WeakRing, // option temp
+    version: u8, // option temp
     registry: Registry,
     root: Vcell,
     uniform: Uniform<u8>,
     rng: ThreadRng,
 }
+use std::ptr;
 
-static mut WEAK_RING: MaybeUninit<WeakRing> = MaybeUninit::<WeakRing>::uninit();
+
+static mut VERSION: u8 = 0;
+static mut GLOBAL_RING: NonNull<AtomicPtr<Weak<GlobalRing>>> = ptr::NonNull::dangling();
 
 thread_local!{
     static RING: RefCell<Ring> = {
@@ -42,8 +45,8 @@ thread_local!{
         let registry: Registry = HashMap::new();
         let root: Vcell = Ring::initial_ring();
         // create useless weak pointer
-        let weak = Weak::new();
-        RefCell::new(Ring{weak, registry ,root, uniform, rng})
+        let version = 0;
+        RefCell::new(Ring{version, registry ,root, uniform, rng})
     };
 }
 
@@ -55,21 +58,16 @@ impl Ring {
         )
     }
     fn sending(&mut self,data_center: DC,replica_index: usize,token: Token,request: Event) {
-        // check if global ARC_RING not up to date.. TODO confirm contract design here.
         unsafe {
-            if  !Weak::ptr_eq(&*WEAK_RING.as_ptr(), &self.weak) {
-                // access the global weak and upgrade it and make sure is not NONE
-                if let Some(mut arc) = Weak::upgrade(&*WEAK_RING.as_ptr()) {
-                    // clone the new registry and root
-                    let (registry, root) = Arc::make_mut(&mut arc);
-                    // update self registry and drop the old one
+            if  VERSION != self.version {
+                // load weak and upgrade to arc if strong_count > 0;
+                if let Some(mut arc) = Weak::upgrade(&*GLOBAL_RING.as_mut().load(Ordering::Relaxed)) {
+                    let (version, registry, root) = Arc::make_mut(&mut arc);
+                    // update the local ring
+                    self.version = version.clone();
                     self.registry = registry.clone();
-                    // update self root and drop the old one
                     self.root = root.clone();
-                    // we create a weak update self weak,
-                    self.weak = Arc::downgrade(&arc); // now weak supposed to point to same location as WEAK_RING.
-                } // at this line the upgraded Some(arc) should go out of scope and be dropped
-                // else if Weak::upgrade(..) == None. then we don't have to do anything for now.
+                };
             }
         }
         // send request.
@@ -342,7 +340,7 @@ fn generate_and_compute_fake_ring() {
     let _root = compute_vnode(&chain);
 }
 
-pub fn build_ring(nodes: &Nodes, registry: Registry) -> ArcRing {
+pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> Arc<GlobalRing> {
     let mut tokens = Vec::new(); // complete tokens-range
     // iter nodes
     for (_, node_info) in nodes {
@@ -384,15 +382,14 @@ pub fn build_ring(nodes: &Nodes, registry: Registry) -> ArcRing {
     }
     // compute_ring
     let root_vnode = compute_ring(&vnodes);
-    // update the global arc_ring
-    // create arc ring
-    let arc_ring = Arc::new((registry, root_vnode));
-    let weak_ring = Arc::downgrade(&arc_ring);
+    // create arc_ring
+    let arc_ring = Arc::new((version ,registry, root_vnode));
+    // update the global ring
     unsafe {
-        // overwrite new weak_ring in global shared state,
-        // note: this will not drop the old strong_arc_ring(in self.arc_ring)
-        // the cluster supervisor should drop it by replacing(self.arc_ring) once this function return new arc_ring
-        WEAK_RING.as_mut_ptr().write(weak_ring);
+        // swap will take the ownership to drop the old weak
+        GLOBAL_RING.as_mut().swap(&mut Arc::downgrade(&arc_ring), Ordering::Relaxed);
+        // update version with new one.// this must be atomic and safe because it's u8.
+        VERSION = version;
     }
     // return new arc_ring
     arc_ring

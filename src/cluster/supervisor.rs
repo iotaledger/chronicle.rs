@@ -1,6 +1,6 @@
 // cluster supervisor
 use crate::connection::cql::{fetch_tokens,connect};
-use crate::ring::ring::ArcRing;
+use std::sync::Arc;
 use crate::ring::ring::{
     DC,
     NodeId,
@@ -8,6 +8,7 @@ use crate::ring::ring::{
     Token,
     Msb,
     ShardCount,
+    GlobalRing,
     build_ring};
 use super::node;
 use std::collections::HashMap;
@@ -68,7 +69,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     reporter_count: u8,
     registry: Registry,
-    arc_ring: Option<ArcRing>,
+    arc_ring: Option<Arc<GlobalRing>>,
     nodes: Nodes,
     ready: u8,
     tx: Sender,
@@ -138,9 +139,11 @@ impl Supervisor {
                 Event::TryBuild => {
                     if self.ready == 0 {
                         // ready to build
+                        // NOTE the global_ring must be initialized state
                         // re/build
-                        let new_arc_ring = build_ring(&self.nodes, self.registry.clone());
-                        // replacing self.arc_ring will result to drop the old one.
+                        let version = 1; // todo generate version
+                        let new_arc_ring = build_ring(&self.nodes, self.registry.clone(), version);
+                        // replace self.arc_ring
                         self.arc_ring.replace(new_arc_ring);
                         // reply to ring-supervisor
                     } else {
