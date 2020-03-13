@@ -16,8 +16,11 @@ impl CqlConn {
     pub fn get_shard_count(&self) -> ShardCount {
         self.shard_count
     }
-    pub fn take_tokens(self) -> Tokens {
-        self.tokens.unwrap()
+    pub fn take_tokens(&mut self) -> Tokens {
+        self.tokens.take().unwrap()
+    }
+    pub fn take_stream(&mut self) -> TcpStream {
+        self.stream.take().unwrap()
     }
 }
 pub struct Error; // todo: change it to tokio error

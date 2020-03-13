@@ -83,7 +83,7 @@ impl Supervisor {
                     match fetch_tokens(
                         connect(&address).await
                     ).await {
-                        Ok(cqlconn) => {
+                        Ok(mut cqlconn) => {
                             let shard_count = cqlconn.get_shard_count();
                             let tokens = cqlconn.take_tokens();
                             let node = node::SupervisorBuilder::new()
