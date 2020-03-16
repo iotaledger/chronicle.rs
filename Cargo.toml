@@ -19,3 +19,4 @@ tokio = { version = "0.2", features = ["macros", "stream", "sync", "net", "io-ut
 warp = "0.2"
 evmap = "7.1.3"
 rand = "0.7.3"
+byteorder = "1.3.4"
