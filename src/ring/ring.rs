@@ -26,7 +26,8 @@ type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
 pub type GlobalRing = (u8 ,Registry, Vcell);
 pub struct Ring {
-    version: u8, // option temp
+    version: u8,
+    arc: Option<Arc<GlobalRing>>,
     registry: Registry,
     root: Vcell,
     uniform: Uniform<u8>,
@@ -45,7 +46,8 @@ thread_local!{
         let registry: Registry = HashMap::new();
         let root: Vcell = Ring::initial_ring();
         let version = 0;
-        RefCell::new(Ring{version, registry ,root, uniform, rng})
+        let arc = None;
+        RefCell::new(Ring{version,arc, registry ,root, uniform, rng})
     };
 }
 
@@ -66,6 +68,7 @@ impl Ring {
                     self.version = version.clone();
                     self.registry = registry.clone();
                     self.root = root.clone();
+                    self.arc.replace(arc);
                 };
             }
         }
