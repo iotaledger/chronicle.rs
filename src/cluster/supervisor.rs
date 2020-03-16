@@ -1,4 +1,5 @@
 // cluster supervisor
+use std::sync::Weak;
 use crate::connection::cql::{fetch_tokens,connect};
 use std::sync::Arc;
 use crate::ring::ring::{
@@ -40,23 +41,28 @@ pub enum Event {
 // Arguments struct
 pub struct SupervisorBuilder {
     reporter_count: Option<u8>,
+    thread_count: Option<usize>,
 }
 
 impl SupervisorBuilder {
     pub fn new() -> Self {
         SupervisorBuilder {
             reporter_count: None,
+            thread_count: None,
         }
     }
 
     set_builder_option_field!(reporter_count, u8);
+    set_builder_option_field!(thread_count, usize);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
+            thread_count: self.thread_count.unwrap(),
             registry: HashMap::new(),
             arc_ring: None,
+            weak_rings: Vec::new(),
             nodes: HashMap::new(),
             ready: 0,
             tx,
@@ -68,8 +74,10 @@ impl SupervisorBuilder {
 // suerpvisor state struct
 pub struct Supervisor {
     reporter_count: u8,
+    thread_count: usize,
     registry: Registry,
     arc_ring: Option<Arc<GlobalRing>>,
+    weak_rings: Vec<Weak<GlobalRing>>,
     nodes: Nodes,
     ready: u8,
     tx: Sender,
@@ -138,13 +146,18 @@ impl Supervisor {
                 }
                 Event::TryBuild => {
                     if self.ready == 0 {
+                        // first we do cleanup for old weak_rings only
+                        // if arc strong_count == thread_count
+                        self.cleanup(); // cleanup will force all oldweaks to drop weak_count to zero to deallocate the memory stores(control block and object store.)
                         // ready to build
                         // NOTE the global_ring must be initialized state
                         // re/build
                         let version = 1; // todo generate version
-                        let new_arc_ring = build_ring(&self.nodes, self.registry.clone(), version);
+                        let (new_arc_ring, new_weak_ring) = build_ring(&self.nodes, self.registry.clone(), version);
                         // replace self.arc_ring
                         self.arc_ring.replace(new_arc_ring);
+                        // push weak to weak_rings
+                        self.weak_rings.push(new_weak_ring);
                         // reply to ring-supervisor
                     } else {
                         // reply to ring-suerpvisor
@@ -153,5 +166,12 @@ impl Supervisor {
                 }
             }
         }
+    }
+    fn cleanup(&mut self) {
+        if let Some(arc_ring) = &self.arc_ring {
+            if Arc::strong_count(arc_ring) == self.thread_count {
+                self.weak_rings.clear();
+            };
+        };
     }
 }

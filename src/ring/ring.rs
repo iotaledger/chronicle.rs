@@ -44,7 +44,6 @@ thread_local!{
         let uniform: Uniform<u8> = Uniform::new(0,1); // move this to global const
         let registry: Registry = HashMap::new();
         let root: Vcell = Ring::initial_ring();
-        // create useless weak pointer
         let version = 0;
         RefCell::new(Ring{version, registry ,root, uniform, rng})
     };
@@ -340,7 +339,7 @@ fn generate_and_compute_fake_ring() {
     let _root = compute_vnode(&chain);
 }
 
-pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> Arc<GlobalRing> {
+pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> (Arc<GlobalRing>, Weak<GlobalRing>) {
     let mut tokens = Vec::new(); // complete tokens-range
     // iter nodes
     for (_, node_info) in nodes {
@@ -384,15 +383,17 @@ pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> Arc<GlobalR
     let root_vnode = compute_ring(&vnodes);
     // create arc_ring
     let arc_ring = Arc::new((version ,registry, root_vnode));
+    // downgrade to weak_ring
+    let mut weak_ring = Arc::downgrade(&arc_ring);
     // update the global ring
     unsafe {
         // swap will take the ownership to drop the old weak
-        GLOBAL_RING.as_mut().swap(&mut Arc::downgrade(&arc_ring), Ordering::Relaxed);
+        GLOBAL_RING.as_mut().swap(&mut weak_ring, Ordering::Relaxed);
         // update version with new one.// this must be atomic and safe because it's u8.
         VERSION = version;
     }
     // return new arc_ring
-    arc_ring
+    (arc_ring, weak_ring)
 }
 
 fn compute_ring(vnodes: &Vec<VnodeTuple>) -> Vcell {
