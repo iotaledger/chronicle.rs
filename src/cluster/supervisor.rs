@@ -1,7 +1,6 @@
 // cluster supervisor
-use std::sync::Weak;
 use crate::connection::cql::{fetch_tokens,connect};
-use std::sync::Arc;
+use crate::dashboard::dashboard;
 use crate::ring::ring::{
     DC,
     NodeId,
@@ -12,6 +11,8 @@ use crate::ring::ring::{
     GlobalRing,
     build_ring};
 use super::node;
+use std::sync::Weak;
+use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use crate::node::supervisor::gen_node_id;
@@ -42,6 +43,7 @@ pub enum Event {
 pub struct SupervisorBuilder {
     reporter_count: Option<u8>,
     thread_count: Option<usize>,
+    dashboard_tx: Option<u8> // temp
 }
 
 impl SupervisorBuilder {
@@ -49,43 +51,52 @@ impl SupervisorBuilder {
         SupervisorBuilder {
             reporter_count: None,
             thread_count: None,
+            dashboard_tx: None,
         }
     }
 
     set_builder_option_field!(reporter_count, u8);
     set_builder_option_field!(thread_count, usize);
+    set_builder_option_field!(dashboard_tx, u8);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
+            dashboard_tx: self.dashboard_tx.unwrap(),
             registry: HashMap::new(),
             arc_ring: None,
             weak_rings: Vec::new(),
             nodes: HashMap::new(),
             ready: 0,
+            build: false,
             tx,
             rx,
         }
     }
+
 }
 
 // suerpvisor state struct
 pub struct Supervisor {
     reporter_count: u8,
     thread_count: usize,
+    dashboard_tx: u8, // temp type
     registry: Registry,
     arc_ring: Option<Arc<GlobalRing>>,
     weak_rings: Vec<Weak<GlobalRing>>,
     nodes: Nodes,
     ready: u8,
+    build: bool,
     tx: Sender,
     rx: Receiver,
 }
 
 impl Supervisor {
     pub async fn run(mut self) {
+        // todo initialize global_ring
+
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::SpawnNode(dc, address) => {
@@ -115,13 +126,15 @@ impl Supervisor {
                             self.nodes.insert(address, node_info);
                             // increase ready and only decrease it on RegisterReporters events
                             self.ready += 1;
+                            // update waiting for build to true
+                            self.build = true;
                             // spawn node,
                             tokio::spawn(node.run());
-                            // todo reply to ring supervisor
+                            // todo reply to dashboard
 
                         },
                         err => {
-                            // todo reply to ring supervisor with unable to reach
+                            // todo reply to dashboard with unable to reach
                         },
                     };
                 }
@@ -134,6 +147,8 @@ impl Supervisor {
                         node_info.node_id[4] = shard_id;
                         // remove the shard_reporters for "address" node in shard_id from registry
                         self.registry.remove(&node_info.node_id);
+                        // update waiting for build to true
+                        self.build = true;
                     }
                 }
                 Event::RegisterReporters(node_registry) => {
@@ -145,12 +160,9 @@ impl Supervisor {
                     }
                 }
                 Event::TryBuild => {
-                    if self.ready == 0 {
-                        // first we do cleanup for old weak_rings only
-                        // if arc strong_count == thread_count
-                        self.cleanup(); // cleanup will force all oldweaks to drop weak_count to zero to deallocate the memory stores(control block and object store.)
-                        // ready to build
-                        // NOTE the global_ring must be initialized state
+                    // do cleanup on weaks
+                    self.cleanup();
+                    if self.ready == 0 && self.build {
                         // re/build
                         let version = 1; // todo generate version
                         let (new_arc_ring, new_weak_ring) = build_ring(&self.nodes, self.registry.clone(), version);
@@ -158,10 +170,13 @@ impl Supervisor {
                         self.arc_ring.replace(new_arc_ring);
                         // push weak to weak_rings
                         self.weak_rings.push(new_weak_ring);
-                        // reply to ring-supervisor
+                        // reset build state to false becaue build it and we don't want to rebuild again incase of another TryBuild event
+                        self.build = false;
+                        // reply to dashboard
+
                     } else {
-                        // reply to ring-suerpvisor
-                        // not ready to build
+                        // reply to dashboard not ready to build
+                        
                     }
                 }
             }
@@ -169,9 +184,12 @@ impl Supervisor {
     }
     fn cleanup(&mut self) {
         if let Some(arc_ring) = &self.arc_ring {
-            if Arc::strong_count(arc_ring) == self.thread_count {
+            if Arc::strong_count(arc_ring) > self.thread_count {
                 self.weak_rings.clear();
             };
         };
+    }
+    pub fn clone_tx(&self) -> Sender {
+        self.tx.clone()
     }
 }

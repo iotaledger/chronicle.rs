@@ -390,12 +390,12 @@ pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> (Arc<Global
     let mut weak_ring = Arc::downgrade(&arc_ring);
     // update the global ring
     unsafe {
-        // swap will take the ownership to drop the old weak
+        // swap 
         GLOBAL_RING.as_mut().swap(&mut weak_ring, Ordering::Relaxed);
         // update version with new one.// this must be atomic and safe because it's u8.
         VERSION = version;
     }
-    // return new arc_ring
+    // return new arc_ring, weak_ring
     (arc_ring, weak_ring)
 }
 
