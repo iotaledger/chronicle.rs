@@ -95,7 +95,7 @@ impl SmartId for Replica {
     }
 }
 
-pub trait Endpoints: EndpointsClone {
+pub trait Endpoints: EndpointsClone + Send + Sync {
     fn send(&mut self,data_center: DC, replica_index: usize, token: Token, request: Event, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>);
 }
 
@@ -135,7 +135,7 @@ impl Endpoints for Option<Replicas> {
     }
 }
 
-pub trait Vnode: VnodeClone {
+pub trait Vnode: VnodeClone + Sync + Send {
     fn search(&mut self, token: Token) -> &mut Box<dyn Endpoints> ;
 
 }
@@ -390,7 +390,7 @@ pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> (Arc<Global
     let mut weak_ring = Arc::downgrade(&arc_ring);
     // update the global ring
     unsafe {
-        // swap 
+        // swap
         GLOBAL_RING.as_mut().swap(&mut weak_ring, Ordering::Relaxed);
         // update version with new one.// this must be atomic and safe because it's u8.
         VERSION = version;
