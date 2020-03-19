@@ -43,7 +43,7 @@ pub enum Event {
 pub struct SupervisorBuilder {
     reporter_count: Option<u8>,
     thread_count: Option<usize>,
-    dashboard_tx: Option<u8> // temp
+    dashboard_tx: Option<dashboard::Sender>
 }
 
 impl SupervisorBuilder {
@@ -57,7 +57,7 @@ impl SupervisorBuilder {
 
     set_builder_option_field!(reporter_count, u8);
     set_builder_option_field!(thread_count, usize);
-    set_builder_option_field!(dashboard_tx, u8);
+    set_builder_option_field!(dashboard_tx, dashboard::Sender);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
@@ -82,7 +82,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     reporter_count: u8,
     thread_count: usize,
-    dashboard_tx: u8, // temp type
+    dashboard_tx: dashboard::Sender, 
     registry: Registry,
     arc_ring: Option<Arc<GlobalRing>>,
     weak_rings: Vec<Weak<GlobalRing>>,
@@ -176,7 +176,7 @@ impl Supervisor {
 
                     } else {
                         // reply to dashboard not ready to build
-                        
+
                     }
                 }
             }

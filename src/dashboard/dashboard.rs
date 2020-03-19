@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use super::listener;
-
+use crate::cluster::supervisor;
 // types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -24,7 +24,7 @@ pub enum Session {
 }
 // Arguments struct
 pub struct DashboardBuilder {
-    listen_address: Option<String>
+    listen_address: Option<String>,
 }
 
 impl DashboardBuilder {
@@ -36,6 +36,15 @@ impl DashboardBuilder {
 
     set_builder_option_field!(listen_address, String);
 
+    pub fn build(self) -> Dashboard {
+        let (tx, rx) = mpsc::unbounded_channel::<Event>();
+        Dashboard {
+            listen_address: self.listen_address.unwrap(),
+            sockets: HashMap::new(),
+            tx,
+            rx,
+        }
+    }
 }
 
 // dashboard state struct
@@ -47,7 +56,7 @@ pub struct Dashboard {
 }
 
 impl Dashboard {
-    pub async fn run(mut self) {
+    pub async fn run(mut self, cluster_tx: supervisor::Sender) {
         // build dashboard listener
         let listener = listener::ListenerBuilder::new()
         .listen_address(self.listen_address.clone())
@@ -73,5 +82,8 @@ impl Dashboard {
                 // get status, get dashboard log, import dump file, etc)
             }
         }
+    }
+    pub fn clone_tx(&self) -> Sender {
+        self.tx.clone()
     }
 }

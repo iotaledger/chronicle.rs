@@ -59,7 +59,7 @@ impl Websocket {
             };
             // pass session to dashboard
             self.dashboard_tx.send(dashboard::Event::Session(session));
-            // event loop for websocket (to be replaced with some websocket crate)
+            // event loop for websocket
             while let Some(res) = self.ws_rx.next().await {
                 let msg = res?;
                 match msg {
