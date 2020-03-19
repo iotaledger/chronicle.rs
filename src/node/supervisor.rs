@@ -118,8 +118,10 @@ impl Supervisor {
                             stage.send(event).unwrap();
                         }
                     }
-                    break; // we break to prevent pushing RegisterReporters to cluster,
-                    // because it asked node to shutdown and doesn't expect it to push anything further
+                    // contract design:
+                    // the node supervisor will only shutdown when stages drop node_txs
+                    // and this will only happen if reporters dropped stage_txs,
+                    // still reporters_txs have to go out of the scope (from ring&stages).
                 }
                 Event::RegisterReporters(shard_id, reporters) => {
                     // collect them and make sure the node_reporters len == shard_count,

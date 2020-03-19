@@ -93,7 +93,7 @@ impl Worker for Broker {
         self.query.status.return_streamstatus()
     }
 
-    fn send_response(&mut self, tx: &reporter::Sender, giveload: Giveload) -> Status {
+    fn send_response(&mut self, tx: &Option<reporter::Sender>, giveload: Giveload) -> Status {
         try_prepare(self.query.prepare_payload, tx, &giveload);
         let event = match self.query.status {
             Status::New => BrokerEvent::Response {

@@ -80,7 +80,7 @@ impl ReporterBuilder {
             shard_id: self.shard_id.unwrap(),
             workers: HashMap::new(),
             checkpoints: 0,
-            tx: self.tx.unwrap(),
+            tx: self.tx,
             rx: self.rx.unwrap(),
             stage_tx: self.stage_tx.unwrap(),
             sender_tx: None,
@@ -97,7 +97,7 @@ pub struct Reporter {
     shard_id: u8,
     workers: Workers,
     checkpoints: u8,
-    tx: Sender,
+    tx: Option<Sender>,
     rx: Receiver,
     stage_tx: supervisor::Sender,
     sender_tx: Option<sender::Sender>,
@@ -205,7 +205,9 @@ impl Reporter {
                             }
                         }
                         Session::Shutdown => {
-                            // don't need to do anything , as we are already dropped the sender_tx
+                            // set self.tx to None, otherwise reporter never shutdown.
+                            self.tx = None;
+                            // as we already dropped the sender_tx
                             // dropping the sender_tx will drop the sender and eventaully drop receiver , this means our reporter_tx in both sender&reciever will be dropped.. finally the only reporter_tx left is in Rings which will eventaully be dropped.
                             // techincally reporters are active till the last Ring::send(..) call.
                             // this make sure we don't leave any requests behind and enabling the workers to async send requests with guarantee to be processed back

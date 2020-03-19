@@ -12,7 +12,7 @@ pub type StreamStatus = Result<Stream, Stream>;
 // WorkerId trait type which will be implemented by worker in order to send their channel_tx.
 pub trait Worker: Send + std::fmt::Debug {
     fn send_streamstatus(&mut self, stream_status: StreamStatus) -> Status;
-    fn send_response(&mut self, tx: &Sender, giveload: Giveload) -> Status;
+    fn send_response(&mut self, tx: &Option<Sender>, giveload: Giveload) -> Status;
     fn send_error(&mut self, error: Error) -> Status;
 }
 

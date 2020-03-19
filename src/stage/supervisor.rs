@@ -59,7 +59,7 @@ impl SupervisorBuilder {
             shutting_down: false,
             address: self.address.unwrap(),
             shard_id: self.shard_id,
-            tx: self.tx.unwrap(),
+            tx: self.tx,
             rx: self.rx.unwrap(),
             node_tx: self.node_tx.unwrap(),
         }
@@ -73,7 +73,7 @@ pub struct Supervisor {
     shutting_down: bool,
     address: String,
     shard_id: u8,
-    tx: Sender,
+    tx: Option<Sender>,
     rx: Receiver,
     node_tx: node::supervisor::Sender,
     reporters: Reporters,
@@ -109,7 +109,7 @@ impl Supervisor {
                 .address(self.address.clone())
                 .tx(reporter_tx)
                 .rx(reporter_rx)
-                .stage_tx(self.tx.clone());
+                .stage_tx(self.tx.as_ref().unwrap().clone());
             let reporter = reporter_builder.build();
             tokio::spawn(reporter.run());
         }
@@ -122,7 +122,7 @@ impl Supervisor {
         // todo improve dbg! msgs
         dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shard_id);
         // Send self event::connect
-        self.tx
+        self.tx.as_ref().unwrap()
             .send(Event::Connect(sender_tx, sender_rx))
             .unwrap();
         // Supervisor event loop
@@ -130,7 +130,7 @@ impl Supervisor {
             match event {
                 Event::Connect(sender_tx, sender_rx) => {
                     // Only try to connect if the stage not shutting_down
-                    if !self.shutting_down {
+                    if self.tx.is_some() {
                         match connect_to_shard_id(&self.address, self.shard_id).await {
                             Ok(mut cqlconn) => {
                                 // Change the connected status to true
@@ -161,9 +161,11 @@ impl Supervisor {
                                 dbg!("trying to connect every 5 seconds: err {}", err);
                                 delay_for(Duration::from_millis(5000)).await;
                                 // Try again to connect
-                                self.tx
+                                if let Some(tx) = &self.tx {
+                                    tx
                                     .send(Event::Connect(sender_tx, sender_rx))
                                     .unwrap();
+                                };
                             }
                         }
                     }
@@ -181,10 +183,15 @@ impl Supervisor {
                     self.connected = false;
                     // Create sender's channel
                     let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
-                    self.tx.send(Event::Connect(sender_tx, sender_rx)).unwrap();
+                    if let Some(tx) = &self.tx {
+                        tx
+                        .send(Event::Connect(sender_tx, sender_rx))
+                        .unwrap();
+                    };
                 }
                 Event::Shutdown => {
-                    self.shutting_down = true;
+                    // drop self.tx by setting it to None.
+                    self.tx = None;
                     // therefore now we tell reporters to gracefully shutdown by droping
                     // sender_tx and eventaully stage_tx, draining reporters is important
                     // otherwise we have to close the rx channel.

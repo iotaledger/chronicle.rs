@@ -28,7 +28,7 @@ impl Worker for Preparer {
         }
     }
 
-    fn send_response(&mut self, _tx: &Sender, _giveload: Vec<u8>) -> Status {
+    fn send_response(&mut self, _tx: &Option<Sender>, _giveload: Vec<u8>) -> Status {
         self.query.status.return_response()
     }
     fn send_error(&mut self, _error: Error) -> Status {
@@ -36,9 +36,10 @@ impl Worker for Preparer {
     }
 }
 
-pub fn try_prepare(prepare_payload: &[u8], tx: &Sender, giveload: &Giveload) {
+pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Giveload) {
     // check if the giveload is unprepared_error.
     if check_unprepared(giveload) {
+
         // create preparer
         let preparer = Preparer {
             query: QueryRef::new(),
@@ -49,7 +50,11 @@ pub fn try_prepare(prepare_payload: &[u8], tx: &Sender, giveload: &Giveload) {
             worker: Box::new(preparer),
         };
         // send to reporter(self as this function is invoked inside reporter)
-        let _ = tx.send(event);
+        if let Some(tx) = tx {
+            tx
+            .send(event)
+            .unwrap();
+        };
     }
 }
 

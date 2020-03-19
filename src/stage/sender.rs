@@ -52,23 +52,21 @@ impl SenderBuilder {
     set_builder_option_field!(session_id, usize);
 
     pub fn build(self) -> SenderState {
-        let state = SenderState {
-            reporters: self.reporters.unwrap(),
-            session_id: self.session_id.unwrap(),
-            socket: self.socket_tx.unwrap(),
-            tx: self.tx.unwrap(),
-            rx: self.rx.unwrap(),
-        };
         // pass sender_tx to reporters
-        for (_, reporter_tx) in &state.reporters {
+        for (_, reporter_tx) in self.reporters.as_ref().unwrap() {
             reporter_tx
                 .send(reporter::Event::Session(reporter::Session::New(
-                    state.session_id,
-                    state.tx.clone(),
+                    self.session_id.as_ref().unwrap().clone(),
+                    self.tx.as_ref().unwrap().clone(),
                 )))
                 .unwrap();
         }
-        state
+        SenderState {
+            reporters: self.reporters.unwrap(),
+            session_id: self.session_id.unwrap(),
+            socket: self.socket_tx.unwrap(),
+            rx: self.rx.unwrap(),
+        }
     }
 }
 
@@ -77,7 +75,6 @@ pub struct SenderState {
     reporters: supervisor::Reporters,
     session_id: usize,
     socket: WriteHalf<TcpStream>,
-    tx: Sender,
     rx: Receiver,
 }
 
