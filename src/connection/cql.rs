@@ -2,9 +2,16 @@ use crate::cluster::supervisor::Tokens;
 use crate::ring::ring::{Msb, NodeId, ShardCount, Token, DC};
 use cdrs::compression::Compression;
 use cdrs::frame::traits::FromCursor;
-use cdrs::frame::Frame;
+
+use cdrs::frame::IntoBytes;
+use cdrs::types::from_cdrs::FromCDRSByName;
+use cdrs::types::prelude::{List, Value, Row, Bytes};
+use cdrs::types::AsRustType;
+
+use cdrs::frame::{Frame, Flag, TryFromRow};
 use cdrs::frame::Opcode;
-use cdrs::frame::{frame_supported, IntoBytes};
+use cdrs::frame::{frame_supported,frame_result};
+use cdrs::query;
 use std::collections::HashMap;
 use std::io::Cursor;
 use tokio::io::Error;
@@ -32,6 +39,15 @@ impl CqlConn {
     pub fn take_stream(&mut self) -> TcpStream {
         self.stream.take().unwrap()
     }
+    pub fn function_name() {
+        unimplemented!()
+    }
+}
+
+#[derive(Clone, Debug, IntoCDRSValue, TryFromRow, PartialEq)]
+struct RowTokens {
+ rpc_address: String,
+ tokens: Vec<String>,
 }
 
 pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
@@ -73,9 +89,32 @@ pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
     };
     Ok(cqlconn)
 }
-pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn, Error> {
+pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlConn, Error> {
     // fetch tokens from scylla using select query to system.local table,
     // then add it to cqlconn
+    // query param builder
+    let params = query::QueryParamsBuilder::new()
+    .page_size(500)
+    .finalize();
+    let query = "SELECT rpc_address, tokens FROM system.local;".to_string();
+    let query = query::Query{query, params};
+    // query_frame
+    let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
+    // write frame to stream
+    connection.as_mut().unwrap().stream.as_mut().unwrap().write(query_frame.as_slice()).await?;
+    // read buffer
+    let mut head_buffer = vec![0; 9];
+    connection.as_mut().unwrap().stream.as_mut().unwrap().read(&mut head_buffer).await?;
+    let length = get_body_length_usize(&head_buffer);
+    let mut body_buffer = vec![0; length];
+    connection.as_mut().unwrap().stream.as_mut().unwrap().read(&mut body_buffer).await?;
+    let mut cursor: Cursor<&[u8]> = Cursor::new(&body_buffer);
+    let rows = frame_result::ResResultBody::from_cursor(&mut cursor)
+        .unwrap().into_rows().unwrap();
+    for row in &rows {
+        let r = RowTokens::try_from_row(row.clone());
+        println!("{:?}",r);
+    }
     todo!()
 }
 
