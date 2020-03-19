@@ -12,7 +12,6 @@ const HEADER_LENGTH: usize = 9;
 const BUFFER_LENGTH: usize = 1024000;
 
 pub struct ReceiverBuidler {
-    stage_tx: Option<supervisor::Sender>,
     reporters: Option<supervisor::Reporters>,
     socket_rx: Option<ReadHalf<TcpStream>>,
     session_id: Option<usize>,
@@ -21,7 +20,6 @@ pub struct ReceiverBuidler {
 impl ReceiverBuidler {
     pub fn new() -> Self {
         ReceiverBuidler {
-            stage_tx: None,
             reporters: None,
             socket_rx: None,
             session_id: None,
@@ -30,14 +28,12 @@ impl ReceiverBuidler {
 
     set_builder_option_field!(socket_rx, ReadHalf<TcpStream>);
     set_builder_option_field!(session_id, usize);
-    set_builder_option_field!(stage_tx, supervisor::Sender);
     set_builder_option_field!(reporters, supervisor::Reporters);
 
     pub fn build(self) -> Receiver {
         let reporters = self.reporters.unwrap();
         let reporters_len = reporters.len();
         Receiver {
-            // stage_tx: self.stage_tx.unwrap(),
             reporters: reporters,
             socket: self.socket_rx.unwrap(),
             stream_id: 0,
@@ -53,7 +49,6 @@ impl ReceiverBuidler {
 
 // suerpvisor state struct
 pub struct Receiver {
-    // stage_tx: supervisor::Sender,
     reporters: supervisor::Reporters,
     socket: ReadHalf<TcpStream>,
     stream_id: reporter::Stream,

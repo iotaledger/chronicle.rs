@@ -46,7 +46,6 @@ pub struct ReporterBuilder {
     tx: Option<Sender>,
     rx: Option<Receiver>,
     stage_tx: Option<supervisor::Sender>,
-    sender_tx: Option<sender::Sender>,
 }
 
 impl ReporterBuilder {
@@ -55,7 +54,6 @@ impl ReporterBuilder {
             tx: None,
             rx: None,
             stage_tx: None,
-            sender_tx: None,
             session_id: None,
             reporter_id: None,
             streams: None,
@@ -66,7 +64,6 @@ impl ReporterBuilder {
 
     set_builder_option_field!(tx, Sender);
     set_builder_option_field!(rx, Receiver);
-    set_builder_option_field!(sender_tx, sender::Sender);
     set_builder_option_field!(session_id, usize);
     set_builder_option_field!(stage_tx, supervisor::Sender);
     set_builder_option_field!(reporter_id, u8);
@@ -86,7 +83,7 @@ impl ReporterBuilder {
             tx: self.tx.unwrap(),
             rx: self.rx.unwrap(),
             stage_tx: self.stage_tx.unwrap(),
-            sender_tx: self.sender_tx,
+            sender_tx: None,
         }
     }
 }

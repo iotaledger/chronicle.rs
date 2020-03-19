@@ -16,8 +16,7 @@ pub type Reporters = HashMap<u8, mpsc::UnboundedSender<reporter::Event>>;
 
 #[derive(Debug)]
 pub enum Event {
-    // Sender, Receiver, Reconnect
-    Connect(sender::Sender, sender::Receiver, bool),
+    Connect(sender::Sender, sender::Receiver),
     Reconnect(usize),
     Shutdown,
 }
@@ -110,21 +109,26 @@ impl Supervisor {
                 .address(self.address.clone())
                 .tx(reporter_tx)
                 .rx(reporter_rx)
-                .stage_tx(self.tx.clone())
-                .sender_tx(sender_tx.clone());
+                .stage_tx(self.tx.clone());
             let reporter = reporter_builder.build();
             tokio::spawn(reporter.run());
         }
-
+        // expose stage reporters in advance
+        let event = node::supervisor::Event::RegisterReporters(
+            self.shard_id,
+            self.reporters.clone(),
+        );
+        self.node_tx.send(event).unwrap();
+        // todo improve dbg! msgs
+        dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shard_id);
         // Send self event::connect
-        // false because they already have the sender_tx and no need to reconnect
         self.tx
-            .send(Event::Connect(sender_tx, sender_rx, false))
+            .send(Event::Connect(sender_tx, sender_rx))
             .unwrap();
         // Supervisor event loop
         while let Some(event) = self.rx.recv().await {
             match event {
-                Event::Connect(sender_tx, sender_rx, reconnect) => {
+                Event::Connect(sender_tx, sender_rx) => {
                     // Only try to connect if the stage not shutting_down
                     if !self.shutting_down {
                         match connect_to_shard_id(&self.address, self.shard_id).await {
@@ -137,31 +141,20 @@ impl Supervisor {
                                 let (socket_rx, socket_tx) = tokio::io::split(cqlconn.take_stream());
                                 // Spawn/restart sender
                                 let sender_state = sender::SenderBuilder::new()
-                                    .reconnect(reconnect)
                                     .tx(sender_tx)
                                     .rx(sender_rx)
                                     .session_id(self.session_id)
                                     .socket_tx(socket_tx)
                                     .reporters(self.reporters.clone())
-                                    .stage_tx(self.tx.clone())
                                     .build();
                                 tokio::spawn(sender_state.run());
                                 // Spawn/restart receiver
                                 let receiver = receiver::ReceiverBuidler::new()
                                     .socket_rx(socket_rx)
                                     .reporters(self.reporters.clone())
-                                    .stage_tx(self.tx.clone())
                                     .session_id(self.session_id)
                                     .build();
                                 tokio::spawn(receiver.run());
-                                if !reconnect {
-                                    let event = node::supervisor::Event::RegisterReporters(
-                                        self.shard_id,
-                                        self.reporters.clone(),
-                                    );
-                                    let _ = self.node_tx.send(event); // node_tx might be closed
-                                    dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shard_id);
-                                }
                             }
                             Err(err) => {
                                 // TODO erro handling
@@ -169,7 +162,7 @@ impl Supervisor {
                                 delay_for(Duration::from_millis(5000)).await;
                                 // Try again to connect
                                 self.tx
-                                    .send(Event::Connect(sender_tx, sender_rx, reconnect))
+                                    .send(Event::Connect(sender_tx, sender_rx))
                                     .unwrap();
                             }
                         }
@@ -188,7 +181,7 @@ impl Supervisor {
                     self.connected = false;
                     // Create sender's channel
                     let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
-                    self.tx.send(Event::Connect(sender_tx, sender_rx, true)).unwrap();
+                    self.tx.send(Event::Connect(sender_tx, sender_rx)).unwrap();
                 }
                 Event::Shutdown => {
                     self.shutting_down = true;

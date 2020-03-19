@@ -29,11 +29,9 @@ pub struct SenderBuilder {
     tx: Option<Sender>,
     // sender's rx to recv events
     rx: Option<Receiver>,
-    stage_tx: Option<supervisor::Sender>,
     socket_tx: Option<WriteHalf<TcpStream>>,
     reporters: Option<supervisor::Reporters>,
     session_id: Option<usize>,
-    reconnect: bool,
 }
 
 impl SenderBuilder {
@@ -41,43 +39,35 @@ impl SenderBuilder {
         SenderBuilder {
             tx: None,
             rx: None,
-            stage_tx: None,
             socket_tx: None,
             reporters: None,
             session_id: None,
-            reconnect: false,
         }
     }
 
     set_builder_option_field!(tx, Sender);
     set_builder_option_field!(rx, Receiver);
-    set_builder_option_field!(stage_tx, supervisor::Sender);
     set_builder_option_field!(socket_tx, WriteHalf<TcpStream>);
     set_builder_option_field!(reporters, supervisor::Reporters);
     set_builder_option_field!(session_id, usize);
-    set_builder_field!(reconnect, bool);
 
     pub fn build(self) -> SenderState {
         let state = SenderState {
-            // stage_tx: self.stage_tx.unwrap(),
             reporters: self.reporters.unwrap(),
             session_id: self.session_id.unwrap(),
             socket: self.socket_tx.unwrap(),
             tx: self.tx.unwrap(),
             rx: self.rx.unwrap(),
         };
-
-        if self.reconnect {
-            for (_, reporter_tx) in &state.reporters {
-                reporter_tx
-                    .send(reporter::Event::Session(reporter::Session::New(
-                        state.session_id,
-                        state.tx.clone(),
-                    )))
-                    .unwrap();
-            }
+        // pass sender_tx to reporters
+        for (_, reporter_tx) in &state.reporters {
+            reporter_tx
+                .send(reporter::Event::Session(reporter::Session::New(
+                    state.session_id,
+                    state.tx.clone(),
+                )))
+                .unwrap();
         }
-
         state
     }
 }
