@@ -6,7 +6,6 @@ use crate::stage::reporter::{Stream, Streams};
 use crate::connection::cql::connect_to_shard_id;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::delay_for;
 

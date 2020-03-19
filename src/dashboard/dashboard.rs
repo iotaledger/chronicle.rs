@@ -1,4 +1,6 @@
 // uses
+use crate::connection::cql::Address;
+use crate::ring::ring::DC;
 use std::collections::HashMap;
 use futures::stream::SplitSink;
 use tokio::sync::mpsc;
@@ -16,12 +18,21 @@ type WsTx = SplitSink<WebSocketStream<TcpStream>, Message>;
 // event
 pub enum Event {
     Session(Session),
+    Toplogy(Toplogy),
 }
 
 pub enum Session {
     // todo auth events
     Socket{peer: SocketAddr, ws_tx: WsTx},
 }
+
+// todo remove the need to pass DC, by fetching durring connection establishment
+pub enum Toplogy {
+    AddNode(DC, Address),
+    RemoveNode(DC, Address),
+    TryBuild,
+}
+
 // Arguments struct
 pub struct DashboardBuilder {
     listen_address: Option<String>,
@@ -75,6 +86,19 @@ impl Dashboard {
                             // once we recv this event means authentication succeed
                             // therefore we add the peer to the sockets we are handling right now
                             self.sockets.insert(peer, ws_tx);
+                        }
+                    }
+                }
+                Event::Toplogy(toplogy) => {
+                    match toplogy {
+                        Toplogy::AddNode(dc, address) => {
+                            
+                        }
+                        Toplogy::RemoveNode(dc, address) => {
+
+                        }
+                        Toplogy::TryBuild => {
+
                         }
                     }
                 }

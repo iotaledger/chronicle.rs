@@ -63,7 +63,7 @@ impl Websocket {
             while let Some(res) = self.ws_rx.next().await {
                 let msg = res?;
                 match msg {
-                    // hande websockets msgs (binary, text, ping, pong) and then encode them into
+                    // handle websockets msgs (binary, text, ping, pong) and then encode them into
                     // dashboard events
                     _ => {
 

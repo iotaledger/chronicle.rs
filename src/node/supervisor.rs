@@ -61,7 +61,7 @@ impl SupervisorBuilder {
             reporter_count: self.reporter_count.unwrap(),
             spawned: false,
             shard_count: self.shard_count.unwrap(),
-            tx,
+            tx: Some(tx),
             rx,
             stages,
             node_registry: Vec::new(),
@@ -77,7 +77,7 @@ pub struct Supervisor {
     data_center: DC,
     reporter_count: u8,
     spawned: bool,
-    tx: Sender,
+    tx: Option<Sender>,
     rx: Receiver,
     shard_count: u8,
     stages: Stages,
@@ -86,8 +86,8 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    pub fn tx(&self) -> Sender {
-        self.tx.clone()
+    pub fn clone_tx(&self) -> Sender {
+        self.tx.as_ref().unwrap().clone()
     }
     pub async fn run(mut self) {
         // spawn stage supervisor for each shard_id
@@ -95,7 +95,7 @@ impl Supervisor {
             let (stage_tx, stage_rx) =
                 mpsc::unbounded_channel::<stage::supervisor::Event>();
             let stage = stage::supervisor::SupervisorBuilder::new()
-                .node_tx(self.tx.clone())
+                .node_tx(self.clone_tx())
                 .address(self.address.clone())
                 .shard_id(shard_id)
                 .reporter_count(self.reporter_count)
@@ -118,6 +118,8 @@ impl Supervisor {
                             stage.send(event).unwrap();
                         }
                     }
+                    // set self.tx to None
+                    self.tx = None;
                     // contract design:
                     // the node supervisor will only shutdown when stages drop node_txs
                     // and this will only happen if reporters dropped stage_txs,

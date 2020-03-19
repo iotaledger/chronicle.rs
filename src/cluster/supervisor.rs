@@ -82,7 +82,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     reporter_count: u8,
     thread_count: usize,
-    dashboard_tx: dashboard::Sender, 
+    dashboard_tx: dashboard::Sender,
     registry: Registry,
     arc_ring: Option<Arc<GlobalRing>>,
     weak_rings: Vec<Weak<GlobalRing>>,
@@ -113,7 +113,7 @@ impl Supervisor {
                                 .data_center(dc)
                                 .supervisor_tx(self.tx.clone())
                                 .build();
-                            let node_tx = node.tx();
+                            let node_tx = node.clone_tx();
                             let node_id = gen_node_id(&address);
                             // generate nodeinfo
                             let node_info = NodeInfo{
@@ -126,12 +126,8 @@ impl Supervisor {
                             self.nodes.insert(address, node_info);
                             // increase ready and only decrease it on RegisterReporters events
                             self.ready += 1;
-                            // update waiting for build to true
-                            self.build = true;
                             // spawn node,
                             tokio::spawn(node.run());
-                            // todo reply to dashboard
-
                         },
                         err => {
                             // todo reply to dashboard with unable to reach
@@ -140,24 +136,33 @@ impl Supervisor {
                 }
                 Event::ShutDownNode(_, address) => {
                     // get and remove node_info
-                    let mut node_info =  self.nodes.remove(&address).unwrap();
+                    let mut node_info = self.nodes.remove(&address).unwrap();
                     // update(remove from) registry
                     for shard_id in 0..node_info.shard_count {
                         // make node_id to reflect the correct shard_id
                         node_info.node_id[4] = shard_id;
                         // remove the shard_reporters for "address" node in shard_id from registry
                         self.registry.remove(&node_info.node_id);
-                        // update waiting for build to true
-                        self.build = true;
                     }
+                    // send shutdown event to node
+                    node_info.node_tx.send(node::supervisor::Event::Shutdown).unwrap();
+                    // update waiting for build to true
+                    self.build = true;
+                    // note: the node tree will not get shutdown unless we drop the ring
+                    // but we cannot drop the ring unless we build a new one and atomically swap it,
+                    // therefore dashboard admin supposed to trybuild
                 }
                 Event::RegisterReporters(node_registry) => {
                     // decrease the ready counter
                     self.ready -= 1;
+                    // update waiting for build to true
+                    self.build = true;
                     // merge the node_registry with self.registry
                     for (node_id, stage_reporters) in node_registry {
                         self.registry.insert(node_id, stage_reporters);
                     }
+                    // tell dashboard
+
                 }
                 Event::TryBuild => {
                     // do cleanup on weaks
@@ -170,7 +175,7 @@ impl Supervisor {
                         self.arc_ring.replace(new_arc_ring);
                         // push weak to weak_rings
                         self.weak_rings.push(new_weak_ring);
-                        // reset build state to false becaue build it and we don't want to rebuild again incase of another TryBuild event
+                        // reset build state to false becaue we built it and we don't want to rebuild again incase of another TryBuild event
                         self.build = false;
                         // reply to dashboard
 

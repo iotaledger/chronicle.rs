@@ -29,7 +29,7 @@ type ReporterCount = u8;
 
 // event enum
 pub enum Event {
-
+    Break
 }
 
 // Arguments struct
@@ -85,13 +85,18 @@ impl Engine {
         self.init().await;
         // check if nodes is provided to start in local mode
         if let Some(nodes) = self.nodes {
-            // spawn async local_starter future
+            // build helper (is supposed to simulate the websocket)
+            let helper = HelperBuilder::new()
+            .nodes(nodes)
+            // it needs engine_tx to respond
+            .engine_tx(self.tx.clone())
+            .build();
+            // spawn helper
+            tokio::spawn(helper.run());
         };
-        // event loop
-        while let Some(event) = self.rx.recv().await {
-            match event {
-                
-            }
+        // await on Break event from dashboard to deattach the engine
+        while let Some(Event::Break) = self.rx.recv().await {
+            break
         }
     }
     async fn init(&mut self) {
@@ -109,5 +114,43 @@ impl Engine {
         tokio::spawn(dashboard.run(cluster.clone_tx()));
         // spawn cluster
         tokio::spawn(cluster.run());
+    }
+}
+
+struct HelperBuilder {
+    nodes: Option<Vec<String>>,
+    engine_tx: Option<Sender>,
+}
+impl HelperBuilder {
+    fn new() -> Self {
+        Self {
+            nodes: None,
+            engine_tx: None,
+            // dashboard_tx
+        }
+    }
+    set_builder_option_field!(nodes, Vec<String>);
+    set_builder_option_field!(engine_tx, Sender);
+    fn build(self) -> Helper {
+        Helper {
+            nodes: self.nodes.unwrap(),
+            engine_tx: self.engine_tx.unwrap(),
+        }
+    }
+}
+
+enum HelperEvent {
+
+}
+
+struct Helper {
+    nodes: Vec<String>,
+    engine_tx: Sender,
+}
+impl Helper {
+    async fn run(mut self) {
+        // create channel
+        let (tx, rx) = mpsc::unbounded_channel::<HelperEvent>();
+
     }
 }
