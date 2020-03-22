@@ -20,34 +20,17 @@ pub enum Event {
     RegisterReporters(u8, stage::supervisor::Reporters),
 }
 
-// Arguments struct
-pub struct SupervisorBuilder {
-    address: Option<String>,
-    node_id: Option<NodeId>,
-    data_center: Option<DC>,
-    reporter_count: Option<u8>,
-    shard_count: Option<u8>,
-    supervisor_tx: Option<supervisor::Sender>,
-}
+actor!(
+    SupervisorBuilder {
+        address: String,
+        node_id: NodeId,
+        data_center: DC,
+        reporter_count: u8,
+        shard_count: u8,
+        supervisor_tx: supervisor::Sender
+});
 
 impl SupervisorBuilder {
-    pub fn new() -> Self {
-        SupervisorBuilder {
-            address: None,
-            node_id: None,
-            data_center: None,
-            reporter_count: None,
-            shard_count: None,
-            supervisor_tx: None,
-        }
-    }
-
-    set_builder_option_field!(address, String);
-    set_builder_option_field!(node_id, NodeId);
-    set_builder_option_field!(data_center, DC);
-    set_builder_option_field!(reporter_count, u8);
-    set_builder_option_field!(shard_count, u8);
-    set_builder_option_field!(supervisor_tx, supervisor::Sender);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();

@@ -33,19 +33,12 @@ pub enum Toplogy {
     TryBuild,
 }
 
-// Arguments struct
-pub struct DashboardBuilder {
-    listen_address: Option<String>,
-}
+actor!(
+    DashboardBuilder {
+        listen_address: String
+});
 
 impl DashboardBuilder {
-    pub fn new() -> Self {
-        DashboardBuilder {
-            listen_address: None,
-        }
-    }
-
-    set_builder_option_field!(listen_address, String);
 
     pub fn build(self) -> Dashboard {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
@@ -56,9 +49,11 @@ impl DashboardBuilder {
             rx,
         }
     }
+    async fn init(self) {
+        unimplemented!()
+    }
 }
 
-// dashboard state struct
 pub struct Dashboard {
     listen_address: String,
     sockets: HashMap<SocketAddr, WsTx>,
@@ -92,7 +87,7 @@ impl Dashboard {
                 Event::Toplogy(toplogy) => {
                     match toplogy {
                         Toplogy::AddNode(dc, address) => {
-                            
+
                         }
                         Toplogy::RemoveNode(dc, address) => {
 

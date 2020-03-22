@@ -25,6 +25,11 @@ type Replica = (NodeId,Msb,ShardCount);
 type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
 pub type GlobalRing = (u8 ,Registry, Vcell);
+pub type AtomicRing = AtomicPtr<Weak<GlobalRing>>;
+pub type ArcRing = Arc<GlobalRing>;
+pub type WeakRing = Weak<GlobalRing>;
+type InitialRing = (AtomicRing, ArcRing, WeakRing);
+
 pub struct Ring {
     version: u8,
     arc: Option<Arc<GlobalRing>>,
@@ -37,14 +42,14 @@ use std::ptr;
 
 
 static mut VERSION: u8 = 0;
-static mut GLOBAL_RING: NonNull<AtomicPtr<Weak<GlobalRing>>> = ptr::NonNull::dangling();
+static mut GLOBAL_RING: NonNull<AtomicRing> = ptr::NonNull::dangling();
 
 thread_local!{
     static RING: RefCell<Ring> = {
         let rng = thread_rng();
         let uniform: Uniform<u8> = Uniform::new(0,1); // move this to global const
         let registry: Registry = HashMap::new();
-        let root: Vcell = Ring::initial_ring();
+        let root: Vcell = DeadEnd::initial_vnode();
         let version = 0;
         let arc = None;
         RefCell::new(Ring{version,arc, registry ,root, uniform, rng})
@@ -77,8 +82,24 @@ impl Ring {
         .search(token)
         .send(data_center, replica_index, token, request, &mut self.registry, &mut self.rng, self.uniform);
     }
-    fn initial_ring() -> Vcell {
-        DeadEnd::initial_vnode()
+    fn initialize_ring() -> InitialRing {
+        // create empty Registry
+        let registry: Registry = HashMap::new();
+        // create initial vnode
+        let root = DeadEnd::initial_vnode();
+        // pack Into globlal ring tuple
+        let global_ring: GlobalRing = (0, registry, root);
+        // create Arc ring
+        let arc_ring = Arc::new(global_ring);
+        // downgrade to weak
+        let mut weak_ring = Arc::downgrade(&arc_ring);
+        // create atomicptr
+        let mut atomic_ptr = AtomicPtr::new(&mut weak_ring);
+        unsafe {
+            GLOBAL_RING = ptr::NonNull::new(&mut atomic_ptr).unwrap();
+            VERSION = 0;
+        }
+        (atomic_ptr, arc_ring, weak_ring)
     }
 }
 trait SmartId {
@@ -423,4 +444,7 @@ fn compute_chain(vnodes: &Vec<VnodeTuple>) -> Vec<(Token, Token, Replicas)> {
         chain.push((*left, *right, replicas));
     }
     chain
+}
+pub fn initialize_ring() -> InitialRing {
+    Ring::initialize_ring()
 }

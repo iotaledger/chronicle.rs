@@ -22,34 +22,16 @@ pub enum Event {
     },
 }
 
-// args struct, each actor must have public Arguments struct,
-// to pass options when starting the actor.
-pub struct SenderBuilder {
-    // sender's tx only to pass it to reporters (if recoonect == true).
-    tx: Option<Sender>,
-    // sender's rx to recv events
-    rx: Option<Receiver>,
-    socket_tx: Option<WriteHalf<TcpStream>>,
-    reporters: Option<supervisor::Reporters>,
-    session_id: Option<usize>,
-}
+actor!(
+    SenderBuilder {
+        tx: Sender,
+        rx: Receiver,
+        socket_tx: WriteHalf<TcpStream>,
+        reporters: supervisor::Reporters,
+        session_id: usize
+});
 
 impl SenderBuilder {
-    pub fn new() -> Self {
-        SenderBuilder {
-            tx: None,
-            rx: None,
-            socket_tx: None,
-            reporters: None,
-            session_id: None,
-        }
-    }
-
-    set_builder_option_field!(tx, Sender);
-    set_builder_option_field!(rx, Receiver);
-    set_builder_option_field!(socket_tx, WriteHalf<TcpStream>);
-    set_builder_option_field!(reporters, supervisor::Reporters);
-    set_builder_option_field!(session_id, usize);
 
     pub fn build(self) -> SenderState {
         // pass sender_tx to reporters

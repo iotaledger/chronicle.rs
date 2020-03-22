@@ -9,9 +9,13 @@ use crate::ring::ring::{
     Msb,
     ShardCount,
     GlobalRing,
-    build_ring};
+    WeakRing,
+    ArcRing,
+    AtomicRing,
+    build_ring,
+    initialize_ring,
+};
 use super::node;
-use std::sync::Weak;
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -39,35 +43,27 @@ pub enum Event {
     TryBuild,
 }
 
-// Arguments struct
-pub struct SupervisorBuilder {
-    reporter_count: Option<u8>,
-    thread_count: Option<usize>,
-    dashboard_tx: Option<dashboard::Sender>
-}
+actor!(
+    SupervisorBuilder {
+        reporter_count: u8,
+        thread_count: usize,
+        dashboard_tx: dashboard::Sender
+});
 
 impl SupervisorBuilder {
-    pub fn new() -> Self {
-        SupervisorBuilder {
-            reporter_count: None,
-            thread_count: None,
-            dashboard_tx: None,
-        }
-    }
-
-    set_builder_option_field!(reporter_count, u8);
-    set_builder_option_field!(thread_count, usize);
-    set_builder_option_field!(dashboard_tx, dashboard::Sender);
 
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
+        // initialize global_ring
+        let (atomic_ring, arc_ring ,weak_ring)= initialize_ring();
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
             dashboard_tx: self.dashboard_tx.unwrap(),
             registry: HashMap::new(),
-            arc_ring: None,
-            weak_rings: Vec::new(),
+            atomic_ring: atomic_ring,
+            arc_ring: Some(arc_ring),
+            weak_rings: vec![weak_ring],
             nodes: HashMap::new(),
             ready: 0,
             build: false,
@@ -84,8 +80,9 @@ pub struct Supervisor {
     thread_count: usize,
     dashboard_tx: dashboard::Sender,
     registry: Registry,
-    arc_ring: Option<Arc<GlobalRing>>,
-    weak_rings: Vec<Weak<GlobalRing>>,
+    atomic_ring: AtomicRing,
+    arc_ring: Option<ArcRing>,
+    weak_rings: Vec<WeakRing>,
     nodes: Nodes,
     ready: u8,
     build: bool,
@@ -95,8 +92,6 @@ pub struct Supervisor {
 
 impl Supervisor {
     pub async fn run(mut self) {
-        // todo initialize global_ring
-
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::SpawnNode(dc, address) => {

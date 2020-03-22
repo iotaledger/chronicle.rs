@@ -13,21 +13,15 @@ use tokio::prelude::*;
 use super::dashboard;
 use tokio_tungstenite::{tungstenite::Message, tungstenite::Result};
 
-// Arguments struct
-#[derive(Default)]
-pub struct WebsocketdBuilder {
-    peer: Option<SocketAddr>,
-    stream: Option<WebSocketStream<TcpStream>>,
-    dashboard_tx: Option<dashboard::Sender>,
-}
-impl WebsocketdBuilder {
-    pub fn new() -> Self {
-        WebsocketdBuilder::default()
-    }
 
-    set_builder_option_field!(peer, SocketAddr);
-    set_builder_option_field!(stream, WebSocketStream<TcpStream>);
-    set_builder_option_field!(dashboard_tx, dashboard::Sender);
+actor!(
+    WebsocketdBuilder {
+        peer: SocketAddr,
+        stream: WebSocketStream<TcpStream>,
+        dashboard_tx: dashboard::Sender
+});
+
+impl WebsocketdBuilder {
 
     pub fn build(self) -> Websocket {
         // split the websocket stream

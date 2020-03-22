@@ -37,39 +37,19 @@ pub enum Session {
     Shutdown,
 }
 
-pub struct ReporterBuilder {
-    session_id: Option<usize>,
-    reporter_id: Option<u8>,
-    streams: Option<Streams>,
-    address: Option<String>,
-    shard_id: Option<u8>,
-    tx: Option<Sender>,
-    rx: Option<Receiver>,
-    stage_tx: Option<supervisor::Sender>,
-}
+actor!(
+    ReporterBuilder {
+        session_id: usize,
+        reporter_id: u8,
+        streams: Streams,
+        address: String,
+        shard_id: u8,
+        tx: Sender,
+        rx: Receiver,
+        stage_tx: supervisor::Sender
+});
 
 impl ReporterBuilder {
-    pub fn new() -> Self {
-        ReporterBuilder {
-            tx: None,
-            rx: None,
-            stage_tx: None,
-            session_id: None,
-            reporter_id: None,
-            streams: None,
-            address: None,
-            shard_id: None,
-        }
-    }
-
-    set_builder_option_field!(tx, Sender);
-    set_builder_option_field!(rx, Receiver);
-    set_builder_option_field!(session_id, usize);
-    set_builder_option_field!(stage_tx, supervisor::Sender);
-    set_builder_option_field!(reporter_id, u8);
-    set_builder_option_field!(streams, Streams);
-    set_builder_option_field!(address, String);
-    set_builder_option_field!(shard_id, u8);
 
     pub fn build(self) -> Reporter {
         Reporter {
@@ -88,7 +68,6 @@ impl ReporterBuilder {
     }
 }
 
-// reporter state struct holds Streams and Workers and the reporter's Sender
 pub struct Reporter {
     session_id: usize,
     reporter_id: u8,

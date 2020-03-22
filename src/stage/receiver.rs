@@ -11,24 +11,14 @@ use tokio::prelude::*;
 const HEADER_LENGTH: usize = 9;
 const BUFFER_LENGTH: usize = 1024000;
 
-pub struct ReceiverBuidler {
-    reporters: Option<supervisor::Reporters>,
-    socket_rx: Option<ReadHalf<TcpStream>>,
-    session_id: Option<usize>,
-}
+actor!(
+    ReceiverBuidler {
+        reporters: supervisor::Reporters,
+        socket_rx: ReadHalf<TcpStream>,
+        session_id: usize
+});
 
 impl ReceiverBuidler {
-    pub fn new() -> Self {
-        ReceiverBuidler {
-            reporters: None,
-            socket_rx: None,
-            session_id: None,
-        }
-    }
-
-    set_builder_option_field!(socket_rx, ReadHalf<TcpStream>);
-    set_builder_option_field!(session_id, usize);
-    set_builder_option_field!(reporters, supervisor::Reporters);
 
     pub fn build(self) -> Receiver {
         let reporters = self.reporters.unwrap();

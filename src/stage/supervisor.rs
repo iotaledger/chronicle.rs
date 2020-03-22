@@ -20,44 +20,26 @@ pub enum Event {
     Shutdown,
 }
 
-pub struct SupervisorBuilder {
-    address: Option<String>,
-    reporter_count: u8,
-    shard_id: u8,
-    tx: Option<Sender>,
-    rx: Option<Receiver>,
-    node_tx: Option<node::supervisor::Sender>,
-}
+actor!(
+    SupervisorBuilder {
+        address: String,
+        reporter_count: u8,
+        shard_id: u8,
+        tx: Sender,
+        rx: Receiver,
+        node_tx: node::supervisor::Sender
+});
 
 impl SupervisorBuilder {
-    pub fn new() -> Self {
-        SupervisorBuilder {
-            address: None,
-            reporter_count: 1,
-            shard_id: 1,
-            tx: None,
-            rx: None,
-            node_tx: None,
-        }
-    }
-
-    set_builder_option_field!(address, String);
-    set_builder_field!(reporter_count, u8);
-    set_builder_field!(shard_id, u8);
-    set_builder_option_field!(tx, Sender);
-    set_builder_option_field!(rx, Receiver);
-    set_builder_option_field!(node_tx, node::supervisor::Sender);
 
     pub fn build(self) -> Supervisor {
         Supervisor {
             session_id: 0,
-            // Generate vector with capcity of reporters number
-            reporters: HashMap::with_capacity(self.reporter_count as usize),
+            reporters: HashMap::with_capacity(self.reporter_count.unwrap() as usize),
             reconnect_requests: 0,
             connected: false,
-            shutting_down: false,
             address: self.address.unwrap(),
-            shard_id: self.shard_id,
+            shard_id: self.shard_id.unwrap(),
             tx: self.tx,
             rx: self.rx.unwrap(),
             node_tx: self.node_tx.unwrap(),
@@ -69,7 +51,6 @@ pub struct Supervisor {
     session_id: usize,
     reconnect_requests: u8,
     connected: bool,
-    shutting_down: bool,
     address: String,
     shard_id: u8,
     tx: Option<Sender>,

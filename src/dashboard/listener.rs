@@ -6,22 +6,13 @@ use tokio_tungstenite::{WebSocketStream, accept_async};
 
 // types
 
-// Arguments struct
-pub struct ListenerBuilder {
-    listen_address: Option<String>,
-    dashboard_tx: Option<dashboard::Sender>,
-}
+actor!(
+    ListenerBuilder {
+        listen_address: String,
+        dashboard_tx: dashboard::Sender
+});
 
 impl ListenerBuilder {
-    pub fn new() -> Self {
-        ListenerBuilder {
-            listen_address: None,
-            dashboard_tx: None,
-        }
-    }
-
-    set_builder_option_field!(listen_address, String);
-    set_builder_option_field!(dashboard_tx, dashboard::Sender);
 
     pub fn build(self) -> Listener {
         Listener {
