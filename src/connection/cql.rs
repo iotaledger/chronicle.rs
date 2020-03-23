@@ -1,3 +1,4 @@
+use crate::node::supervisor::gen_node_id;
 use crate::cluster::supervisor::Tokens;
 use crate::ring::ring::{Msb, NodeId, ShardCount, Token, DC};
 use cdrs::compression::Compression;
@@ -10,9 +11,9 @@ use cdrs::query;
 use cdrs::types::from_cdrs::FromCDRSByName;
 use cdrs::types::prelude::{Bytes, List, Row, Value};
 use cdrs::types::AsRustType;
-use std::collections::HashMap;
 use std::io::Cursor;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr};
+use std::i64;
 use tokio::io::Error;
 use tokio::io::ErrorKind;
 use tokio::net::TcpStream;
@@ -20,6 +21,7 @@ use tokio::prelude::*;
 
 pub type Address = String;
 
+#[derive(Debug)]
 pub struct CqlConn {
     stream: Option<TcpStream>,
     tokens: Option<Tokens>,
@@ -127,20 +129,28 @@ pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlC
         .read(&mut body_buffer)
         .await?;
     let mut cursor: Cursor<&[u8]> = Cursor::new(&body_buffer);
-    let rows = frame_result::ResResultBody::from_cursor(&mut cursor)
+    let mut rows = frame_result::ResResultBody::from_cursor(&mut cursor)
         .unwrap()
         .into_rows()
         .unwrap();
-    for row in &rows {
-        let r = RowTokens::try_from_row(row.clone()).unwrap();
-        let rpc_address = r.rpc_address.to_string();
-        let tokens = r.tokens;
-        println!("{:?}, {:?}", rpc_address, tokens);
+    let row = RowTokens::try_from_row(rows.pop().unwrap()).unwrap();
+    let rpc_address = row.rpc_address.to_string();
+    let mut tokens: Tokens = Vec::new();
+    let mut cqlconn = connection.unwrap();
+    for token in row.tokens.iter() {
+        let node_id = gen_node_id(&rpc_address);
+        let token = i64::from_str_radix(token, 10).unwrap();
+        tokens.push(
+            (token, node_id,"dc1", cqlconn.msb, cqlconn.shard_count)
+        )
     }
-    todo!()
+    cqlconn.tokens.replace(tokens);
+    Ok(cqlconn)
 }
 
 pub async fn connect_to_shard_id(address: &Address, shard_id: u8) -> Result<CqlConn, Error> {
+    // buffer connections temporary to force scylla connects us to new shard_id
+    let mut conns = Vec::new();
     // loop till we connect to the right shard_id
     loop {
         match connect(address).await {
@@ -152,6 +162,11 @@ pub async fn connect_to_shard_id(address: &Address, shard_id: u8) -> Result<CqlC
                     // error as it's impossible to connect to shard_id doesn't exist
                     break Err(Error::new(ErrorKind::Other, "shard_id does not exist."));
                 } else {
+                    if conns.len() > cqlconn.shard_count as usize {
+                        // clear conns otherwise we are going to overflow the memory
+                        conns.clear();
+                    }
+                    conns.push(cqlconn);
                     // continue to retry
                     continue;
                 }
