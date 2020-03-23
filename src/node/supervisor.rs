@@ -124,7 +124,8 @@ impl Supervisor {
                         self.node_registry.shrink_to_fit();
                         // node_registry should be passed to cluster supervisor
                         let event = supervisor::Event::RegisterReporters(
-                            node_registry
+                            node_registry,
+                            self.address.clone(),
                         );
                         self.supervisor_tx.send(event).unwrap();
                     }

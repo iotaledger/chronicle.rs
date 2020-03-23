@@ -19,6 +19,7 @@ type WsTx = SplitSink<WebSocketStream<TcpStream>, Message>;
 pub enum Event {
     Session(Session),
     Toplogy(Toplogy),
+    Result(Result),
 }
 
 pub enum Session {
@@ -31,6 +32,12 @@ pub enum Toplogy {
     AddNode(DC, Address),
     RemoveNode(DC, Address),
     TryBuild,
+}
+
+pub enum Result {
+    Ok(Address),
+    Err(Address),
+    TryBuild(bool),
 }
 
 actor!(
@@ -88,14 +95,33 @@ impl Dashboard {
                 Event::Toplogy(toplogy) => {
                     match toplogy {
                         Toplogy::AddNode(dc, address) => {
-
+                            let event = supervisor::Event::SpawnNode(dc, address);
+                            cluster_tx.send(event);
                         }
                         Toplogy::RemoveNode(dc, address) => {
-
+                            let event = supervisor::Event::ShutDownNode(dc, address);
+                            cluster_tx.send(event);
                         }
                         Toplogy::TryBuild => {
-
+                            let event = supervisor::Event::TryBuild;
+                            cluster_tx.send(event);
                         }
+                    }
+                }
+                Event::Result(result) => {
+                    match result {
+                        Result::Ok(address) => {
+                            // successfully spawned the node
+                            println!("addnode ok status: {}", address);
+                        }
+                        Result::Err(address) => {
+                            // wasn't able to
+                            println!("addnode err status: {}", address);
+                        }
+                        Result::TryBuild(built) => {
+                            println!("built status: {}", built);
+                        }
+
                     }
                 }
                 // todo handle websocket decoded msgs (add node, remove node, build,

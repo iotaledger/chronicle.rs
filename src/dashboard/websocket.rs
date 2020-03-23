@@ -25,7 +25,7 @@ impl WebsocketdBuilder {
 
     pub fn build(self) -> Websocket {
         // split the websocket stream
-        let (mut ws_tx, mut ws_rx) = self.stream.unwrap().split();
+        let (ws_tx, ws_rx) = self.stream.unwrap().split();
         Websocket {
             peer: self.peer.unwrap(),
             ws_rx: ws_rx,

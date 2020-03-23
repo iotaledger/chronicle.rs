@@ -27,7 +27,7 @@ pub struct NodeInfo {
 
 #[derive(Debug)]
 pub enum Event {
-    RegisterReporters(node::supervisor::NodeRegistry),
+    RegisterReporters(node::supervisor::NodeRegistry, Address),
     SpawnNode(DC, Address),
     ShutDownNode(DC, Address),
     TryBuild,
@@ -110,8 +110,9 @@ impl Supervisor {
                             // spawn node,
                             tokio::spawn(node.run());
                         }
-                        err => {
-                            // todo reply to dashboard with unable to reach
+                        _ => {
+                            let event = dashboard::Event::Result(dashboard::Result::Err(address));
+                            self.dashboard_tx.send(event);
                         }
                     };
                 }
@@ -136,7 +137,7 @@ impl Supervisor {
                     // but we cannot drop the ring unless we build a new one and atomically swap it,
                     // therefore dashboard admin supposed to trybuild
                 }
-                Event::RegisterReporters(node_registry) => {
+                Event::RegisterReporters(node_registry, address) => {
                     // decrease the ready counter
                     self.ready -= 1;
                     // update waiting for build to true
@@ -146,6 +147,8 @@ impl Supervisor {
                         self.registry.insert(node_id, stage_reporters);
                     }
                     // tell dashboard
+                    let event = dashboard::Event::Result(dashboard::Result::Ok(address));
+                    self.dashboard_tx.send(event);
                 }
                 Event::TryBuild => {
                     // do cleanup on weaks
@@ -161,9 +164,12 @@ impl Supervisor {
                         self.weak_rings.push(new_weak_ring);
                         // reset build state to false becaue we built it and we don't want to rebuild again incase of another TryBuild event
                         self.build = false;
-                    // reply to dashboard
+                        // reply to dashboard
+                        let event = dashboard::Event::Result(dashboard::Result::TryBuild(true));
+                        self.dashboard_tx.send(event);
                     } else {
-                        // reply to dashboard not ready to build
+                        let event = dashboard::Event::Result(dashboard::Result::TryBuild(false));
+                        self.dashboard_tx.send(event);
                     }
                 }
             }
