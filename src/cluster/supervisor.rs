@@ -188,13 +188,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_supervisor() {
-        let (dashboard_tx, dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
-        let cluster = SupervisorBuilder::new()
+        let (mut dashboard_tx, dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
+        let cluster = self::SupervisorBuilder::new()
             .reporter_count(1)
             .thread_count(1)
             .dashboard_tx(dashboard_tx)
             .build();
-        tokio::spawn(cluster.run());
-        // TODO: add/remove nodes and gracefully shut down after dashboard is implemented.
+        let cluster_tx = cluster.clone_tx();
+
+        if let Sender = &cluster_tx {
+            tokio::task::spawn(cluster.run());
+            cluster_tx.send(Event::TryBuild);
+            tokio::task::yield_now().await;
+        } else {
+            assert!(false, "Cluster tx clone fail.");
+        }
     }
 }
