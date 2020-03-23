@@ -1,29 +1,19 @@
 // cluster supervisor
-use crate::connection::cql::{fetch_tokens,connect};
-use crate::dashboard::dashboard;
-use crate::ring::ring::{
-    DC,
-    NodeId,
-    Registry,
-    Token,
-    Msb,
-    ShardCount,
-    GlobalRing,
-    WeakRing,
-    ArcRing,
-    AtomicRing,
-    build_ring,
-    initialize_ring,
-};
 use super::node;
-use std::sync::Arc;
-use std::collections::HashMap;
-use tokio::sync::mpsc;
+use crate::connection::cql::{connect, fetch_tokens};
+use crate::dashboard::dashboard;
 use crate::node::supervisor::gen_node_id;
+use crate::ring::ring::{
+    build_ring, initialize_ring, ArcRing, AtomicRing, GlobalRing, Msb, NodeId, Registry,
+    ShardCount, Token, WeakRing, DC,
+};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 //types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
-pub type Tokens = Vec<(Token,NodeId, DC, Msb, ShardCount)>;
+pub type Tokens = Vec<(Token, NodeId, DC, Msb, ShardCount)>;
 pub type Address = String;
 pub type Nodes = HashMap<Address, NodeInfo>;
 
@@ -43,19 +33,17 @@ pub enum Event {
     TryBuild,
 }
 
-actor!(
-    SupervisorBuilder {
-        reporter_count: u8,
-        thread_count: usize,
-        dashboard_tx: dashboard::Sender
+actor!(SupervisorBuilder {
+    reporter_count: u8,
+    thread_count: usize,
+    dashboard_tx: dashboard::Sender
 });
 
 impl SupervisorBuilder {
-
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         // initialize global_ring
-        let (atomic_ring, arc_ring ,weak_ring)= initialize_ring();
+        let (atomic_ring, arc_ring, weak_ring) = initialize_ring();
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
@@ -71,7 +59,6 @@ impl SupervisorBuilder {
             rx,
         }
     }
-
 }
 
 // suerpvisor state struct
@@ -95,9 +82,7 @@ impl Supervisor {
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::SpawnNode(dc, address) => {
-                    match fetch_tokens(
-                        connect(&address).await
-                    ).await {
+                    match fetch_tokens(connect(&address).await).await {
                         Ok(mut cqlconn) => {
                             let shard_count = cqlconn.get_shard_count();
                             let tokens = cqlconn.take_tokens();
@@ -111,22 +96,23 @@ impl Supervisor {
                             let node_tx = node.clone_tx();
                             let node_id = gen_node_id(&address);
                             // generate nodeinfo
-                            let node_info = NodeInfo{
+                            let node_info = NodeInfo {
                                 data_center: dc,
                                 node_id,
                                 shard_count,
                                 node_tx,
-                                tokens};
+                                tokens,
+                            };
                             // add node_info to nodes
                             self.nodes.insert(address, node_info);
                             // increase ready and only decrease it on RegisterReporters events
                             self.ready += 1;
                             // spawn node,
                             tokio::spawn(node.run());
-                        },
+                        }
                         err => {
                             // todo reply to dashboard with unable to reach
-                        },
+                        }
                     };
                 }
                 Event::ShutDownNode(_, address) => {
@@ -140,7 +126,10 @@ impl Supervisor {
                         self.registry.remove(&node_info.node_id);
                     }
                     // send shutdown event to node
-                    node_info.node_tx.send(node::supervisor::Event::Shutdown).unwrap();
+                    node_info
+                        .node_tx
+                        .send(node::supervisor::Event::Shutdown)
+                        .unwrap();
                     // update waiting for build to true
                     self.build = true;
                     // note: the node tree will not get shutdown unless we drop the ring
@@ -157,7 +146,6 @@ impl Supervisor {
                         self.registry.insert(node_id, stage_reporters);
                     }
                     // tell dashboard
-
                 }
                 Event::TryBuild => {
                     // do cleanup on weaks
@@ -165,18 +153,17 @@ impl Supervisor {
                     if self.ready == 0 && self.build {
                         // re/build
                         let version = 1; // todo generate version
-                        let (new_arc_ring, new_weak_ring) = build_ring(&self.nodes, self.registry.clone(), version);
+                        let (new_arc_ring, new_weak_ring) =
+                            build_ring(&self.nodes, self.registry.clone(), version);
                         // replace self.arc_ring
                         self.arc_ring.replace(new_arc_ring);
                         // push weak to weak_rings
                         self.weak_rings.push(new_weak_ring);
                         // reset build state to false becaue we built it and we don't want to rebuild again incase of another TryBuild event
                         self.build = false;
-                        // reply to dashboard
-
+                    // reply to dashboard
                     } else {
                         // reply to dashboard not ready to build
-
                     }
                 }
             }
@@ -191,5 +178,21 @@ impl Supervisor {
     }
     pub fn clone_tx(&self) -> Sender {
         self.tx.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_build_supervisor() {
+        let (dashboard_tx, dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
+        let cluster = SupervisorBuilder::new()
+            .reporter_count(1)
+            .thread_count(1)
+            .dashboard_tx(dashboard_tx)
+            .build();
     }
 }
