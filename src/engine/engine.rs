@@ -1,12 +1,11 @@
 // uses
 use crate::cluster;
 use crate::dashboard::dashboard;
+use super::helper::HelperBuilder;
 use tokio::sync::mpsc;
 
 type ThreadCount = usize;
 type ReporterCount = u8;
-
-use crate::launcher::launcher;
 
 app!(EngineBuilder {
     listen_address: String,
@@ -23,6 +22,7 @@ impl EngineBuilder {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
             nodes: self.nodes,
+            launcher_tx: self.launcher_tx,
         }
     }
 
@@ -33,6 +33,7 @@ pub struct Engine {
     reporter_count: u8,
     thread_count: usize,
     nodes: Option<Vec<String>>,
+    launcher_tx: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl Engine {
@@ -53,6 +54,7 @@ impl Engine {
     async fn init(&mut self) {
         // build dashboard
         let dashboard = dashboard::DashboardBuilder::new()
+        .launcher_tx(self.launcher_tx.take().unwrap())
         .listen_address(self.listen_address.clone())
         .build();
         // build cluster
@@ -65,36 +67,5 @@ impl Engine {
         tokio::spawn(dashboard.run(cluster.clone_tx()));
         // spawn cluster
         tokio::spawn(cluster.run());
-    }
-}
-
-actor!(
-    HelperBuilder {
-        nodes: Vec<String>
-});
-
-impl HelperBuilder {
-
-    fn build(self) -> Helper {
-        Helper {
-            nodes: self.nodes.unwrap(),
-        }
-    }
-}
-
-enum HelperEvent {
-
-}
-
-// work in progress
-struct Helper {
-    nodes: Vec<String>,
-    // dashboard_tx
-}
-impl Helper {
-    async fn run(mut self) {
-        // create channel
-        let (tx, rx) = mpsc::unbounded_channel::<HelperEvent>();
-
     }
 }

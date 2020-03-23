@@ -1,3 +1,5 @@
+// this is an example of how the operator have to use the lib
+// therefore launcher.rs should be defined in the userspace
 use crate::engine::engine::EngineBuilder;
 
 launcher!(AppsBuilder{engine: EngineBuilder});

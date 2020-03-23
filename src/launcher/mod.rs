@@ -2,8 +2,8 @@
 macro_rules! launcher {
     ($name:ident {$($app:ident : $t:ty),+}) => {
         use tokio::sync::mpsc;
-        pub type Sender = mpsc::UnboundedSender<Break>;
-        pub type Receiver = mpsc::UnboundedReceiver<Break>;
+        pub type Sender = mpsc::UnboundedSender<String>;
+        pub type Receiver = mpsc::UnboundedReceiver<String>;
         pub struct Break;
         #[derive(Default)]
         pub struct $name {
@@ -46,7 +46,7 @@ macro_rules! launcher {
         }
         impl $name {
             pub fn new() -> Self {
-                let (tx, rx) = mpsc::unbounded_channel::<Break>();
+                let (tx, rx) = mpsc::unbounded_channel::<String>();
                 let mut launcher = Self::default();
                 launcher.tx.replace(tx);
                 launcher.rx.replace(rx);
@@ -88,7 +88,7 @@ macro_rules! app {
     ($struct:ident {$( $field:ident:$type:ty ),*}) =>{
         #[derive(Default)]
         pub struct $struct {
-            launcher_tx: Option<launcher::Sender>,
+            launcher_tx: Option<mpsc::UnboundedSender<String>>,
             $(
                 $field: Option<$type>,
             )*
@@ -97,7 +97,7 @@ macro_rules! app {
             pub fn new() -> Self {
                 Self::default()
             }
-            pub fn launcher_tx(mut self, launcher_tx: launcher::Sender) -> Self {
+            pub fn launcher_tx(mut self, launcher_tx: mpsc::UnboundedSender<String>) -> Self {
                 self.launcher_tx.replace(launcher_tx);
                 self
             }
@@ -133,6 +133,3 @@ macro_rules! actor {
         }
     };
 }
-
-
-pub mod launcher;

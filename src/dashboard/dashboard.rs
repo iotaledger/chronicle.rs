@@ -35,7 +35,8 @@ pub enum Toplogy {
 
 actor!(
     DashboardBuilder {
-        listen_address: String
+        listen_address: String,
+        launcher_tx: mpsc::UnboundedSender<String>
 });
 
 impl DashboardBuilder {
@@ -43,18 +44,18 @@ impl DashboardBuilder {
     pub fn build(self) -> Dashboard {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Dashboard {
+            launcher_tx: self.launcher_tx.unwrap(),
             listen_address: self.listen_address.unwrap(),
             sockets: HashMap::new(),
             tx,
             rx,
         }
     }
-    async fn init(self) {
-        unimplemented!()
-    }
+
 }
 
 pub struct Dashboard {
+    launcher_tx: mpsc::UnboundedSender<String>,
     listen_address: String,
     sockets: HashMap<SocketAddr, WsTx>,
     tx: Sender,
