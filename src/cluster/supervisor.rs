@@ -186,13 +186,15 @@ mod tests {
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
-    #[test]
-    fn test_build_supervisor() {
+    #[tokio::test]
+    async fn test_build_supervisor() {
         let (dashboard_tx, dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
         let cluster = SupervisorBuilder::new()
             .reporter_count(1)
             .thread_count(1)
             .dashboard_tx(dashboard_tx)
             .build();
+        tokio::spawn(cluster.run());
+        // TODO: add/remove nodes and gracefully shut down after dashboard is implemented.
     }
 }
