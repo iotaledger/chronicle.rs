@@ -1,5 +1,4 @@
 // uses (WIP)
-use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use crate::cluster::supervisor::Nodes;
 use std::sync::{Arc, Weak};
@@ -28,21 +27,18 @@ pub type GlobalRing = (u8 ,Registry, Vcell);
 pub type AtomicRing = AtomicPtr<Weak<GlobalRing>>;
 pub type ArcRing = Arc<GlobalRing>;
 pub type WeakRing = Weak<GlobalRing>;
-type InitialRing = (AtomicRing, ArcRing, WeakRing);
 
 pub struct Ring {
     version: u8,
-    arc: Option<Arc<GlobalRing>>,
+    weak: Option<Weak<GlobalRing>>,
     registry: Registry,
     root: Vcell,
     uniform: Uniform<u8>,
     rng: ThreadRng,
 }
-use std::ptr;
-
 
 static mut VERSION: u8 = 0;
-static mut GLOBAL_RING: NonNull<AtomicRing> = ptr::NonNull::dangling();
+static mut GLOBAL_RING: Option<AtomicRing> = None;
 
 thread_local!{
     static RING: RefCell<Ring> = {
@@ -51,8 +47,8 @@ thread_local!{
         let registry: Registry = HashMap::new();
         let root: Vcell = DeadEnd::initial_vnode();
         let version = 0;
-        let arc = None;
-        RefCell::new(Ring{version,arc, registry ,root, uniform, rng})
+        let weak = None;
+        RefCell::new(Ring{version,weak, registry ,root, uniform, rng})
     };
 }
 
@@ -64,16 +60,21 @@ impl Ring {
         )
     }
     fn sending(&mut self,data_center: DC,replica_index: usize,token: Token,request: Event) {
+
         unsafe {
             if  VERSION != self.version {
                 // load weak and upgrade to arc if strong_count > 0;
-                if let Some(mut arc) = Weak::upgrade(&*GLOBAL_RING.as_mut().load(Ordering::Relaxed)) {
+                if let Some(mut arc) = Weak::upgrade(
+                    GLOBAL_RING.as_ref().unwrap().load(Ordering::Relaxed).as_ref().unwrap()
+                )
+                 {
+                    let new_weak = Arc::downgrade(&arc);
                     let (version, registry, root) = Arc::make_mut(&mut arc);
                     // update the local ring
                     self.version = version.clone();
                     self.registry = registry.clone();
                     self.root = root.clone();
-                    self.arc.replace(arc);
+                    self.weak.replace(new_weak);
                 };
             }
         }
@@ -82,7 +83,7 @@ impl Ring {
         .search(token)
         .send(data_center, replica_index, token, request, &mut self.registry, &mut self.rng, self.uniform);
     }
-    fn initialize_ring() -> InitialRing {
+    fn initialize_ring() -> ArcRing {
         // create empty Registry
         let registry: Registry = HashMap::new();
         // create initial vnode
@@ -92,14 +93,16 @@ impl Ring {
         // create Arc ring
         let arc_ring = Arc::new(global_ring);
         // downgrade to weak
-        let mut weak_ring = Arc::downgrade(&arc_ring);
+        let weak_ring = Arc::downgrade(&arc_ring);
         // create atomicptr
-        let mut atomic_ptr = AtomicPtr::new(&mut weak_ring);
+        let boxed = Box::new(weak_ring);
+        let raw_box = Box::into_raw(boxed);
+        let atomic_ptr = AtomicPtr::new(raw_box);
         unsafe {
-            GLOBAL_RING = ptr::NonNull::new(&mut atomic_ptr).unwrap();
+            GLOBAL_RING = Some(atomic_ptr);
             VERSION = 0;
         }
-        (atomic_ptr, arc_ring, weak_ring)
+        arc_ring
     }
 }
 trait SmartId {
@@ -363,7 +366,7 @@ fn generate_and_compute_fake_ring() {
     let _root = compute_vnode(&chain);
 }
 
-pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> (Arc<GlobalRing>, Weak<GlobalRing>) {
+pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> (Arc<GlobalRing>, Box<Weak<GlobalRing>>) {
     let mut tokens = Vec::new(); // complete tokens-range
     // iter nodes
     for (_, node_info) in nodes {
@@ -408,16 +411,21 @@ pub fn build_ring(nodes: &Nodes, registry: Registry, version: u8) -> (Arc<Global
     // create arc_ring
     let arc_ring = Arc::new((version ,registry, root_vnode));
     // downgrade to weak_ring
-    let mut weak_ring = Arc::downgrade(&arc_ring);
+    let weak_ring = Arc::downgrade(&arc_ring);
+    let boxed = Box::new(weak_ring);
+    let raw_box = Box::into_raw(boxed);
     // update the global ring
-    unsafe {
-        // swap
-        GLOBAL_RING.as_mut().swap(&mut weak_ring, Ordering::Relaxed);
-        // update version with new one.// this must be atomic and safe because it's u8.
-        VERSION = version;
-    }
+    let old_weak =
+        unsafe {
+            // swap
+            let old_weak = GLOBAL_RING.as_mut().unwrap().swap(raw_box,Ordering::Relaxed);
+            // update version with new one.// this must be atomic and safe because it's u8.
+            VERSION = version;
+            old_weak
+        };
+
     // return new arc_ring, weak_ring
-    (arc_ring, weak_ring)
+    (arc_ring, unsafe { Box::from_raw(old_weak) })
 }
 
 fn compute_ring(vnodes: &Vec<VnodeTuple>) -> Vcell {
@@ -445,6 +453,6 @@ fn compute_chain(vnodes: &Vec<VnodeTuple>) -> Vec<(Token, Token, Replicas)> {
     }
     chain
 }
-pub fn initialize_ring() -> InitialRing {
+pub fn initialize_ring() -> ArcRing {
     Ring::initialize_ring()
 }

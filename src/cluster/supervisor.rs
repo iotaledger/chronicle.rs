@@ -1,4 +1,5 @@
 // cluster supervisor
+use tokio::time::delay_for;
 use super::node;
 use crate::connection::cql::{connect, fetch_tokens};
 use crate::dashboard::dashboard;
@@ -43,15 +44,14 @@ impl SupervisorBuilder {
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         // initialize global_ring
-        let (atomic_ring, arc_ring, weak_ring) = initialize_ring();
+        let arc_ring = initialize_ring();
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
             dashboard_tx: self.dashboard_tx.unwrap(),
             registry: HashMap::new(),
-            atomic_ring: atomic_ring,
             arc_ring: Some(arc_ring),
-            weak_rings: vec![weak_ring],
+            weak_rings: Vec::new(),
             nodes: HashMap::new(),
             ready: 0,
             build: false,
@@ -67,9 +67,8 @@ pub struct Supervisor {
     thread_count: usize,
     dashboard_tx: dashboard::Sender,
     registry: Registry,
-    atomic_ring: AtomicRing,
     arc_ring: Option<ArcRing>,
-    weak_rings: Vec<WeakRing>,
+    weak_rings: Vec<Box<WeakRing>>,
     nodes: Nodes,
     ready: u8,
     build: bool,
@@ -156,12 +155,12 @@ impl Supervisor {
                     if self.ready == 0 && self.build {
                         // re/build
                         let version = 1; // todo generate version
-                        let (new_arc_ring, new_weak_ring) =
+                        let (new_arc_ring, old_weak_ring) =
                             build_ring(&self.nodes, self.registry.clone(), version);
                         // replace self.arc_ring
                         self.arc_ring.replace(new_arc_ring);
                         // push weak to weak_rings
-                        self.weak_rings.push(new_weak_ring);
+                        self.weak_rings.push(old_weak_ring);
                         // reset build state to false becaue we built it and we don't want to rebuild again incase of another TryBuild event
                         self.build = false;
                         // reply to dashboard
@@ -177,7 +176,9 @@ impl Supervisor {
     }
     fn cleanup(&mut self) {
         if let Some(arc_ring) = &self.arc_ring {
-            if Arc::strong_count(arc_ring) > self.thread_count {
+            // total_weak_count = thread_count + 1(the global weak)
+            // so we clear all old weaks once weak_count > self.thread_count+1
+            if Arc::weak_count(arc_ring) > self.thread_count {
                 self.weak_rings.clear();
             };
         };
@@ -203,7 +204,7 @@ mod tests {
         let cluster_tx = cluster.clone_tx();
 
         if let Sender = &cluster_tx {
-            tokio::task::spawn(cluster.run());
+        //    tokio::task::spawn(cluster.run());
             cluster_tx.send(Event::TryBuild);
             tokio::task::yield_now().await;
         } else {
