@@ -29,7 +29,7 @@ impl ReceiverBuidler {
             stream_id: 0,
             total_length: 0,
             header: false,
-            buffer: Vec::new(),
+            buffer: vec![0; BUFFER_LENGTH],
             i: 0,
             session_id: self.session_id.unwrap(),
             appends_num: 32767 / reporters_len as i16,
