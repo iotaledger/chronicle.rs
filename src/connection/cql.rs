@@ -91,6 +91,7 @@ pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
     Ok(cqlconn)
 }
 pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlConn, Error> {
+    let mut cqlconn = connection?;
     // fetch tokens from scylla using select query to system.local table,
     // then add it to cqlconn
     // query param builder
@@ -100,30 +101,21 @@ pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlC
     // query_frame
     let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
     // write frame to stream
-    connection
-        .as_mut()
-        .unwrap()
-        .stream
+    cqlconn.stream
         .as_mut()
         .unwrap()
         .write(query_frame.as_slice())
         .await?;
     // read buffer
     let mut head_buffer = vec![0; 9];
-    connection
-        .as_mut()
-        .unwrap()
-        .stream
+    cqlconn.stream
         .as_mut()
         .unwrap()
         .read(&mut head_buffer)
         .await?;
     let length = get_body_length_usize(&head_buffer);
     let mut body_buffer = vec![0; length];
-    connection
-        .as_mut()
-        .unwrap()
-        .stream
+    cqlconn.stream
         .as_mut()
         .unwrap()
         .read(&mut body_buffer)
@@ -136,7 +128,6 @@ pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlC
     let row = RowTokens::try_from_row(rows.pop().unwrap()).unwrap();
     let rpc_address = row.rpc_address.to_string();
     let mut tokens: Tokens = Vec::new();
-    let mut cqlconn = connection.unwrap();
     for token in row.tokens.iter() {
         let node_id = gen_node_id(&rpc_address);
         let token = i64::from_str_radix(token, 10).unwrap();
