@@ -28,6 +28,7 @@ pub struct CqlConn {
     shard_id: u8,
     shard_count: ShardCount,
     msb: Msb,
+    dc: Option<String>,
 }
 
 impl CqlConn {
@@ -40,13 +41,14 @@ impl CqlConn {
     pub fn take_stream(&mut self) -> TcpStream {
         self.stream.take().unwrap()
     }
-    pub fn function_name() {
-        unimplemented!()
+    pub fn take_dc(&mut self) -> DC {
+        self.dc.take().unwrap()
     }
 }
 
 #[derive(Clone, Debug, IntoCDRSValue, TryFromRow, PartialEq)]
 struct RowTokens {
+    data_center: String,
     rpc_address: IpAddr,
     tokens: Vec<String>,
 }
@@ -87,6 +89,7 @@ pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
         shard_id: shard,
         shard_count: nr_shard,
         msb: ignore_msb,
+        dc: None,
     };
     Ok(cqlconn)
 }
@@ -96,7 +99,7 @@ pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlC
     // then add it to cqlconn
     // query param builder
     let params = query::QueryParamsBuilder::new().page_size(500).finalize();
-    let query = "SELECT rpc_address, tokens FROM system.local;".to_string();
+    let query = "SELECT data_center, rpc_address, tokens FROM system.local;".to_string();
     let query = query::Query { query, params };
     // query_frame
     let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
@@ -132,10 +135,11 @@ pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlC
         let node_id = gen_node_id(&rpc_address);
         let token = i64::from_str_radix(token, 10).unwrap();
         tokens.push(
-            (token, node_id,"dc1", cqlconn.msb, cqlconn.shard_count)
+            (token, node_id,row.data_center.clone(), cqlconn.msb, cqlconn.shard_count)
         )
     }
     cqlconn.tokens.replace(tokens);
+    cqlconn.dc.replace(row.data_center);
     Ok(cqlconn)
 }
 

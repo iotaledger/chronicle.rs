@@ -29,8 +29,8 @@ pub struct NodeInfo {
 #[derive(Debug)]
 pub enum Event {
     RegisterReporters(node::supervisor::NodeRegistry, Address),
-    SpawnNode(DC, Address),
-    ShutDownNode(DC, Address),
+    SpawnNode(Address),
+    ShutDownNode(Address),
     TryBuild,
 }
 
@@ -55,6 +55,7 @@ impl SupervisorBuilder {
             nodes: HashMap::new(),
             ready: 0,
             build: false,
+            version: 0,
             tx,
             rx,
         }
@@ -72,6 +73,7 @@ pub struct Supervisor {
     nodes: Nodes,
     ready: u8,
     build: bool,
+    version: u8,
     tx: Sender,
     rx: Receiver,
 }
@@ -80,16 +82,17 @@ impl Supervisor {
     pub async fn run(mut self) {
         while let Some(event) = self.rx.recv().await {
             match event {
-                Event::SpawnNode(dc, address) => {
+                Event::SpawnNode(address) => {
                     match fetch_tokens(connect(&address).await).await {
                         Ok(mut cqlconn) => {
                             let shard_count = cqlconn.get_shard_count();
                             let tokens = cqlconn.take_tokens();
+                            let dc = cqlconn.take_dc();
                             let node = node::SupervisorBuilder::new()
                                 .address(address.clone())
                                 .reporter_count(self.reporter_count)
                                 .shard_count(shard_count)
-                                .data_center(dc)
+                                .data_center(dc.clone())
                                 .supervisor_tx(self.tx.clone())
                                 .build();
                             let node_tx = node.clone_tx();
@@ -115,7 +118,7 @@ impl Supervisor {
                         }
                     };
                 }
-                Event::ShutDownNode(_, address) => {
+                Event::ShutDownNode(address) => {
                     // get and remove node_info
                     let mut node_info = self.nodes.remove(&address).unwrap();
                     // update(remove from) registry
@@ -154,9 +157,9 @@ impl Supervisor {
                     self.cleanup();
                     if self.ready == 0 && self.build {
                         // re/build
-                        let version = 1; // todo generate version
+                        let version = self.new_version();
                         let (new_arc_ring, old_weak_ring) =
-                            build_ring(&self.nodes, self.registry.clone(), version);
+                            build_ring(&self.nodes, self.registry.clone(),self.reporter_count, version);
                         // replace self.arc_ring
                         self.arc_ring.replace(new_arc_ring);
                         // push weak to weak_rings
@@ -175,16 +178,23 @@ impl Supervisor {
         }
     }
     fn cleanup(&mut self) {
-        if let Some(arc_ring) = &self.arc_ring {
-            // total_weak_count = thread_count + 1(the global weak)
-            // so we clear all old weaks once weak_count > self.thread_count+1
-            if Arc::weak_count(arc_ring) > self.thread_count {
-                self.weak_rings.clear();
-            };
+        // total_weak_count = thread_count + 1(the global weak)
+        // so we clear all old weaks once weak_count > self.thread_count
+        if Arc::weak_count(self.arc_ring.as_ref().unwrap()) > self.thread_count {
+            self.weak_rings.clear();
         };
     }
     pub fn clone_tx(&self) -> Sender {
         self.tx.clone()
+    }
+    fn new_version(&mut self) -> u8 {
+        let mut m: u8 = 1;
+        while (self.version & m) != 0 {
+            self.version ^= m;
+        	m <<= 1 as u8;
+        }
+        self.version ^= m;
+        self.version
     }
 }
 

@@ -27,10 +27,9 @@ pub enum Session {
     Socket{peer: SocketAddr, ws_tx: WsTx},
 }
 
-// todo remove the need to pass DC, by fetching durring connection establishment
 pub enum Toplogy {
-    AddNode(DC, Address),
-    RemoveNode(DC, Address),
+    AddNode(Address),
+    RemoveNode(Address),
     TryBuild,
 }
 
@@ -94,12 +93,12 @@ impl Dashboard {
                 }
                 Event::Toplogy(toplogy) => {
                     match toplogy {
-                        Toplogy::AddNode(dc, address) => {
-                            let event = supervisor::Event::SpawnNode(dc, address);
+                        Toplogy::AddNode(address) => {
+                            let event = supervisor::Event::SpawnNode(address);
                             cluster_tx.send(event);
                         }
-                        Toplogy::RemoveNode(dc, address) => {
-                            let event = supervisor::Event::ShutDownNode(dc, address);
+                        Toplogy::RemoveNode(address) => {
+                            let event = supervisor::Event::ShutDownNode(address);
                             cluster_tx.send(event);
                         }
                         Toplogy::TryBuild => {
@@ -112,11 +111,10 @@ impl Dashboard {
                     match result {
                         Result::Ok(address) => {
                             // successfully spawned the node
-                            println!("addnode ok status: {}", address);
+                            println!("addnode ok address: {}", address);
                         }
                         Result::Err(address) => {
-                            // wasn't able to
-                            println!("addnode err status: {}", address);
+                            println!("addnode err address: {}", address);
                         }
                         Result::TryBuild(built) => {
                             println!("built status: {}", built);
