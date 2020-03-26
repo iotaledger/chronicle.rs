@@ -36,3 +36,18 @@ impl Helper {
         // send tryBuild (assuming the nodes have been added)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn create_helper_from_builder() {
+        let (tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
+        let _ = HelperBuilder::new()
+            .nodes(vec![String::from("0.0.0.0")])
+            .dashboard_tx(tx)
+            .build();
+    }
+}
