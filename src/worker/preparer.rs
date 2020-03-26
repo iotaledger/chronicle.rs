@@ -47,7 +47,7 @@ pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Givel
         // create event query
         let event = Event::Request {
             payload: prepare_payload.to_vec(),
-            worker: Box::new(preparer),
+            worker: smallbox!(preparer),
         };
         // send to reporter(self as this function is invoked inside reporter)
         if let Some(tx) = tx {

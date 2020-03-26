@@ -4,9 +4,9 @@ use crate::engine::engine::EngineBuilder;
 
 launcher!(AppsBuilder{engine: EngineBuilder});
 
-
+#[allow(dead_code)]
 impl AppsBuilder {
-    fn build(mut self) -> Apps {
+    fn build(self) -> Apps {
         // build your apps
         // - engine app:
         let engine = EngineBuilder::new()

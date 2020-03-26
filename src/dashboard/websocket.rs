@@ -5,11 +5,10 @@
 
 // uses
 use tokio::net::TcpStream;
-use futures::{StreamExt, SinkExt};
+use futures::StreamExt;
 use futures::stream::{SplitSink, SplitStream};
 use std::net::SocketAddr;
 use tokio_tungstenite::WebSocketStream;
-use tokio::prelude::*;
 use super::dashboard;
 use tokio_tungstenite::{tungstenite::Message, tungstenite::Result};
 
@@ -52,7 +51,7 @@ impl Websocket {
                 ws_tx: self.ws_tx.take().unwrap(),
             };
             // pass session to dashboard
-            self.dashboard_tx.send(dashboard::Event::Session(session));
+            let _ = self.dashboard_tx.send(dashboard::Event::Session(session));
             // event loop for websocket
             while let Some(res) = self.ws_rx.next().await {
                 let msg = res?;

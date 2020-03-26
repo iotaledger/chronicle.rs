@@ -11,3 +11,5 @@ pub mod worker;
 pub mod connection;
 #[macro_use]
 extern crate cdrs_helpers_derive;
+#[macro_use]
+extern crate smallbox;

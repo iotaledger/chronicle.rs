@@ -1,3 +1,5 @@
+use smallbox::space::S64;
+use smallbox::SmallBox;
 use super::sender::{self, Payload};
 use super::supervisor;
 use crate::worker::{Error, Status, StreamStatus, Worker};
@@ -14,12 +16,11 @@ pub type Stream = i16;
 // Streams type is array/list which should hold u8 from 1 to 32768
 pub type Streams = Vec<Stream>;
 // Worker is how will be presented in the workers_map
-type Workers = HashMap<Stream, Box<dyn Worker>>;
-
+type Workers = HashMap<Stream, SmallBox<dyn Worker,S64>>;
 #[derive(Debug)]
 pub enum Event {
     Request {
-        worker: Box<dyn Worker>,
+        worker: SmallBox<dyn Worker,S64>,
         payload: Payload,
     },
     Response {

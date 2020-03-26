@@ -2,7 +2,6 @@
 use super::listener;
 use crate::cluster::supervisor;
 use crate::connection::cql::Address;
-use crate::ring::ring::DC;
 use futures::stream::SplitSink;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -21,7 +20,6 @@ pub enum Event {
     Toplogy(Toplogy),
     Result(Result),
 }
-
 pub enum Session {
     // todo auth events
     Socket { peer: SocketAddr, ws_tx: WsTx },
@@ -32,7 +30,6 @@ pub enum Toplogy {
     RemoveNode(Address),
     TryBuild,
 }
-
 pub enum Result {
     Ok(Address),
     Err(Address),
@@ -92,15 +89,15 @@ impl Dashboard {
                 Event::Toplogy(toplogy) => match toplogy {
                     Toplogy::AddNode(address) => {
                         let event = supervisor::Event::SpawnNode(address);
-                        cluster_tx.send(event);
+                        cluster_tx.send(event).unwrap();
                     }
                     Toplogy::RemoveNode(address) => {
                         let event = supervisor::Event::ShutDownNode(address);
-                        cluster_tx.send(event);
+                        cluster_tx.send(event).unwrap();
                     }
                     Toplogy::TryBuild => {
                         let event = supervisor::Event::TryBuild;
-                        cluster_tx.send(event);
+                        cluster_tx.send(event).unwrap();
                     }
                 },
                 Event::Result(result) => {

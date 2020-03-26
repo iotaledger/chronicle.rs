@@ -2,7 +2,7 @@
 use super::dashboard;
 use super::websocket;
 use tokio::net::TcpListener;
-use tokio_tungstenite::{WebSocketStream, accept_async};
+use tokio_tungstenite::accept_async;
 
 // types
 

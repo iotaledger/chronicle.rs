@@ -1,6 +1,6 @@
 use crate::node::supervisor::gen_node_id;
 use crate::cluster::supervisor::Tokens;
-use crate::ring::ring::{Msb, NodeId, ShardCount, Token, DC};
+use crate::ring::ring::{Msb, ShardCount, DC};
 use cdrs::compression::Compression;
 use cdrs::frame::traits::FromCursor;
 use cdrs::frame::IntoBytes;
@@ -93,7 +93,7 @@ pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
     };
     Ok(cqlconn)
 }
-pub async fn fetch_tokens(mut connection: Result<CqlConn, Error>) -> Result<CqlConn, Error> {
+pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn, Error> {
     let mut cqlconn = connection?;
     // fetch tokens from scylla using select query to system.local table,
     // then add it to cqlconn

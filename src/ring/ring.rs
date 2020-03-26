@@ -116,7 +116,7 @@ impl SmartId for Replica {
          << self.1) as u128 * self.2 as u128) >> 64) as u8;
         registry.get_mut(&self.0).unwrap()
         .get_mut(&rng.sample(uniform)).unwrap()
-        .send(request);
+        .send(request).unwrap();
     }
 }
 

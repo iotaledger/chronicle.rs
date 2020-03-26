@@ -40,7 +40,6 @@ impl SupervisorBuilder {
         Supervisor {
             address,
             node_id,
-            data_center: self.data_center.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
             spawned: false,
             shard_count: self.shard_count.unwrap(),
@@ -57,7 +56,6 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     address: String,
     node_id: NodeId,
-    data_center: DC,
     reporter_count: u8,
     spawned: bool,
     tx: Option<Sender>,
