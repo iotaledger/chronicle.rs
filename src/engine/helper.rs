@@ -42,11 +42,11 @@ mod tests {
     use super::*;
     use tokio::sync::mpsc;
 
-    #[tokio::test]
-    async fn create_helper_from_builder() {
+    #[test]
+    fn create_helper_from_builder() {
         let (tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
         let _ = HelperBuilder::new()
-            .nodes(vec![String::from("0.0.0.0")])
+            .nodes(vec!["0.0.0.0".to_string()])
             .dashboard_tx(tx)
             .build();
     }

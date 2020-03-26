@@ -1,7 +1,7 @@
 // uses
+use super::helper::HelperBuilder;
 use crate::cluster;
 use crate::dashboard::dashboard;
-use super::helper::HelperBuilder;
 use tokio::sync::mpsc;
 
 type ThreadCount = usize;
@@ -15,7 +15,6 @@ app!(EngineBuilder {
 });
 
 impl EngineBuilder {
-
     pub fn build(self) -> Engine {
         Engine {
             listen_address: self.listen_address.unwrap(),
@@ -25,7 +24,6 @@ impl EngineBuilder {
             launcher_tx: self.launcher_tx,
         }
     }
-
 }
 
 pub struct Engine {
@@ -44,26 +42,25 @@ impl Engine {
         if let Some(nodes) = self.nodes {
             // build helper (is supposed to simulate the websocket)
             let helper = HelperBuilder::new()
-            .nodes(nodes)
-            .dashboard_tx(dashboard_tx.unwrap())
-            .build();
+                .nodes(nodes)
+                .dashboard_tx(dashboard_tx.unwrap())
+                .build();
             // spawn helper
             tokio::spawn(helper.run());
         };
-
     }
     async fn init(&mut self) -> Option<dashboard::Sender> {
         // build dashboard
         let dashboard = dashboard::DashboardBuilder::new()
-        .launcher_tx(self.launcher_tx.take().unwrap())
-        .listen_address(self.listen_address.clone())
-        .build();
+            .launcher_tx(self.launcher_tx.take().unwrap())
+            .listen_address(self.listen_address.clone())
+            .build();
         // build cluster
         let cluster = cluster::SupervisorBuilder::new()
-        .reporter_count(self.reporter_count)
-        .thread_count(self.thread_count)
-        .dashboard_tx(dashboard.clone_tx())
-        .build();
+            .reporter_count(self.reporter_count)
+            .thread_count(self.thread_count)
+            .dashboard_tx(dashboard.clone_tx())
+            .build();
         // clone dashboard_tx to return in case some(nodes) used for testing
         let dashboard_tx = Some(dashboard.clone_tx());
         // spawn dashboard
@@ -75,5 +72,20 @@ impl Engine {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_engine_from_builder() {
+        let _ = EngineBuilder::new()
+            .listen_address("0.0.0.0:8080".to_string())
+            .thread_count(2)
+            .reporter_count(1)
+            .nodes(vec!["0.0.0.0:9042".to_string()])
+            .build();
     }
 }

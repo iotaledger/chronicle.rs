@@ -1,15 +1,15 @@
 // uses
-use crate::connection::cql::Address;
-use crate::ring::ring::DC;
-use std::collections::HashMap;
-use futures::stream::SplitSink;
-use tokio::sync::mpsc;
-use tokio::net::TcpStream;
-use std::net::SocketAddr;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::Message;
 use super::listener;
 use crate::cluster::supervisor;
+use crate::connection::cql::Address;
+use crate::ring::ring::DC;
+use futures::stream::SplitSink;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::WebSocketStream;
 // types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -24,7 +24,7 @@ pub enum Event {
 
 pub enum Session {
     // todo auth events
-    Socket{peer: SocketAddr, ws_tx: WsTx},
+    Socket { peer: SocketAddr, ws_tx: WsTx },
 }
 
 pub enum Toplogy {
@@ -46,7 +46,6 @@ actor!(
 });
 
 impl DashboardBuilder {
-
     pub fn build(self) -> Dashboard {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Dashboard {
@@ -57,7 +56,6 @@ impl DashboardBuilder {
             rx,
         }
     }
-
 }
 
 pub struct Dashboard {
@@ -72,9 +70,9 @@ impl Dashboard {
     pub async fn run(mut self, cluster_tx: supervisor::Sender) {
         // build dashboard listener
         let listener = listener::ListenerBuilder::new()
-        .listen_address(self.listen_address.clone())
-        .dashboard_tx(self.tx.clone())
-        .build();
+            .listen_address(self.listen_address.clone())
+            .dashboard_tx(self.tx.clone())
+            .build();
         // spawn dashboard listener
         tokio::spawn(listener.run());
         // event loop
@@ -84,29 +82,27 @@ impl Dashboard {
                 Event::Session(session) => {
                     match session {
                         // todo: here we put our ticket based auth events
-                        Session::Socket{peer, ws_tx} => {
+                        Session::Socket { peer, ws_tx } => {
                             // once we recv this event means authentication succeed
                             // therefore we add the peer to the sockets we are handling right now
                             self.sockets.insert(peer, ws_tx);
                         }
                     }
                 }
-                Event::Toplogy(toplogy) => {
-                    match toplogy {
-                        Toplogy::AddNode(address) => {
-                            let event = supervisor::Event::SpawnNode(address);
-                            cluster_tx.send(event);
-                        }
-                        Toplogy::RemoveNode(address) => {
-                            let event = supervisor::Event::ShutDownNode(address);
-                            cluster_tx.send(event);
-                        }
-                        Toplogy::TryBuild => {
-                            let event = supervisor::Event::TryBuild;
-                            cluster_tx.send(event);
-                        }
+                Event::Toplogy(toplogy) => match toplogy {
+                    Toplogy::AddNode(address) => {
+                        let event = supervisor::Event::SpawnNode(address);
+                        cluster_tx.send(event);
                     }
-                }
+                    Toplogy::RemoveNode(address) => {
+                        let event = supervisor::Event::ShutDownNode(address);
+                        cluster_tx.send(event);
+                    }
+                    Toplogy::TryBuild => {
+                        let event = supervisor::Event::TryBuild;
+                        cluster_tx.send(event);
+                    }
+                },
                 Event::Result(result) => {
                     match result {
                         Result::Ok(address) => {
@@ -119,15 +115,27 @@ impl Dashboard {
                         Result::TryBuild(built) => {
                             println!("built status: {}", built);
                         }
-
                     }
-                }
-                // todo handle websocket decoded msgs (add node, remove node, build,
-                // get status, get dashboard log, import dump file, etc)
+                } // todo handle websocket decoded msgs (add node, remove node, build,
+                  // get status, get dashboard log, import dump file, etc)
             }
         }
     }
     pub fn clone_tx(&self) -> Sender {
         self.tx.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_dashboard_from_builder() {
+        let (launcher_tx, _) = mpsc::unbounded_channel::<String>();
+        let _ = DashboardBuilder::new()
+            .launcher_tx(launcher_tx)
+            .listen_address("0.0.0.0:9042".to_string())
+            .build();
     }
 }
