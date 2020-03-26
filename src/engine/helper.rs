@@ -10,7 +10,6 @@ actor!(
 });
 
 impl HelperBuilder {
-
     pub fn build(self) -> Helper {
         Helper {
             nodes: self.nodes.unwrap(),
@@ -18,7 +17,6 @@ impl HelperBuilder {
         }
     }
 }
-
 
 pub struct Helper {
     nodes: Vec<String>,
@@ -30,9 +28,7 @@ impl Helper {
         let five_seconds = Duration::new(5, 0);
         // spawn nodes with delay in-between for simplicty
         for node_address in self.nodes {
-            let event = dashboard::Event::Toplogy(
-                dashboard::Toplogy::AddNode("DC1", node_address)
-            );
+            let event = dashboard::Event::Toplogy(dashboard::Toplogy::AddNode(node_address));
             self.dashboard_tx.send(event);
             // duration
             tokio::time::delay_for(five_seconds).await;
