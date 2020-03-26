@@ -9,6 +9,7 @@ pub mod node;
 pub mod stage;
 pub mod worker;
 pub mod connection;
+pub mod api;
 #[macro_use]
 extern crate cdrs_helpers_derive;
 #[macro_use]
