@@ -2,6 +2,7 @@
 // production setup should manage and setup everything through dashboard. therefore this mod will be removed eventually once we have dashboard ready.
 use crate::dashboard::dashboard;
 use std::time::Duration;
+use crate::ring::ring::Ring;
 
 actor!(
     HelperBuilder {
@@ -28,12 +29,19 @@ impl Helper {
         let five_seconds = Duration::new(5, 0);
         // spawn nodes with delay in-between for simplicty
         for node_address in self.nodes {
-            let event = dashboard::Event::Toplogy(dashboard::Toplogy::AddNode(node_address));
+            let event = dashboard::Event::Toplogy(
+                dashboard::Toplogy::AddNode(node_address)
+            );
             self.dashboard_tx.send(event);
-            // duration
             tokio::time::delay_for(five_seconds).await;
         }
         // send tryBuild (assuming the nodes have been added)
+        let event = dashboard::Event::Toplogy(
+            dashboard::Toplogy::TryBuild
+        );
+        self.dashboard_tx.send(event);
+        tokio::time::delay_for(five_seconds).await;
+        // now we make use of ring:send() with built Ring.
     }
 }
 
@@ -46,7 +54,7 @@ mod tests {
     fn create_helper_from_builder() {
         let (tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
         let _ = HelperBuilder::new()
-            .nodes(vec!["0.0.0.0".to_string()])
+            .nodes(vec!["0.0.0.0:9042".to_string()])
             .dashboard_tx(tx)
             .build();
     }
