@@ -1,5 +1,5 @@
 // please note: preparer is not a real actor instead is a resumption actor (without its own mailbox/channel).
-use super::{Error, StreamStatus, Status, Worker};
+use super::{Error, Status, StreamStatus, Worker};
 use crate::stage::reporter::{Event, Giveload, Sender};
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ impl Worker for Preparer {
     fn send_streamstatus(&mut self, stream_status: StreamStatus) -> Status {
         match stream_status {
             Ok(_) => self.query.status.return_streamstatus(),
-            Err(_) => self.query.status.return_error()
+            Err(_) => self.query.status.return_error(),
         }
     }
 
@@ -39,7 +39,6 @@ impl Worker for Preparer {
 pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Giveload) {
     // check if the giveload is unprepared_error.
     if check_unprepared(giveload) {
-
         // create preparer
         let preparer = Preparer {
             query: QueryRef::new(),
@@ -51,13 +50,11 @@ pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Givel
         };
         // send to reporter(self as this function is invoked inside reporter)
         if let Some(tx) = tx {
-            tx
-            .send(event)
-            .unwrap();
+            tx.send(event).unwrap();
         };
     }
 }
 
 fn check_unprepared(giveload: &Giveload) -> bool {
-    giveload[3] == 0 && giveload[7..11] == [0, 0, 37, 0] // cql specs
+    giveload[4] == 0 && giveload[9..13] == [0, 0, 37, 0] // cql specs
 }
