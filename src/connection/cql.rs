@@ -1,5 +1,5 @@
-use crate::node::supervisor::gen_node_id;
 use crate::cluster::supervisor::Tokens;
+use crate::node::supervisor::gen_node_id;
 use crate::ring::ring::{Msb, ShardCount, DC};
 use cdrs::compression::Compression;
 use cdrs::frame::traits::FromCursor;
@@ -11,9 +11,9 @@ use cdrs::query;
 use cdrs::types::from_cdrs::FromCDRSByName;
 use cdrs::types::prelude::{Bytes, List, Row, Value};
 use cdrs::types::AsRustType;
-use std::io::Cursor;
-use std::net::{IpAddr};
 use std::i64;
+use std::io::Cursor;
+use std::net::IpAddr;
 use tokio::io::Error;
 use tokio::io::ErrorKind;
 use tokio::net::TcpStream;
@@ -104,21 +104,24 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     // query_frame
     let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
     // write frame to stream
-    cqlconn.stream
+    cqlconn
+        .stream
         .as_mut()
         .unwrap()
         .write(query_frame.as_slice())
         .await?;
     // read buffer
     let mut head_buffer = vec![0; 9];
-    cqlconn.stream
+    cqlconn
+        .stream
         .as_mut()
         .unwrap()
         .read(&mut head_buffer)
         .await?;
     let length = get_body_length_usize(&head_buffer);
     let mut body_buffer = vec![0; length];
-    cqlconn.stream
+    cqlconn
+        .stream
         .as_mut()
         .unwrap()
         .read(&mut body_buffer)
@@ -134,9 +137,13 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     for token in row.tokens.iter() {
         let node_id = gen_node_id(&rpc_address);
         let token = i64::from_str_radix(token, 10).unwrap();
-        tokens.push(
-            (token, node_id,row.data_center.clone(), cqlconn.msb, cqlconn.shard_count)
-        )
+        tokens.push((
+            token,
+            node_id,
+            row.data_center.clone(),
+            cqlconn.msb,
+            cqlconn.shard_count,
+        ))
     }
     cqlconn.tokens.replace(tokens);
     cqlconn.dc.replace(row.data_center);
@@ -173,7 +180,7 @@ pub async fn connect_to_shard_id(address: &Address, shard_id: u8) -> Result<CqlC
     }
 }
 
-fn get_body_length_usize(buffer: &[u8]) -> usize {
+pub fn get_body_length_usize(buffer: &[u8]) -> usize {
     ((buffer[5] as usize) << 24)
         + ((buffer[6] as usize) << 16)
         + ((buffer[7] as usize) << 8)
