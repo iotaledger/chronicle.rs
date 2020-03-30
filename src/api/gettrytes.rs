@@ -19,7 +19,6 @@ use std::io::Cursor;
 use tokio::io::Error;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
-use tokio::sync::mpsc;
 
 actor!(GetTrytesBuilder {
     listen_address: String
