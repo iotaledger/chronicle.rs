@@ -9,20 +9,19 @@ use bee_bundle::{
 };
 use bytemuck::cast_slice;
 
-use bee_ternary::{T1B1Buf, T5B1Buf, TritBuf, Trits, T5B1};
+use bee_ternary::{T1B1Buf, TritBuf, Trits, T5B1};
 
 use cdrs::frame::traits::{FromCursor, TryFromRow};
-use cdrs::frame::{frame_result, frame_supported, Flag, Frame, IntoBytes};
-use cdrs::types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row, value::Bytes, IntoRustByName};
+use cdrs::frame::{frame_result, Flag, Frame, IntoBytes};
+use cdrs::types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row};
 use cdrs::{query, query_values};
 use std::io::Cursor;
-use std::str::from_utf8;
 use tokio::io::Error;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::sync::mpsc;
 
-app!(GetTrytesBuilder {
+actor!(GetTrytesBuilder {
     listen_address: String
 });
 
@@ -30,11 +29,11 @@ impl GetTrytesBuilder {
     pub fn build(self) -> GetTrytes {
         GetTrytes {
             listen_address: self.listen_address.unwrap(),
-            launcher_tx: self.launcher_tx,
         }
     }
 }
 
+// Borrow the function from the
 fn decode_bytes(u8_slice: &[u8], num_trits: usize) -> TritBuf {
     let decoded_column_i8_slice: &[i8] = cast_slice(u8_slice);
     unsafe {
@@ -64,7 +63,6 @@ pub struct TcpStreamTx {
 
 pub struct GetTrytes {
     listen_address: String,
-    launcher_tx: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl GetTrytes {
@@ -73,7 +71,7 @@ impl GetTrytes {
     // TODO: use Ring::send to send the queries
     pub async fn run(mut self, hashs: Vec<Hash>) {
         for hash in hashs.iter() {
-            let mut stream = TcpStream::connect(self.listen_address.clone())
+            let stream = TcpStream::connect(self.listen_address.clone())
                 .await
                 .unwrap();
             self.get_trytes(hash, stream).await;
@@ -108,7 +106,6 @@ impl GetTrytes {
             .into_rows()
             .unwrap();
         let tx = TcpStreamTx::try_from_row(rows.pop().unwrap()).unwrap();
-        let mut builder = TransactionBuilder::new();
         let payload_tritbuf = decode_bytes(&tx.payload.into_vec(), PAYLOAD_TRIT_LEN);
         let address_tritbuf = decode_bytes(&tx.address.into_vec(), ADDRESS_TRIT_LEN);
         let value = tx.value as i64;
@@ -124,7 +121,7 @@ impl GetTrytes {
         let attachment_lbts = tx.attachment_lbts as u64;
         let attachment_ubts = tx.attachment_ubts as u64;
         let nonce_tritbuf = decode_bytes(&tx.nonce.into_vec(), NONCE_TRIT_LEN);
-        let builder = builder
+        let builder = TransactionBuilder::new()
             .with_payload(Payload::from_inner_unchecked(payload_tritbuf))
             .with_address(Address::from_inner_unchecked(address_tritbuf))
             .with_value(Value::from_inner_unchecked(value))
