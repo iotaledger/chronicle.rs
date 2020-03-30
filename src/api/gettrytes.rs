@@ -3,11 +3,17 @@ use crate::connection::cql::get_body_length_usize;
 use crate::statements::*;
 // use crate::worker::{Error, Status, StreamStatus, Worker};
 use bee_bundle::{
-    Address, Hash, Index, Nonce, Payload, Tag, Timestamp, Transaction, TransactionBuilder, Value,
+    Address, Hash, Index, Nonce, Payload, Tag, Timestamp, Transaction, TransactionBuilder,
+    TransactionField, Value, ADDRESS_TRIT_LEN, HASH_TRIT_LEN, NONCE_TRIT_LEN, PAYLOAD_TRIT_LEN,
+    TAG_TRIT_LEN,
 };
+use bytemuck::cast_slice;
+
+use bee_ternary::{T1B1Buf, T5B1Buf, TritBuf, Trits, T5B1};
+
 use cdrs::frame::traits::{FromCursor, TryFromRow};
 use cdrs::frame::{frame_result, frame_supported, Flag, Frame, IntoBytes};
-use cdrs::types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row, IntoRustByName};
+use cdrs::types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row, value::Bytes, IntoRustByName};
 use cdrs::{query, query_values};
 use std::io::Cursor;
 use std::str::from_utf8;
@@ -29,6 +35,13 @@ impl GetTrytesBuilder {
     }
 }
 
+fn decode_bytes(u8_slice: &[u8], num_trits: usize) -> TritBuf {
+    let decoded_column_i8_slice: &[i8] = cast_slice(u8_slice);
+    unsafe {
+        Trits::<T5B1>::from_raw_unchecked(decoded_column_i8_slice, num_trits).to_buf::<T1B1Buf>()
+    }
+}
+
 #[derive(Debug, TryFromRow)]
 pub struct TcpStreamTx {
     hash: Blob,
@@ -43,9 +56,9 @@ pub struct TcpStreamTx {
     trunk: Blob,
     branch: Blob,
     tag: Blob,
-    attachment_timestamp: i32,
-    attachment_timestamp_lower: i32,
-    attachment_timestamp_upper: i32,
+    attachment_ts: i32,
+    attachment_lbts: i32,
+    attachment_ubts: i32,
     nonce: Blob,
 }
 
@@ -56,8 +69,10 @@ pub struct GetTrytes {
 
 impl GetTrytes {
     // TODO: Error Handling
-    pub async fn run(mut self, tx_hashs: Vec<Hash>) {
-        for hash in tx_hashs.iter() {
+    // TODO: refactory the directory struct
+    // TODO: use Ring::send to send the queries
+    pub async fn run(mut self, hashs: Vec<Hash>) {
+        for hash in hashs.iter() {
             let mut stream = TcpStream::connect(self.listen_address.clone())
                 .await
                 .unwrap();
@@ -66,13 +81,13 @@ impl GetTrytes {
     }
     pub async fn get_trytes(
         &self,
-        tx_hash: &Hash,
+        hash: &Hash,
         mut stream: TcpStream,
     ) -> Result<Transaction, Error> {
         // let mut cqlconn = connection?;
         // query param builder
         let params = query::QueryParamsBuilder::new()
-            .values(query_values!(tx_hash.to_string()))
+            .values(query_values!(hash.as_bytes().to_vec()))
             .page_size(500)
             .finalize();
         let query = SELECT_TX_QUERY.to_string();
@@ -80,7 +95,6 @@ impl GetTrytes {
         // query_frame
         let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
         // write frame to stream
-        // let mut stream = cqlconn.take_stream();
         stream.write(query_frame.as_slice()).await?;
         // read buffer
         let mut head_buffer = vec![0; 9];
@@ -95,28 +109,37 @@ impl GetTrytes {
             .unwrap();
         let tx = TcpStreamTx::try_from_row(rows.pop().unwrap()).unwrap();
         let mut builder = TransactionBuilder::new();
-        builder = builder
-            .with_payload(Payload::from_str(
-                from_utf8(&tx.payload.into_vec()).unwrap(),
-            ))
-            .with_address(Address::from_str(
-                from_utf8(&tx.address.into_vec()).unwrap(),
-            ))
-            .with_value(Value(tx.value as i64))
-            .with_obsolete_tag(Tag::from_str(
-                from_utf8(&tx.obsolete_tag.into_vec()).unwrap(),
-            ))
-            .with_timestamp(Timestamp(tx.timestamp as u64))
-            .with_index(Index(tx.current_index as usize))
-            .with_last_index(Index(tx.last_index as usize))
-            .with_bundle(Hash::from_str(from_utf8(&tx.bundle.into_vec()).unwrap()))
-            .with_trunk(Hash::from_str(from_utf8(&tx.trunk.into_vec()).unwrap()))
-            .with_branch(Hash::from_str(from_utf8(&tx.branch.into_vec()).unwrap()))
-            .with_tag(Tag::from_str(from_utf8(&tx.tag.into_vec()).unwrap()))
-            .with_attachment_ts(Timestamp(tx.attachment_timestamp as u64))
-            .with_attachment_lbts(Timestamp(tx.attachment_timestamp_lower as u64))
-            .with_attachment_ubts(Timestamp(tx.attachment_timestamp_upper as u64))
-            .with_nonce(Nonce::from_str(from_utf8(&tx.nonce.into_vec()).unwrap()));
+        let payload_tritbuf = decode_bytes(&tx.payload.into_vec(), PAYLOAD_TRIT_LEN);
+        let address_tritbuf = decode_bytes(&tx.address.into_vec(), ADDRESS_TRIT_LEN);
+        let value = tx.value as i64;
+        let obs_tag_tritbuf = decode_bytes(&tx.obsolete_tag.into_vec(), TAG_TRIT_LEN);
+        let timestamp = tx.timestamp as u64;
+        let current_index = tx.current_index as usize;
+        let last_index = tx.last_index as usize;
+        let bundle_tritbuf = decode_bytes(&tx.bundle.into_vec(), HASH_TRIT_LEN);
+        let tag_tritbuf = decode_bytes(&tx.tag.into_vec(), TAG_TRIT_LEN);
+        let trunk_tritbuf = decode_bytes(&tx.trunk.into_vec(), TAG_TRIT_LEN);
+        let branch_tritbuf = decode_bytes(&tx.branch.into_vec(), TAG_TRIT_LEN);
+        let attachment_ts = tx.attachment_ts as u64;
+        let attachment_lbts = tx.attachment_lbts as u64;
+        let attachment_ubts = tx.attachment_ubts as u64;
+        let nonce_tritbuf = decode_bytes(&tx.nonce.into_vec(), NONCE_TRIT_LEN);
+        let builder = builder
+            .with_payload(Payload::from_inner_unchecked(payload_tritbuf))
+            .with_address(Address::from_inner_unchecked(address_tritbuf))
+            .with_value(Value::from_inner_unchecked(value))
+            .with_obsolete_tag(Tag::from_inner_unchecked(obs_tag_tritbuf))
+            .with_timestamp(Timestamp::from_inner_unchecked(timestamp))
+            .with_index(Index::from_inner_unchecked(current_index))
+            .with_last_index(Index::from_inner_unchecked(last_index))
+            .with_bundle(Hash::from_inner_unchecked(bundle_tritbuf))
+            .with_trunk(Hash::from_inner_unchecked(trunk_tritbuf))
+            .with_branch(Hash::from_inner_unchecked(branch_tritbuf))
+            .with_tag(Tag::from_inner_unchecked(tag_tritbuf))
+            .with_attachment_ts(Timestamp::from_inner_unchecked(attachment_ts))
+            .with_attachment_lbts(Timestamp::from_inner_unchecked(attachment_lbts))
+            .with_attachment_ubts(Timestamp::from_inner_unchecked(attachment_ubts))
+            .with_nonce(Nonce::from_inner_unchecked(nonce_tritbuf));
         Ok(builder.build().unwrap())
     }
 }
