@@ -1,5 +1,4 @@
 // cluster supervisor
-use tokio::time::delay_for;
 use super::node;
 use crate::connection::cql::{connect, fetch_tokens};
 use crate::dashboard::dashboard;
@@ -11,6 +10,7 @@ use crate::ring::ring::{
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::time::delay_for;
 //types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -158,8 +158,12 @@ impl Supervisor {
                     if self.ready == 0 && self.build {
                         // re/build
                         let version = self.new_version();
-                        let (new_arc_ring, old_weak_ring) =
-                            build_ring(&self.nodes, self.registry.clone(),self.reporter_count, version);
+                        let (new_arc_ring, old_weak_ring) = build_ring(
+                            &self.nodes,
+                            self.registry.clone(),
+                            self.reporter_count,
+                            version,
+                        );
                         // replace self.arc_ring
                         self.arc_ring.replace(new_arc_ring);
                         // push weak to weak_rings
@@ -191,7 +195,7 @@ impl Supervisor {
         let mut m: u8 = 1;
         while (self.version & m) != 0 {
             self.version ^= m;
-        	m <<= 1 as u8;
+            m <<= 1 as u8;
         }
         self.version ^= m;
         self.version
@@ -214,7 +218,7 @@ mod tests {
         let cluster_tx = cluster.clone_tx();
 
         if let Sender = &cluster_tx {
-        //    tokio::task::spawn(cluster.run());
+            //    tokio::task::spawn(cluster.run());
             cluster_tx.send(Event::TryBuild);
             tokio::task::yield_now().await;
         } else {

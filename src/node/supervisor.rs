@@ -1,8 +1,8 @@
 // node supervisor .. spawn stages // WIP
-use crate::ring::ring::DC;
-use crate::ring::ring::NodeId;
-use crate::cluster::supervisor;
 use super::stage;
+use crate::cluster::supervisor;
+use crate::ring::ring::NodeId;
+use crate::ring::ring::DC;
 use std::collections::HashMap;
 use tokio;
 use tokio::sync::mpsc;
@@ -20,18 +20,16 @@ pub enum Event {
     RegisterReporters(u8, stage::supervisor::Reporters),
 }
 
-actor!(
-    SupervisorBuilder {
-        address: String,
-        node_id: NodeId,
-        data_center: DC,
-        reporter_count: u8,
-        shard_count: u8,
-        supervisor_tx: supervisor::Sender
+actor!(SupervisorBuilder {
+    address: String,
+    node_id: NodeId,
+    data_center: DC,
+    reporter_count: u8,
+    shard_count: u8,
+    supervisor_tx: supervisor::Sender
 });
 
 impl SupervisorBuilder {
-
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let stages: Stages = HashMap::new();
@@ -73,8 +71,7 @@ impl Supervisor {
     pub async fn run(mut self) {
         // spawn stage supervisor for each shard_id
         for shard_id in 0..self.shard_count {
-            let (stage_tx, stage_rx) =
-                mpsc::unbounded_channel::<stage::supervisor::Event>();
+            let (stage_tx, stage_rx) = mpsc::unbounded_channel::<stage::supervisor::Event>();
             let stage = stage::supervisor::SupervisorBuilder::new()
                 .node_tx(self.clone_tx())
                 .address(self.address.clone())

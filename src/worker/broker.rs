@@ -1,10 +1,5 @@
-use super::{
-    Status,
-    StreamStatus,
-    Error,
-    Worker,
-};
 use super::preparer::try_prepare;
+use super::{Error, Status, StreamStatus, Worker};
 use crate::stage::reporter::{self, Giveload};
 use tokio::sync::mpsc;
 
@@ -55,13 +50,9 @@ pub struct Broker {
 
 impl Broker {
     pub fn new(tx: Sender, query: QueryRef) -> Broker {
-        Broker {
-            tx,
-            query,
-        }
+        Broker { tx, query }
     }
 }
-
 
 impl Worker for Broker {
     fn send_streamstatus(&mut self, stream_status: StreamStatus) -> Status {
@@ -80,7 +71,7 @@ impl Worker for Broker {
                     },
                 };
                 self.tx.send(event).unwrap();
-            },
+            }
             Err(_) => {
                 let event = BrokerEvent::StreamStatus {
                     stream_status,
@@ -88,7 +79,7 @@ impl Worker for Broker {
                     tx: Some(self.tx.to_owned()),
                 };
                 self.tx.send(event).unwrap();
-            },
+            }
         }
         self.query.status.return_streamstatus()
     }

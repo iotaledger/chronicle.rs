@@ -1,8 +1,8 @@
-use smallbox::space::S64;
-use smallbox::SmallBox;
 use super::sender::{self, Payload};
 use super::supervisor;
 use crate::worker::{Error, Status, StreamStatus, Worker};
+use smallbox::space::S64;
+use smallbox::SmallBox;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
@@ -16,11 +16,11 @@ pub type Stream = i16;
 // Streams type is array/list which should hold u8 from 1 to 32768
 pub type Streams = Vec<Stream>;
 // Worker is how will be presented in the workers_map
-type Workers = HashMap<Stream, SmallBox<dyn Worker,S64>>;
+type Workers = HashMap<Stream, SmallBox<dyn Worker, S64>>;
 #[derive(Debug)]
 pub enum Event {
     Request {
-        worker: SmallBox<dyn Worker,S64>,
+        worker: SmallBox<dyn Worker, S64>,
         payload: Payload,
     },
     Response {
@@ -38,20 +38,18 @@ pub enum Session {
     Shutdown,
 }
 
-actor!(
-    ReporterBuilder {
-        session_id: usize,
-        reporter_id: u8,
-        streams: Streams,
-        address: String,
-        shard_id: u8,
-        tx: Sender,
-        rx: Receiver,
-        stage_tx: supervisor::Sender
+actor!(ReporterBuilder {
+    session_id: usize,
+    reporter_id: u8,
+    streams: Streams,
+    address: String,
+    shard_id: u8,
+    tx: Sender,
+    rx: Receiver,
+    stage_tx: supervisor::Sender
 });
 
 impl ReporterBuilder {
-
     pub fn build(self) -> Reporter {
         Reporter {
             session_id: self.session_id.unwrap(),
@@ -104,7 +102,7 @@ impl Reporter {
                         match &self.sender_tx {
                             Some(sender) => {
                                 let _ = sender.send(event); // as the sender might be closed durring closing a session, and thats fine as force_consistency will respond Error::Lost where the query status is new.
-                                // Insert worker into workers map using stream_id as key
+                                                            // Insert worker into workers map using stream_id as key
                                 self.workers.insert(stream, worker);
                             }
                             None => {

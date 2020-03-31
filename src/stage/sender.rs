@@ -32,7 +32,6 @@ actor!(
 });
 
 impl SenderBuilder {
-
     pub fn build(self) -> SenderState {
         // pass sender_tx to reporters
         for (_, reporter_tx) in self.reporters.as_ref().unwrap() {

@@ -28,16 +28,12 @@ impl Helper {
         let five_seconds = Duration::new(5, 0);
         // spawn nodes with delay in-between for simplicty
         for node_address in self.nodes {
-            let event = dashboard::Event::Toplogy(
-                dashboard::Toplogy::AddNode(node_address)
-            );
+            let event = dashboard::Event::Toplogy(dashboard::Toplogy::AddNode(node_address));
             let _ = self.dashboard_tx.send(event);
             tokio::time::delay_for(five_seconds).await;
         }
         // send tryBuild (assuming the nodes have been added)
-        let event = dashboard::Event::Toplogy(
-            dashboard::Toplogy::TryBuild
-        );
+        let event = dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild);
         let _ = self.dashboard_tx.send(event);
         tokio::time::delay_for(five_seconds).await;
         // now we make use of ring:send() with built Ring.

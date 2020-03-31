@@ -4,14 +4,13 @@
 // - block on read-half to recv headless packets from clients(admins)
 
 // uses
-use tokio::net::TcpStream;
-use futures::StreamExt;
-use futures::stream::{SplitSink, SplitStream};
-use std::net::SocketAddr;
-use tokio_tungstenite::WebSocketStream;
 use super::dashboard;
+use futures::stream::{SplitSink, SplitStream};
+use futures::StreamExt;
+use std::net::SocketAddr;
+use tokio::net::TcpStream;
+use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::{tungstenite::Message, tungstenite::Result};
-
 
 actor!(
     WebsocketdBuilder {
@@ -21,7 +20,6 @@ actor!(
 });
 
 impl WebsocketdBuilder {
-
     pub fn build(self) -> Websocket {
         // split the websocket stream
         let (ws_tx, ws_rx) = self.stream.unwrap().split();
@@ -32,7 +30,6 @@ impl WebsocketdBuilder {
             dashboard_tx: self.dashboard_tx.unwrap(),
         }
     }
-
 }
 
 pub struct Websocket {
@@ -46,7 +43,7 @@ impl Websocket {
     pub async fn run(mut self) -> Result<()> {
         if self.authenticate().await {
             // create login session
-            let session = dashboard::Session::Socket{
+            let session = dashboard::Session::Socket {
                 peer: self.peer,
                 ws_tx: self.ws_tx.take().unwrap(),
             };
@@ -58,9 +55,7 @@ impl Websocket {
                 match msg {
                     // handle websockets msgs (binary, text, ping, pong) and then encode them into
                     // dashboard events
-                    _ => {
-
-                    }
+                    _ => {}
                 }
             }
         }
