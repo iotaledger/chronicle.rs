@@ -32,8 +32,7 @@ impl GetTrytesBuilder {
     }
 }
 
-// Borrow the function from the storage crate
-// TODO: remove the comment and refactory
+// TODO: this function is currently borrowed from the storage crate, remove it in refactory phase
 fn decode_bytes(u8_slice: &[u8], num_trits: usize) -> TritBuf {
     let decoded_column_i8_slice: &[i8] = cast_slice(u8_slice);
     unsafe {
