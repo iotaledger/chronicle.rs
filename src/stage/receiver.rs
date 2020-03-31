@@ -19,7 +19,6 @@ actor!(
 });
 
 impl ReceiverBuidler {
-
     pub fn build(self) -> Receiver {
         let reporters = self.reporters.unwrap();
         let reporters_len = reporters.len();
