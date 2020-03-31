@@ -88,7 +88,7 @@ impl GetTrytes {
         let query = query::Query { query, params };
         // query_frame
         let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
-
+      
         // TODO: modify the prepare_payload
         let qf = QueryRef::new(1, &[0; 200]);
         let (tx, mut rx) = mpsc::unbounded_channel::<BrokerEvent>();
