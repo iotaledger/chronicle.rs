@@ -1,11 +1,7 @@
 pub mod broker;
 mod preparer;
 
-use crate::stage::reporter::{
-    Giveload,
-    Sender,
-    Stream
-};
+use crate::stage::reporter::{Giveload, Sender, Stream};
 
 pub type StreamStatus = Result<Stream, Stream>;
 

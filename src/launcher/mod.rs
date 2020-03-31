@@ -1,4 +1,3 @@
-
 macro_rules! launcher {
     ($name:ident {$($app:ident : $t:ty),+}) => {
         use tokio::sync::mpsc;

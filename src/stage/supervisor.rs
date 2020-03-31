@@ -1,9 +1,9 @@
 use super::receiver;
 use super::reporter;
 use super::sender;
+use crate::connection::cql::connect_to_shard_id;
 use crate::node;
 use crate::stage::reporter::{Stream, Streams};
-use crate::connection::cql::connect_to_shard_id;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -20,18 +20,16 @@ pub enum Event {
     Shutdown,
 }
 
-actor!(
-    SupervisorBuilder {
-        address: String,
-        reporter_count: u8,
-        shard_id: u8,
-        tx: Sender,
-        rx: Receiver,
-        node_tx: node::supervisor::Sender
+actor!(SupervisorBuilder {
+    address: String,
+    reporter_count: u8,
+    shard_id: u8,
+    tx: Sender,
+    rx: Receiver,
+    node_tx: node::supervisor::Sender
 });
 
 impl SupervisorBuilder {
-
     pub fn build(self) -> Supervisor {
         Supervisor {
             session_id: 0,
@@ -94,15 +92,18 @@ impl Supervisor {
             tokio::spawn(reporter.run());
         }
         // expose stage reporters in advance
-        let event = node::supervisor::Event::RegisterReporters(
-            self.shard_id,
-            self.reporters.clone(),
-        );
+        let event =
+            node::supervisor::Event::RegisterReporters(self.shard_id, self.reporters.clone());
         self.node_tx.send(event).unwrap();
         // todo improve dbg! msgs
-        dbg!("just exposed stage reporters of shard: {}, to node supervisor", self.shard_id);
+        dbg!(
+            "just exposed stage reporters of shard: {}, to node supervisor",
+            self.shard_id
+        );
         // Send self event::connect
-        self.tx.as_ref().unwrap()
+        self.tx
+            .as_ref()
+            .unwrap()
             .send(Event::Connect(sender_tx, sender_rx))
             .unwrap();
         // Supervisor event loop
@@ -118,7 +119,8 @@ impl Supervisor {
                                 // TODO convert the session_id to a meaningful (timestamp + count)
                                 self.session_id += 1;
                                 // Split the stream
-                                let (socket_rx, socket_tx) = tokio::io::split(cqlconn.take_stream());
+                                let (socket_rx, socket_tx) =
+                                    tokio::io::split(cqlconn.take_stream());
                                 // Spawn/restart sender
                                 let sender_state = sender::SenderBuilder::new()
                                     .tx(sender_tx)
@@ -142,9 +144,7 @@ impl Supervisor {
                                 delay_for(Duration::from_millis(5000)).await;
                                 // Try again to connect
                                 if let Some(tx) = &self.tx {
-                                    tx
-                                    .send(Event::Connect(sender_tx, sender_rx))
-                                    .unwrap();
+                                    tx.send(Event::Connect(sender_tx, sender_rx)).unwrap();
                                 };
                             }
                         }
@@ -164,9 +164,7 @@ impl Supervisor {
                     // Create sender's channel
                     let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
                     if let Some(tx) = &self.tx {
-                        tx
-                        .send(Event::Connect(sender_tx, sender_rx))
-                        .unwrap();
+                        tx.send(Event::Connect(sender_tx, sender_rx)).unwrap();
                     };
                 }
                 Event::Shutdown => {
