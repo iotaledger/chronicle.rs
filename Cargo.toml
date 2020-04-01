@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 async-trait = "0.1"
 bee-bundle = { git = "https://github.com/Alex6323/bee-p", branch = "master" }
 bee-ternary = { git = "https://github.com/Alex6323/bee-p", branch = "master" }
+bee-common = { git = "https://github.com/Alex6323/bee-p", branch = "master" }
 cdrs = "2.2.4"
 cdrs_helpers_derive = "0.1.0"
 futures = "0.3.1"
