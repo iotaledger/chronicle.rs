@@ -9,7 +9,6 @@ use tokio::prelude::*;
 
 // consts
 const HEADER_LENGTH: usize = 9;
-const BUFFER_LENGTH: usize = 1024000;
 
 actor!(
     ReceiverBuilder {
@@ -24,6 +23,7 @@ impl ReceiverBuilder {
     pub fn build(self) -> Receiver {
         let reporters = self.reporters.unwrap();
         let reporters_len = reporters.len();
+        let buffer_size = self.buffer_size.unwrap();
         Receiver {
             reporters: reporters,
             socket: self.socket_rx.unwrap(),
@@ -31,12 +31,12 @@ impl ReceiverBuilder {
             total_length: 0,
             current_length: 0,
             header: false,
-            buffer: vec![0; BUFFER_LENGTH],
+            buffer: vec![0; buffer_size],
             i: 0,
             session_id: self.session_id.unwrap(),
             appends_num: 32767 / reporters_len as i16,
             payloads: self.payloads.unwrap(),
-            buffer_size: self.buffer_size.unwrap(),
+            buffer_size: buffer_size,
         }
     }
 }
