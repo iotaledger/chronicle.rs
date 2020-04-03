@@ -12,8 +12,8 @@ app!(EngineBuilder {
     reporter_count: ReporterCount,
     thread_count: ThreadCount,
     buffer_size: usize,
-    recv_buffer_size: Option<usize>,
-    send_buffer_size: Option<usize>,
+    recv_buffer_size: usize,
+    send_buffer_size: usize,
     nodes: Vec<String>
 });
 
@@ -24,8 +24,8 @@ impl EngineBuilder {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
             buffer_size: self.buffer_size.unwrap(),
-            recv_buffer_size: self.recv_buffer_size.unwrap(),
-            send_buffer_size: self.send_buffer_size.unwrap(),
+            recv_buffer_size: self.recv_buffer_size,
+            send_buffer_size: self.send_buffer_size,
             nodes: self.nodes,
             launcher_tx: self.launcher_tx,
         }
@@ -97,6 +97,7 @@ mod tests {
             .listen_address("0.0.0.0:8080".to_string())
             .thread_count(2)
             .reporter_count(1)
+            .buffer_size(1024000)
             .nodes(vec!["0.0.0.0:9042".to_string()])
             .build();
     }

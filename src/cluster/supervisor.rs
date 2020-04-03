@@ -225,6 +225,9 @@ mod tests {
         let cluster = self::SupervisorBuilder::new()
             .reporter_count(1)
             .thread_count(1)
+            .buffer_size(1024000)
+            .recv_buffer_size(None)
+            .send_buffer_size(None)
             .dashboard_tx(dashboard_tx)
             .build();
         let cluster_tx = cluster.clone_tx();
