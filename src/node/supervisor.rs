@@ -26,7 +26,10 @@ actor!(SupervisorBuilder {
     data_center: DC,
     reporter_count: u8,
     shard_count: u8,
-    supervisor_tx: supervisor::Sender
+    supervisor_tx: supervisor::Sender,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>
 });
 
 impl SupervisorBuilder {
@@ -46,6 +49,9 @@ impl SupervisorBuilder {
             stages,
             node_registry: Vec::new(),
             supervisor_tx: self.supervisor_tx.unwrap(),
+            buffer_size: self.buffer_size.unwrap(),
+            recv_buffer_size: self.recv_buffer_size.unwrap(),
+            send_buffer_size: self.send_buffer_size.unwrap(),
         }
     }
 }
@@ -62,6 +68,9 @@ pub struct Supervisor {
     stages: Stages,
     node_registry: NodeRegistry,
     supervisor_tx: supervisor::Sender,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
 }
 
 impl Supervisor {
@@ -79,8 +88,10 @@ impl Supervisor {
                 .reporter_count(self.reporter_count)
                 .tx(stage_tx.clone())
                 .rx(stage_rx)
+                .buffer_size(self.buffer_size)
+                .recv_buffer_size(self.recv_buffer_size)
+                .send_buffer_size(self.send_buffer_size)
                 .build();
-
             tokio::spawn(stage.run());
             self.stages.insert(shard_id, stage_tx);
         }

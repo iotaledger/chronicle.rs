@@ -37,6 +37,9 @@ pub enum Event {
 actor!(SupervisorBuilder {
     reporter_count: u8,
     thread_count: usize,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
     dashboard_tx: dashboard::Sender
 });
 
@@ -48,6 +51,9 @@ impl SupervisorBuilder {
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
+            buffer_size: self.buffer_size.unwrap(),
+            recv_buffer_size: self.recv_buffer_size.unwrap(),
+            send_buffer_size: self.send_buffer_size.unwrap(),
             dashboard_tx: self.dashboard_tx.unwrap(),
             registry: HashMap::new(),
             arc_ring: Some(arc_ring),
@@ -66,6 +72,9 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     reporter_count: u8,
     thread_count: usize,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
     dashboard_tx: dashboard::Sender,
     registry: Registry,
     arc_ring: Option<ArcRing>,
@@ -83,7 +92,7 @@ impl Supervisor {
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::SpawnNode(address) => {
-                    match fetch_tokens(connect(&address).await).await {
+                    match fetch_tokens(connect(&address, None, None).await).await {
                         Ok(mut cqlconn) => {
                             let shard_count = cqlconn.get_shard_count();
                             let tokens = cqlconn.take_tokens();
@@ -94,6 +103,9 @@ impl Supervisor {
                                 .shard_count(shard_count)
                                 .data_center(dc.clone())
                                 .supervisor_tx(self.tx.clone())
+                                .buffer_size(self.buffer_size)
+                                .recv_buffer_size(self.recv_buffer_size)
+                                .send_buffer_size(self.send_buffer_size)
                                 .build();
                             let node_tx = node.clone_tx();
                             let node_id = gen_node_id(&address);

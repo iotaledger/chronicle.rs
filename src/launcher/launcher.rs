@@ -13,6 +13,9 @@ impl AppsBuilder {
         .listen_address("0.0.0.0:8080".to_string())
         .thread_count(2)
         .reporter_count(1)
+        .buffer_size(1024000)
+        .recv_buffer_size(1024000)
+        .send_buffer_size(1024000)
         .nodes(vec!["172.17.0.2:9042".to_string()]);
         // add app to AppsBuilder then transform it to Apps
         self.engine(engine)

@@ -1,16 +1,14 @@
 // please note: preparer is not a real actor instead is a resumption actor (without its own mailbox/channel).
-use super::{Error, Status, StreamStatus, Worker};
+use super::{Error, Worker};
 use crate::stage::reporter::{Event, Giveload, Sender};
 
 #[derive(Debug)]
 pub struct QueryRef {
-    status: Status,
 }
 
 impl QueryRef {
     fn new() -> Self {
         QueryRef {
-            status: Status::New,
         }
     }
 }
@@ -21,19 +19,10 @@ pub struct Preparer {
 }
 
 impl Worker for Preparer {
-    fn send_streamstatus(&mut self, stream_status: StreamStatus) -> Status {
-        match stream_status {
-            Ok(_) => self.query.status.return_streamstatus(),
-            Err(_) => self.query.status.return_error(),
-        }
+    fn send_response(self: Box<Self>, _tx: &Option<Sender>, _giveload: Vec<u8>) {
+        
     }
-
-    fn send_response(&mut self, _tx: &Option<Sender>, _giveload: Vec<u8>) -> Status {
-        self.query.status.return_response()
-    }
-    fn send_error(&mut self, _error: Error) -> Status {
-        self.query.status.return_error()
-    }
+    fn send_error(self: Box<Self>, _error: Error) { }
 }
 
 pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Giveload) {
@@ -46,7 +35,7 @@ pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Givel
         // create event query
         let event = Event::Request {
             payload: prepare_payload.to_vec(),
-            worker: smallbox!(preparer),
+            worker: Box::new(preparer),
         };
         // send to reporter(self as this function is invoked inside reporter)
         if let Some(tx) = tx {

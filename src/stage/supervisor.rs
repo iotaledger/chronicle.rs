@@ -4,6 +4,8 @@ use super::sender;
 use crate::connection::cql::connect_to_shard_id;
 use crate::node;
 use crate::stage::reporter::{Stream, Streams};
+use std::sync::Arc;
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -12,6 +14,7 @@ use tokio::time::delay_for;
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type Reporters = HashMap<u8, mpsc::UnboundedSender<reporter::Event>>;
+pub type Payloads = Arc<Vec<Reusable>>;
 
 #[derive(Debug)]
 pub enum Event {
@@ -26,11 +29,17 @@ actor!(SupervisorBuilder {
     shard_id: u8,
     tx: Sender,
     rx: Receiver,
-    node_tx: node::supervisor::Sender
+    node_tx: node::supervisor::Sender,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>
 });
 
 impl SupervisorBuilder {
     pub fn build(self) -> Supervisor {
+        // create reusable payloads as giveload
+        let vector: Vec<Reusable> = Vec::new();
+        let payloads: Payloads = Arc::new(vector);
         Supervisor {
             session_id: 0,
             reporters: HashMap::with_capacity(self.reporter_count.unwrap() as usize),
@@ -41,9 +50,35 @@ impl SupervisorBuilder {
             tx: self.tx,
             rx: self.rx.unwrap(),
             node_tx: self.node_tx.unwrap(),
+            payloads: payloads,
+            buffer_size: self.buffer_size.unwrap(),
+            recv_buffer_size: self.recv_buffer_size.unwrap(),
+            send_buffer_size: self.send_buffer_size.unwrap(),
         }
     }
 }
+#[derive(Default)]
+pub struct Reusable {
+    value: UnsafeCell<Option<sender::Payload>>,
+}
+impl Reusable {
+    pub fn as_mut(&self) -> &mut Option<sender::Payload> {
+        unsafe {
+            self.value.get().as_mut().unwrap()
+        }
+    }
+    pub fn as_ref_payload(&self) -> Option<&sender::Payload> {
+        unsafe {
+            self.value.get().as_ref().unwrap().as_ref()
+        }
+    }
+    pub fn as_mut_payload(&self) -> Option<&mut sender::Payload> {
+        unsafe {
+            self.value.get().as_mut().unwrap().as_mut()
+        }
+    }
+}
+unsafe impl Sync for Reusable {}
 
 pub struct Supervisor {
     session_id: usize,
@@ -55,15 +90,28 @@ pub struct Supervisor {
     rx: Receiver,
     node_tx: node::supervisor::Sender,
     reporters: Reporters,
+    payloads: Payloads,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
 }
 
 impl Supervisor {
     pub async fn run(mut self) {
         let reporters_num = self.reporters.capacity() as u8;
         // Create sender's channel
-        let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
+        let (sender_tx, sender_rx) = mpsc::unbounded_channel::<Stream>();
         // Prepare range to later create stream_ids vector per reporter
         let (mut start_range, appends_num): (Stream, Stream) = (0, 32767 / (reporters_num as i16));
+        // init Reusable payloads holder to enable reporter/sender/receiver
+        // to reuse the payload whenever is possible.
+        {
+            let last_range = appends_num * (reporters_num as i16);
+            let payloads = Arc::get_mut(&mut self.payloads).unwrap();
+            for _ in 0..last_range {
+                payloads.push(Reusable::default())
+            }
+        }
         // Start reporters
         for reporter_num in 0..reporters_num {
             // Create reporter's channel
@@ -112,7 +160,7 @@ impl Supervisor {
                 Event::Connect(sender_tx, sender_rx) => {
                     // Only try to connect if the stage not shutting_down
                     if self.tx.is_some() {
-                        match connect_to_shard_id(&self.address, self.shard_id).await {
+                        match connect_to_shard_id(&self.address, self.shard_id, self.recv_buffer_size, self.send_buffer_size).await {
                             Ok(mut cqlconn) => {
                                 // Change the connected status to true
                                 self.connected = true;
@@ -128,13 +176,15 @@ impl Supervisor {
                                     .session_id(self.session_id)
                                     .socket_tx(socket_tx)
                                     .reporters(self.reporters.clone())
+                                    .payloads(self.payloads.clone())
                                     .build();
                                 tokio::spawn(sender_state.run());
                                 // Spawn/restart receiver
-                                let receiver = receiver::ReceiverBuidler::new()
+                                let receiver = receiver::ReceiverBuilder::new()
                                     .socket_rx(socket_rx)
                                     .reporters(self.reporters.clone())
                                     .session_id(self.session_id)
+                                    .payloads(self.payloads.clone())
                                     .build();
                                 tokio::spawn(receiver.run());
                             }
@@ -162,7 +212,7 @@ impl Supervisor {
                     // change the connected status
                     self.connected = false;
                     // Create sender's channel
-                    let (sender_tx, sender_rx) = mpsc::unbounded_channel::<sender::Event>();
+                    let (sender_tx, sender_rx) = mpsc::unbounded_channel::<Stream>();
                     if let Some(tx) = &self.tx {
                         tx.send(Event::Connect(sender_tx, sender_rx)).unwrap();
                     };

@@ -11,6 +11,9 @@ app!(EngineBuilder {
     listen_address: String,
     reporter_count: ReporterCount,
     thread_count: ThreadCount,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
     nodes: Vec<String>
 });
 
@@ -20,6 +23,9 @@ impl EngineBuilder {
             listen_address: self.listen_address.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
+            buffer_size: self.buffer_size.unwrap(),
+            recv_buffer_size: self.recv_buffer_size.unwrap(),
+            send_buffer_size: self.send_buffer_size.unwrap(),
             nodes: self.nodes,
             launcher_tx: self.launcher_tx,
         }
@@ -30,6 +36,9 @@ pub struct Engine {
     listen_address: String,
     reporter_count: u8,
     thread_count: usize,
+    buffer_size: usize,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
     nodes: Option<Vec<String>>,
     launcher_tx: Option<mpsc::UnboundedSender<String>>,
 }
@@ -59,6 +68,9 @@ impl Engine {
         let cluster = cluster::SupervisorBuilder::new()
             .reporter_count(self.reporter_count)
             .thread_count(self.thread_count)
+            .buffer_size(self.buffer_size)
+            .recv_buffer_size(self.recv_buffer_size)
+            .send_buffer_size(self.send_buffer_size)
             .dashboard_tx(dashboard.clone_tx())
             .build();
         // clone dashboard_tx to return in case some(nodes) used for testing

@@ -1,8 +1,7 @@
 use super::sender::{self, Payload};
 use super::supervisor;
-use crate::worker::{Error, Status, StreamStatus, Worker};
-use smallbox::space::S64;
-use smallbox::SmallBox;
+use crate::worker::{Error, Worker};
+use std::io::{Error as IoError, ErrorKind};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
@@ -16,18 +15,17 @@ pub type Stream = i16;
 // Streams type is array/list which should hold u8 from 1 to 32768
 pub type Streams = Vec<Stream>;
 // Worker is how will be presented in the workers_map
-type Workers = HashMap<Stream, SmallBox<dyn Worker, S64>>;
+type Workers = HashMap<Stream, Box<dyn Worker>>;
 #[derive(Debug)]
 pub enum Event {
     Request {
-        worker: SmallBox<dyn Worker, S64>,
+        worker: Box<dyn Worker>,
         payload: Payload,
     },
     Response {
-        giveload: Giveload,
         stream_id: Stream,
     },
-    StreamStatus(StreamStatus),
+    Err(std::io::Error, Stream),
     Session(Session),
 }
 
@@ -46,7 +44,8 @@ actor!(ReporterBuilder {
     shard_id: u8,
     tx: Sender,
     rx: Receiver,
-    stage_tx: supervisor::Sender
+    stage_tx: supervisor::Sender,
+    payloads: supervisor::Payloads
 });
 
 impl ReporterBuilder {
@@ -63,6 +62,7 @@ impl ReporterBuilder {
             rx: self.rx.unwrap(),
             stage_tx: self.stage_tx.unwrap(),
             sender_tx: None,
+            payloads: self.payloads.unwrap(),
         }
     }
 }
@@ -79,6 +79,7 @@ pub struct Reporter {
     rx: Receiver,
     stage_tx: supervisor::Sender,
     sender_tx: Option<sender::Sender>,
+    payloads: supervisor::Payloads,
 }
 
 impl Reporter {
@@ -86,28 +87,23 @@ impl Reporter {
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::Request {
-                    mut worker,
+                    worker,
                     mut payload,
                 } => {
                     if let Some(stream) = self.streams.pop() {
                         // Assign stream_id to the payload
                         assign_stream_to_payload(stream, &mut payload);
-                        // Put the payload inside an event of a socket_sender(the sender_tx inside reporter's state)
-                        let event = sender::Event::Payload {
-                            stream: stream,
-                            payload: payload,
-                            reporter_id: self.reporter_id,
-                        };
+                        // store payload as reusable at payloads[stream]
+                        self.payloads[stream as usize].as_mut().replace(payload);
                         // Send the event
                         match &self.sender_tx {
                             Some(sender) => {
-                                let _ = sender.send(event); // as the sender might be closed durring closing a session, and thats fine as force_consistency will respond Error::Lost where the query status is new.
-                                                            // Insert worker into workers map using stream_id as key
+                                sender.send(stream).unwrap();
                                 self.workers.insert(stream, worker);
                             }
                             None => {
-                                // This means the sender_tx had been droped as a result of checkpoint
-                                worker.send_streamstatus(StreamStatus::Err(0));
+                                // This means the sender_tx had been droped as a result of checkpoint from receiver
+                                worker.send_error(Error::Io(IoError::new(ErrorKind::Other, "No Sender!")));
                             }
                         }
                     } else {
@@ -116,41 +112,12 @@ impl Reporter {
                     }
                 }
                 Event::Response {
-                    giveload,
                     stream_id,
                 } => {
-                    let worker = self.workers.get_mut(&stream_id).unwrap();
-                    if let Status::Done = worker.send_response(&self.tx, giveload) {
-                        // Remove the worker from workers.
-                        self.workers.remove(&stream_id).unwrap();
-                        // Push the stream_id back to streams vector.
-                        self.streams.push(stream_id);
-                    };
+                    self.handle_response(stream_id);
                 }
-                Event::StreamStatus(send_status) => {
-                    match send_status {
-                        StreamStatus::Ok(stream_id) => {
-                            // get_mut worker from workers map.
-                            let worker = self.workers.get_mut(&stream_id).unwrap();
-                            // tell the worker and mutate its status,
-                            if let Status::Done = worker.send_streamstatus(send_status) {
-                                // remove the worker from workers.
-                                self.workers.remove(&stream_id);
-                                // push the stream_id back to streams vector.
-                                self.streams.push(stream_id);
-                            };
-                        }
-                        StreamStatus::Err(stream_id) => {
-                            // get_mut worker from workers map.
-                            let worker = self.workers.get_mut(&stream_id).unwrap();
-                            // tell the worker and mutate worker status,
-                            let _status_done = worker.send_streamstatus(send_status);
-                            // remove the worker from workers.
-                            self.workers.remove(&stream_id);
-                            // push the stream_id back to streams vector.
-                            self.streams.push(stream_id);
-                        }
-                    }
+                Event::Err(io_error, stream_id) => {
+                    self.handle_error(stream_id, Error::Io(io_error));
                 }
                 Event::Session(session) => {
                     // drop the sender_tx to prevent any further payloads, and also force sender to gracefully shutdown
@@ -203,6 +170,22 @@ impl Reporter {
             &self.address
         );
     }
+    fn handle_response(&mut self, stream: Stream) {
+        // remove the worker from workers and send response.
+        let worker = self.workers.remove(&stream).unwrap();
+        worker.send_response(&self.tx, self.payloads[stream as usize].as_mut().take().unwrap());
+        // push the stream_id back to streams vector.
+        self.streams.push(stream);
+    }
+    fn handle_error(&mut self, stream: Stream, error: Error) {
+        // remove the worker from workers and send error.
+        let worker = self.workers.remove(&stream).unwrap();
+        // drop payload.
+        self.payloads[stream as usize].as_mut().take().unwrap();
+        worker.send_error(error);
+        // push the stream_id back to streams vector.
+        self.streams.push(stream);
+    }
 }
 
 // private functions
@@ -212,7 +195,7 @@ fn assign_stream_to_payload(stream: Stream, payload: &mut Payload) {
 }
 
 fn force_consistency(streams: &mut Streams, workers: &mut Workers) {
-    for (stream_id, mut worker_id) in workers.drain() {
+    for (stream_id, worker_id) in workers.drain() {
         // push the stream_id back into the streams vector
         streams.push(stream_id);
         // tell worker_id that we lost the response for his request, because we lost scylla connection in middle of request cycle,

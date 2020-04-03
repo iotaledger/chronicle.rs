@@ -53,9 +53,16 @@ struct RowTokens {
     tokens: Vec<String>,
 }
 
-pub async fn connect(address: &Address) -> Result<CqlConn, Error> {
+pub async fn connect(address: &Address, recv_buffer_size: Option<usize>, send_buffer_size: Option<usize>) -> Result<CqlConn, Error> {
     // connect using tokio and return
     let mut stream = TcpStream::connect(address.clone()).await?;
+    // set socket flags
+    if let Some(recv_buffer_size) = recv_buffer_size {
+        stream.set_recv_buffer_size(recv_buffer_size)?
+    }
+    if let Some(send_buffer_size) = send_buffer_size {
+        stream.set_send_buffer_size(send_buffer_size)?
+    }
     // establish cql using startup frame and ensure is ready
     let ref mut compression = Compression::None;
     let startup_frame = Frame::new_req_startup(compression.as_str()).into_cbytes();
@@ -150,12 +157,12 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     Ok(cqlconn)
 }
 
-pub async fn connect_to_shard_id(address: &Address, shard_id: u8) -> Result<CqlConn, Error> {
+pub async fn connect_to_shard_id(address: &Address, shard_id: u8, recv_buffer_size: Option<usize>, send_buffer_size: Option<usize>) -> Result<CqlConn, Error> {
     // buffer connections temporary to force scylla connects us to new shard_id
     let mut conns = Vec::new();
     // loop till we connect to the right shard_id
     loop {
-        match connect(address).await {
+        match connect(address, recv_buffer_size, send_buffer_size).await {
             Ok(cqlconn) => {
                 if cqlconn.shard_id == shard_id {
                     // return

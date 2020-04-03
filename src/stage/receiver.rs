@@ -12,13 +12,15 @@ const HEADER_LENGTH: usize = 9;
 const BUFFER_LENGTH: usize = 1024000;
 
 actor!(
-    ReceiverBuidler {
+    ReceiverBuilder {
         reporters: supervisor::Reporters,
         socket_rx: ReadHalf<TcpStream>,
-        session_id: usize
+        session_id: usize,
+        payloads: supervisor::Payloads,
+        buffer_size: usize
 });
 
-impl ReceiverBuidler {
+impl ReceiverBuilder {
     pub fn build(self) -> Receiver {
         let reporters = self.reporters.unwrap();
         let reporters_len = reporters.len();
@@ -27,11 +29,14 @@ impl ReceiverBuidler {
             socket: self.socket_rx.unwrap(),
             stream_id: 0,
             total_length: 0,
+            current_length: 0,
             header: false,
             buffer: vec![0; BUFFER_LENGTH],
             i: 0,
             session_id: self.session_id.unwrap(),
             appends_num: 32767 / reporters_len as i16,
+            payloads: self.payloads.unwrap(),
+            buffer_size: self.buffer_size.unwrap(),
         }
     }
 }
@@ -42,70 +47,28 @@ pub struct Receiver {
     socket: ReadHalf<TcpStream>,
     stream_id: reporter::Stream,
     total_length: usize,
+    current_length: usize,
     header: bool,
     buffer: Vec<u8>,
     i: usize,
     session_id: usize,
     appends_num: i16,
+    payloads: supervisor::Payloads,
+    buffer_size: usize,
 }
 
 impl Receiver {
     pub async fn run(mut self) {
-        // receiver event loop
         while let Ok(n) = self.socket.read(&mut self.buffer[self.i..]).await {
-            // if n != 0 then the socket is not closed
             if n != 0 {
-                let mut current_length = self.i + n; // cuurrent buffer length is i(recent index) + received n-bytes
-                if current_length < HEADER_LENGTH {
-                    self.i = current_length; // not enough bytes to decode the frame-header
+                self.current_length += n;
+                if self.current_length < HEADER_LENGTH {
+                    self.i = self.current_length;
                 } else {
-                    // if no-header decode the header and resize the buffer(if needed).
-                    if !self.header {
-                        // decode total_length(HEADER_LENGTH + frame_body_length)
-                        self.total_length = get_total_length_usize(&self.buffer);
-                        // decode stream_id
-                        self.stream_id = get_stream_id(&self.buffer);
-                        // resize buffer only if total_length is larger than our buffer
-                        if self.total_length > BUFFER_LENGTH {
-                            // resize the len of the buffer.
-                            self.buffer.resize(self.total_length, 0);
-                        }
-                    }
-                    if current_length >= self.total_length {
-                        let remaining_buffer = self.buffer.split_off(self.total_length);
-                        // send event(response) to reporter
-                        let event = reporter::Event::Response {
-                            giveload: self.buffer,
-                            stream_id: self.stream_id,
-                        };
-                        let reporter_tx = self
-                            .reporters
-                            .get(&compute_reporter_num(self.stream_id, self.appends_num))
-                            .unwrap();
-                        let _ = reporter_tx.send(event);
-                        // decrease total_length from current_length
-                        current_length -= self.total_length;
-                        // reset total_length to zero
-                        self.total_length = 0;
-                        // reset i to new current_length
-                        self.i = current_length;
-                        // process any events in the remaining_buffer.
-                        self.buffer = process_remaining(
-                            remaining_buffer,
-                            &mut self.stream_id,
-                            &mut self.total_length,
-                            &mut self.header,
-                            &mut self.i,
-                            &self.appends_num,
-                            &self.reporters,
-                        );
-                    } else {
-                        self.i = current_length; // update i to n.
-                        self.header = true; // as now we got the frame-header including knowing its body-length
-                    }
+                    self.handle_frame_header(0);
+                    self.handle_frame(n, 0);
                 }
             } else {
-                // breaking the while loop as the received n == 0.
                 break;
             }
         }
@@ -116,61 +79,62 @@ impl Receiver {
             )));
         }
     }
-}
-
-// private functions
-fn process_remaining(
-    mut buffer: Vec<u8>,
-    stream_id: &mut reporter::Stream,
-    total_length: &mut usize,
-    header: &mut bool,
-    current_length: &mut usize,
-    appends_num: &i16,
-    reporters: &Reporters,
-) -> Vec<u8> {
-    // first check if current_length hold header at least
-    if *current_length >= HEADER_LENGTH {
-        // decode and update total_length
-        *total_length = get_total_length_usize(&buffer);
-        // decode and update stream_id
-        *stream_id = get_stream_id(&buffer);
-        // check if current_length
-        if *current_length >= *total_length {
-            let remaining_buffer = buffer.split_off(*total_length);
-            let event = reporter::Event::Response {
-                giveload: buffer,
-                stream_id: *stream_id,
-            };
-            let reporter_tx = reporters
-                .get(&compute_reporter_num(*stream_id, *appends_num))
-                .unwrap();
-            let _ = reporter_tx.send(event);
-            // reset before loop
-            *current_length -= *total_length;
-            process_remaining(
-                remaining_buffer,
-                stream_id,
-                total_length,
-                header,
-                current_length,
-                appends_num,
-                reporters,
-            )
-        } else {
-            if *total_length > BUFFER_LENGTH {
-                buffer.resize(*total_length, 0);
-            } else {
-                buffer.resize(BUFFER_LENGTH, 0);
+    fn handle_remaining_buffer(&mut self, i: usize,end: usize) {
+        if self.current_length < HEADER_LENGTH {
+            for index in i..end {
+                self.buffer[self.i] = self.buffer[index];
+                self.i += 1;
             }
-            *header = true;
-            buffer
+        } else {
+            self.handle_frame_header(i);
+            self.handle_frame(end-i, i);
         }
-    } else {
-        // not enough to decode the buffer, make sure to resize(extend) the buffer to BUFFER_LENGTH
-        buffer.resize(BUFFER_LENGTH, 0);
-        *header = false;
-        *total_length = 0;
-        buffer
+    }
+    fn handle_frame_header(&mut self, padding: usize) {
+        // if no-header decode the header and resize the buffer(if needed).
+        if !self.header {
+            // decode total_length(HEADER_LENGTH + frame_body_length)
+            self.total_length = get_total_length_usize(&self.buffer[padding..]);
+            // decode stream_id
+            self.stream_id = get_stream_id(&self.buffer[padding..]);
+            // get mut ref to payload for stream_id
+            let payload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
+            // resize payload only if total_length is larger than the payload length
+            if self.total_length > payload.len() {
+                // resize the len of the payload.
+                payload.resize(self.total_length, 0);
+            }
+            // set self.i to zero
+            self.i = 0;
+            // set header to true
+            self.header = true;
+        }
+    }
+    fn handle_frame(&mut self, n: usize, mut padding: usize) {
+        if self.current_length >= self.total_length {
+            // get mut ref to payload for stream_id as giveload
+            let giveload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
+            // memcpy the current bytes from self.buffer into payload
+            giveload[(self.current_length-n)..self.total_length]
+            .copy_from_slice(&self.buffer[padding..(padding+self.total_length)]);
+            // tell reporter that giveload is ready.
+            self.reporters
+            .get(&compute_reporter_num(self.stream_id, self.appends_num))
+            .unwrap()
+            .send(reporter::Event::Response{stream_id: self.stream_id});
+            // set header to false
+            self.header = false;
+            // update current_length
+            self.current_length -= self.total_length;
+            // update padding
+            padding = padding+self.total_length;
+            self.handle_remaining_buffer(padding, padding+self.current_length);
+        } else {
+            // get mut ref to payload for stream_id
+            let payload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
+            // memcpy the current bytes from self.buffer into payload
+            payload[(self.current_length-n)..self.current_length].copy_from_slice(&self.buffer[padding..(padding+n)]);
+        }
     }
 }
 
@@ -187,6 +151,6 @@ fn get_stream_id(buffer: &[u8]) -> reporter::Stream {
     ((buffer[2] as reporter::Stream) << 8) | buffer[3] as reporter::Stream
 }
 
-fn compute_reporter_num(stream_id: Stream, appends_num: i16) -> u8 {
+pub fn compute_reporter_num(stream_id: Stream, appends_num: i16) -> u8 {
     (stream_id / appends_num) as u8
 }
