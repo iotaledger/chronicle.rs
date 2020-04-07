@@ -185,6 +185,7 @@ impl Supervisor {
                                     .reporters(self.reporters.clone())
                                     .session_id(self.session_id)
                                     .payloads(self.payloads.clone())
+                                    .buffer_size(self.buffer_size)
                                     .build();
                                 tokio::spawn(receiver.run());
                             }

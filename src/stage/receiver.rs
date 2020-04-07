@@ -2,7 +2,6 @@
 use super::reporter;
 use super::reporter::Stream;
 use super::supervisor;
-use super::supervisor::Reporters;
 use tokio::io::ReadHalf;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
@@ -36,7 +35,6 @@ impl ReceiverBuilder {
             session_id: self.session_id.unwrap(),
             appends_num: 32767 / reporters_len as i16,
             payloads: self.payloads.unwrap(),
-            buffer_size: buffer_size,
         }
     }
 }
@@ -54,7 +52,6 @@ pub struct Receiver {
     session_id: usize,
     appends_num: i16,
     payloads: supervisor::Payloads,
-    buffer_size: usize,
 }
 
 impl Receiver {
@@ -91,7 +88,7 @@ impl Receiver {
         }
     }
     fn handle_frame_header(&mut self, padding: usize) {
-        // if no-header decode the header and resize the buffer(if needed).
+        // if no-header decode the header and resize the payload(if needed).
         if !self.header {
             // decode total_length(HEADER_LENGTH + frame_body_length)
             self.total_length = get_total_length_usize(&self.buffer[padding..]);

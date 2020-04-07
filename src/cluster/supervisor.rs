@@ -4,13 +4,13 @@ use crate::connection::cql::{connect, fetch_tokens};
 use crate::dashboard::dashboard;
 use crate::node::supervisor::gen_node_id;
 use crate::ring::ring::{
-    build_ring, initialize_ring, ArcRing, AtomicRing, GlobalRing, Msb, NodeId, Registry,
+    build_ring, initialize_ring, ArcRing, Msb, NodeId, Registry,
     ShardCount, Token, WeakRing, DC,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::time::delay_for;
+
 //types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;

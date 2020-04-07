@@ -14,4 +14,4 @@ pub mod worker;
 #[macro_use]
 extern crate cdrs_helpers_derive;
 #[macro_use]
-extern crate smallbox;
+extern crate serde_json;

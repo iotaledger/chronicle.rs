@@ -1,5 +1,4 @@
 mod preparer;
-
 use crate::stage::reporter::{Giveload, Sender};
 
 // WorkerId trait type which will be implemented by worker in order to send their channel_tx.

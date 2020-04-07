@@ -7,38 +7,39 @@ WITH REPLICATION = {
 "#;
 
 pub const CREATE_TX_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS chronicle.transaction (
+CREATE TABLE IF NOT EXISTS tangle.transaction (
   hash blob PRIMARY KEY,
   payload blob,
   address blob,
-  value int,
+  value varint,
   obsolete_tag blob,
-  timestamp int,
-  current_index smallint,
-  last_index smallint,
+  timestamp varint,
+  current_index varint,
+  last_index varint,
   bundle blob,
   trunk blob,
   branch blob,
   tag blob,
-  attachment_timestamp int,
-  attachment_timestamp_lower int,
-  attachment_timestamp_upper int,
+  attachment_timestamp varint,
+  attachment_timestamp_lower varint,
+  attachment_timestamp_upper varint,
   nonce blob,
+  milestone varint,
 );
 "#;
 
 pub const CREATE_EDGE_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS chronicle.edge (
-  hash blob,
-  kind tinyint,
-  timestamp int,
+CREATE TABLE IF NOT EXISTS tangle.edge (
+  vertex blob,
+  kind text,
+  timestamp varint,
   tx blob,
-  PRIMARY KEY(hash, kind, timestamp)
+  PRIMARY KEY(vertex, kind, timestamp)
 );
 "#;
 
 pub const INSERT_TX_QUERY: &str = r#"
-  INSERT INTO chronicle.transaction (
+  INSERT INTO tangle.transaction (
     hash,
     payload,
     address,
@@ -59,8 +60,8 @@ pub const INSERT_TX_QUERY: &str = r#"
 "#;
 
 pub const INSERT_EDGE_QUERY: &str = r#"
-  INSERT INTO chronicle.edge (
-    hash,
+  INSERT INTO tangle.edge (
+    vertex,
     kind,
     timestamp,
     tx
@@ -68,12 +69,11 @@ pub const INSERT_EDGE_QUERY: &str = r#"
 "#;
 
 pub const SELECT_TX_QUERY: &str = r#"
-  SELECT * FROM chronicle.transaction
+  SELECT * FROM tangle.transaction
   WHERE hash = ?;
 "#;
 
 pub const SELECT_EDGE_QUERY: &str = r#"
-  SELECT * FROM chronicle.edge
-  WHERE hash = ?
-  AND kind = ?;
+  SELECT * FROM tangle.edge
+  WHERE vertex = ?;
 "#;
