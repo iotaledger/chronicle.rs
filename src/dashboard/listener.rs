@@ -57,3 +57,18 @@ impl Listener {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn create_listener_from_builder() {
+        let (mut dashboard_tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
+        let _ = ListenerBuilder::new()
+            .listen_address("0.0.0.0:9042".to_string())
+            .dashboard_tx(dashboard_tx)
+            .build();
+    }
+}

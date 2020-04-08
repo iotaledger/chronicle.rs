@@ -4,8 +4,7 @@ use crate::connection::cql::{connect, fetch_tokens};
 use crate::dashboard::dashboard;
 use crate::node::supervisor::gen_node_id;
 use crate::ring::ring::{
-    build_ring, initialize_ring, ArcRing, Msb, NodeId, Registry,
-    ShardCount, Token, WeakRing, DC,
+    build_ring, initialize_ring, ArcRing, Msb, NodeId, Registry, ShardCount, Token, WeakRing, DC,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -220,7 +219,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_build_supervisor() {
+    async fn create_cluster_from_builder() {
         let (mut dashboard_tx, dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
         let cluster = self::SupervisorBuilder::new()
             .reporter_count(1)

@@ -67,3 +67,26 @@ impl Websocket {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use tokio::net::TcpStream;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::accept_async;
+
+    #[tokio::test]
+    #[ignore]
+    async fn create_websocket_from_builder() {
+        let peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let socket = TcpStream::connect(peer).await.unwrap();
+        let ws_stream = accept_async(socket).await.unwrap();
+        let (mut dashboard_tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
+        let _ = WebsocketdBuilder::new()
+            .peer(peer)
+            .stream(ws_stream)
+            .dashboard_tx(dashboard_tx.clone())
+            .build();
+    }
+}
