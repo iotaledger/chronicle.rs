@@ -33,7 +33,7 @@ impl Helper {
             tokio::time::delay_for(five_seconds).await;
         }
         // send tryBuild (assuming the nodes have been added)
-        let event = dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild);
+        let event = dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild(1));
         let _ = self.dashboard_tx.send(event);
         tokio::time::delay_for(five_seconds).await;
         // now we make use of ring:send() with built Ring.

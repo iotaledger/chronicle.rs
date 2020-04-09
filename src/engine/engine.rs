@@ -2,6 +2,7 @@
 use super::helper::HelperBuilder;
 use crate::cluster;
 use crate::dashboard::dashboard;
+use crate::ring::ring::DC;
 use tokio::sync::mpsc;
 
 type ThreadCount = usize;
@@ -11,6 +12,7 @@ app!(EngineBuilder {
     listen_address: String,
     reporter_count: ReporterCount,
     thread_count: ThreadCount,
+    local_dc: DC,
     buffer_size: usize,
     recv_buffer_size: usize,
     send_buffer_size: usize,
@@ -23,6 +25,7 @@ impl EngineBuilder {
             listen_address: self.listen_address.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
+            local_dc: self.local_dc.unwrap(),
             buffer_size: self.buffer_size.unwrap(),
             recv_buffer_size: self.recv_buffer_size,
             send_buffer_size: self.send_buffer_size,
@@ -36,6 +39,7 @@ pub struct Engine {
     listen_address: String,
     reporter_count: u8,
     thread_count: usize,
+    local_dc: DC,
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
@@ -68,6 +72,7 @@ impl Engine {
         let cluster = cluster::SupervisorBuilder::new()
             .reporter_count(self.reporter_count)
             .thread_count(self.thread_count)
+            .data_centers(vec![self.local_dc.clone()])
             .buffer_size(self.buffer_size)
             .recv_buffer_size(self.recv_buffer_size)
             .send_buffer_size(self.send_buffer_size)
@@ -96,6 +101,7 @@ mod tests {
         let _ = EngineBuilder::new()
             .listen_address("0.0.0.0:8080".to_string())
             .thread_count(2)
+            .local_dc("datacenter1".to_string())
             .reporter_count(1)
             .buffer_size(1024000)
             .nodes(vec!["0.0.0.0:9042".to_string()])

@@ -28,7 +28,7 @@ pub enum Session {
 pub enum Toplogy {
     AddNode(Address),
     RemoveNode(Address),
-    TryBuild,
+    TryBuild(usize),
 }
 pub enum Result {
     Ok(Address),
@@ -95,8 +95,8 @@ impl Dashboard {
                         let event = supervisor::Event::ShutDownNode(address);
                         cluster_tx.send(event).unwrap();
                     }
-                    Toplogy::TryBuild => {
-                        let event = supervisor::Event::TryBuild;
+                    Toplogy::TryBuild(replication_factor) => {
+                        let event = supervisor::Event::TryBuild(replication_factor);
                         cluster_tx.send(event).unwrap();
                     }
                 },

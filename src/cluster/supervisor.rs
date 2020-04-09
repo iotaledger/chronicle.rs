@@ -22,7 +22,6 @@ pub struct NodeInfo {
     pub tokens: Tokens,
     node_id: NodeId,
     shard_count: ShardCount,
-    data_center: DC,
 }
 
 #[derive(Debug)]
@@ -30,12 +29,13 @@ pub enum Event {
     RegisterReporters(node::supervisor::NodeRegistry, Address),
     SpawnNode(Address),
     ShutDownNode(Address),
-    TryBuild,
+    TryBuild(usize),
 }
 
 actor!(SupervisorBuilder {
     reporter_count: u8,
     thread_count: usize,
+    data_centers: Vec<DC>,
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
@@ -50,6 +50,7 @@ impl SupervisorBuilder {
         Supervisor {
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
+            data_centers: self.data_centers.unwrap(),
             buffer_size: self.buffer_size.unwrap(),
             recv_buffer_size: self.recv_buffer_size.unwrap(),
             send_buffer_size: self.send_buffer_size.unwrap(),
@@ -71,6 +72,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     reporter_count: u8,
     thread_count: usize,
+    data_centers: Vec<DC>,
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
@@ -110,7 +112,6 @@ impl Supervisor {
                             let node_id = gen_node_id(&address);
                             // generate nodeinfo
                             let node_info = NodeInfo {
-                                data_center: dc,
                                 node_id,
                                 shard_count,
                                 node_tx,
@@ -163,16 +164,18 @@ impl Supervisor {
                     let event = dashboard::Event::Result(dashboard::Result::Ok(address));
                     self.dashboard_tx.send(event);
                 }
-                Event::TryBuild => {
+                Event::TryBuild(uniform_rf) => {
                     // do cleanup on weaks
                     self.cleanup();
                     if self.ready == 0 && self.build {
                         // re/build
                         let version = self.new_version();
                         let (new_arc_ring, old_weak_ring) = build_ring(
+                            &mut self.data_centers,
                             &self.nodes,
                             self.registry.clone(),
                             self.reporter_count,
+                            uniform_rf,
                             version,
                         );
                         // replace self.arc_ring
@@ -224,19 +227,11 @@ mod tests {
         let cluster = self::SupervisorBuilder::new()
             .reporter_count(1)
             .thread_count(1)
+            .data_centers(vec!["datacenter1".to_string()])
             .buffer_size(1024000)
             .recv_buffer_size(None)
             .send_buffer_size(None)
             .dashboard_tx(dashboard_tx)
             .build();
-        let cluster_tx = cluster.clone_tx();
-
-        if let Sender = &cluster_tx {
-            //    tokio::task::spawn(cluster.run());
-            cluster_tx.send(Event::TryBuild);
-            tokio::task::yield_now().await;
-        } else {
-            assert!(false, "Cluster tx clone fail.");
-        }
     }
 }

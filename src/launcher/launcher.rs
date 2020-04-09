@@ -12,6 +12,7 @@ impl AppsBuilder {
         let engine = EngineBuilder::new()
         .listen_address("0.0.0.0:8080".to_string())
         .thread_count(2)
+        .local_dc("datacenter1".to_string())
         .reporter_count(1)
         .buffer_size(1024000)
         .recv_buffer_size(1024000)

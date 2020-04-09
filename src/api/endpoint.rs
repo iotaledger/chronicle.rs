@@ -1,8 +1,8 @@
-// work in progress
+use super::router::handle;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use hyper::service::{make_service_fn, service_fn};
-use serde::de;
+use hyper::server::Server;
 
 actor!(ServerBuilder {
     listen_address: String
@@ -29,19 +29,6 @@ impl Endpoint {
         let server = Server::bind(&self.addr).serve(service);
         if let Err(e) = server.await {
             eprintln!("error: {}, endpoint: {}",e,self.addr);
-        }
-    }
-}
-
-
-async fn router(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    let (parts, body) = req.into_parts();
-    match (parts.method, parts.uri.path()) {
-        (Method::POST, "/api") => {
-
-        }
-        _ => {
-            Ok(Response::new(Body::from("Can only POST to /api")))
         }
     }
 }

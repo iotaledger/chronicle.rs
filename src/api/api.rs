@@ -20,6 +20,5 @@ pub struct Api {
 
 impl Api {
     pub async fn run(mut self) {
-        
     }
 }

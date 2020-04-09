@@ -1,4 +1,6 @@
 // work in progress
+use crate::statements::SELECT_TX_QUERY;
+use crate::ring::ring::Ring;
 use crate::worker::{
     Worker,
     Error
@@ -11,49 +13,94 @@ use hyper::{
 use serde_json::Value;
 use serde::Serialize;
 use tokio::sync::mpsc;
+use cdrs::frame::traits::{FromCursor, TryFromRow};
+use cdrs::frame::{frame_result, Flag, Frame, IntoBytes};
+use cdrs::types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row};
+use cdrs::{query, query_values};
 
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 
-#[derive(Serialize)]
-struct Trytes(Vec<Value>);
 
 actor!(GetTrytesBuilder {
-    hashes: Vec<String>
+    hashes: Vec<Value>,
+    data_center: &'static String
 });
 
 impl GetTrytesBuilder {
     pub fn build(self) -> GetTrytes {
-        let (tx, rx) = mpsc::unbounded_channel::<Event>();
         GetTrytes {
             hashes: self.hashes.unwrap(),
-            trytes: Trytes(Vec::new()),
-            tx: Box::new(tx),
-            rx
         }
     }
 }
 
 pub struct GetTrytes {
-    hashes: Vec<String>,
-    trytes: Trytes,
-    tx: Box<Sender>,
-    rx: Receiver,
+    hashes: Vec<Value>,
+}
+
+#[derive(Serialize)]
+struct ResTrytes {
+    trytes: Vec<Value>
 }
 
 impl GetTrytes {
     pub async fn run(mut self) -> Response<Body> {
-        for hash_index in 0..self.hashes.len() {
-            let value = self.process(hash_index).await;
-            self.trytes.0.push(value);
+        let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
+        let mut worker = Box::new(tx);
+        let len = self.hashes.len();
+        let mut hashes = self.hashes.iter_mut();
+        for _ in 0..len {
+            worker = Self::process(hashes.next().unwrap(), worker, &mut rx).await;
         }
-        response!(body: serde_json::to_string(&self.trytes).unwrap())
+        let res_trytes = ResTrytes{trytes: self.hashes};
+        response!(body: serde_json::to_string(&res_trytes).unwrap())
     }
 
-    async fn process(&mut self, hash_index: usize) -> Value {
-        unimplemented!()
+    async fn process(value: &mut Value, worker: Box<Sender>, rx: &mut Receiver) -> Box<Sender> {
+        // by taking the value we are leaving behind null.
+        // now we try to query and get the result
+        if let Value::String(hash) = value.take() {
+            let request = reporter::Event::Request{
+                payload: Self::query(hash),
+                worker: worker
+            };
+            // use random token till murmur3 hash function algo impl is ready
+            // send_local_random_replica will select random replica for token.
+            Ring::send_local_random_replica(rand::random::<i64>(), request);
+                match rx.recv().await.unwrap() {
+                    Event::Response{giveload, tx} => {
+                        // TODO decode the giveload and mutate the value to trytes
+
+                        // return box<sender>
+                        return tx
+                    }
+                    Event::Error{kind, tx} => {
+                        // do nothing as the value is already null,
+                        // still we can appliy other retry strategies
+                        return tx
+                    }
+                }
+        } else {
+            unreachable!()
+        }
     }
+    // unfortunately for now a lot of un necessarily heap allocation in cdrs.
+    // this is a cql query frame, later we will impl execute frame.
+    fn query(hash: String) -> Vec<u8> {
+        let params = query::QueryParamsBuilder::new()
+            .values(query_values!(hash))
+            .page_size(1)
+            .finalize();
+        let query = query::Query{
+            query: SELECT_TX_QUERY.to_string(),
+            params
+         };
+        Frame::new_query(query, vec![Flag::Ignore]).into_cbytes()
+    }
+
 }
+
 pub enum Event {
     Response {
         giveload: Vec<u8>,

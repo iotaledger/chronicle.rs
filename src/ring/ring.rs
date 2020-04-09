@@ -23,7 +23,7 @@ type Replicas = HashMap<DC, Vec<Replica>>;
 type Replica = (NodeId, Msb, ShardCount);
 type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
-pub type GlobalRing = (Uniform<u8>, u8, Registry, Vcell);
+pub type GlobalRing = (Vec<DC>,Uniform<usize>,Uniform<usize>,Uniform<u8>, u8, Registry, Vcell);
 pub type AtomicRing = AtomicPtr<Weak<GlobalRing>>;
 pub type ArcRing = Arc<GlobalRing>;
 pub type WeakRing = Weak<GlobalRing>;
@@ -35,6 +35,9 @@ pub struct Ring {
     root: Vcell,
     uniform: Uniform<u8>,
     rng: ThreadRng,
+    dcs: Vec<DC>,
+    uniform_dcs: Uniform<usize>,
+    uniform_rf: Uniform<usize>,
 }
 
 static mut VERSION: u8 = 0;
@@ -48,7 +51,20 @@ thread_local! {
         let root: Vcell = DeadEnd::initial_vnode();
         let version = 0;
         let weak = None;
-        RefCell::new(Ring{version,weak, registry ,root, uniform, rng})
+        let dcs = vec!["".to_string()];
+        let uniform_dcs: Uniform<usize> = Uniform::new(0,dcs.len());
+        let uniform_rf: Uniform<usize> = Uniform::new(0,1);
+        RefCell::new(Ring{
+            version,
+            weak,
+            registry,
+            root,
+            uniform,
+            rng,
+            uniform_dcs,
+            uniform_rf,
+            dcs
+        })
     };
 }
 
@@ -57,10 +73,35 @@ impl Ring {
         RING.with(|local| {
             local
                 .borrow_mut()
-                .sending(data_center, replica_index, token, request)
+                .sending()
+                .global(data_center, replica_index, token, request)
         })
     }
-    fn sending(&mut self, data_center: &DC, replica_index: usize, token: Token, request: Event) {
+    pub fn send_local(replica_index: usize, token: Token, request: Event) {
+        RING.with(|local| {
+            local
+                .borrow_mut()
+                .sending()
+                .local(replica_index, token, request)
+        })
+    }
+    pub fn send_local_random_replica(token: Token, request: Event) {
+        RING.with(|local| {
+            local
+                .borrow_mut()
+                .sending()
+                .local_random_replica(token, request)
+        })
+    }
+    pub fn send_global_random_replica(token: Token, request: Event) {
+        RING.with(|local| {
+            local
+                .borrow_mut()
+                .sending()
+                .global_random_replica(token, request)
+        })
+    }
+    fn sending(&mut self) -> &mut Self {
         unsafe {
             if VERSION != self.version {
                 // load weak and upgrade to arc if strong_count > 0;
@@ -73,8 +114,11 @@ impl Ring {
                         .unwrap(),
                 ) {
                     let new_weak = Arc::downgrade(&arc);
-                    let (uniform, version, registry, root) = Arc::make_mut(&mut arc);
+                    let (dcs,uniform_dcs,uniform_rf,uniform, version, registry, root) = Arc::make_mut(&mut arc);
                     // update the local ring
+                    self.dcs = dcs.clone();
+                    self.uniform_dcs = uniform_dcs.clone();
+                    self.uniform_rf = uniform_rf.clone();
                     self.uniform = uniform.clone();
                     self.version = version.clone();
                     self.registry = registry.clone();
@@ -83,10 +127,49 @@ impl Ring {
                 };
             }
         }
+    self
+    }
+    fn global(&mut self, data_center: &DC,replica_index: usize, token: Token, request: Event) {
         // send request.
         self.root.as_mut().search(token).send(
             data_center,
             replica_index,
+            token,
+            request,
+            &mut self.registry,
+            &mut self.rng,
+            &self.uniform,
+        );
+    }
+    fn local(&mut self, replica_index: usize, token: Token, request: Event) {
+        // send request.
+        self.root.as_mut().search(token).send(
+            &self.dcs[0],
+            replica_index,
+            token,
+            request,
+            &mut self.registry,
+            &mut self.rng,
+            &self.uniform,
+        );
+    }
+    fn local_random_replica(&mut self, token: Token, request: Event) {
+        // send request.
+        self.root.as_mut().search(token).send(
+            &self.dcs[0],
+            self.rng.sample(self.uniform_rf),
+            token,
+            request,
+            &mut self.registry,
+            &mut self.rng,
+            &self.uniform,
+        );
+    }
+    fn global_random_replica(&mut self, token: Token, request: Event) {
+        // send request.
+        self.root.as_mut().search(token).send(
+            &self.dcs[self.rng.sample(self.uniform_dcs)],
+            self.rng.sample(self.uniform_rf),
             token,
             request,
             &mut self.registry,
@@ -100,7 +183,15 @@ impl Ring {
         // create initial vnode
         let root = DeadEnd::initial_vnode();
         // pack Into globlal ring tuple
-        let global_ring: GlobalRing = (Uniform::new(0, 1), 0, registry, root);
+        let global_ring: GlobalRing = (
+            vec!["".to_string()], // dcs
+            Uniform::new(0, 1),
+            Uniform::new(0, 1),
+            Uniform::new(0, 1),
+            0,
+            registry,
+            root
+        );
         // create Arc ring
         let arc_ring = Arc::new(global_ring);
         // downgrade to weak
@@ -215,7 +306,7 @@ impl Endpoints for Option<Replicas> {
     ) {
         // simulate reporter,
         if let Event::Request {
-            mut worker,
+            worker,
             payload: _,
         } = request
         {
@@ -372,9 +463,11 @@ fn walk_clockwise(
 }
 
 pub fn build_ring(
+    dcs: &mut Vec<DC>,
     nodes: &Nodes,
     registry: Registry,
     reporter_count: u8,
+    uniform_rf: usize,
     version: u8,
 ) -> (Arc<GlobalRing>, Box<Weak<GlobalRing>>) {
     let mut tokens = Vec::new(); // complete tokens-range
@@ -432,9 +525,12 @@ pub fn build_ring(
         vnodes.push(max_vnode);
     }
     // compute_ring
-    let root_vnode = compute_ring(&vnodes);
+    let root_vnode = compute_ring(&vnodes, dcs);
     // create arc_ring
     let arc_ring = Arc::new((
+        dcs.clone(),
+        Uniform::new(0, dcs.len()),
+        Uniform::new(0, uniform_rf),
         Uniform::new(0, reporter_count),
         version,
         registry,
@@ -460,9 +556,18 @@ pub fn build_ring(
     (arc_ring, unsafe { Box::from_raw(old_weak) })
 }
 
-fn compute_ring(vnodes: &Vec<VnodeTuple>) -> Vcell {
+fn compute_ring(vnodes: &Vec<VnodeTuple>, dcs: &mut Vec<DC>) -> Vcell {
     // compute chain (vnodes with replicas)
     let chain = compute_chain(vnodes);
+    // clear dcs except the local_dc which is located at the header
+    dcs.truncate(1);
+    // collect data centers
+    for dc in chain.first().as_ref().unwrap().2.keys() {
+        // push rest dcs
+        if dc != &dcs[0] {
+            dcs.push(dc.to_string())
+        }
+    }
     // compute balanced binary tree
     compute_vnode(&chain)
 }
