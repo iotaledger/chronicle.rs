@@ -11,7 +11,6 @@ pub mod ring;
 pub mod stage;
 pub mod statements;
 pub mod worker;
+pub mod utils;
 #[macro_use]
 extern crate cdrs_helpers_derive;
-#[macro_use]
-extern crate serde_json;

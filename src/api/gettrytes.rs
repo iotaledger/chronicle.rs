@@ -77,7 +77,7 @@ impl GetTrytes {
                     }
                     Event::Error{kind, tx} => {
                         // do nothing as the value is already null,
-                        // still we can appliy other retry strategies
+                        // still we can apply other retry strategies
                         return tx
                     }
                 }
