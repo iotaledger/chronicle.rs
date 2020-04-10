@@ -62,8 +62,8 @@ pub fn murmur3_cassandra_x64_128<T: Read>(source: &mut T, seed: u32) -> Result<T
             h1 = fmix64_i64(h1);
             h2 = fmix64_i64(h2);
             h1 = h1.wrapping_add(h2);
-            h2 = h2.wrapping_add(h1);
             // This is the original output
+            // h2 = h2.wrapping_add(h1);
             // let x = ((h2 as i128) << 64) | (h1 as u64 as i128);
             let x = h1 as Token;
             return Ok(x);
