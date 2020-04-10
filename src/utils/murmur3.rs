@@ -16,13 +16,6 @@ where
 /// Modified from https://github.com/stusmall/murmur3
 ///
 /// Use the x64 variant of the 128 bit murmur3 to hash some [Read] implementation.
-///
-/// # Example
-/// ```
-/// use std::io::Cursor;
-/// use murmur3::murmur3_x64_128;
-/// let hash_result = murmur3_cassandra_x64_128(&mut Cursor::new("EHUHSJRCMDJSZUQMNLDBSRFC9O9XCI9SMHFWWHNDYOOOWMSOJQHCC9GFUEGECEVVXCSXYTHSRJ9TZ9999"), 0);
-/// ```
 pub fn murmur3_cassandra_x64_128<T: Read>(source: &mut T, seed: u32) -> Result<Token> {
     const C1: i64 = -8663945395140668459i64; // 0x87c3_7b91_1142_53d5;
     const C2: i64 = 0x4cf5_ad43_2745_937f;
