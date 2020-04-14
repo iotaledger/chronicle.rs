@@ -64,9 +64,13 @@ async fn route(request: ReqBody) -> Response<Body> {
         "getTrytes" => {
             if let Some(hashes) = request.hashes {
                 if let Value::Array(hashes) = serde_json::to_value(hashes).unwrap() {
-                    GetTrytesBuilder::new()
-                    .hashes(hashes)
-                    .build().run().await
+                    if !hashes.is_empty() {
+                        GetTrytesBuilder::new()
+                        .hashes(hashes)
+                        .build().run().await
+                    } else {
+                        response!(status: BAD_REQUEST, body: r#"{"error":"No Hashes"}"#)
+                    }
                 } else {
                     unreachable!()
                 }

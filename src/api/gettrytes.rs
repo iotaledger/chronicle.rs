@@ -1,4 +1,6 @@
 // work in progress
+use crate::frame::decoder::Decoder;
+use crate::frame::frame::Frame;
 use crate::statements::SELECT_TX_QUERY;
 use crate::ring::ring::Ring;
 use crate::worker::{
@@ -13,18 +15,15 @@ use hyper::{
 use serde_json::Value;
 use serde::Serialize;
 use tokio::sync::mpsc;
-use cdrs::frame::traits::{FromCursor, TryFromRow};
-use cdrs::frame::{frame_result, Flag, Frame, IntoBytes};
-use cdrs::types::{blob::Blob, from_cdrs::FromCDRSByName, rows::Row};
-use cdrs::{query, query_values};
+use cdrs::frame::{Opcode, Flag, Frame as CdrsFrame, IntoBytes};
+use cdrs::{query, query_values, query::QueryFlags};
 
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 
 
 actor!(GetTrytesBuilder {
-    hashes: Vec<Value>,
-    data_center: &'static String
+    hashes: Vec<Value>
 });
 
 impl GetTrytesBuilder {
@@ -44,14 +43,30 @@ struct ResTrytes {
     trytes: Vec<Value>
 }
 
+enum Trytes {
+    GiveLoad(Vec<u8>),
+    Trytes(String),
+}
+
+impl Decoder for Trytes {
+    fn decode(self) -> Self {
+        if let Trytes::GiveLoad(_giveload) = self {
+            // decode giveload as string/ trytes
+            unimplemented!()
+            // return Trytes::Trytes(String)
+        } else {
+            unreachable!()
+        }
+    }
+}
+
 impl GetTrytes {
     pub async fn run(mut self) -> Response<Body> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(tx);
-        let len = self.hashes.len();
         let mut hashes = self.hashes.iter_mut();
-        for _ in 0..len {
-            worker = Self::process(hashes.next().unwrap(), worker, &mut rx).await;
+        while let Some(value) = hashes.next() {
+            worker = Self::process(value, worker, &mut rx).await;
         }
         let res_trytes = ResTrytes{trytes: self.hashes};
         response!(body: serde_json::to_string(&res_trytes).unwrap())
@@ -70,12 +85,15 @@ impl GetTrytes {
             Ring::send_local_random_replica(rand::random::<i64>(), request);
                 match rx.recv().await.unwrap() {
                     Event::Response{giveload, tx} => {
-                        // TODO decode the giveload and mutate the value to trytes
-
+                        if Opcode::from(giveload.opcode()) == Opcode::Result {
+                            if let Trytes::Trytes(trytes) = Trytes::GiveLoad(giveload).decode() {
+                                *value = serde_json::value::Value::String(trytes);
+                            };
+                        }
                         // return box<sender>
                         return tx
                     }
-                    Event::Error{kind, tx} => {
+                    Event::Error{kind: _, tx} => {
                         // do nothing as the value is already null,
                         // still we can apply other retry strategies
                         return tx
@@ -91,14 +109,14 @@ impl GetTrytes {
         let params = query::QueryParamsBuilder::new()
             .values(query_values!(hash))
             .page_size(1)
+            .flags(vec![QueryFlags::SkipMetadata])
             .finalize();
         let query = query::Query{
             query: SELECT_TX_QUERY.to_string(),
             params
          };
-        Frame::new_query(query, vec![Flag::Ignore]).into_cbytes()
+        CdrsFrame::new_query(query, vec![Flag::Ignore]).into_cbytes()
     }
-
 }
 
 pub enum Event {

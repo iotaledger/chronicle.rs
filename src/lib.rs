@@ -12,5 +12,6 @@ pub mod stage;
 pub mod statements;
 pub mod worker;
 pub mod utils;
+pub mod frame;
 #[macro_use]
 extern crate cdrs_helpers_derive;
