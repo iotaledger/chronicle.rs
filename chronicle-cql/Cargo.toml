@@ -1,0 +1,15 @@
+[package]
+name = "chronicle-cql"
+version = "0.1.0"
+authors = ["Chronicle developers"]
+edition = "2018"
+
+[dependencies]
+
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "murmur3_benchmark"
+harness = false

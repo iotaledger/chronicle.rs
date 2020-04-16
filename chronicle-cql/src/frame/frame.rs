@@ -25,6 +25,6 @@ impl Frame for Vec<u8> {
         todo!()
     }
     fn body(&self) -> &[u8] {
-        &self[10..self.length()]
+        &self[9..self.length()]
     }
 }

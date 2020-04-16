@@ -1,9 +1,9 @@
+#[macro_export]
 macro_rules! launcher {
     ($name:ident {$($app:ident : $t:ty),+}) => {
         use tokio::sync::mpsc;
         pub type Sender = mpsc::UnboundedSender<String>;
         pub type Receiver = mpsc::UnboundedReceiver<String>;
-        pub struct Break;
         #[derive(Default)]
         pub struct $name {
             tx: Option<Sender>,
@@ -82,54 +82,3 @@ macro_rules! launcher {
     (@count $t1:tt, $($t:tt),+) => { 1 + launcher!(@count $($t),+) };
     (@count $t:tt) => { 1 };
 }
-
-macro_rules! app {
-    ($struct:ident {$( $field:ident:$type:ty ),*}) =>{
-        #[derive(Default)]
-        pub struct $struct {
-            launcher_tx: Option<mpsc::UnboundedSender<String>>,
-            $(
-                $field: Option<$type>,
-            )*
-        }
-        impl $struct {
-            pub fn new() -> Self {
-                Self::default()
-            }
-            pub fn launcher_tx(mut self, launcher_tx: mpsc::UnboundedSender<String>) -> Self {
-                self.launcher_tx.replace(launcher_tx);
-                self
-            }
-            $(
-                pub fn $field(mut self, $field: $type) -> Self {
-                    self.$field.replace($field);
-                    self
-                }
-            )*
-        }
-    };
-}
-
-macro_rules! actor {
-    ($struct:ident {$( $field:ident:$type:ty ),*}) =>{
-        #[derive(Default)]
-        pub struct $struct {
-            $(
-                $field: Option<$type>,
-            )*
-        }
-        impl $struct {
-            pub fn new() -> Self {
-                Self::default()
-            }
-
-            $(
-                pub fn $field(mut self, $field: $type) -> Self {
-                    self.$field.replace($field);
-                    self
-                }
-            )*
-        }
-    };
-}
-// pub mod launcher; uncomment for testing

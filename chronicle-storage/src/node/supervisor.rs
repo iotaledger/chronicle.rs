@@ -1,4 +1,3 @@
-// node supervisor .. spawn stages // WIP
 use super::stage;
 use crate::cluster::supervisor;
 use crate::ring::ring::NodeId;

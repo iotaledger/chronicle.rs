@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate criterion;
-use chronicle::utils::murmur3::murmur3_cassandra_x64_128;
+use chronicle_cql::murmur3::murmur3::murmur3_cassandra_x64_128;
 use criterion::Criterion;
 use std::io::Cursor;
 
