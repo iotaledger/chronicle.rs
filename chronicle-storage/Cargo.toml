@@ -1,0 +1,15 @@
+[package]
+name = "chronicle-storage"
+version = "0.1.0"
+authors = ["Chronicle developers"]
+edition = "2018"
+
+[dependencies]
+chronicle-common = { path = "../chronicle-common" }
+chronicle-cql = { path = "../chronicle-cql" }
+futures = "0.3"
+tokio = { version = "0.2", features = ["macros", "stream", "sync", "net", "io-util", "rt-threaded", "time"] }
+tokio-tungstenite = "0.10"
+rand = "0.7"
+cdrs = "2.2.4"
+cdrs_helpers_derive = "0.1.0"

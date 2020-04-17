@@ -1,26 +1,27 @@
-// work in progress
-use crate::frame::decoder::Decoder;
-use crate::frame::frame::Frame;
-use crate::statements::SELECT_TX_QUERY;
-use crate::ring::ring::Ring;
-use crate::worker::{
+
+use chronicle_cql::frame::decoder::Decoder;
+use chronicle_cql::frame::frame::Frame;
+use chronicle_common::statements::statements::SELECT_TX_QUERY;
+use chronicle_storage::ring::ring::Ring;
+use tokio::sync::mpsc;
+use chronicle_storage::worker::{
     Worker,
     Error
 };
-use crate::stage::reporter;
+use chronicle_storage::stage::reporter;
 use hyper::{
     Response,
     Body
 };
 use serde_json::Value;
 use serde::Serialize;
-use tokio::sync::mpsc;
 use cdrs::frame::{Opcode, Flag, Frame as CdrsFrame, IntoBytes};
 use cdrs::{query, query_values, query::QueryFlags};
 
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
-
+#[derive(Debug)]
+pub struct GetTrytesId(Sender);
 
 actor!(GetTrytesBuilder {
     hashes: Vec<Value>
@@ -60,10 +61,14 @@ impl Decoder for Trytes {
     }
 }
 
+struct T {
+
+}
+
 impl GetTrytes {
     pub async fn run(mut self) -> Response<Body> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
-        let mut worker = Box::new(tx);
+        let mut worker = Box::new(GetTrytesId(tx));
         let mut hashes = self.hashes.iter_mut();
         while let Some(value) = hashes.next() {
             worker = Self::process(value, worker, &mut rx).await;
@@ -72,7 +77,7 @@ impl GetTrytes {
         response!(body: serde_json::to_string(&res_trytes).unwrap())
     }
 
-    async fn process(value: &mut Value, worker: Box<Sender>, rx: &mut Receiver) -> Box<Sender> {
+    async fn process(value: &mut Value, worker: Box<GetTrytesId>, rx: &mut Receiver) -> Box<GetTrytesId> {
         // by taking the value we are leaving behind null.
         // now we try to query and get the result
         if let Value::String(hash) = value.take() {
@@ -122,16 +127,16 @@ impl GetTrytes {
 pub enum Event {
     Response {
         giveload: Vec<u8>,
-        tx: Box<Sender>,
+        tx: Box<GetTrytesId>,
     },
     Error {
         kind: Error,
-        tx: Box<Sender>,
+        tx: Box<GetTrytesId>,
     },
 }
 
 // implementation!
-impl Worker for Sender {
+impl Worker for GetTrytesId {
     fn send_response(self: Box<Self>, _: &Option<reporter::Sender>, giveload: Vec<u8>) {
         // to enable reusable self(Sender), we will do unsafe trick
         unsafe {
@@ -141,7 +146,8 @@ impl Worker for Sender {
             let tx = Box::from_raw(raw);
             let event = Event::Response{giveload, tx};
             // now we can use raw to send self through itself.
-            (*raw).send(event);
+            (*raw).0.send(event);
+
         }
     }
     fn send_error(self: Box<Self>, kind: Error) {
@@ -152,7 +158,7 @@ impl Worker for Sender {
             let samebox = Box::from_raw(raw);
             let event = Event::Error{kind, tx: samebox};
             // now we can use raw to send itself through itself.
-            (*raw).send(event);
+            (*raw).0.send(event);
         }
     }
 

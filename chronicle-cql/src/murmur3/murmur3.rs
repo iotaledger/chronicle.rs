@@ -1,4 +1,3 @@
-use crate::ring::ring::Token;
 use std::io::Cursor;
 use std::io::{Read, Result};
 use std::ops::Shl;
@@ -20,10 +19,10 @@ where
 /// # Example
 /// ```
 /// use std::io::Cursor;
-/// use chronicle::utils::murmur3::murmur3_cassandra_x64_128;
+/// use chronicle_cql::murmur3::murmur3::murmur3_cassandra_x64_128;
 /// let hash_result = murmur3_cassandra_x64_128(&mut Cursor::new("EHUHSJRCMDJSZUQMNLDBSRFC9O9XCI9SMHFWWHNDYOOOWMSOJQHCC9GFUEGECEVVXCSXYTHSRJ9TZ9999"), 0);
 /// ```
-pub fn murmur3_cassandra_x64_128<T: Read>(source: &mut T, seed: u32) -> Result<Token> {
+pub fn murmur3_cassandra_x64_128<T: Read>(source: &mut T, seed: u32) -> Result<i64> {
     const C1: i64 = -8663945395140668459i64; // 0x87c3_7b91_1142_53d5;
     const C2: i64 = 0x4cf5_ad43_2745_937f;
     const C3: i64 = 0x52dc_e729;
@@ -65,7 +64,7 @@ pub fn murmur3_cassandra_x64_128<T: Read>(source: &mut T, seed: u32) -> Result<T
             // This is the original output
             // h2 = h2.wrapping_add(h1);
             // let x = ((h2 as i128) << 64) | (h1 as u64 as i128);
-            let x = h1 as Token;
+            let x = h1 as i64;
             return Ok(x);
         } else {
             let mut k1 = 0;
