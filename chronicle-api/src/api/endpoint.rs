@@ -1,4 +1,5 @@
 use super::router::handle;
+use chronicle_common::actor;
 use hyper::{
     server::Server,
     service::{
@@ -10,7 +11,6 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
 };
-
 actor!(ServerBuilder { listen_address: String });
 
 impl ServerBuilder {

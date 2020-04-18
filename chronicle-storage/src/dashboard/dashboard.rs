@@ -4,6 +4,7 @@ use crate::{
     cluster::supervisor,
     connection::cql::Address,
 };
+use chronicle_common::actor;
 use futures::stream::SplitSink;
 use std::{
     collections::HashMap,

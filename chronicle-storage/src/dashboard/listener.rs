@@ -3,9 +3,9 @@ use super::{
     dashboard,
     websocket,
 };
+use chronicle_common::actor;
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
-
 // types
 
 actor!(ListenerBuilder {

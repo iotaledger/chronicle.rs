@@ -1,7 +1,9 @@
-#[macro_use]
-extern crate criterion;
 use chronicle_cql::murmur3::murmur3::murmur3_cassandra_x64_128;
-use criterion::Criterion;
+use criterion::{
+    criterion_group,
+    criterion_main,
+    Criterion,
+};
 use std::io::Cursor;
 
 fn tx_murmur3_cassandra_x64_128() {

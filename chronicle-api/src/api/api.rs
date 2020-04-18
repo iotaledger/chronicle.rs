@@ -1,5 +1,5 @@
+use chronicle_common::app;
 use tokio::sync::mpsc;
-
 app!(ApiBuilder { listen_address: String });
 
 impl ApiBuilder {

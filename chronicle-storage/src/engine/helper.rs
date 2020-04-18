@@ -1,8 +1,8 @@
 // helper for unit test and not for production,
 // production setup should manage and setup everything through dashboard. therefore this mod will be removed eventually once we have dashboard ready.
 use crate::dashboard::dashboard;
+use chronicle_common::actor;
 use std::time::Duration;
-
 actor!(
     HelperBuilder {
         nodes: Vec<String>,

@@ -5,6 +5,7 @@
 
 // uses
 use super::dashboard;
+use chronicle_common::actor;
 use futures::{
     stream::{
         SplitSink,

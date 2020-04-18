@@ -45,6 +45,11 @@ use tokio::{
     prelude::*,
 };
 
+use cdrs_helpers_derive::{
+    IntoCDRSValue,
+    TryFromRow,
+};
+
 pub type Address = String;
 
 #[derive(Debug)]
