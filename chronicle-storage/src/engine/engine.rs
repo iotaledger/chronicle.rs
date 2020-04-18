@@ -5,6 +5,7 @@ use crate::{
     dashboard::dashboard,
     ring::ring::DC,
 };
+use chronicle_common::app;
 use tokio::sync::mpsc;
 
 type ThreadCount = usize;

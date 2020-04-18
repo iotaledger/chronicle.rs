@@ -9,7 +9,11 @@ use cdrs::{
     query::QueryFlags,
     query_values,
 };
-use chronicle_common::statements::statements::SELECT_TX_QUERY;
+use chronicle_common::{
+    actor,
+    app,
+    statements::statements::SELECT_TX_QUERY,
+};
 use chronicle_cql::frame::{
     decoder::Decoder,
     frame::Frame,
@@ -29,7 +33,6 @@ use hyper::{
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
-
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]

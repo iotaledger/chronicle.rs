@@ -9,6 +9,7 @@ use crate::worker::{
     Error,
     Worker,
 };
+use chronicle_common::actor;
 use std::{
     collections::HashMap,
     io::{
@@ -17,7 +18,6 @@ use std::{
     },
 };
 use tokio::sync::mpsc;
-
 // types
 pub type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;

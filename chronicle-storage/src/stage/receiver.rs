@@ -4,12 +4,12 @@ use super::{
     reporter::Stream,
     supervisor,
 };
+use chronicle_common::actor;
 use tokio::{
     io::ReadHalf,
     net::TcpStream,
     prelude::*,
 };
-
 // consts
 const HEADER_LENGTH: usize = 9;
 

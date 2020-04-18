@@ -11,6 +11,7 @@ use crate::{
         Streams,
     },
 };
+use chronicle_common::actor;
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
@@ -21,7 +22,6 @@ use tokio::{
     sync::mpsc,
     time::delay_for,
 };
-
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type Reporters = HashMap<u8, mpsc::UnboundedSender<reporter::Event>>;

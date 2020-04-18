@@ -5,13 +5,13 @@ use super::{
     supervisor,
 };
 use crate::stage::reporter::Stream;
+use chronicle_common::actor;
 use tokio::{
     io::WriteHalf,
     net::TcpStream,
     prelude::*,
     sync::mpsc,
 };
-
 // types
 pub type Sender = mpsc::UnboundedSender<Stream>;
 pub type Receiver = mpsc::UnboundedReceiver<Stream>;
