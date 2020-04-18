@@ -1,8 +1,21 @@
-use super::sender::{self, Payload};
-use super::supervisor;
-use crate::worker::{Error, Worker};
-use std::io::{Error as IoError, ErrorKind};
-use std::collections::HashMap;
+use super::{
+    sender::{
+        self,
+        Payload,
+    },
+    supervisor,
+};
+use crate::worker::{
+    Error,
+    Worker,
+};
+use std::{
+    collections::HashMap,
+    io::{
+        Error as IoError,
+        ErrorKind,
+    },
+};
 use tokio::sync::mpsc;
 
 // types
@@ -18,13 +31,8 @@ pub type Streams = Vec<Stream>;
 type Workers = HashMap<Stream, Box<dyn Worker>>;
 #[derive(Debug)]
 pub enum Event {
-    Request {
-        worker: Box<dyn Worker>,
-        payload: Payload,
-    },
-    Response {
-        stream_id: Stream,
-    },
+    Request { worker: Box<dyn Worker>, payload: Payload },
+    Response { stream_id: Stream },
     Err(std::io::Error, Stream),
     Session(Session),
 }
@@ -86,10 +94,7 @@ impl Reporter {
     pub async fn run(mut self) -> () {
         while let Some(event) = self.rx.recv().await {
             match event {
-                Event::Request {
-                    worker,
-                    mut payload,
-                } => {
+                Event::Request { worker, mut payload } => {
                     if let Some(stream) = self.streams.pop() {
                         // Assign stream_id to the payload
                         assign_stream_to_payload(stream, &mut payload);
@@ -111,9 +116,7 @@ impl Reporter {
                         worker.send_error(Error::Overload);
                     }
                 }
-                Event::Response {
-                    stream_id,
-                } => {
+                Event::Response { stream_id } => {
                     self.handle_response(stream_id);
                 }
                 Event::Err(io_error, stream_id) => {
@@ -141,7 +144,13 @@ impl Reporter {
                                 force_consistency(&mut self.streams, &mut self.workers);
                                 // reset checkpoints to 0
                                 self.checkpoints = 0;
-                                dbg!("address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}", &self.address, self.shard_id, self.reporter_id, old_session);
+                                dbg!(
+                                    "address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}",
+                                    &self.address,
+                                    self.shard_id,
+                                    self.reporter_id,
+                                    old_session
+                                );
                                 // tell stage_tx to reconnect
                                 let event = supervisor::Event::Reconnect(old_session);
                                 self.stage_tx.send(event).unwrap();

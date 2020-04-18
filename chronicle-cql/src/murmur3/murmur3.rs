@@ -1,6 +1,11 @@
-use std::io::Cursor;
-use std::io::{Read, Result};
-use std::ops::Shl;
+use std::{
+    io::{
+        Cursor,
+        Read,
+        Result,
+    },
+    ops::Shl,
+};
 
 fn copy_into_array<A, T>(slice: &[T]) -> A
 where
@@ -18,9 +23,12 @@ where
 ///
 /// # Example
 /// ```
-/// use std::io::Cursor;
 /// use chronicle_cql::murmur3::murmur3::murmur3_cassandra_x64_128;
-/// let hash_result = murmur3_cassandra_x64_128(&mut Cursor::new("EHUHSJRCMDJSZUQMNLDBSRFC9O9XCI9SMHFWWHNDYOOOWMSOJQHCC9GFUEGECEVVXCSXYTHSRJ9TZ9999"), 0);
+/// use std::io::Cursor;
+/// let hash_result = murmur3_cassandra_x64_128(
+///     &mut Cursor::new("EHUHSJRCMDJSZUQMNLDBSRFC9O9XCI9SMHFWWHNDYOOOWMSOJQHCC9GFUEGECEVVXCSXYTHSRJ9TZ9999"),
+///     0,
+/// );
 /// ```
 pub fn murmur3_cassandra_x64_128<T: Read>(source: &mut T, seed: u32) -> Result<i64> {
     const C1: i64 = -8663945395140668459i64; // 0x87c3_7b91_1142_53d5;
@@ -42,17 +50,9 @@ pub fn murmur3_cassandra_x64_128<T: Read>(source: &mut T, seed: u32) -> Result<i
             let k1 = i64::from_le_bytes(copy_into_array(&buf[0..8]));
             let k2 = i64::from_le_bytes(copy_into_array(&buf[8..]));
             h1 ^= k1.wrapping_mul(C1).rotate_left(R2).wrapping_mul(C2);
-            h1 = h1
-                .rotate_left(R1)
-                .wrapping_add(h2)
-                .wrapping_mul(M)
-                .wrapping_add(C3);
+            h1 = h1.rotate_left(R1).wrapping_add(h2).wrapping_mul(M).wrapping_add(C3);
             h2 ^= k2.wrapping_mul(C2).rotate_left(R3).wrapping_mul(C1);
-            h2 = h2
-                .rotate_left(R2)
-                .wrapping_add(h1)
-                .wrapping_mul(M)
-                .wrapping_add(C4);
+            h2 = h2.rotate_left(R2).wrapping_add(h1).wrapping_mul(M).wrapping_add(C4);
         } else if read == 0 {
             h1 ^= processed as i64;
             h2 ^= processed as i64;
@@ -142,8 +142,7 @@ mod tests {
 
     #[test]
     fn test_tx_murmur3_token_generation() {
-        let tx =
-            "EHUHSJRCMDJSZUQMNLDBSRFC9O9XCI9SMHFWWHNDYOOOWMSOJQHCC9GFUEGECEVVXCSXYTHSRJ9TZ9999";
+        let tx = "EHUHSJRCMDJSZUQMNLDBSRFC9O9XCI9SMHFWWHNDYOOOWMSOJQHCC9GFUEGECEVVXCSXYTHSRJ9TZ9999";
         let mut key = Cursor::new(tx);
         let hash_result = murmur3_cassandra_x64_128(&mut key, 0);
         assert_eq!(hash_result.unwrap(), -7733304998189415164);

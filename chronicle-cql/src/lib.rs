@@ -1,2 +1,2 @@
-pub mod murmur3;
 pub mod frame;
+pub mod murmur3;

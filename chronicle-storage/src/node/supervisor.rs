@@ -1,10 +1,16 @@
 use super::stage;
-use crate::cluster::supervisor;
-use crate::ring::ring::NodeId;
-use crate::ring::ring::DC;
+use crate::{
+    cluster::supervisor,
+    ring::ring::{
+        NodeId,
+        DC,
+    },
+};
 use std::collections::HashMap;
-use tokio;
-use tokio::sync::mpsc;
+use tokio::{
+    self,
+    sync::mpsc,
+};
 
 // types
 type Stages = HashMap<u8, stage::supervisor::Sender>;
@@ -128,10 +134,7 @@ impl Supervisor {
                         self.node_registry.clear();
                         self.node_registry.shrink_to_fit();
                         // node_registry should be passed to cluster supervisor
-                        let event = supervisor::Event::RegisterReporters(
-                            node_registry,
-                            self.address.clone(),
-                        );
+                        let event = supervisor::Event::RegisterReporters(node_registry, self.address.clone());
                         self.supervisor_tx.send(event).unwrap();
                     }
                 }

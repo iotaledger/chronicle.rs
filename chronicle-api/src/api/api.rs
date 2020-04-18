@@ -1,8 +1,6 @@
 use tokio::sync::mpsc;
 
-app!(ApiBuilder {
-    listen_address: String
-});
+app!(ApiBuilder { listen_address: String });
 
 impl ApiBuilder {
     pub fn build(self) -> Api {
@@ -19,6 +17,5 @@ pub struct Api {
 }
 
 impl Api {
-    pub async fn run(mut self) {
-    }
+    pub async fn run(mut self) {}
 }

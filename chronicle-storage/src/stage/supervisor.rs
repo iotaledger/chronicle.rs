@@ -1,15 +1,26 @@
-use super::receiver;
-use super::reporter;
-use super::sender;
-use crate::connection::cql::connect_to_shard_id;
-use crate::node;
-use crate::stage::reporter::{Stream, Streams};
-use std::sync::Arc;
-use std::cell::UnsafeCell;
-use std::collections::HashMap;
-use std::time::Duration;
-use tokio::sync::mpsc;
-use tokio::time::delay_for;
+use super::{
+    receiver,
+    reporter,
+    sender,
+};
+use crate::{
+    connection::cql::connect_to_shard_id,
+    node,
+    stage::reporter::{
+        Stream,
+        Streams,
+    },
+};
+use std::{
+    cell::UnsafeCell,
+    collections::HashMap,
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    sync::mpsc,
+    time::delay_for,
+};
 
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -63,19 +74,13 @@ pub struct Reusable {
 }
 impl Reusable {
     pub fn as_mut(&self) -> &mut Option<sender::Payload> {
-        unsafe {
-            self.value.get().as_mut().unwrap()
-        }
+        unsafe { self.value.get().as_mut().unwrap() }
     }
     pub fn as_ref_payload(&self) -> Option<&sender::Payload> {
-        unsafe {
-            self.value.get().as_ref().unwrap().as_ref()
-        }
+        unsafe { self.value.get().as_ref().unwrap().as_ref() }
     }
     pub fn as_mut_payload(&self) -> Option<&mut sender::Payload> {
-        unsafe {
-            self.value.get().as_mut().unwrap().as_mut()
-        }
+        unsafe { self.value.get().as_mut().unwrap().as_mut() }
     }
 }
 unsafe impl Sync for Reusable {}
@@ -140,8 +145,7 @@ impl Supervisor {
             tokio::spawn(reporter.run());
         }
         // expose stage reporters in advance
-        let event =
-            node::supervisor::Event::RegisterReporters(self.shard_id, self.reporters.clone());
+        let event = node::supervisor::Event::RegisterReporters(self.shard_id, self.reporters.clone());
         self.node_tx.send(event).unwrap();
         // todo improve dbg! msgs
         dbg!(
@@ -160,15 +164,21 @@ impl Supervisor {
                 Event::Connect(sender_tx, sender_rx) => {
                     // Only try to connect if the stage not shutting_down
                     if self.tx.is_some() {
-                        match connect_to_shard_id(&self.address, self.shard_id, self.recv_buffer_size, self.send_buffer_size).await {
+                        match connect_to_shard_id(
+                            &self.address,
+                            self.shard_id,
+                            self.recv_buffer_size,
+                            self.send_buffer_size,
+                        )
+                        .await
+                        {
                             Ok(mut cqlconn) => {
                                 // Change the connected status to true
                                 self.connected = true;
                                 // TODO convert the session_id to a meaningful (timestamp + count)
                                 self.session_id += 1;
                                 // Split the stream
-                                let (socket_rx, socket_tx) =
-                                    tokio::io::split(cqlconn.take_stream());
+                                let (socket_rx, socket_tx) = tokio::io::split(cqlconn.take_stream());
                                 // Spawn/restart sender
                                 let sender_state = sender::SenderBuilder::new()
                                     .tx(sender_tx)

@@ -16,5 +16,5 @@ macro_rules! response {
 
 pub mod api;
 pub mod endpoint;
-pub mod router;
 pub mod gettrytes;
+pub mod router;

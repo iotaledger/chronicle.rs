@@ -1,12 +1,16 @@
 // uses
+use super::{
+    receiver::compute_reporter_num,
+    reporter,
+    supervisor,
+};
 use crate::stage::reporter::Stream;
-use super::reporter;
-use super::supervisor;
-use super::receiver::compute_reporter_num;
-use tokio::io::WriteHalf;
-use tokio::net::TcpStream;
-use tokio::prelude::*;
-use tokio::sync::mpsc;
+use tokio::{
+    io::WriteHalf,
+    net::TcpStream,
+    prelude::*,
+    sync::mpsc,
+};
 
 // types
 pub type Sender = mpsc::UnboundedSender<Stream>;
@@ -63,7 +67,11 @@ impl SenderState {
         // loop to process event by event.
         while let Some(stream) = self.rx.recv().await {
             // write the payload to the socket, make sure the result is valid
-            if let Err(io_error) = self.socket.write_all(self.payloads[stream as usize].as_ref_payload().unwrap()).await {
+            if let Err(io_error) = self
+                .socket
+                .write_all(self.payloads[stream as usize].as_ref_payload().unwrap())
+                .await
+            {
                 // send to reporter send_status::Err(stream_id)
                 self.reporters
                     .get(&compute_reporter_num(stream, self.appends_num))
@@ -72,14 +80,12 @@ impl SenderState {
                     .unwrap();
             }
         } // if sender reached this line, then either write_all returned IO Err(err) or reporter(s) droped sender_tx(s)
-        // probably not needed
+          // probably not needed
         self.socket.shutdown().await.unwrap();
         // send checkpoint to all reporters because the socket is mostly closed
         for (_, reporter_tx) in &self.reporters {
             reporter_tx
-                .send(reporter::Event::Session(reporter::Session::CheckPoint(
-                    self.session_id,
-                )))
+                .send(reporter::Event::Session(reporter::Session::CheckPoint(self.session_id)))
                 .unwrap();
         }
     }

@@ -1,10 +1,14 @@
 // uses
-use super::reporter;
-use super::reporter::Stream;
-use super::supervisor;
-use tokio::io::ReadHalf;
-use tokio::net::TcpStream;
-use tokio::prelude::*;
+use super::{
+    reporter,
+    reporter::Stream,
+    supervisor,
+};
+use tokio::{
+    io::ReadHalf,
+    net::TcpStream,
+    prelude::*,
+};
 
 // consts
 const HEADER_LENGTH: usize = 9;
@@ -71,12 +75,10 @@ impl Receiver {
         }
         // clean shutdown
         for (_, reporter_tx) in &self.reporters {
-            let _ = reporter_tx.send(reporter::Event::Session(reporter::Session::CheckPoint(
-                self.session_id,
-            )));
+            let _ = reporter_tx.send(reporter::Event::Session(reporter::Session::CheckPoint(self.session_id)));
         }
     }
-    fn handle_remaining_buffer(&mut self, i: usize,end: usize) {
+    fn handle_remaining_buffer(&mut self, i: usize, end: usize) {
         if self.current_length < HEADER_LENGTH {
             for index in i..end {
                 self.buffer[self.i] = self.buffer[index];
@@ -84,7 +86,7 @@ impl Receiver {
             }
         } else {
             self.handle_frame_header(i);
-            self.handle_frame(end-i, i);
+            self.handle_frame(end - i, i);
         }
     }
     fn handle_frame_header(&mut self, padding: usize) {
@@ -112,25 +114,28 @@ impl Receiver {
             // get mut ref to payload for stream_id as giveload
             let giveload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // memcpy the current bytes from self.buffer into payload
-            giveload[(self.current_length-n)..self.total_length]
-            .copy_from_slice(&self.buffer[padding..(padding+self.total_length)]);
+            giveload[(self.current_length - n)..self.total_length]
+                .copy_from_slice(&self.buffer[padding..(padding + self.total_length)]);
             // tell reporter that giveload is ready.
             self.reporters
-            .get(&compute_reporter_num(self.stream_id, self.appends_num))
-            .unwrap()
-            .send(reporter::Event::Response{stream_id: self.stream_id});
+                .get(&compute_reporter_num(self.stream_id, self.appends_num))
+                .unwrap()
+                .send(reporter::Event::Response {
+                    stream_id: self.stream_id,
+                });
             // set header to false
             self.header = false;
             // update current_length
             self.current_length -= self.total_length;
             // update padding
-            padding = padding+self.total_length;
-            self.handle_remaining_buffer(padding, padding+self.current_length);
+            padding = padding + self.total_length;
+            self.handle_remaining_buffer(padding, padding + self.current_length);
         } else {
             // get mut ref to payload for stream_id
             let payload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // memcpy the current bytes from self.buffer into payload
-            payload[(self.current_length-n)..self.current_length].copy_from_slice(&self.buffer[padding..(padding+n)]);
+            payload[(self.current_length - n)..self.current_length]
+                .copy_from_slice(&self.buffer[padding..(padding + n)]);
         }
     }
 }

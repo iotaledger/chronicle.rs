@@ -5,12 +5,22 @@
 
 // uses
 use super::dashboard;
-use futures::stream::{SplitSink, SplitStream};
-use futures::StreamExt;
+use futures::{
+    stream::{
+        SplitSink,
+        SplitStream,
+    },
+    StreamExt,
+};
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::{tungstenite::Message, tungstenite::Result};
+use tokio_tungstenite::{
+    tungstenite::{
+        Message,
+        Result,
+    },
+    WebSocketStream,
+};
 
 actor!(
     WebsocketdBuilder {
@@ -71,9 +81,15 @@ impl Websocket {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use tokio::net::TcpStream;
-    use tokio::sync::mpsc;
+    use std::net::{
+        IpAddr,
+        Ipv4Addr,
+        SocketAddr,
+    };
+    use tokio::{
+        net::TcpStream,
+        sync::mpsc,
+    };
     use tokio_tungstenite::accept_async;
 
     #[tokio::test]
