@@ -1,4 +1,3 @@
-
 pub trait Frame {
     fn version(&self) -> u8;
     fn flags(&self) -> u8;

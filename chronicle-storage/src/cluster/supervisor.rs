@@ -1,13 +1,29 @@
 // cluster supervisor
 use super::node;
-use crate::connection::cql::{connect, fetch_tokens};
-use crate::dashboard::dashboard;
-use crate::node::supervisor::gen_node_id;
-use crate::ring::ring::{
-    build_ring, initialize_ring, ArcRing, Msb, NodeId, Registry, ShardCount, Token, WeakRing, DC,
+use crate::{
+    connection::cql::{
+        connect,
+        fetch_tokens,
+    },
+    dashboard::dashboard,
+    node::supervisor::gen_node_id,
+    ring::ring::{
+        build_ring,
+        initialize_ring,
+        ArcRing,
+        Msb,
+        NodeId,
+        Registry,
+        ShardCount,
+        Token,
+        WeakRing,
+        DC,
+    },
 };
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+};
 use tokio::sync::mpsc;
 
 //types
@@ -141,10 +157,7 @@ impl Supervisor {
                         self.registry.remove(&node_info.node_id);
                     }
                     // send shutdown event to node
-                    node_info
-                        .node_tx
-                        .send(node::supervisor::Event::Shutdown)
-                        .unwrap();
+                    node_info.node_tx.send(node::supervisor::Event::Shutdown).unwrap();
                     // update waiting for build to true
                     self.build = true;
                     // note: the node tree will not get shutdown unless we drop the ring

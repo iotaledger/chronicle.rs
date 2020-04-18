@@ -1,0 +1,4 @@
+imports_layout = "Vertical"
+merge_imports = true
+max_width = 120
+format_code_in_doc_comments = true

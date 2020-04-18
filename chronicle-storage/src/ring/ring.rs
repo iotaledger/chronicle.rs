@@ -1,16 +1,34 @@
 // uses (WIP)
-use crate::cluster::supervisor::Nodes;
-use crate::stage::reporter::Event;
-use crate::stage::supervisor::Reporters;
-use crate::worker::Error;
-use rand::distributions::Uniform;
-use rand::prelude::ThreadRng;
-use rand::{thread_rng, Rng};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::i64::{MAX, MIN};
-use std::sync::atomic::{AtomicPtr, Ordering};
-use std::sync::{Arc, Weak};
+use crate::{
+    cluster::supervisor::Nodes,
+    stage::{
+        reporter::Event,
+        supervisor::Reporters,
+    },
+    worker::Error,
+};
+use rand::{
+    distributions::Uniform,
+    prelude::ThreadRng,
+    thread_rng,
+    Rng,
+};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    i64::{
+        MAX,
+        MIN,
+    },
+    sync::{
+        atomic::{
+            AtomicPtr,
+            Ordering,
+        },
+        Arc,
+        Weak,
+    },
+};
 // types
 pub type Token = i64;
 pub type Msb = u8;
@@ -23,7 +41,15 @@ type Replicas = HashMap<DC, Vec<Replica>>;
 type Replica = (NodeId, Msb, ShardCount);
 type Vcell = Box<dyn Vnode>;
 pub type Registry = HashMap<NodeId, Reporters>;
-pub type GlobalRing = (Vec<DC>,Uniform<usize>,Uniform<usize>,Uniform<u8>, u8, Registry, Vcell);
+pub type GlobalRing = (
+    Vec<DC>,
+    Uniform<usize>,
+    Uniform<usize>,
+    Uniform<u8>,
+    u8,
+    Registry,
+    Vcell,
+);
 pub type AtomicRing = AtomicPtr<Weak<GlobalRing>>;
 pub type ArcRing = Arc<GlobalRing>;
 pub type WeakRing = Weak<GlobalRing>;
@@ -78,43 +104,23 @@ impl Ring {
         })
     }
     pub fn send_local(replica_index: usize, token: Token, request: Event) {
-        RING.with(|local| {
-            local
-                .borrow_mut()
-                .sending()
-                .local(replica_index, token, request)
-        })
+        RING.with(|local| local.borrow_mut().sending().local(replica_index, token, request))
     }
     pub fn send_local_random_replica(token: Token, request: Event) {
-        RING.with(|local| {
-            local
-                .borrow_mut()
-                .sending()
-                .local_random_replica(token, request)
-        })
+        RING.with(|local| local.borrow_mut().sending().local_random_replica(token, request))
     }
     pub fn send_global_random_replica(token: Token, request: Event) {
-        RING.with(|local| {
-            local
-                .borrow_mut()
-                .sending()
-                .global_random_replica(token, request)
-        })
+        RING.with(|local| local.borrow_mut().sending().global_random_replica(token, request))
     }
     fn sending(&mut self) -> &mut Self {
         unsafe {
             if VERSION != self.version {
                 // load weak and upgrade to arc if strong_count > 0;
-                if let Some(mut arc) = Weak::upgrade(
-                    GLOBAL_RING
-                        .as_ref()
-                        .unwrap()
-                        .load(Ordering::Relaxed)
-                        .as_ref()
-                        .unwrap(),
-                ) {
+                if let Some(mut arc) =
+                    Weak::upgrade(GLOBAL_RING.as_ref().unwrap().load(Ordering::Relaxed).as_ref().unwrap())
+                {
                     let new_weak = Arc::downgrade(&arc);
-                    let (dcs,uniform_dcs,uniform_rf,uniform, version, registry, root) = Arc::make_mut(&mut arc);
+                    let (dcs, uniform_dcs, uniform_rf, uniform, version, registry, root) = Arc::make_mut(&mut arc);
                     // update the local ring
                     self.dcs = dcs.clone();
                     self.uniform_dcs = uniform_dcs.clone();
@@ -127,9 +133,9 @@ impl Ring {
                 };
             }
         }
-    self
+        self
     }
-    fn global(&mut self, data_center: &DC,replica_index: usize, token: Token, request: Event) {
+    fn global(&mut self, data_center: &DC, replica_index: usize, token: Token, request: Event) {
         // send request.
         self.root.as_mut().search(token).send(
             data_center,
@@ -190,7 +196,7 @@ impl Ring {
             Uniform::new(0, 1),
             0,
             registry,
-            root
+            root,
         );
         // create Arc ring
         let arc_ring = Arc::new(global_ring);
@@ -227,8 +233,7 @@ impl SmartId for Replica {
         request: Event,
     ) {
         // shard awareness algo,
-        self.0[4] = (((((token as i128 + MIN as i128) as u64) << self.1) as u128 * self.2 as u128)
-            >> 64) as u8;
+        self.0[4] = (((((token as i128 + MIN as i128) as u64) << self.1) as u128 * self.2 as u128) >> 64) as u8;
         registry
             .get_mut(&self.0)
             .unwrap()
@@ -305,11 +310,7 @@ impl Endpoints for Option<Replicas> {
         _uniform: &Uniform<u8>,
     ) {
         // simulate reporter,
-        if let Event::Request {
-            worker,
-            payload: _,
-        } = request
-        {
+        if let Event::Request { worker, payload: _ } = request {
             worker.send_error(Error::NoRing);
         };
     }
@@ -437,12 +438,7 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
     }
 }
 
-fn walk_clockwise(
-    starting_index: usize,
-    end_index: usize,
-    vnodes: &Vec<VnodeTuple>,
-    replicas: &mut Replicas,
-) {
+fn walk_clockwise(starting_index: usize, end_index: usize, vnodes: &Vec<VnodeTuple>, replicas: &mut Replicas) {
     for i in starting_index..end_index {
         // fetch replica
         let (_, _, node_id, dc, msb, shard_count) = &vnodes[i];
@@ -485,14 +481,7 @@ pub fn build_ring(
     let mut recent_left = MIN;
     for (right, node_id, dc, msb, shard_count) in &tokens {
         // create vnode tuple (starting from min)
-        let vnode = (
-            recent_left,
-            *right,
-            *node_id,
-            dc.clone(),
-            *msb,
-            *shard_count,
-        );
+        let vnode = (recent_left, *right, *node_id, dc.clone(), *msb, *shard_count);
         // push to vnodes
         vnodes.push(vnode);
         // update recent_left to right
@@ -543,10 +532,7 @@ pub fn build_ring(
     // update the global ring
     let old_weak = unsafe {
         // swap
-        let old_weak = GLOBAL_RING
-            .as_mut()
-            .unwrap()
-            .swap(raw_box, Ordering::Relaxed);
+        let old_weak = GLOBAL_RING.as_mut().unwrap().swap(raw_box, Ordering::Relaxed);
         // update version with new one.// this must be atomic and safe because it's u8.
         VERSION = version;
         old_weak

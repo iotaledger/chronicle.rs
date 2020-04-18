@@ -1,9 +1,20 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use hyper::body::Buf;
-use hyper::{body::aggregate, Body, Request, Response, Method};
-use std::convert::Infallible;
 use super::gettrytes::GetTrytesBuilder;
+use hyper::{
+    body::{
+        aggregate,
+        Buf,
+    },
+    Body,
+    Method,
+    Request,
+    Response,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use serde_json::Value;
+use std::convert::Infallible;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct ReqBody {
@@ -17,21 +28,23 @@ struct ReqBody {
 
 pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let (parts, stream) = req.into_parts();
-    match (parts.method,parts.uri.path(),parts.headers.get("content-length"), parts.headers.get("content-type")) {
-        (
-            Method::POST,
-            "/api",
-            Some(length),
-            Some(application_json)
-        )   if application_json == "application/json" => {
-            if let Ok(length_str) =  length.to_str() {
+    match (
+        parts.method,
+        parts.uri.path(),
+        parts.headers.get("content-length"),
+        parts.headers.get("content-type"),
+    ) {
+        (Method::POST, "/api", Some(length), Some(application_json)) if application_json == "application/json" => {
+            if let Ok(length_str) = length.to_str() {
                 if let Ok(length_u32) = length_str.parse::<u32>() {
                     if length_u32 <= 16384 {
                         if let Ok(buffer) = aggregate(stream).await {
                             if let Ok(request) = serde_json::from_slice::<ReqBody>(buffer.bytes()) {
                                 Ok(route(request).await)
                             } else {
-                                Ok(response!(status: BAD_REQUEST, body: r#"{"error":"invalid request, check the api reference"}"#))
+                                Ok(
+                                    response!(status: BAD_REQUEST, body: r#"{"error":"invalid request, check the api reference"}"#),
+                                )
                             }
                         } else {
                             Ok(response!(status: BAD_REQUEST, body: r#"{"error":"invalid request"}"#))
@@ -49,15 +62,12 @@ pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
                 Ok(response!(status: BAD_REQUEST, body: r#"{"error":"content-length is invalid"}"#))
             }
         }
-        _ => {
-            Ok(response!(
-                status: BAD_REQUEST,
-                body: r#"{"error":"can only POST application/json to /api where content-length <= 16384-bytes"}"#
-            ))
-        }
+        _ => Ok(response!(
+            status: BAD_REQUEST,
+            body: r#"{"error":"can only POST application/json to /api where content-length <= 16384-bytes"}"#
+        )),
     }
 }
-
 
 async fn route(request: ReqBody) -> Response<Body> {
     match &request.command[..] {
@@ -65,9 +75,7 @@ async fn route(request: ReqBody) -> Response<Body> {
             if let Some(hashes) = request.hashes {
                 if let Value::Array(hashes) = serde_json::to_value(hashes).unwrap() {
                     if !hashes.is_empty() {
-                        GetTrytesBuilder::new()
-                        .hashes(hashes)
-                        .build().run().await
+                        GetTrytesBuilder::new().hashes(hashes).build().run().await
                     } else {
                         response!(status: BAD_REQUEST, body: r#"{"error":"No Hashes"}"#)
                     }
@@ -78,8 +86,6 @@ async fn route(request: ReqBody) -> Response<Body> {
                 response!(status: BAD_REQUEST, body: r#"{"error":"No Hashes"}"#)
             }
         }
-        _ => {
-            response!(status: BAD_REQUEST, body: r#"{"error":"Invalid Request Command"}"#)
-        }
+        _ => response!(status: BAD_REQUEST, body: r#"{"error":"Invalid Request Command"}"#),
     }
 }

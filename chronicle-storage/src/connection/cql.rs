@@ -1,23 +1,49 @@
-use crate::cluster::supervisor::Tokens;
-use crate::node::supervisor::gen_node_id;
-use crate::ring::ring::{Msb, ShardCount, DC};
-use cdrs::compression::Compression;
-use cdrs::frame::traits::FromCursor;
-use cdrs::frame::IntoBytes;
-use cdrs::frame::Opcode;
-use cdrs::frame::{frame_result, frame_supported};
-use cdrs::frame::{Flag, Frame, TryFromRow};
-use cdrs::query;
-use cdrs::types::from_cdrs::FromCDRSByName;
-use cdrs::types::prelude::{Bytes, List, Row, Value};
-use cdrs::types::AsRustType;
-use std::i64;
-use std::io::Cursor;
-use std::net::IpAddr;
-use tokio::io::Error;
-use tokio::io::ErrorKind;
-use tokio::net::TcpStream;
-use tokio::prelude::*;
+use crate::{
+    cluster::supervisor::Tokens,
+    node::supervisor::gen_node_id,
+    ring::ring::{
+        Msb,
+        ShardCount,
+        DC,
+    },
+};
+use cdrs::{
+    compression::Compression,
+    frame::{
+        frame_result,
+        frame_supported,
+        traits::FromCursor,
+        Flag,
+        Frame,
+        IntoBytes,
+        Opcode,
+        TryFromRow,
+    },
+    query,
+    types::{
+        from_cdrs::FromCDRSByName,
+        prelude::{
+            Bytes,
+            List,
+            Row,
+            Value,
+        },
+        AsRustType,
+    },
+};
+use std::{
+    i64,
+    io::Cursor,
+    net::IpAddr,
+};
+use tokio::{
+    io::{
+        Error,
+        ErrorKind,
+    },
+    net::TcpStream,
+    prelude::*,
+};
 
 pub type Address = String;
 
@@ -53,7 +79,11 @@ struct RowTokens {
     tokens: Vec<String>,
 }
 
-pub async fn connect(address: &Address, recv_buffer_size: Option<usize>, send_buffer_size: Option<usize>) -> Result<CqlConn, Error> {
+pub async fn connect(
+    address: &Address,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
+) -> Result<CqlConn, Error> {
     // connect using tokio and return
     let mut stream = TcpStream::connect(address.clone()).await?;
     // set socket flags
@@ -86,9 +116,7 @@ pub async fn connect(address: &Address, recv_buffer_size: Option<usize>, send_bu
         .data;
     let shard = options.get("SCYLLA_SHARD").unwrap()[0].parse().unwrap();
     let nr_shard = options.get("SCYLLA_NR_SHARDS").unwrap()[0].parse().unwrap();
-    let ignore_msb = options.get("SCYLLA_SHARDING_IGNORE_MSB").unwrap()[0]
-        .parse()
-        .unwrap();
+    let ignore_msb = options.get("SCYLLA_SHARDING_IGNORE_MSB").unwrap()[0].parse().unwrap();
     // create cqlconn
     let cqlconn = CqlConn {
         stream: Some(stream),
@@ -111,28 +139,13 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     // query_frame
     let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
     // write frame to stream
-    cqlconn
-        .stream
-        .as_mut()
-        .unwrap()
-        .write(query_frame.as_slice())
-        .await?;
+    cqlconn.stream.as_mut().unwrap().write(query_frame.as_slice()).await?;
     // read buffer
     let mut head_buffer = vec![0; 9];
-    cqlconn
-        .stream
-        .as_mut()
-        .unwrap()
-        .read(&mut head_buffer)
-        .await?;
+    cqlconn.stream.as_mut().unwrap().read(&mut head_buffer).await?;
     let length = get_body_length_usize(&head_buffer);
     let mut body_buffer = vec![0; length];
-    cqlconn
-        .stream
-        .as_mut()
-        .unwrap()
-        .read(&mut body_buffer)
-        .await?;
+    cqlconn.stream.as_mut().unwrap().read(&mut body_buffer).await?;
     let mut cursor: Cursor<&[u8]> = Cursor::new(&body_buffer);
     let mut rows = frame_result::ResResultBody::from_cursor(&mut cursor)
         .unwrap()
@@ -157,7 +170,12 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     Ok(cqlconn)
 }
 
-pub async fn connect_to_shard_id(address: &Address, shard_id: u8, recv_buffer_size: Option<usize>, send_buffer_size: Option<usize>) -> Result<CqlConn, Error> {
+pub async fn connect_to_shard_id(
+    address: &Address,
+    shard_id: u8,
+    recv_buffer_size: Option<usize>,
+    send_buffer_size: Option<usize>,
+) -> Result<CqlConn, Error> {
     // buffer connections temporary to force scylla connects us to new shard_id
     let mut conns = Vec::new();
     // loop till we connect to the right shard_id

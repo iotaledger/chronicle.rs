@@ -1,6 +1,8 @@
 // uses
-use super::dashboard;
-use super::websocket;
+use super::{
+    dashboard,
+    websocket,
+};
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
 

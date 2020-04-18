@@ -1,14 +1,22 @@
 // uses
 use super::listener;
-use crate::cluster::supervisor;
-use crate::connection::cql::Address;
+use crate::{
+    cluster::supervisor,
+    connection::cql::Address,
+};
 use futures::stream::SplitSink;
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::WebSocketStream;
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+};
+use tokio::{
+    net::TcpStream,
+    sync::mpsc,
+};
+use tokio_tungstenite::{
+    tungstenite::Message,
+    WebSocketStream,
+};
 // types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -113,8 +121,8 @@ impl Dashboard {
                             println!("built status: {}", built);
                         }
                     }
-                } // todo handle websocket decoded msgs (add node, remove node, build,
-                  // get status, get dashboard log, import dump file, etc)
+                } /* todo handle websocket decoded msgs (add node, remove node, build,
+                   * get status, get dashboard log, import dump file, etc) */
             }
         }
     }
