@@ -12,11 +12,13 @@ use cdrs::{
 use chronicle_common::{
     actor,
     app,
-    statements::statements::SELECT_TX_QUERY,
 };
-use chronicle_cql::frame::{
-    decoder::Decoder,
-    frame::Frame,
+use chronicle_cql::{
+    frame::{
+        decoder::Decoder,
+        frame::Frame,
+    },
+    statements::statements::SELECT_TX_QUERY,
 };
 use chronicle_storage::{
     ring::ring::Ring,
