@@ -86,3 +86,15 @@ async fn download_file(url: &str) -> Result<String, Box<dyn Error>> {
     let hash = sha256.result();
     Ok(format!("{:x}", hash))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_download_file() {
+        let hash = download_file("https://sh.rustup.rs").await.unwrap();
+        assert_eq!(hash.len(), 64);
+        let _ = read_file("sh.rustddup.rs").await.unwrap();
+    }
+}
