@@ -74,10 +74,31 @@ async fn download_file(url: &str) -> Result<String, Box<dyn Error>> {
     let file_name = Path::new(url).file_name().unwrap();
     {
         let mut file = tokio::fs::File::create(file_name).await?;
-        // let len = response.content_length().unwrap();
+        let total_size = response.content_length().unwrap();
+        let mut cur_pos = 0;
+
+        // The progress bar in CLI
+        let pb = ProgressBar::new(total_size);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) \n {msg}",
+                )
+                .progress_chars("#>-"),
+        );
+        // Show the progress when every 1MB are processed
+        let mut next_progress = PROGRESS_STEP;
+
         while let Some(chunk) = response.chunk().await? {
             file.write_all(&chunk).await?;
+            cur_pos += chunk.len() as u64;
+            if cur_pos > next_progress {
+                next_progress += PROGRESS_STEP;
+                pb.set_position(cur_pos);
+            }
         }
+        pb.set_position(cur_pos);
+        pb.finish_with_message(&format!("{} is downloaded succesfully.", url));
     }
     // Reopen the file from the disk and calculate checksum
     let mut sha256 = Sha256::new();
