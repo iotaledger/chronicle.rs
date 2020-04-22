@@ -1,6 +1,5 @@
 use std::{
     io::{
-        Cursor,
         Read,
         Result,
     },
@@ -139,6 +138,7 @@ fn fmix64_i64(k: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn test_tx_murmur3_token_generation() {
