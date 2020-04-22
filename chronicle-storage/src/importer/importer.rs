@@ -95,6 +95,5 @@ mod tests {
     async fn test_download_file() {
         let hash = download_file("https://sh.rustup.rs").await.unwrap();
         assert_eq!(hash.len(), 64);
-        let _ = read_file("sh.rustddup.rs").await.unwrap();
     }
 }
