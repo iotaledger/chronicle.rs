@@ -1,5 +1,6 @@
 use chronicle_common::app;
 use tokio::sync::mpsc;
+use super::endpoint::EndpointBuilder;
 app!(ApiBuilder { listen_address: String });
 
 impl ApiBuilder {
@@ -17,5 +18,10 @@ pub struct Api {
 }
 
 impl Api {
-    pub async fn run(mut self) {}
+    pub async fn run(mut self) {
+        let server = EndpointBuilder::new()
+        .listen_address(self.listen_address)
+        .build();
+        tokio::spawn(server.run());
+    }
 }

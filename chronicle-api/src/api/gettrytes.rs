@@ -12,9 +12,9 @@ use cdrs::{
 use chronicle_common::actor;
 use chronicle_cql::{
     frame::{
-        decoder::Decoder,
         frame::Frame,
     },
+    rows,
     statements::statements::SELECT_TX_QUERY,
 };
 use chronicle_storage::{
@@ -30,7 +30,7 @@ use hyper::{
     Response,
 };
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -38,7 +38,7 @@ type Receiver = mpsc::UnboundedReceiver<Event>;
 pub struct GetTrytesId(Sender);
 
 actor!(GetTrytesBuilder {
-    hashes: Vec<Value>
+    hashes: Vec<JsonValue>
 });
 
 impl GetTrytesBuilder {
@@ -50,32 +50,13 @@ impl GetTrytesBuilder {
 }
 
 pub struct GetTrytes {
-    hashes: Vec<Value>,
+    hashes: Vec<JsonValue>,
 }
 
 #[derive(Serialize)]
 struct ResTrytes {
-    trytes: Vec<Value>,
+    trytes: Vec<JsonValue>,
 }
-
-enum Trytes {
-    GiveLoad(Vec<u8>),
-    Trytes(String),
-}
-
-impl Decoder for Trytes {
-    fn decode(self) -> Self {
-        if let Trytes::GiveLoad(_giveload) = self {
-            // decode giveload as string/ trytes
-            unimplemented!()
-        // return Trytes::Trytes(String)
-        } else {
-            unreachable!()
-        }
-    }
-}
-
-struct T {}
 
 impl GetTrytes {
     pub async fn run(mut self) -> Response<Body> {
@@ -89,10 +70,10 @@ impl GetTrytes {
         response!(body: serde_json::to_string(&res_trytes).unwrap())
     }
 
-    async fn process(value: &mut Value, worker: Box<GetTrytesId>, rx: &mut Receiver) -> Box<GetTrytesId> {
+    async fn process(value: &mut JsonValue, worker: Box<GetTrytesId>, rx: &mut Receiver) -> Box<GetTrytesId> {
         // by taking the value we are leaving behind null.
         // now we try to query and get the result
-        if let Value::String(hash) = value.take() {
+        if let JsonValue::String(hash) = value.take() {
             let request = reporter::Event::Request {
                 payload: Self::query(hash),
                 worker: worker,
@@ -103,7 +84,7 @@ impl GetTrytes {
             match rx.recv().await.unwrap() {
                 Event::Response { giveload, tx } => {
                     if Opcode::from(giveload.opcode()) == Opcode::Result {
-                        if let Trytes::Trytes(trytes) = Trytes::GiveLoad(giveload).decode() {
+                        if let Some(trytes) = Trytes::new(giveload).decode().finalize() {
                             *value = serde_json::value::Value::String(trytes);
                         };
                     }
@@ -165,5 +146,145 @@ impl Worker for GetTrytesId {
             // now we can use raw to send itself through itself.
             (*raw).0.send(event);
         }
+    }
+}
+
+rows!(
+    rows: Trytes {},
+    row: Row(
+        Hash,
+        Payload,
+        Address,
+        Value,
+        ObsoleteTag,
+        Timestamp,
+        CurrentIndex,
+        LastIndex,
+        Bundle,
+        Trunk,
+        Branch,
+        Tag,
+        AttachmentTimestamp,
+        AttachmentTimestampLower,
+        AttachmentTimestampUpper,
+        Nonce,
+        Milestone
+    ),
+    column_decoder: TrytesDecoder
+);
+
+// define decoder trait as you wish
+trait Rows {
+    // to decode the rows
+    fn decode(self) -> Self;
+    // to finalize it as the expected result (trytes or none)
+    fn finalize(self) -> Option<String> ;
+}
+
+impl Rows for Trytes {
+    fn decode(mut self) -> Self {
+        while let Some(_remaining_rows_count) = self.next() {
+            // one transaction can only have one row ever
+        }
+        // it should be fine now to finalize the buffer as stringtryte,
+        // return
+        self
+    }
+    fn finalize(mut self) -> Option<String> {
+        // check if result is not empty
+        if self.rows_count == 1 {
+            // the buffer is ready to be converted to string trytes
+            self.buffer.truncate(2763);
+            Some(String::from_utf8(self.buffer).unwrap())
+        } else {
+            // we didn't have any transaction row for the provided hash.
+            None
+        }
+    }
+}
+// implementation to decoder the columns in order to form the trytes eventually
+impl TrytesDecoder for Hash {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        // we don't need the hash to build the trytes, so nothing should be done.
+    }
+}
+impl TrytesDecoder for Payload {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Address {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Value {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for ObsoleteTag {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Timestamp {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for CurrentIndex {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for LastIndex {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Bundle {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Trunk {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Branch {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Tag {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for AttachmentTimestamp {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for AttachmentTimestampLower {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for AttachmentTimestampUpper {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Nonce {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
+    }
+}
+impl TrytesDecoder for Milestone {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        todo!()
     }
 }

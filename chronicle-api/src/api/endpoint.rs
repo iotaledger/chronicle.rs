@@ -11,9 +11,9 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
 };
-actor!(ServerBuilder { listen_address: String });
+actor!(EndpointBuilder { listen_address: String});
 
-impl ServerBuilder {
+impl EndpointBuilder {
     pub fn build(self) -> Endpoint {
         let addr: SocketAddr = self.listen_address.unwrap().parse().unwrap();
         Endpoint { addr }
