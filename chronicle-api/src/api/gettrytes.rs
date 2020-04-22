@@ -9,10 +9,7 @@ use cdrs::{
     query::QueryFlags,
     query_values,
 };
-use chronicle_common::{
-    actor,
-    app,
-};
+use chronicle_common::actor;
 use chronicle_cql::{
     frame::{
         decoder::Decoder,

@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate chronicle_common;
 pub mod cluster;
 pub mod connection;
@@ -9,5 +8,4 @@ pub mod node;
 pub mod ring;
 pub mod stage;
 pub mod worker;
-#[macro_use]
 extern crate cdrs_helpers_derive;
