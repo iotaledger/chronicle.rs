@@ -8,6 +8,7 @@ edition = "2018"
 chronicle-common = { path = "../chronicle-common" }
 chronicle-cql = { path = "../chronicle-cql" }
 chronicle-storage = { path = "../chronicle-storage" }
+bee-ternary = { git = "https://github.com/Alex6323/bee-p", branch = "master"}
 tokio = { version = "0.2", features = ["macros", "stream", "sync", "net", "io-util", "rt-threaded", "time"] }
 hyper = "0.13.4"
 rand = "0.7.3"

@@ -66,7 +66,7 @@ macro_rules! rows {
             row: $row,
             column_start: usize,
             $(
-                $field: Option<$type>,
+                $field: $type,
             )*
         }
         #[derive(Default)]
@@ -100,7 +100,7 @@ macro_rules! rows {
         }
 
         impl $rows {
-            pub fn new(buffer: Vec<u8>) -> Self {
+            pub fn new(buffer: Vec<u8>,$($field: $type,)*) -> Self {
                 let metadata = buffer.metadata();
                 let column_start = metadata.rows_start();
                 let rows_count = i32::from_be_bytes(buffer[column_start..(column_start+4)].try_into().unwrap());
@@ -113,16 +113,10 @@ macro_rules! rows {
                     row,
                     column_start,
                     $(
-                        $field: None,
+                        $field,
                     )*
                 }
             }
-            $(
-                pub fn $field(mut self, $field: $type) -> Self {
-                    self.$field.replace($field);
-                    self
-                }
-            )*
         }
     };
 }

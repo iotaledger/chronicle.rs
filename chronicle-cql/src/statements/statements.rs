@@ -11,20 +11,20 @@ CREATE TABLE IF NOT EXISTS tangle.transaction (
   hash blob PRIMARY KEY,
   payload blob,
   address blob,
-  value varint,
+  value i64,
   obsolete_tag blob,
-  timestamp varint,
-  current_index varint,
-  last_index varint,
+  timestamp i64,
+  current_index i64,
+  last_index i64,
   bundle blob,
   trunk blob,
   branch blob,
   tag blob,
-  attachment_timestamp varint,
-  attachment_timestamp_lower varint,
-  attachment_timestamp_upper varint,
+  attachment_timestamp i64,
+  attachment_timestamp_lower i64,
+  attachment_timestamp_upper i64,
   nonce blob,
-  milestone varint,
+  milestone i64,
 );
 "#;
 
@@ -32,7 +32,7 @@ pub const CREATE_EDGE_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS tangle.edge (
   vertex blob,
   kind text,
-  timestamp varint,
+  timestamp i64,
   tx blob,
   PRIMARY KEY(vertex, kind, timestamp)
 );
