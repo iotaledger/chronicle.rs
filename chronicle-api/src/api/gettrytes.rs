@@ -1,3 +1,4 @@
+use bee_ternary::TryteBuf;
 use cdrs::{
     frame::{
         Flag,
@@ -225,8 +226,10 @@ impl TrytesDecoder for Value {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // value is represented as i64
         let value = i64::from_be_bytes(acc.buffer[start..(length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
+        let buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
         // convert TritBuf to trytes and put it in acc.buffer[2268..2295]
+
+        //buff.encode::<TryteBuf>();
         todo!()
     }
 }

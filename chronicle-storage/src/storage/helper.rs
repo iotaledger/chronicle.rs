@@ -29,12 +29,12 @@ impl Helper {
         // spawn nodes with delay in-between for simplicty
         for node_address in self.nodes {
             let event = dashboard::Event::Toplogy(dashboard::Toplogy::AddNode(node_address));
-            let _ = self.dashboard_tx.send(event);
+            let _ = self.dashboard_tx.0.send(event);
             tokio::time::delay_for(five_seconds).await;
         }
         // send tryBuild (assuming the nodes have been added)
         let event = dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild(1));
-        let _ = self.dashboard_tx.send(event);
+        let _ = self.dashboard_tx.0.send(event);
         tokio::time::delay_for(five_seconds).await;
         // now we make use of ring:send() with built Ring.
     }
@@ -50,7 +50,7 @@ mod tests {
         let (tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
         let _ = HelperBuilder::new()
             .nodes(vec!["0.0.0.0:9042".to_string()])
-            .dashboard_tx(tx)
+            .dashboard_tx(dashboard::Sender(tx))
             .build();
     }
 }

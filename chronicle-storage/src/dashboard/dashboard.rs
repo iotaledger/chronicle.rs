@@ -1,4 +1,11 @@
 // uses
+use chronicle_common::traits::{
+    launcher::LauncherTx,
+    dashboard::{
+        DashboardTx,
+        AppStatus,
+    }
+};
 use super::listener;
 use crate::{
     cluster::supervisor,
@@ -19,7 +26,22 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 // types
-pub type Sender = mpsc::UnboundedSender<Event>;
+#[derive(Clone)]
+pub struct Sender(pub mpsc::UnboundedSender<Event>);
+impl DashboardTx for Sender {
+    fn started_app(&mut self, app_name: std::string::String) {
+        let event = Event::App(AppStatus::Running(app_name));
+        let _ = self.0.send(event);
+    }
+    fn shutdown_app(&mut self, app_name: std::string::String) {
+        let event = Event::App(AppStatus::Shutdown(app_name));
+        let _ = self.0.send(event);
+    }
+    fn apps_status(&mut self, apps_status: HashMap<String, AppStatus>) {
+        let event = Event::AppsStatus(apps_status);
+        let _ = self.0.send(event);
+    }
+}
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 type WsTx = SplitSink<WebSocketStream<TcpStream>, Message>;
 
@@ -28,6 +50,8 @@ pub enum Event {
     Session(Session),
     Toplogy(Toplogy),
     Result(Result),
+    App(AppStatus),
+    AppsStatus(HashMap<String, AppStatus>)
 }
 pub enum Session {
     // todo auth events
@@ -48,7 +72,7 @@ pub enum Result {
 actor!(
     DashboardBuilder {
         listen_address: String,
-        launcher_tx: mpsc::UnboundedSender<String>
+        launcher_tx: Box<dyn LauncherTx>
 });
 
 impl DashboardBuilder {
@@ -58,14 +82,14 @@ impl DashboardBuilder {
             launcher_tx: self.launcher_tx.unwrap(),
             listen_address: self.listen_address.unwrap(),
             sockets: HashMap::new(),
-            tx,
+            tx: Sender(tx),
             rx,
         }
     }
 }
 
 pub struct Dashboard {
-    launcher_tx: mpsc::UnboundedSender<String>,
+    launcher_tx: Box<dyn LauncherTx>,
     listen_address: String,
     sockets: HashMap<SocketAddr, WsTx>,
     tx: Sender,
@@ -124,24 +148,13 @@ impl Dashboard {
                     }
                 } /* todo handle websocket decoded msgs (add node, remove node, build,
                    * get status, get dashboard log, import dump file, etc) */
+                _ => {
+                    //
+                }
             }
         }
     }
     pub fn clone_tx(&self) -> Sender {
         self.tx.clone()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn create_dashboard_from_builder() {
-        let (launcher_tx, _) = mpsc::unbounded_channel::<String>();
-        let _ = DashboardBuilder::new()
-            .launcher_tx(launcher_tx)
-            .listen_address("0.0.0.0:9042".to_string())
-            .build();
     }
 }

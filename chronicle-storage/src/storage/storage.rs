@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 type ThreadCount = usize;
 type ReporterCount = u8;
 
-app!(EngineBuilder {
+app!(StorageBuilder {
     listen_address: String,
     reporter_count: ReporterCount,
     thread_count: ThreadCount,
@@ -22,9 +22,9 @@ app!(EngineBuilder {
     nodes: Vec<String>
 });
 
-impl EngineBuilder {
-    pub fn build(self) -> Engine {
-        Engine {
+impl StorageBuilder {
+    pub fn build(self) -> Storage {
+        Storage {
             listen_address: self.listen_address.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
@@ -38,7 +38,7 @@ impl EngineBuilder {
     }
 }
 
-pub struct Engine {
+pub struct Storage {
     listen_address: String,
     reporter_count: u8,
     thread_count: usize,
@@ -47,10 +47,10 @@ pub struct Engine {
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
     nodes: Option<Vec<String>>,
-    launcher_tx: Option<mpsc::UnboundedSender<String>>,
+    launcher_tx: Option<Box<dyn LauncherTx>>,
 }
 
-impl Engine {
+impl Storage {
     pub async fn run(mut self) {
         // init
         let dashboard_tx = self.init().await;
@@ -66,13 +66,15 @@ impl Engine {
         };
     }
     async fn init(&mut self) -> Option<dashboard::Sender> {
+        let launcher_tx = self.launcher_tx.take().unwrap();
         // build dashboard
         let dashboard = dashboard::DashboardBuilder::new()
-            .launcher_tx(self.launcher_tx.take().unwrap())
+            .launcher_tx(launcher_tx.clone())
             .listen_address(self.listen_address.clone())
             .build();
         // build cluster
         let cluster = cluster::SupervisorBuilder::new()
+            .launcher_tx(launcher_tx)
             .reporter_count(self.reporter_count)
             .thread_count(self.thread_count)
             .data_centers(vec![self.local_dc.clone()])
@@ -100,8 +102,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn create_engine_from_builder() {
-        let _ = EngineBuilder::new()
+    fn create_storage_from_builder() {
+        let _ = StorageBuilder::new()
             .listen_address("0.0.0.0:8080".to_string())
             .thread_count(2)
             .local_dc("datacenter1".to_string())

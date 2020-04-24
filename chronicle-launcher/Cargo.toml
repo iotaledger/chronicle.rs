@@ -5,3 +5,4 @@ authors = ["Chronicle developers"]
 edition = "2018"
 
 [dependencies]
+chronicle-common = { path = "../chronicle-common" }

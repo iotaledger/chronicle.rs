@@ -1,9 +1,10 @@
 #[macro_export]
 macro_rules! app {
     ($struct:ident {$( $field:ident:$type:ty ),*}) =>{
+        use chronicle_common::traits::launcher::LauncherTx;
         #[derive(Default)]
         pub struct $struct {
-            launcher_tx: Option<mpsc::UnboundedSender<String>>,
+            launcher_tx: Option<Box<dyn LauncherTx>>,
             $(
                 $field: Option<$type>,
             )*
@@ -12,7 +13,7 @@ macro_rules! app {
             pub fn new() -> Self {
                 Self::default()
             }
-            pub fn launcher_tx(mut self, launcher_tx: mpsc::UnboundedSender<String>) -> Self {
+            pub fn launcher_tx(mut self, launcher_tx: Box<dyn LauncherTx>) -> Self {
                 self.launcher_tx.replace(launcher_tx);
                 self
             }

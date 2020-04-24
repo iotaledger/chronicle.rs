@@ -59,7 +59,7 @@ impl Websocket {
                 ws_tx: self.ws_tx.take().unwrap(),
             };
             // pass session to dashboard
-            let _ = self.dashboard_tx.send(dashboard::Event::Session(session));
+            let _ = self.dashboard_tx.0.send(dashboard::Event::Session(session));
             // event loop for websocket
             while let Some(res) = self.ws_rx.next().await {
                 let msg = res?;
@@ -103,7 +103,7 @@ mod tests {
         let _ = WebsocketdBuilder::new()
             .peer(peer)
             .stream(ws_stream)
-            .dashboard_tx(dashboard_tx.clone())
+            .dashboard_tx(dashboard::Sender(dashboard_tx.clone()))
             .build();
     }
 }

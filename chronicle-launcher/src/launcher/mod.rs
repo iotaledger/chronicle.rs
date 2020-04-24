@@ -1,23 +1,32 @@
 #[macro_export]
 macro_rules! launcher {
-    ($name:ident {$($app:ident : $t:ty),+}) => {
-        use tokio::sync::mpsc;
-        pub type Sender = mpsc::UnboundedSender<String>;
-        pub type Receiver = mpsc::UnboundedReceiver<String>;
+    (
+        apps_builder: $name:ident {$($app:ident : $t:ty),+},
+        apps: $apps:ident {$($field:ident : $type:ty),*},
+        tx: $tx:ty,
+        rx: $rx:ty
+    ) => {
+        use chronicle_common::traits::{
+            launcher::LauncherTx,
+            dashboard::DashboardTx,
+        };
         #[derive(Default)]
         pub struct $name {
-            tx: Option<Sender>,
-            rx: Option<Receiver>,
+            tx: Option<$tx>,
+            rx: Option<$rx>,
             $(
                 $app: Option<$t>,
             )*
         }
-        pub struct Apps {
+        pub struct $apps {
             app_count: usize,
-            tx: Sender,
-            rx: Receiver,
+            tx: $tx,
+            rx: $rx,
             $(
                 $app: Option<$t>,
+            )*
+            $(
+                $field: Option<$type>,
             )*
         }
         impl Apps {
@@ -27,32 +36,16 @@ macro_rules! launcher {
                     self
                 }
             )*
-            // this will break once all apps send break events
-            async fn all(mut self) {
-                while let Some(_) = self.rx.recv().await {
-                    self.app_count -= 1;
-                    if self.app_count == 0 {
-                        break
-                    }
-                }
-            }
-            // this will break once any app send break event
-            async fn one(mut self) {
-                while let Some(_) = self.rx.recv().await {
-                    break
-                }
-            }
         }
         impl $name {
-            pub fn new() -> Self {
-                let (tx, rx) = mpsc::unbounded_channel::<String>();
+            pub fn new(tx: $tx, rx: $rx) -> Self {
                 let mut launcher = Self::default();
                 launcher.tx.replace(tx);
                 launcher.rx.replace(rx);
                 launcher
             }
 
-            pub fn clone_tx(&self) -> Sender {
+            pub fn clone_tx(&self) -> $tx {
                 self.tx.as_ref().unwrap().clone()
             }
 

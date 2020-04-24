@@ -1,4 +1,3 @@
-// cluster supervisor
 use super::node;
 use crate::{
     connection::cql::{
@@ -20,7 +19,10 @@ use crate::{
         DC,
     },
 };
-use chronicle_common::actor;
+use chronicle_common::{
+    actor,
+    traits::launcher::LauncherTx,
+};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -55,7 +57,8 @@ actor!(SupervisorBuilder {
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
-    dashboard_tx: dashboard::Sender
+    dashboard_tx: dashboard::Sender,
+    launcher_tx: Box<dyn LauncherTx>
 });
 
 impl SupervisorBuilder {
@@ -64,6 +67,7 @@ impl SupervisorBuilder {
         // initialize global_ring
         let arc_ring = initialize_ring();
         Supervisor {
+            launcher_tx: self.launcher_tx.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
             data_centers: self.data_centers.unwrap(),
@@ -86,6 +90,7 @@ impl SupervisorBuilder {
 
 // suerpvisor state struct
 pub struct Supervisor {
+    launcher_tx: Box<dyn LauncherTx>,
     reporter_count: u8,
     thread_count: usize,
     data_centers: Vec<DC>,
@@ -142,7 +147,7 @@ impl Supervisor {
                         }
                         _ => {
                             let event = dashboard::Event::Result(dashboard::Result::Err(address));
-                            self.dashboard_tx.send(event);
+                            self.dashboard_tx.0.send(event);
                         }
                     };
                 }
@@ -175,7 +180,7 @@ impl Supervisor {
                     }
                     // tell dashboard
                     let event = dashboard::Event::Result(dashboard::Result::Ok(address));
-                    self.dashboard_tx.send(event);
+                    self.dashboard_tx.0.send(event);
                 }
                 Event::TryBuild(uniform_rf) => {
                     // do cleanup on weaks
@@ -199,14 +204,16 @@ impl Supervisor {
                         self.build = false;
                         // reply to dashboard
                         let event = dashboard::Event::Result(dashboard::Result::TryBuild(true));
-                        self.dashboard_tx.send(event);
+                        self.dashboard_tx.0.send(event);
                     } else {
                         let event = dashboard::Event::Result(dashboard::Result::TryBuild(false));
-                        self.dashboard_tx.send(event);
+                        self.dashboard_tx.0.send(event);
                     }
                 }
             }
         }
+        // aknowledge_shutdown to launcher
+        self.launcher_tx.aknowledge_shutdown("storage".to_string());
     }
     fn cleanup(&mut self) {
         // total_weak_count = thread_count + 1(the global weak)
@@ -236,15 +243,15 @@ mod tests {
 
     #[tokio::test]
     async fn create_cluster_from_builder() {
-        let (mut dashboard_tx, dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
-        let cluster = self::SupervisorBuilder::new()
+        let (dashboard_tx, _dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
+        let _cluster = self::SupervisorBuilder::new()
             .reporter_count(1)
             .thread_count(1)
             .data_centers(vec!["datacenter1".to_string()])
             .buffer_size(1024000)
             .recv_buffer_size(None)
             .send_buffer_size(None)
-            .dashboard_tx(dashboard_tx)
+            .dashboard_tx(dashboard::Sender(dashboard_tx))
             .build();
     }
 }
