@@ -235,23 +235,3 @@ impl Supervisor {
         self.version
     }
 }
-
-#[cfg(test)]
-mod tests {
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
-    use super::*;
-
-    #[tokio::test]
-    async fn create_cluster_from_builder() {
-        let (dashboard_tx, _dashboard_rx) = mpsc::unbounded_channel::<dashboard::Event>();
-        let _cluster = self::SupervisorBuilder::new()
-            .reporter_count(1)
-            .thread_count(1)
-            .data_centers(vec!["datacenter1".to_string()])
-            .buffer_size(1024000)
-            .recv_buffer_size(None)
-            .send_buffer_size(None)
-            .dashboard_tx(dashboard::Sender(dashboard_tx))
-            .build();
-    }
-}
