@@ -21,7 +21,10 @@ use crate::{
 };
 use chronicle_common::{
     actor,
-    traits::launcher::LauncherTx,
+    traits::{
+        launcher::LauncherTx,
+        shutdown::ShutdownTx,
+    }
 };
 use std::{
     collections::HashMap,
@@ -34,6 +37,14 @@ pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type Tokens = Vec<(Token, NodeId, DC, Msb, ShardCount)>;
 pub type Address = String;
 pub type Nodes = HashMap<Address, NodeInfo>;
+pub struct Shutdown(Sender);
+
+// register the app shutdown handler
+impl ShutdownTx for Shutdown {
+    fn shutdown(self) {
+        self.0.send(Event::Shutdown).unwrap();
+    }
+}
 
 pub struct NodeInfo {
     node_tx: node::supervisor::Sender,
@@ -48,6 +59,7 @@ pub enum Event {
     SpawnNode(Address),
     ShutDownNode(Address),
     TryBuild(usize),
+    Shutdown,
 }
 
 actor!(SupervisorBuilder {
@@ -88,7 +100,6 @@ impl SupervisorBuilder {
     }
 }
 
-// suerpvisor state struct
 pub struct Supervisor {
     launcher_tx: Box<dyn LauncherTx>,
     reporter_count: u8,
@@ -210,7 +221,12 @@ impl Supervisor {
                         self.dashboard_tx.0.send(event);
                     }
                 }
+                Event::Shutdown => {
+                    // shutdown everything and drop self.tx
+                    todo!()
+                }
             }
+
         }
         // aknowledge_shutdown to launcher
         self.launcher_tx.aknowledge_shutdown("storage".to_string());
@@ -224,6 +240,10 @@ impl Supervisor {
     }
     pub fn clone_tx(&self) -> Sender {
         self.tx.clone()
+    }
+    pub fn clone_shutdown(&self) -> Shutdown {
+        let tx = self.tx.clone();
+        Shutdown(tx)
     }
     fn new_version(&mut self) -> u8 {
         let mut m: u8 = 1;

@@ -25,20 +25,20 @@ use tokio_tungstenite::{
     tungstenite::Message,
     WebSocketStream,
 };
-// types
+
 #[derive(Clone)]
 pub struct Sender(pub mpsc::UnboundedSender<Event>);
 impl DashboardTx for Sender {
     fn started_app(&mut self, app_name: std::string::String) {
-        let event = Event::App(AppStatus::Running(app_name));
+        let event = Event::Launcher(Launcher::App(AppStatus::Running(app_name)));
         let _ = self.0.send(event);
     }
     fn shutdown_app(&mut self, app_name: std::string::String) {
-        let event = Event::App(AppStatus::Shutdown(app_name));
+        let event = Event::Launcher(Launcher::App(AppStatus::Shutdown(app_name)));
         let _ = self.0.send(event);
     }
     fn apps_status(&mut self, apps_status: HashMap<String, AppStatus>) {
-        let event = Event::AppsStatus(apps_status);
+        let event = Event::Launcher(Launcher::Apps(apps_status));
         let _ = self.0.send(event);
     }
 }
@@ -50,8 +50,7 @@ pub enum Event {
     Session(Session),
     Toplogy(Toplogy),
     Result(Result),
-    App(AppStatus),
-    AppsStatus(HashMap<String, AppStatus>)
+    Launcher(Launcher),
 }
 pub enum Session {
     // todo auth events
@@ -67,6 +66,11 @@ pub enum Result {
     Ok(Address),
     Err(Address),
     TryBuild(bool),
+}
+
+pub enum Launcher {
+    App(AppStatus),
+    Apps(HashMap<String, AppStatus>)
 }
 
 actor!(

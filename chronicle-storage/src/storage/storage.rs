@@ -6,7 +6,6 @@ use crate::{
     ring::ring::DC,
 };
 use chronicle_common::app;
-use tokio::sync::mpsc;
 
 type ThreadCount = usize;
 type ReporterCount = u8;
@@ -66,15 +65,17 @@ impl Storage {
         };
     }
     async fn init(&mut self) -> Option<dashboard::Sender> {
-        let launcher_tx = self.launcher_tx.take().unwrap();
+        let mut launcher_tx = self.launcher_tx.take().unwrap();
         // build dashboard
         let dashboard = dashboard::DashboardBuilder::new()
             .launcher_tx(launcher_tx.clone())
             .listen_address(self.listen_address.clone())
             .build();
+        // register dashboard with launcher
+        launcher_tx.register_dashboard(Box::new(dashboard.clone_tx()));
         // build cluster
         let cluster = cluster::SupervisorBuilder::new()
-            .launcher_tx(launcher_tx)
+            .launcher_tx(launcher_tx.clone())
             .reporter_count(self.reporter_count)
             .thread_count(self.thread_count)
             .data_centers(vec![self.local_dc.clone()])
@@ -83,6 +84,8 @@ impl Storage {
             .send_buffer_size(self.send_buffer_size)
             .dashboard_tx(dashboard.clone_tx())
             .build();
+        // register storage app with launcher
+        launcher_tx.register_app("storage".to_string(), Box::new(cluster.clone_shutdown()));
         // clone dashboard_tx to return in case some(nodes) used for testing
         let dashboard_tx = Some(dashboard.clone_tx());
         // spawn dashboard

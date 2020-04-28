@@ -57,7 +57,7 @@ async fn apps_builder() {
     let (tx, rx) = mpsc::unbounded_channel::<String>();
     AppsBuilder::new(tx,rx)
     .build() // build apps first
-    .engine().await // start the first app
+    .storage().await // start the first app
     // here we can start other apps(if any) .api().await etc,
     .all().await // await once all apps break
 }
