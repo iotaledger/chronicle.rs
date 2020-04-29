@@ -138,6 +138,7 @@ impl Supervisor {
                 .streams(streams)
                 .shard_id(self.shard_id.clone())
                 .address(self.address.clone())
+                .payloads(self.payloads.clone())
                 .tx(reporter_tx)
                 .rx(reporter_rx)
                 .stage_tx(self.tx.as_ref().unwrap().clone());

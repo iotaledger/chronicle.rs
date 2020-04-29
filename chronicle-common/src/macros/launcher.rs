@@ -20,6 +20,7 @@ macro_rules! launcher {
             fn register_app(app_name: String, shutdown_tx: Box<dyn ShutdownTx>) -> Self;
             fn register_dashboard(dashboard_name: String, dashboard_tx: Box<dyn DashboardTx>) -> Self;
             fn apps_status(dashboard_name: String) -> Self;
+            fn break_launcher() -> Self;
         }
         #[derive(Clone)]
         pub struct Sender(mpsc::UnboundedSender<$event>);
@@ -43,6 +44,9 @@ macro_rules! launcher {
             fn apps_status(&mut self, dashboard_name: String) {
                 let _ = self.0.send(LauncherEvent::apps_status(dashboard_name));
             }
+            fn break_launcher(&mut self) {
+                let _ = self.0.send(LauncherEvent::break_launcher());
+            }
         }
         #[derive(Default)]
         pub struct $name {
@@ -53,6 +57,7 @@ macro_rules! launcher {
             )*
         }
         pub struct $apps {
+            apps: HashMap<String, Box<dyn ShutdownTx>>,
             app_count: usize,
             tx: Sender,
             rx: Receiver,
@@ -67,6 +72,12 @@ macro_rules! launcher {
             $(
                 async fn $app(mut self) -> Self {
                     self.$app.take().unwrap().build().run().await;
+                    self
+                }
+            )*
+            $(
+                pub fn $field(mut self, $field: $type) -> Self {
+                    self.$field.replace($field);
                     self
                 }
             )*
@@ -86,11 +97,15 @@ macro_rules! launcher {
 
             pub fn to_apps(mut self) -> $apps {
                 $apps {
+                    apps: HashMap::new(),
                     app_count: self.app_count(),
                     tx: self.tx.take().unwrap(),
                     rx: self.rx.take().unwrap(),
                     $(
                         $app: self.$app,
+                    )*
+                    $(
+                        $field: None,
                     )*
                 }
             }

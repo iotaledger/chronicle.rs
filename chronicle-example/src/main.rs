@@ -1,4 +1,5 @@
 // import the apps you want to build
+use std::collections::HashMap;
 use chronicle_storage::storage::storage::StorageBuilder;
 use chronicle_api::api::api::ApiBuilder;
 // import launcher macro
@@ -12,6 +13,7 @@ enum Event {
     RegisterApp(String, Box<dyn ShutdownTx>),
     RegisterDashboard(String, Box<dyn DashboardTx>),
     AppsStatus(String),
+    Break,
 }
 
 launcher!(
@@ -40,6 +42,9 @@ impl LauncherEvent for Event {
     fn register_app(app_name: String, shutdown_tx: Box<dyn ShutdownTx>) -> Event {
         Event::RegisterApp(app_name, shutdown_tx)
     }
+    fn break_launcher() -> Event {
+        Event::Break
+    }
 }
 
 // build your apps
@@ -48,17 +53,19 @@ impl AppsBuilder {
         // - storage app:
         let storage = StorageBuilder::new()
         .listen_address("0.0.0.0:8080".to_string())
-        .thread_count(2)
+        .thread_count(8)
         .local_dc("datacenter1".to_string())
         .reporter_count(1)
         .buffer_size(1024000)
         .recv_buffer_size(1024000)
         .send_buffer_size(1024000)
         .nodes(vec!["172.17.0.2:9042".to_string()]);
-        // - build api app
-        // TODO
+        // - api app
+        let api = ApiBuilder::new()
+        .listen_address("0.0.0.0:4000".to_string());
         // add app to AppsBuilder then transform it to Apps
         self.storage(storage)
+        .api(api)
         .to_apps()
     }
 }
@@ -67,8 +74,12 @@ impl Apps {
     async fn run(mut self) {
         while let Some(event) = self.rx.0.recv().await {
             match event {
+                Event::RegisterApp(app_name, shutdown_tx) => {
+                    // insert app in map
+                    self.apps.insert(app_name, shutdown_tx);
+                }
                 _ => {
-
+                    
                 }
             }
         };
@@ -79,7 +90,8 @@ impl Apps {
 async fn main() {
     println!("starting chronicle-example");
     AppsBuilder::new()
-    .build() // build apps first
-    .storage().await // start first app
+    .build() // build apps first, then start them in order you want.
+    .storage().await // start storage app
+    .api().await // start api app
     .run().await; // launcher event loop
 }

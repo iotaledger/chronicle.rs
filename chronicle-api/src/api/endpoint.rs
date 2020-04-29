@@ -51,6 +51,6 @@ impl Endpoint {
             eprintln!("error: {}, endpoint: {}", e, self.addr);
         }
         // aknowledge_shutdown
-        self.launcher_tx.aknowledge_shutdown("api".to_string());
+        //self.launcher_tx.aknowledge_shutdown("api".to_string());
     }
 }
