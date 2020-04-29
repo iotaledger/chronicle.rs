@@ -6,46 +6,10 @@ use chronicle_api::api::api::ApiBuilder;
 use chronicle_common::launcher;
 
 // create event type
-enum Event {
-    StartApp(String),
-    ShutdownApp(String),
-    AknShutdown(String),
-    RegisterApp(String, Box<dyn ShutdownTx>),
-    RegisterDashboard(String, Box<dyn DashboardTx>),
-    AppsStatus(String),
-    Break,
-}
-
 launcher!(
     apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder }, // Apps
-    apps: Apps{}, // Launcher state
-    event: Event // Launcher event type
+    apps: Apps{} // Launcher state
 );
-
-// required implemenetation
-impl LauncherEvent for Event {
-    fn start_app(app_name: String) -> Event {
-        Event::StartApp(app_name)
-    }
-    fn apps_status(dashboard_name: String) -> Event {
-        Event::AppsStatus(dashboard_name)
-    }
-    fn shutdown_app(app_name: String) -> Event {
-        Event::ShutdownApp(app_name)
-    }
-    fn aknowledge_shutdown(app_name: String) -> Event {
-        Event::AknShutdown(app_name)
-    }
-    fn register_dashboard(dashboard_name: String, dashboard_tx: Box<dyn DashboardTx>) -> Event {
-        Event::RegisterDashboard(dashboard_name, dashboard_tx)
-    }
-    fn register_app(app_name: String, shutdown_tx: Box<dyn ShutdownTx>) -> Event {
-        Event::RegisterApp(app_name, shutdown_tx)
-    }
-    fn break_launcher() -> Event {
-        Event::Break
-    }
-}
 
 // build your apps
 impl AppsBuilder {
@@ -79,7 +43,7 @@ impl Apps {
                     self.apps.insert(app_name, shutdown_tx);
                 }
                 _ => {
-                    
+
                 }
             }
         };
@@ -93,5 +57,6 @@ async fn main() {
     .build() // build apps first, then start them in order you want.
     .storage().await // start storage app
     .api().await // start api app
-    .run().await; // launcher event loop
+    .run().await; // run should be defined by poweruser,
+    // we are working on basic strategies, to simplify the implementation.
 }
