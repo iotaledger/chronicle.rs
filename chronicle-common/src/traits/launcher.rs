@@ -6,8 +6,9 @@ pub trait LauncherTx: Send + LauncherTxClone {
     fn start_app(&mut self, app_name: String);
     fn shutdown_app(&mut self, app_name: String);
     fn aknowledge_shutdown(&mut self, app_name: String);
-    fn register_dashboard(&mut self, dashboard_tx: Box<dyn DashboardTx>);
+    fn register_dashboard(&mut self, dashboard_name: String, dashboard_tx: Box<dyn DashboardTx>);
     fn register_app(&mut self, app_name: String, shutdown_tx: Box<dyn ShutdownTx>);
+    fn apps_status(&mut self, dashboard_name: String);
 }
 
 impl Clone for Box<dyn LauncherTx> {

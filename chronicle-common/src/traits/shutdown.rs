@@ -1,3 +1,3 @@
-pub trait ShutdownTx {
+pub trait ShutdownTx: Send {
     fn shutdown(self);
 }

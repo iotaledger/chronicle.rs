@@ -4,6 +4,6 @@ members = [
     "chronicle-storage",
     "chronicle-cql",
     "chronicle-api",
-    "chronicle-launcher",
     "chronicle-common",
+    "chronicle-example",
 ]

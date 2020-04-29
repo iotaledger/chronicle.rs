@@ -1,4 +1,3 @@
-use bee_ternary::TryteBuf;
 use cdrs::{
     frame::{
         Flag,
@@ -25,9 +24,6 @@ use chronicle_storage::{
         Error,
         Worker,
     },
-};
-use bee_ternary::{
-    num_conversions,
 };
 use hyper::{
     Body,
@@ -222,14 +218,10 @@ impl TrytesDecoder for Address {
         acc.buffer.copy_within(start..(length as usize),2187)
     }
 }
-impl TrytesDecoder for Value {
-    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // value is represented as i64
-        let value = i64::from_be_bytes(acc.buffer[start..(length as usize)].try_into().unwrap());
-        let buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2268..2295]
+use std::convert::From;
 
-        //buff.encode::<TryteBuf>();
+impl TrytesDecoder for Value {
+    fn decode_column(_start: usize, _length: i32, _acc: &mut Trytes) {
         todo!()
     }
 }
@@ -249,7 +241,7 @@ impl TrytesDecoder for CurrentIndex {
     }
 }
 impl TrytesDecoder for LastIndex {
-    fn decode_column(_start: usize, _length: i32,_accc: &mut Trytes) {
+    fn decode_column(_start: usize, _length: i32, _acc: &mut Trytes) {
         todo!()
     }
 }
@@ -289,7 +281,7 @@ impl TrytesDecoder for AttachmentTimestampUpper {
     }
 }
 impl TrytesDecoder for Nonce {
-    fn decode_column(_start: usize, _length: i32,_accc: &mut Trytes) {
+    fn decode_column(_start: usize, _length: i32, _acc: &mut Trytes) {
         todo!()
     }
 }

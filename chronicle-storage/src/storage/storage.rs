@@ -72,7 +72,7 @@ impl Storage {
             .listen_address(self.listen_address.clone())
             .build();
         // register dashboard with launcher
-        launcher_tx.register_dashboard(Box::new(dashboard.clone_tx()));
+        launcher_tx.register_dashboard("StorageDashboard".to_string(),Box::new(dashboard.clone_tx()));
         // build cluster
         let cluster = cluster::SupervisorBuilder::new()
             .launcher_tx(launcher_tx.clone())
