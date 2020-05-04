@@ -1,4 +1,9 @@
 // uses
+use futures::Future;
+use futures::future::Abortable;
+use futures::future::AbortHandle;
+use futures::future::abortable;
+
 use super::{
     dashboard,
     websocket,
@@ -29,31 +34,31 @@ pub struct Listener {
 }
 
 impl Listener {
-    pub async fn run(self) {
-        // try to bind and unwrap to panic() on error (this is what we want)
-        let mut listener = TcpListener::bind(&self.listen_address).await.unwrap();
-        // accept dashboard connections
-        while let stream = listener.accept().await {
-            match stream {
-                Ok((socket, _)) => {
-                    // convert socket to websocketstream
-                    let peer = socket
-                        .peer_addr()
-                        .expect("connected streams should have a peer address");
-                    if let Ok(ws_stream) = accept_async(socket).await {
-                        // build websocket
-                        let websocket = websocket::WebsocketdBuilder::new()
-                            .peer(peer)
-                            .stream(ws_stream)
-                            .dashboard_tx(self.dashboard_tx.clone())
-                            .build();
-                        // spawn websocket
-                        tokio::spawn(websocket.run());
-                    };
-                }
-                Err(_) => {
-                    // todo error handling
-                    continue;
+    pub async fn run(listener: Abortable<impl Future>, dashboard_tx: dashboard::Sender) {
+        // await abortable_listener
+        let _aborted_or_ok = listener.await;
+        // aknowledge shutdown
+        // dashboard_tx.0.send();
+    }
+    pub fn make_abortable(self) -> (Abortable<impl Future>, AbortHandle) {
+        // make abortable_listener
+        abortable(self.listener())
+    }
+    async fn listener(self) {
+        if let Ok(mut listener) = TcpListener::bind(&self.listen_address).await {
+            while let Ok((socket, _)) = listener.accept().await {
+                let peer = socket
+                    .peer_addr()
+                    .expect("connected streams should have a peer address");
+                if let Ok(ws_stream) = accept_async(socket).await {
+                    // build websocket
+                    let websocket = websocket::WebsocketdBuilder::new()
+                        .peer(peer)
+                        .stream(ws_stream)
+                        .dashboard_tx(self.dashboard_tx.clone())
+                        .build();
+                    // spawn websocket
+                    tokio::spawn(websocket.run());
                 }
             }
         }

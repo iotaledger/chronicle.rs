@@ -1,4 +1,5 @@
-// uses
+// work in progress
+use futures::future::AbortHandle;
 use chronicle_common::traits::{
     launcher::LauncherTx,
     dashboard::{
@@ -85,6 +86,7 @@ impl DashboardBuilder {
         Dashboard {
             launcher_tx: self.launcher_tx.unwrap(),
             listen_address: self.listen_address.unwrap(),
+            listener: None,
             sockets: HashMap::new(),
             tx: Sender(tx),
             rx,
@@ -94,6 +96,7 @@ impl DashboardBuilder {
 
 pub struct Dashboard {
     launcher_tx: Box<dyn LauncherTx>,
+    listener: Option<AbortHandle>,
     listen_address: String,
     sockets: HashMap<SocketAddr, WsTx>,
     tx: Sender,
@@ -107,8 +110,14 @@ impl Dashboard {
             .listen_address(self.listen_address.clone())
             .dashboard_tx(self.tx.clone())
             .build();
+        // make listner abortable
+        let (abortable_listener, abort_handle) = listener.make_abortable();
+        // register listener abort_handle
+        self.listener = Some(abort_handle);
         // spawn dashboard listener
-        tokio::spawn(listener.run());
+        tokio::spawn(
+            listener::Listener::run(abortable_listener, self.clone_tx())
+        );
         // event loop
         while let Some(event) = self.rx.recv().await {
             // events from websocket(read-half)
@@ -152,8 +161,8 @@ impl Dashboard {
                     }
                 } /* todo handle websocket decoded msgs (add node, remove node, build,
                    * get status, get dashboard log, import dump file, etc) */
-                _ => {
-                    //
+                Event::Launcher(app_status) => {
+
                 }
             }
         }

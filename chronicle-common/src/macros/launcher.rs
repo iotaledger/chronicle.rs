@@ -103,6 +103,7 @@ macro_rules! launcher {
             )*
         }
         pub struct $apps {
+            dashboards: HashMap<String, Box<dyn DashboardTx>>,
             apps: HashMap<String, Box<dyn ShutdownTx>>,
             app_count: usize,
             tx: Sender,
@@ -117,7 +118,7 @@ macro_rules! launcher {
         impl $apps {
             $(
                 async fn $app(mut self) -> Self {
-                    self.$app.take().unwrap().build().run().await;
+                    self.$app.clone().take().unwrap().build().run().await;
                     self
                 }
             )*
@@ -142,11 +143,14 @@ macro_rules! launcher {
             }
 
             pub fn to_apps(mut self) -> $apps {
+                let tx = self.tx.take().unwrap();
+                let rx = self.rx.take().unwrap();
                 $apps {
+                    dashboards: HashMap::new(),
                     apps: HashMap::new(),
                     app_count: self.app_count(),
-                    tx: self.tx.take().unwrap(),
-                    rx: self.rx.take().unwrap(),
+                    tx,
+                    rx,
                     $(
                         $app: self.$app,
                     )*
@@ -161,7 +165,7 @@ macro_rules! launcher {
                     self
                 }
             )*
-
+            
             fn app_count(&self) -> usize {
                 launcher!(@count $($app),+)
             }

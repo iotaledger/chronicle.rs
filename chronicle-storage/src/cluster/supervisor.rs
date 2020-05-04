@@ -77,7 +77,7 @@ impl SupervisorBuilder {
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         // initialize global_ring
-        let arc_ring = initialize_ring();
+        let (arc_ring, _none) = initialize_ring(0, false);
         Supervisor {
             launcher_tx: self.launcher_tx.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
@@ -158,7 +158,7 @@ impl Supervisor {
                         }
                         _ => {
                             let event = dashboard::Event::Result(dashboard::Result::Err(address));
-                            self.dashboard_tx.0.send(event);
+                            let _ = self.dashboard_tx.0.send(event);
                         }
                     };
                 }
@@ -191,7 +191,7 @@ impl Supervisor {
                     }
                     // tell dashboard
                     let event = dashboard::Event::Result(dashboard::Result::Ok(address));
-                    self.dashboard_tx.0.send(event);
+                    let _ = self.dashboard_tx.0.send(event);
                 }
                 Event::TryBuild(uniform_rf) => {
                     // do cleanup on weaks
@@ -199,26 +199,32 @@ impl Supervisor {
                     if self.ready == 0 && self.build {
                         // re/build
                         let version = self.new_version();
-                        let (new_arc_ring, old_weak_ring) = build_ring(
-                            &mut self.data_centers,
-                            &self.nodes,
-                            self.registry.clone(),
-                            self.reporter_count,
-                            uniform_rf,
-                            version,
-                        );
-                        // replace self.arc_ring
-                        self.arc_ring.replace(new_arc_ring);
-                        // push weak to weak_rings
-                        self.weak_rings.push(old_weak_ring);
+                        if self.nodes.is_empty() {
+                            let (new_arc_ring, old_weak_ring) = initialize_ring(version, true);
+                            self.arc_ring.replace(new_arc_ring);
+                            self.weak_rings.push(old_weak_ring.unwrap());
+                        } else {
+                            let (new_arc_ring, old_weak_ring) = build_ring(
+                                &mut self.data_centers,
+                                &self.nodes,
+                                self.registry.clone(),
+                                self.reporter_count,
+                                uniform_rf,
+                                version,
+                            );
+                            // replace self.arc_ring
+                            self.arc_ring.replace(new_arc_ring);
+                            // push weak to weak_rings
+                            self.weak_rings.push(old_weak_ring);
+                        }
                         // reset build state to false becaue we built it and we don't want to rebuild again incase of another TryBuild event
                         self.build = false;
                         // reply to dashboard
                         let event = dashboard::Event::Result(dashboard::Result::TryBuild(true));
-                        self.dashboard_tx.0.send(event);
+                        let _ = self.dashboard_tx.0.send(event);
                     } else {
                         let event = dashboard::Event::Result(dashboard::Result::TryBuild(false));
-                        self.dashboard_tx.0.send(event);
+                        let _ = self.dashboard_tx.0.send(event);
                     }
                 }
                 Event::Shutdown => {
@@ -226,7 +232,6 @@ impl Supervisor {
                     todo!()
                 }
             }
-
         }
         // aknowledge_shutdown to launcher
         self.launcher_tx.aknowledge_shutdown("storage".to_string());

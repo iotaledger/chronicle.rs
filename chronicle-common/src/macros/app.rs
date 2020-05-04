@@ -2,7 +2,7 @@
 macro_rules! app {
     ($struct:ident {$( $field:ident:$type:ty ),*}) =>{
         use chronicle_common::traits::launcher::LauncherTx;
-        #[derive(Default)]
+        #[derive(Default,Clone)]
         pub struct $struct {
             launcher_tx: Option<Box<dyn LauncherTx>>,
             $(

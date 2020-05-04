@@ -183,7 +183,7 @@ impl Ring {
             &self.uniform,
         );
     }
-    fn initialize_ring() -> ArcRing {
+    fn initialize_ring(version: u8, rebuild: bool) -> (ArcRing, Option<Box<Weak<GlobalRing>>>) {
         // create empty Registry
         let registry: Registry = HashMap::new();
         // create initial vnode
@@ -194,7 +194,7 @@ impl Ring {
             Uniform::new(0, 1),
             Uniform::new(0, 1),
             Uniform::new(0, 1),
-            0,
+            version,
             registry,
             root,
         );
@@ -206,11 +206,21 @@ impl Ring {
         let boxed = Box::new(weak_ring);
         let raw_box = Box::into_raw(boxed);
         let atomic_ptr = AtomicPtr::new(raw_box);
-        unsafe {
-            GLOBAL_RING = Some(atomic_ptr);
-            VERSION = 0;
+        if rebuild {
+            let old_weak = unsafe {
+                let old_weak = GLOBAL_RING.as_mut().unwrap().swap(raw_box, Ordering::Relaxed);
+                VERSION = version;
+                old_weak
+            };
+            (arc_ring, Some(unsafe {Box::from_raw(old_weak)}))
+        } else {
+            unsafe {
+                GLOBAL_RING = Some(atomic_ptr);
+                VERSION = version;
+            }
+            (arc_ring, None)
         }
-        arc_ring
+
     }
 }
 trait SmartId {
@@ -576,8 +586,8 @@ fn compute_chain(vnodes: &Vec<VnodeTuple>) -> Vec<(Token, Token, Replicas)> {
     }
     chain
 }
-pub fn initialize_ring() -> ArcRing {
-    Ring::initialize_ring()
+pub fn initialize_ring(version: u8, rebuild: bool) -> (ArcRing, Option<Box<Weak<GlobalRing>>>) {
+    Ring::initialize_ring(version, rebuild)
 }
 
 #[test]
