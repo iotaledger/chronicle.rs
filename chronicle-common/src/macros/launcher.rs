@@ -12,7 +12,7 @@ macro_rules! launcher {
             RegisterApp(String, Box<dyn ShutdownTx>),
             RegisterDashboard(String, Box<dyn DashboardTx>),
             AppsStatus(String),
-            Break,
+            ExitProgram,
         }
 
         launcher!(
@@ -40,11 +40,10 @@ macro_rules! launcher {
             fn register_app(app_name: String, shutdown_tx: Box<dyn ShutdownTx>) -> Event {
                 Event::RegisterApp(app_name, shutdown_tx)
             }
-            fn break_launcher() -> Event {
-                Event::Break
+            fn exit_program() -> Event {
+                Event::ExitProgram
             }
         }
-        // TODO implement basic strategies for Apps {}
         impl Apps {
             async fn one_for_one(mut self) {
                 while let Some(event) = self.rx.0.recv().await {
@@ -54,8 +53,11 @@ macro_rules! launcher {
                             self.dashboards.insert(dashboard_name, dashboard_tx);
                         }
                         Event::RegisterApp(app_name, shutdown_tx) => {
-                            // register app in map
+                            // register app in apps
                             self.apps.insert(app_name.clone(), shutdown_tx);
+                            println!("AppStatus: {} is Running, and got registered", app_name);
+                            // insert app_status in apps_status
+                            self.apps_status.insert(app_name.clone(), AppStatus::Running(app_name.clone()));
                             // tell dashboard(s) that we startedapp
                             for (_dashboard_name, dashboard_tx) in self.dashboards.iter_mut() {
                                 // aknowledge startedapp
@@ -64,12 +66,15 @@ macro_rules! launcher {
                         }
                         Event::StartApp(app_name) => {
                             self.start_app(app_name.clone()).await;
-                            // tell dashboards that we started app
+                            println!("AppStatus: {} is Starting, and dynamically started", app_name);
+                            self.apps_status.insert(app_name.clone(), AppStatus::Starting(app_name.clone()));
                             for (_, mut dashboard_tx) in &mut self.dashboards {
-                                dashboard_tx.started_app(app_name.clone());
+                                dashboard_tx.starting_app(app_name.clone());
                             }
                         }
                         Event::ShutdownApp(app_name) => {
+                            println!("AppStatus: {} is shutting down", app_name);
+                            self.apps_status.insert(app_name.clone(), AppStatus::ShuttingDown(app_name.clone()));
                             if let Some(shutdown_tx) = self.apps.remove(&app_name) {
                                 shutdown_tx.shutdown();
                             };
@@ -78,26 +83,44 @@ macro_rules! launcher {
                             // aknowledging shutdown for an app under one_for_one policy require us to restart the app
                             // check if the the shutdown was requested
                             if let Some(_shutdown_tx) = self.apps.remove(&app_name) {
+                                println!("AppStatus: {} is restarting", app_name);
+                                self.apps_status.insert(app_name.clone(), AppStatus::Restarting(app_name.clone()));
                                 // mean the shutdown it's not requested so we restart
                                 self.start_app(app_name.clone()).await;
-                                // tell dashboards that we started app
+                                // tell dashboards that we restarted app
                                 for (_, dashboard_tx) in &mut self.dashboards {
-                                    dashboard_tx.started_app(app_name.clone());
+                                    dashboard_tx.restarted_app(app_name.clone());
                                 }
                             } else {
+                                println!("AppStatus: {} got shutdown", app_name);
+                                self.apps_status.insert(app_name.clone(), AppStatus::Shutdown(app_name.clone()));
                                 // tell dashboards that we shutdown an app
                                 for (_, dashboard_tx) in &mut self.dashboards {
                                     dashboard_tx.shutdown_app(app_name.clone());
                                 }
+                                // check if all apps got shutdown
+                                let shutdown_status = AppStatus::Shutdown("".to_string());
+                                let is_all_shutdown = !self.apps_status.iter().any(|(_, app_status)|
+                                app_status != &shutdown_status);
+                                if self.exit && is_all_shutdown {
+                                    // exit program
+                                    println!("Aknowledged shutdown for all Apps, GoodBye;");
+                                    break
+                                }
                             }
                         }
-                        Event::Break => {
-                            // break launcher
-                            break
+                        Event::AppsStatus(dashboard_name) => {
+                            if let Some(dashboard_tx) = self.dashboards.get_mut(&dashboard_name) {
+                                dashboard_tx.apps_status(self.apps_status.clone());
+                            }
                         }
-                        _ => {
-                            // todo app_status
-                            todo!()
+                        Event::ExitProgram => {
+                            self.exit = true;
+                            println!("Exiting Program;");
+                            for (app_name, shutdown_tx) in self.apps.drain() {
+                                println!("Shutting down: {}", app_name);
+                                shutdown_tx.shutdown();
+                            }
                         }
                     }
                 }
@@ -116,7 +139,11 @@ macro_rules! launcher {
                 LauncherTx,
             },
             shutdown::ShutdownTx,
-            dashboard::DashboardTx,
+            dashboard::{
+                DashboardTx,
+                AppStatus,
+                AppsStatus,
+            },
         };
         pub trait LauncherEvent: Send {
             fn start_app(app_name: String) -> Self;
@@ -125,7 +152,7 @@ macro_rules! launcher {
             fn register_app(app_name: String, shutdown_tx: Box<dyn ShutdownTx>) -> Self;
             fn register_dashboard(dashboard_name: String, dashboard_tx: Box<dyn DashboardTx>) -> Self;
             fn apps_status(dashboard_name: String) -> Self;
-            fn break_launcher() -> Self;
+            fn exit_program() -> Self;
         }
         #[derive(Clone)]
         pub struct Sender(mpsc::UnboundedSender<$event>);
@@ -149,8 +176,8 @@ macro_rules! launcher {
             fn apps_status(&mut self, dashboard_name: String) {
                 let _ = self.0.send(LauncherEvent::apps_status(dashboard_name));
             }
-            fn break_launcher(&mut self) {
-                let _ = self.0.send(LauncherEvent::break_launcher());
+            fn exit_program(&mut self) {
+                let _ = self.0.send(LauncherEvent::exit_program());
             }
         }
         #[derive(Default)]
@@ -162,8 +189,10 @@ macro_rules! launcher {
             )*
         }
         pub struct $apps {
+            exit: bool,
             dashboards: HashMap<String, Box<dyn DashboardTx>>,
             apps: HashMap<String, Box<dyn ShutdownTx>>,
+            apps_status: AppsStatus,
             app_count: usize,
             tx: Sender,
             rx: Receiver,
@@ -215,8 +244,10 @@ macro_rules! launcher {
                 let tx = self.tx.take().unwrap();
                 let rx = self.rx.take().unwrap();
                 $apps {
+                    exit: false,
                     dashboards: HashMap::new(),
                     apps: HashMap::new(),
+                    apps_status: HashMap::new(),
                     app_count: self.app_count(),
                     tx,
                     rx,

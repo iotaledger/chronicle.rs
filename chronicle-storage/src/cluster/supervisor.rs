@@ -37,14 +37,7 @@ pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type Tokens = Vec<(Token, NodeId, DC, Msb, ShardCount)>;
 pub type Address = String;
 pub type Nodes = HashMap<Address, NodeInfo>;
-pub struct Shutdown(Sender);
 
-// register the app shutdown handler
-impl ShutdownTx for Shutdown {
-    fn shutdown(self: Box<Self>) {
-        self.0.send(Event::Shutdown).unwrap();
-    }
-}
 
 pub struct NodeInfo {
     node_tx: node::supervisor::Sender,
@@ -246,10 +239,6 @@ impl Supervisor {
     }
     pub fn clone_tx(&self) -> Sender {
         self.tx.as_ref().unwrap().clone()
-    }
-    pub fn clone_shutdown(&self) -> Shutdown {
-        let tx = self.clone_tx();
-        Shutdown(tx)
     }
     fn new_version(&mut self) -> u8 {
         let mut m: u8 = 1;

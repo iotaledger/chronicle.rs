@@ -56,6 +56,5 @@ async fn main() {
     .build() // build apps first, then start them in order you want.
     .storage().await // start storage app
     .api().await // start api app
-    .run().await; // run should be defined by poweruser,
-    // we are working on basic strategies, to simplify the implementation.
+    .one_for_one().await; // instead you can define your own .run() strategy
 }

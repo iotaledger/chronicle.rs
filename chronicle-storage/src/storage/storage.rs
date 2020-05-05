@@ -83,8 +83,6 @@ impl Storage {
             .send_buffer_size(self.send_buffer_size)
             .dashboard_tx(dashboard.clone_tx())
             .build();
-        // register storage app with launcher
-        launcher_tx.register_app("storage".to_string(), Box::new(cluster.clone_shutdown()));
         // clone dashboard_tx to return in case some(nodes) used for testing
         let dashboard_tx = Some(dashboard.clone_tx());
         // spawn dashboard

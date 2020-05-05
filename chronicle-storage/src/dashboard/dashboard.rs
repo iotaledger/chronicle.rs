@@ -33,8 +33,16 @@ use tokio_tungstenite::{
 #[derive(Clone)]
 pub struct Sender(pub mpsc::UnboundedSender<Event>);
 impl DashboardTx for Sender {
+    fn starting_app(&mut self, app_name: std::string::String) {
+        let event = Event::Launcher(Launcher::App(AppStatus::Starting(app_name)));
+        let _ = self.0.send(event);
+    }
     fn started_app(&mut self, app_name: std::string::String) {
         let event = Event::Launcher(Launcher::App(AppStatus::Running(app_name)));
+        let _ = self.0.send(event);
+    }
+    fn restarted_app(&mut self, app_name: std::string::String) {
+        let event = Event::Launcher(Launcher::App(AppStatus::Restarting(app_name)));
         let _ = self.0.send(event);
     }
     fn shutdown_app(&mut self, app_name: std::string::String) {
@@ -172,8 +180,8 @@ impl Dashboard {
                     }
                 } /* todo handle websocket decoded msgs (add node, remove node, build,
                    * get status, get dashboard log, import dump file, etc) */
-                Event::Launcher(_app_statuss) => {
-
+                Event::Launcher(_launcher_status) => {
+                    //TODO do something with app/apps_status
                 }
                 Event::Shutdown => {
                     // storage app shutdown including the dashboard/cluster/listener.
