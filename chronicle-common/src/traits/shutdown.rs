@@ -1,3 +1,3 @@
 pub trait ShutdownTx: Send {
-    fn shutdown(self);
+    fn shutdown(self: Box<Self>);
 }

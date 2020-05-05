@@ -1,5 +1,4 @@
 // import the apps you want to build
-use std::collections::HashMap;
 use chronicle_storage::storage::storage::StorageBuilder;
 use chronicle_api::api::api::ApiBuilder;
 // import launcher macro
@@ -47,37 +46,6 @@ impl Apps {
                 }
             }
         };
-    }
-}
-impl Apps {
-    async fn one_for_one(mut self) {
-        while let Some(event) = self.rx.0.recv().await {
-            match event {
-                Event::RegisterDashboard(dashboard_name, dashboard_tx) => {
-                    // register dashboard by adding it to map
-                    self.dashboards.insert(dashboard_name, dashboard_tx);
-                }
-                Event::RegisterApp(app_name, shutdown_tx) => {
-                    // register app in map
-                    self.apps.insert(app_name.clone(), shutdown_tx);
-                    // tell dashboard(s) that we startedapp
-                    for (_dashboard_name, dashboard_tx) in self.dashboards.iter_mut() {
-                        // aknowledge startedapp
-                        dashboard_tx.started_app(app_name.clone());
-                    }
-                }
-                Event::StartApp(app_name) => {
-
-                }
-                Event::Break => {
-                    // break launcher
-                    break
-                }
-                _ => {
-
-                }
-            }
-        }
     }
 }
 

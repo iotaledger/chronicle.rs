@@ -45,6 +45,64 @@ macro_rules! launcher {
             }
         }
         // TODO implement basic strategies for Apps {}
+        impl Apps {
+            async fn one_for_one(mut self) {
+                while let Some(event) = self.rx.0.recv().await {
+                    match event {
+                        Event::RegisterDashboard(dashboard_name, dashboard_tx) => {
+                            // register dashboard by adding it to map
+                            self.dashboards.insert(dashboard_name, dashboard_tx);
+                        }
+                        Event::RegisterApp(app_name, shutdown_tx) => {
+                            // register app in map
+                            self.apps.insert(app_name.clone(), shutdown_tx);
+                            // tell dashboard(s) that we startedapp
+                            for (_dashboard_name, dashboard_tx) in self.dashboards.iter_mut() {
+                                // aknowledge startedapp
+                                dashboard_tx.started_app(app_name.clone());
+                            }
+                        }
+                        Event::StartApp(app_name) => {
+                            self.start_app(app_name.clone()).await;
+                            // tell dashboards that we started app
+                            for (_, mut dashboard_tx) in &mut self.dashboards {
+                                dashboard_tx.started_app(app_name.clone());
+                            }
+                        }
+                        Event::ShutdownApp(app_name) => {
+                            if let Some(shutdown_tx) = self.apps.remove(&app_name) {
+                                shutdown_tx.shutdown();
+                            };
+                        }
+                        Event::AknShutdown(app_name) => {
+                            // aknowledging shutdown for an app under one_for_one policy require us to restart the app
+                            // check if the the shutdown was requested
+                            if let Some(_shutdown_tx) = self.apps.remove(&app_name) {
+                                // mean the shutdown it's not requested so we restart
+                                self.start_app(app_name.clone()).await;
+                                // tell dashboards that we started app
+                                for (_, dashboard_tx) in &mut self.dashboards {
+                                    dashboard_tx.started_app(app_name.clone());
+                                }
+                            } else {
+                                // tell dashboards that we shutdown an app
+                                for (_, dashboard_tx) in &mut self.dashboards {
+                                    dashboard_tx.shutdown_app(app_name.clone());
+                                }
+                            }
+                        }
+                        Event::Break => {
+                            // break launcher
+                            break
+                        }
+                        _ => {
+                            // todo app_status
+                            todo!()
+                        }
+                    }
+                }
+            }
+        }
     };
     (
         apps_builder: $name:ident {$($app:ident : $t:ty),+},
@@ -52,6 +110,7 @@ macro_rules! launcher {
         event: $event:ty
     ) => {
         use tokio::sync::mpsc;
+        use std::collections::HashMap;
         use chronicle_common::traits::{
             launcher::{
                 LauncherTx,
@@ -128,6 +187,16 @@ macro_rules! launcher {
                     self
                 }
             )*
+            async fn start_app(&mut self, app_name: String) {
+                match &app_name[..] {
+                    $(
+                        stringify!($app) => {
+                            self.$app.clone().take().unwrap().build().run().await;
+                        }
+                    )*
+                    _ => {unreachable!()}
+                }
+            }
         }
         impl $name {
             pub fn new() -> Self {
@@ -165,7 +234,7 @@ macro_rules! launcher {
                     self
                 }
             )*
-            
+
             fn app_count(&self) -> usize {
                 launcher!(@count $($app),+)
             }

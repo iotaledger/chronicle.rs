@@ -75,7 +75,6 @@ impl Storage {
         launcher_tx.register_dashboard("StorageDashboard".to_string(),Box::new(dashboard.clone_tx()));
         // build cluster
         let cluster = cluster::SupervisorBuilder::new()
-            .launcher_tx(launcher_tx.clone())
             .reporter_count(self.reporter_count)
             .thread_count(self.thread_count)
             .data_centers(vec![self.local_dc.clone()])

@@ -32,7 +32,7 @@ pub struct Endpoint {
 
 }
 impl ShutdownTx for Shutdown {
-    fn shutdown(self) {
+    fn shutdown(self: Box<Self>) {
         self.0.send(()).unwrap();
     }
 }

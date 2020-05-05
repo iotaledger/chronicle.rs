@@ -12,7 +12,10 @@ use crate::{
     cluster::supervisor,
     connection::cql::Address,
 };
-use chronicle_common::actor;
+use chronicle_common::{
+    actor,
+    traits::shutdown::ShutdownTx,
+};
 use futures::stream::SplitSink;
 use std::{
     collections::HashMap,
@@ -43,15 +46,22 @@ impl DashboardTx for Sender {
         let _ = self.0.send(event);
     }
 }
+pub struct Shutdown(Sender);
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 type WsTx = SplitSink<WebSocketStream<TcpStream>, Message>;
 
+impl ShutdownTx for Shutdown {
+    fn shutdown(self: Box<Self>) {
+        (self.0).0.send(Event::Shutdown);
+    }
+}
 // event
 pub enum Event {
     Session(Session),
     Toplogy(Toplogy),
     Result(Result),
     Launcher(Launcher),
+    Shutdown,
 }
 pub enum Session {
     // todo auth events
@@ -118,7 +128,8 @@ impl Dashboard {
         tokio::spawn(
             listener::Listener::run(abortable_listener, self.clone_tx())
         );
-        // event loop
+        // register storage/dashboard app in launcher
+        self.launcher_tx.register_app("storage".to_string(), Box::new(Shutdown(self.clone_tx())));
         while let Some(event) = self.rx.recv().await {
             // events from websocket(read-half)
             match event {
@@ -161,11 +172,23 @@ impl Dashboard {
                     }
                 } /* todo handle websocket decoded msgs (add node, remove node, build,
                    * get status, get dashboard log, import dump file, etc) */
-                Event::Launcher(app_status) => {
+                Event::Launcher(_app_statuss) => {
 
+                }
+                Event::Shutdown => {
+                    // storage app shutdown including the dashboard/cluster/listener.
+                    // - async shutdown cluster
+                    cluster_tx.send(supervisor::Event::Shutdown).unwrap();
+                    // - abort listener
+                    self.listener.unwrap().abort();
+                    // shutdown self
+                    break;
                 }
             }
         }
+        // now is safe to aknowledge_shutdown to launcher,
+        // note: it's still possible that some reporters are still active draining remaining requests.
+        self.launcher_tx.aknowledge_shutdown("storage".to_string());
     }
     pub fn clone_tx(&self) -> Sender {
         self.tx.clone()

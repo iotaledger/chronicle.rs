@@ -41,7 +41,7 @@ pub struct Shutdown(Sender);
 
 // register the app shutdown handler
 impl ShutdownTx for Shutdown {
-    fn shutdown(self) {
+    fn shutdown(self: Box<Self>) {
         self.0.send(Event::Shutdown).unwrap();
     }
 }
@@ -79,7 +79,6 @@ impl SupervisorBuilder {
         // initialize global_ring
         let (arc_ring, _none) = initialize_ring(0, false);
         Supervisor {
-            launcher_tx: self.launcher_tx.unwrap(),
             reporter_count: self.reporter_count.unwrap(),
             thread_count: self.thread_count.unwrap(),
             data_centers: self.data_centers.unwrap(),
@@ -94,14 +93,13 @@ impl SupervisorBuilder {
             ready: 0,
             build: false,
             version: 0,
-            tx,
+            tx: Some(tx),
             rx,
         }
     }
 }
 
 pub struct Supervisor {
-    launcher_tx: Box<dyn LauncherTx>,
     reporter_count: u8,
     thread_count: usize,
     data_centers: Vec<DC>,
@@ -116,7 +114,7 @@ pub struct Supervisor {
     ready: u8,
     build: bool,
     version: u8,
-    tx: Sender,
+    tx: Option<Sender>,
     rx: Receiver,
 }
 
@@ -135,7 +133,7 @@ impl Supervisor {
                                 .reporter_count(self.reporter_count)
                                 .shard_count(shard_count)
                                 .data_center(dc.clone())
-                                .supervisor_tx(self.tx.clone())
+                                .supervisor_tx(self.clone_tx())
                                 .buffer_size(self.buffer_size)
                                 .recv_buffer_size(self.recv_buffer_size)
                                 .send_buffer_size(self.send_buffer_size)
@@ -228,13 +226,16 @@ impl Supervisor {
                     }
                 }
                 Event::Shutdown => {
+                    // do self cleanup on weaks
+                    self.cleanup();
                     // shutdown everything and drop self.tx
-                    todo!()
+                    // TODO
+                    // drop self.tx
+                    self.tx = None;
                 }
             }
+            // cluster will only reach this line once all its tree(reporters -> stages -> nodes) breakdown.
         }
-        // aknowledge_shutdown to launcher
-        self.launcher_tx.aknowledge_shutdown("storage".to_string());
     }
     fn cleanup(&mut self) {
         // total_weak_count = thread_count + 1(the global weak)
@@ -244,10 +245,10 @@ impl Supervisor {
         };
     }
     pub fn clone_tx(&self) -> Sender {
-        self.tx.clone()
+        self.tx.as_ref().unwrap().clone()
     }
     pub fn clone_shutdown(&self) -> Shutdown {
-        let tx = self.tx.clone();
+        let tx = self.clone_tx();
         Shutdown(tx)
     }
     fn new_version(&mut self) -> u8 {
