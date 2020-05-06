@@ -32,6 +32,20 @@ const COMPRESSION: &'static str = "COMPRESSION";
 
 // TODO: use the macro to encode
 // TODO: remove the Frame struct if it is not necessary
+macro_rules! frame_u8 {
+    ($version:expr, $flags:expr, $stream:expr, $opcode:expr, $body_bytes:expr) => {{
+        let mut v: Vec<u8> = Vec::new();
+        let length = u32::try_from($body_bytes.len()).unwrap();
+        v.push($version as u8);
+        v.push($flags);
+        v.extend_from_slice(&$stream.to_be_bytes());
+        v.push($opcode as u8);
+        v.extend_from_slice(&length.to_be_bytes());
+        v.extend_from_slice(&$body_bytes);
+        v
+    }};
+}
+
 pub struct Frame {
     pub version: Version,
     pub flags: Flags,
@@ -53,10 +67,10 @@ pub trait FrameEncoder {
 
 impl FrameEncoder for Frame {
     fn create_startup_frame(compression: &str) -> Vec<u8> {
-        let version = Version::Request as u8;
+        let version = Version::Request;
         let flags: u8 = 0;
         let stream = rand::random::<u16>();
-        let opcode = Opcode::Startup as u8;
+        let opcode = Opcode::Startup;
 
         // Prepare the body part
         let mut map = HashMap::new();
@@ -73,71 +87,41 @@ impl FrameEncoder for Frame {
             // push val
             body_bytes.extend_from_slice(val.as_bytes());
         }
-        // Get the body length
-        let length = u32::try_from(body_bytes.len()).unwrap();
 
         // Encode the frame as u8 vector
-        let mut v = vec![];
-        v.push(version);
-        v.push(flags);
-        v.extend_from_slice(&stream.to_be_bytes());
-        v.push(opcode);
-        v.extend_from_slice(&length.to_be_bytes());
-        v
+        frame_u8!(version, flags, stream, opcode, body_bytes)
     }
 
     fn create_auth_response_frame(token_bytes: &Vec<u8>) -> Vec<u8> {
-        let version = Version::Request as u8;
+        let version = Version::Request;
         let flags: u8 = 0;
         let stream = rand::random::<u16>();
-        let opcode = Opcode::AuthResponse as u8;
-        let length = u32::try_from(token_bytes.len()).unwrap();
+        let opcode = Opcode::AuthResponse;
 
         // Encode the frame as u8 vector
-        let mut v = vec![];
-        v.push(version);
-        v.push(flags);
-        v.extend_from_slice(&stream.to_be_bytes());
-        v.push(opcode);
-        v.extend_from_slice(&length.to_be_bytes());
-        v
+        frame_u8!(version, flags, stream, opcode, token_bytes)
     }
     fn create_options_frame() -> Vec<u8> {
-        let version = Version::Request as u8;
+        let version = Version::Request;
         let flags: u8 = 0;
         let stream = rand::random::<u16>();
-        let opcode = Opcode::Options as u8;
-        let length: u8 = 0;
+        let opcode = Opcode::Options;
 
         // Encode the frame as u8 vector
-        let mut v = vec![];
-        v.push(version);
-        v.push(flags);
-        v.extend_from_slice(&stream.to_be_bytes());
-        v.push(opcode);
-        v.extend_from_slice(&length.to_be_bytes());
-        v
+        frame_u8!(version, flags, stream, opcode, vec![0; 0])
     }
     fn create_query_frame(&self) -> Vec<u8> {
         todo!()
     }
     fn create_prepare_frame(query: &str) -> Vec<u8> {
-        let version = Version::Request as u8;
+        let version = Version::Request;
         let flags: u8 = 0;
         let stream = rand::random::<u16>();
-        let opcode = Opcode::Prepare as u8;
-        let body = query.as_bytes();
-        let length = u32::try_from(body.len()).unwrap();
+        let opcode = Opcode::Prepare;
+        let body_bytes = query.as_bytes();
 
         // Encode the frame as u8 vector
-        let mut v = vec![];
-        v.push(version);
-        v.push(flags);
-        v.extend_from_slice(&stream.to_be_bytes());
-        v.push(opcode);
-        v.extend_from_slice(&length.to_be_bytes());
-        v.extend_from_slice(&body);
-        v
+        frame_u8!(version, flags, stream, opcode, body_bytes)
     }
     fn create_execute_frame(&self) -> Vec<u8> {
         todo!()

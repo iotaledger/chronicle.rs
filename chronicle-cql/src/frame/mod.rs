@@ -1,4 +1,4 @@
 pub mod frame;
-mod fream_encoder;
+mod frame_encoder;
 pub mod rows;
 pub mod types;
