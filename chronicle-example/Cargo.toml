@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 # essential
-tokio = "0.2.19"
+tokio = { version = "0.2", features = ["full"] }
 chronicle-common = { path = "../chronicle-common" }
 # apps
 chronicle-storage = { path = "../chronicle-storage" }

@@ -6,7 +6,7 @@ use chronicle_common::launcher;
 
 // create event type
 launcher!(
-    apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder }, // Apps
+    apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder}, // Apps
     apps: Apps{} // Launcher state
 );
 
@@ -32,29 +32,25 @@ impl AppsBuilder {
         .to_apps()
     }
 }
-// launcher event loop
-impl Apps {
-    async fn run(mut self) {
-        while let Some(event) = self.rx.0.recv().await {
-            match event {
-                Event::RegisterApp(app_name, shutdown_tx) => {
-                    // insert app in map
-                    self.apps.insert(app_name, shutdown_tx);
-                }
-                _ => {
-
-                }
-            }
-        };
-    }
-}
 
 #[tokio::main(core_threads = 8)]
 async fn main() {
-    println!("starting chronicle-example");
+    println!("Starting chronicle-example");
     AppsBuilder::new()
     .build() // build apps first, then start them in order you want.
+    .function(|apps| {
+        // for instance this is helpful to spawn ctrl_c future
+        tokio::spawn(ctrl_c(apps.tx.clone()));
+    }).await // you can start some function(it must never block)
     .storage().await // start storage app
     .api().await // start api app
     .one_for_one().await; // instead you can define your own .run() strategy
+}
+
+/// Useful function to exit program using ctrl_c signal
+async fn ctrl_c(mut launcher: Sender) {
+    // await on ctrl_c
+    tokio::signal::ctrl_c().await.unwrap();
+    // exit program using launcher
+    launcher.exit_program();
 }

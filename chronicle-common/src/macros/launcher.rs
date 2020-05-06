@@ -133,6 +133,8 @@ macro_rules! launcher {
         event: $event:ty
     ) => {
         use tokio::sync::mpsc;
+        use std::future::Future;
+        use std::ops::FnMut;
         use std::collections::HashMap;
         use chronicle_common::traits::{
             launcher::{
@@ -216,6 +218,10 @@ macro_rules! launcher {
                     self
                 }
             )*
+            pub async fn function(mut self, f: impl Fn(&mut $apps)) -> Self {
+                f(&mut self);
+                self
+            }
             async fn start_app(&mut self, app_name: String) {
                 match &app_name[..] {
                     $(
