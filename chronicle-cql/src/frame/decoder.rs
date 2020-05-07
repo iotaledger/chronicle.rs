@@ -1,19 +1,45 @@
 use super::rows::{Flags, ColumnsCount, PagingState, Metadata};
 use super::header;
+use super::opcode;
+use super::result;
 use crate::compression::decompressor::Decompressor;
 use std::convert::TryInto;
 
 pub trait Frame {
     fn version(&self) -> u8;
-    fn flags(&mut self, decompressor: Option<impl Decompressor>) -> HeaderFlags;
+    fn flags(&self) -> &HeaderFlags;
     fn stream(&self) -> i16;
     fn opcode(&self) -> u8;
     fn length(&self) -> usize;
+    fn body(&self) -> &[u8];
+    fn is_void(&self) -> bool;
     fn is_rows(&self) -> bool;
-    fn rows_flags(&self, header_flags: &HeaderFlags) -> Flags;
-    fn columns_count(&self, header_flags: &HeaderFlags) -> ColumnsCount;
-    fn paging_state(&self,header_flags: &HeaderFlags, has_more_pages: bool) -> PagingState;
-    fn metadata(&self, header_flags: &HeaderFlags) -> Metadata;
+    fn rows_flags(&self) -> Flags;
+    fn columns_count(&self) -> ColumnsCount;
+    fn paging_state(&self, has_more_pages: bool) -> PagingState;
+    fn metadata(&self) -> Metadata;
+}
+pub struct Decoder {
+    buffer: Vec<u8>,
+    header_flags: HeaderFlags,
+}
+impl Decoder {
+    pub fn new(mut buffer: Vec<u8>, decompressor: Option<impl Decompressor>) -> Self {
+        let header_flags = HeaderFlags::new(&mut buffer, decompressor);
+        Decoder {
+            buffer: buffer,
+            header_flags,
+        }
+    }
+    pub fn buffer_as_ref(&self) -> &Vec<u8> {
+        &self.buffer
+    }
+    pub fn buffer_as_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.buffer
+    }
+    pub fn into_buffer(self) -> Vec<u8> {
+        self.buffer
+    }
 }
 
 pub struct HeaderFlags {
@@ -25,21 +51,18 @@ pub struct HeaderFlags {
     body_start: usize,
 }
 
-impl Frame for Vec<u8> {
-    fn version(&self) -> u8 {
-        self[0]
-    }
-    fn flags(&mut self, decompressor: Option<impl Decompressor>) -> HeaderFlags {
+impl HeaderFlags {
+    pub fn new(buffer: &mut Vec<u8>,decompressor: Option<impl Decompressor>) -> Self {
         let mut body_start = 9;
-        let flags = self[1];
+        let flags = buffer[1];
         let compression = flags & header::COMPRESSION == header::COMPRESSION;
         if compression {
-            decompressor.as_ref().unwrap().decompress(self);
+            decompressor.as_ref().unwrap().decompress(buffer);
         }
         let tracing;
         if flags & header::TRACING == header::TRACING {
             let mut tracing_id = [0;16];
-            tracing_id.copy_from_slice(&self[9..25]);
+            tracing_id.copy_from_slice(&buffer[9..25]);
             tracing = Some(tracing_id);
             // add tracing_id length = 16
             body_start += 16;
@@ -48,7 +71,7 @@ impl Frame for Vec<u8> {
         }
         let warnings;
         if flags & header::WARNING == header::WARNING {
-            let string_list = string_list(&self[body_start..]);
+            let string_list = string_list(&buffer[body_start..]);
             // add all [short] length to the body_start
             body_start += 2*(string_list.len()+1);
             // add the warning length
@@ -61,7 +84,7 @@ impl Frame for Vec<u8> {
             warnings = None;
         }
         let custom_payload = flags & header::CUSTOM_PAYLOAD == header::CUSTOM_PAYLOAD;
-        HeaderFlags {
+        Self {
             compression,
             tracing,
             warnings,
@@ -69,52 +92,83 @@ impl Frame for Vec<u8> {
             body_start,
         }
     }
+    pub fn compression(&self) -> bool {
+        self.compression
+    }
+    pub fn take_tracing_id(&mut self) -> Option<[u8;16]>{
+        self.tracing.take()
+    }
+    fn take_warnings(&mut self) -> Option<Vec<String>> {
+        self.warnings.take()
+    }
+}
+
+impl Frame for Decoder {
+    fn version(&self) -> u8 {
+        self.buffer_as_ref()[0]
+    }
+    fn flags(&self) -> &HeaderFlags {
+        &self.header_flags
+    }
     fn stream(&self) -> i16 {
         todo!()
     }
     fn opcode(&self) -> u8 {
-        self[4]
+        self.buffer_as_ref()[4]
     }
     fn length(&self) -> usize {
-        todo!()
+        i32::from_be_bytes(self.buffer_as_ref()[5..9].try_into().unwrap()) as usize
+    }
+    fn body(&self) -> &[u8] {
+        let body_start = self.header_flags.body_start;
+        &self.buffer_as_ref()[body_start..self.length()]
+    }
+    fn is_void(&self) -> bool {
+        let body_kind = i32::from_be_bytes(
+            self.body()[0..4].try_into().unwrap()
+        );
+        (self.opcode() == opcode::RESULT) && (body_kind == result::VOID)
     }
     fn is_rows(&self) -> bool {
-        todo!()
+        let body_kind = i32::from_be_bytes(
+            self.body()[0..4].try_into().unwrap()
+        );
+        (self.opcode() == opcode::RESULT) && (body_kind == result::ROWS)
     }
-    fn rows_flags(&self, header_flags: &HeaderFlags) -> Flags {
+    fn rows_flags(&self) -> Flags {
         // cql rows specs, flags is [int] and protocol is big-endian
         let flags = i32::from_be_bytes(
-            self[(header_flags.body_start+4)..(header_flags.body_start+8)].try_into().unwrap()
+            self.buffer_as_ref()[(self.flags().body_start+4)..(self.flags().body_start+8)].try_into().unwrap()
         );
         Flags::from_i32(flags)
     }
-    fn columns_count(&self, header_flags: &HeaderFlags) -> ColumnsCount {
+    fn columns_count(&self) -> ColumnsCount {
         // column count located right after flags, therefore
         i32::from_be_bytes(
-            self[(header_flags.body_start+8)..(header_flags.body_start+12)].try_into().unwrap()
+            self.buffer_as_ref()[(self.flags().body_start+8)..(self.flags().body_start+12)].try_into().unwrap()
         )
     }
-    fn paging_state(&self, header_flags: &HeaderFlags, has_more_pages: bool) -> PagingState {
+    fn paging_state(&self, has_more_pages: bool) -> PagingState {
         if has_more_pages {
             // decode PagingState
-            let paging_state_bytes_start = header_flags.body_start+12;
+            let paging_state_bytes_start = self.flags().body_start+12;
             let paging_state_value_start = paging_state_bytes_start+4;
             let paging_state_len = i32::from_be_bytes(
-                self[paging_state_bytes_start..paging_state_value_start].try_into().unwrap());
+                self.buffer_as_ref()[paging_state_bytes_start..paging_state_value_start].try_into().unwrap());
             if paging_state_len == -1 {
                 PagingState::new(None, paging_state_value_start)
             } else {
                 let paging_state_end: usize = paging_state_value_start+(paging_state_len as usize);
-                PagingState::new(Some((&self[paging_state_value_start..paging_state_end]).to_vec()), paging_state_end)
+                PagingState::new(Some((self.buffer_as_ref()[paging_state_value_start..paging_state_end]).to_vec()), paging_state_end)
             }
         } else {
-            PagingState::new(None, header_flags.body_start+12)
+            PagingState::new(None, self.flags().body_start+12)
         }
     }
-    fn metadata(&self, header_flags: &HeaderFlags) -> Metadata {
-        let flags = self.rows_flags(header_flags);
-        let columns_count = self.columns_count(header_flags);
-        let paging_state = self.paging_state(header_flags, flags.has_more_pages());
+    fn metadata(&self) -> Metadata {
+        let flags = self.rows_flags();
+        let columns_count = self.columns_count();
+        let paging_state = self.paging_state(flags.has_more_pages());
         Metadata::new(flags,columns_count,paging_state)
     }
 }

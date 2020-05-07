@@ -1,5 +1,3 @@
-use super::decoder::Frame;
-
 pub type ColumnsCount = i32;
 pub struct Flags {
     global_table_spec: bool,
@@ -60,24 +58,20 @@ macro_rules! rows {
             fn decode_column(start: usize, length: i32, acc: &mut $rows);
         }
         pub struct $rows {
-            header_flags: chronicle_cql::frame::decoder::HeaderFlags,
-            buffer: Vec<u8>,
+            decoder: Decoder,
             rows_count: usize,
             remaining_rows_count: usize,
             metadata: chronicle_cql::frame::rows::Metadata,
-            row: $row,
             column_start: usize,
             $(
                 $field: $type,
             )*
         }
-        #[derive(Default)]
         struct $row(
             $( $col_type, )*
         );
 
         $(
-            #[derive(Default)]
             struct $col_type;
         )*
         impl Iterator for $rows {
@@ -87,7 +81,7 @@ macro_rules! rows {
                     self.remaining_rows_count -= 1;
                     $(
                         let length = i32::from_be_bytes(
-                            self.buffer[self.column_start..(self.column_start+4)].try_into().unwrap()
+                            self.decoder.buffer_as_ref()[self.column_start..(self.column_start+4)].try_into().unwrap()
                         );
                         self.column_start += 4; // now it become the column_value start.
                         $col_type::decode_column(self.column_start, length, self);
@@ -104,24 +98,23 @@ macro_rules! rows {
         }
 
         impl $rows {
-            pub fn new(mut buffer: Vec<u8>,decompressor: Option<impl Decompressor>, $($field: $type,)*) -> Self {
-                let header_flags = buffer.flags(decompressor);
-                let metadata = buffer.metadata(&header_flags);
+            pub fn new(mut decoder: Decoder, $($field: $type,)*) -> Self {
+                let metadata = decoder.metadata();
                 let column_start = metadata.rows_start();
-                let rows_count = i32::from_be_bytes(buffer[column_start..(column_start+4)].try_into().unwrap());
-                let row = $row::default();
+                let rows_count = i32::from_be_bytes(decoder.buffer_as_ref()[column_start..(column_start+4)].try_into().unwrap());
                 Self{
-                    header_flags,
-                    buffer: buffer,
+                    decoder,
                     metadata,
                     rows_count: rows_count as usize,
                     remaining_rows_count: rows_count as usize,
-                    row,
                     column_start,
                     $(
                         $field,
                     )*
                 }
+            }
+            pub fn buffer(&mut self) -> &mut Vec<u8> {
+                self.decoder.buffer_as_mut()
             }
         }
     };
