@@ -1,4 +1,4 @@
-use super::frame::Frame;
+use super::decoder::Frame;
 
 pub type ColumnsCount = i32;
 pub struct Flags {
@@ -55,10 +55,12 @@ impl Metadata {
 macro_rules! rows {
     (rows: $rows:ident {$( $field:ident:$type:ty ),*}, row: $row:ident($( $col_type:tt ),*), column_decoder: $decoder:ident ) => {
         use std::convert::TryInto;
+        use chronicle_cql::compression::decompressor::Decompressor;
         trait $decoder {
             fn decode_column(start: usize, length: i32, acc: &mut $rows);
         }
         pub struct $rows {
+            header_flags: chronicle_cql::frame::decoder::HeaderFlags,
             buffer: Vec<u8>,
             rows_count: usize,
             remaining_rows_count: usize,
@@ -84,7 +86,9 @@ macro_rules! rows {
                 if self.remaining_rows_count > 0 {
                     self.remaining_rows_count -= 1;
                     $(
-                        let length = i32::from_be_bytes(        self.buffer[self.column_start..(self.column_start+4)].try_into().unwrap());
+                        let length = i32::from_be_bytes(
+                            self.buffer[self.column_start..(self.column_start+4)].try_into().unwrap()
+                        );
                         self.column_start += 4; // now it become the column_value start.
                         $col_type::decode_column(self.column_start, length, self);
                         // update the next column_start to start from next column
@@ -100,12 +104,14 @@ macro_rules! rows {
         }
 
         impl $rows {
-            pub fn new(buffer: Vec<u8>,$($field: $type,)*) -> Self {
-                let metadata = buffer.metadata();
+            pub fn new(mut buffer: Vec<u8>,decompressor: Option<impl Decompressor>, $($field: $type,)*) -> Self {
+                let header_flags = buffer.flags(decompressor);
+                let metadata = buffer.metadata(&header_flags);
                 let column_start = metadata.rows_start();
                 let rows_count = i32::from_be_bytes(buffer[column_start..(column_start+4)].try_into().unwrap());
                 let row = $row::default();
                 Self{
+                    header_flags,
                     buffer: buffer,
                     metadata,
                     rows_count: rows_count as usize,

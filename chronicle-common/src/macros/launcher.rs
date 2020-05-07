@@ -133,8 +133,6 @@ macro_rules! launcher {
         event: $event:ty
     ) => {
         use tokio::sync::mpsc;
-        use std::future::Future;
-        use std::ops::FnMut;
         use std::collections::HashMap;
         use chronicle_common::traits::{
             launcher::{

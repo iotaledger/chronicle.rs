@@ -16,9 +16,10 @@ use cdrs::{
 };
 use chronicle_common::actor;
 use chronicle_cql::{
-    frame::frame::Frame,
+    frame::decoder::Frame,
     rows,
     statements::statements::SELECT_TX_QUERY,
+    compression::decompressor::Uncompressed,
 };
 use chronicle_storage::{
     ring::ring::Ring,
@@ -87,7 +88,7 @@ impl GetTrytes {
             match rx.recv().await.unwrap() {
                 Event::Response { giveload, pid } => {
                     if Opcode::from(giveload.opcode()) == Opcode::Result {
-                        if let Some(trytes) = Trytes::new(giveload).decode().finalize() {
+                        if let Some(trytes) = Trytes::new(giveload, Uncompressed::new()).decode().finalize() {
                             *value = serde_json::value::Value::String(trytes);
                         };
                     }
