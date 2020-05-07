@@ -53,7 +53,7 @@ impl Metadata {
 macro_rules! rows {
     (rows: $rows:ident {$( $field:ident:$type:ty ),*}, row: $row:ident($( $col_type:tt ),*), column_decoder: $decoder:ident ) => {
         use std::convert::TryInto;
-        use chronicle_cql::compression::decompressor::Decompressor;
+        use chronicle_cql::compression::Compression;
         trait $decoder {
             fn decode_column(start: usize, length: i32, acc: &mut $rows);
         }

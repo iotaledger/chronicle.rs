@@ -1,4 +1,4 @@
-mod header;
+mod flags;
 pub mod opcode;
 pub mod result;
 pub mod decoder;

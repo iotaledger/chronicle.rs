@@ -1,8 +1,8 @@
 use super::rows::{Flags, ColumnsCount, PagingState, Metadata};
-use super::header;
+use super::flags;
 use super::opcode;
 use super::result;
-use crate::compression::decompressor::Decompressor;
+use crate::compression::Compression;
 use std::convert::TryInto;
 
 pub trait Frame {
@@ -24,7 +24,7 @@ pub struct Decoder {
     header_flags: HeaderFlags,
 }
 impl Decoder {
-    pub fn new(mut buffer: Vec<u8>, decompressor: Option<impl Decompressor>) -> Self {
+    pub fn new(mut buffer: Vec<u8>, decompressor: Option<impl Compression>) -> Self {
         let header_flags = HeaderFlags::new(&mut buffer, decompressor);
         Decoder {
             buffer: buffer,
@@ -52,15 +52,15 @@ pub struct HeaderFlags {
 }
 
 impl HeaderFlags {
-    pub fn new(buffer: &mut Vec<u8>,decompressor: Option<impl Decompressor>) -> Self {
+    pub fn new(buffer: &mut Vec<u8>,decompressor: Option<impl Compression>) -> Self {
         let mut body_start = 9;
         let flags = buffer[1];
-        let compression = flags & header::COMPRESSION == header::COMPRESSION;
+        let compression = flags & flags::COMPRESSION == flags::COMPRESSION;
         if compression {
             decompressor.as_ref().unwrap().decompress(buffer);
         }
         let tracing;
-        if flags & header::TRACING == header::TRACING {
+        if flags & flags::TRACING == flags::TRACING {
             let mut tracing_id = [0;16];
             tracing_id.copy_from_slice(&buffer[9..25]);
             tracing = Some(tracing_id);
@@ -70,7 +70,7 @@ impl HeaderFlags {
             tracing = None;
         }
         let warnings;
-        if flags & header::WARNING == header::WARNING {
+        if flags & flags::WARNING == flags::WARNING {
             let string_list = string_list(&buffer[body_start..]);
             // add all [short] length to the body_start
             body_start += 2*(string_list.len()+1);
@@ -83,7 +83,7 @@ impl HeaderFlags {
         } else {
             warnings = None;
         }
-        let custom_payload = flags & header::CUSTOM_PAYLOAD == header::CUSTOM_PAYLOAD;
+        let custom_payload = flags & flags::CUSTOM_PAYLOAD == flags::CUSTOM_PAYLOAD;
         Self {
             compression,
             tracing,

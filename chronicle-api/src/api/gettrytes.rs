@@ -22,7 +22,7 @@ use chronicle_cql::{
     },
     rows,
     statements::statements::SELECT_TX_QUERY,
-    compression::decompressor::Uncompressed,
+    compression::UNCOMPRESSED,
 };
 use chronicle_storage::{
     ring::ring::Ring,
@@ -91,7 +91,7 @@ impl GetTrytes {
             match rx.recv().await.unwrap() {
                 Event::Response { giveload, pid } => {
                     // create decoder
-                    let decoder = Decoder::new(giveload, Uncompressed::new());
+                    let decoder = Decoder::new(giveload, UNCOMPRESSED);
                     if decoder.is_rows() {
                         if let Some(trytes) = Trytes::new(decoder).decode().finalize() {
                             *value = serde_json::value::Value::String(trytes);
