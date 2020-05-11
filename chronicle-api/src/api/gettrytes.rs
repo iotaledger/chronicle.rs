@@ -83,7 +83,7 @@ impl GetTrytes {
         if let JsonValue::String(hash) = value.take() {
             let request = reporter::Event::Request {
                 payload: Self::query(hash),
-                worker: worker,
+                worker,
             };
             // use random token till murmur3 hash function algo impl is ready
             // send_local_random_replica will select random replica for token.

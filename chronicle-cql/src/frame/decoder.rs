@@ -28,7 +28,7 @@ impl Decoder {
     pub fn new(mut buffer: Vec<u8>, decompressor: impl Compression) -> Self {
         let header_flags = HeaderFlags::new(&mut buffer, decompressor);
         Decoder {
-            buffer: buffer,
+            buffer,
             header_flags,
         }
     }

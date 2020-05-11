@@ -9,16 +9,6 @@ const BE_1_BYTES_LEN: [u8; 4] = [0,0,0,1];
 pub trait ColumnEncoder {
     fn encode(&self, buffer: &mut Vec<u8>);
 }
-// value types
-pub struct Ascii(String);
-pub struct Bigint(i64);
-pub struct Blob(Vec<u8>);
-pub struct Boolean(bool);
-pub struct Counter(i64);
-pub struct Double(f64);
-pub struct Float(f32);
-pub struct Int(i32);
-pub struct Timestamp(i64);
 
 impl ColumnEncoder for i64 {
     fn encode(&self, buffer: &mut Vec<u8>) {
