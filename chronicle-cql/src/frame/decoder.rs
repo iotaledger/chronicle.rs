@@ -12,6 +12,7 @@ pub trait Frame {
     fn opcode(&self) -> u8;
     fn length(&self) -> usize;
     fn body(&self) -> &[u8];
+    fn body_start(&self,padding: usize) -> usize;
     fn is_void(&self) -> bool;
     fn is_rows(&self) -> bool;
     fn rows_flags(&self) -> Flags;
@@ -24,7 +25,7 @@ pub struct Decoder {
     header_flags: HeaderFlags,
 }
 impl Decoder {
-    pub fn new(mut buffer: Vec<u8>, decompressor: Option<impl Compression>) -> Self {
+    pub fn new(mut buffer: Vec<u8>, decompressor: impl Compression) -> Self {
         let header_flags = HeaderFlags::new(&mut buffer, decompressor);
         Decoder {
             buffer: buffer,
@@ -52,12 +53,12 @@ pub struct HeaderFlags {
 }
 
 impl HeaderFlags {
-    pub fn new(buffer: &mut Vec<u8>,decompressor: Option<impl Compression>) -> Self {
+    pub fn new(buffer: &mut Vec<u8>,decompressor: impl Compression) -> Self {
         let mut body_start = 9;
         let flags = buffer[1];
         let compression = flags & flags::COMPRESSION == flags::COMPRESSION;
         if compression {
-            decompressor.as_ref().unwrap().decompress(buffer);
+            decompressor.decompress(buffer);
         }
         let tracing;
         if flags & flags::TRACING == flags::TRACING {
@@ -123,6 +124,9 @@ impl Frame for Decoder {
         let body_start = self.header_flags.body_start;
         &self.buffer_as_ref()[body_start..self.length()]
     }
+    fn body_start(&self, padding: usize) -> usize {
+        self.header_flags.body_start+padding
+    }
     fn is_void(&self) -> bool {
         let body_kind = i32::from_be_bytes(
             self.body()[0..4].try_into().unwrap()
@@ -138,20 +142,20 @@ impl Frame for Decoder {
     fn rows_flags(&self) -> Flags {
         // cql rows specs, flags is [int] and protocol is big-endian
         let flags = i32::from_be_bytes(
-            self.buffer_as_ref()[(self.flags().body_start+4)..(self.flags().body_start+8)].try_into().unwrap()
+            self.buffer_as_ref()[self.body_start(4)..self.body_start(8)].try_into().unwrap()
         );
         Flags::from_i32(flags)
     }
     fn columns_count(&self) -> ColumnsCount {
         // column count located right after flags, therefore
         i32::from_be_bytes(
-            self.buffer_as_ref()[(self.flags().body_start+8)..(self.flags().body_start+12)].try_into().unwrap()
+            self.buffer_as_ref()[self.body_start(8)..self.body_start(12)].try_into().unwrap()
         )
     }
     fn paging_state(&self, has_more_pages: bool) -> PagingState {
+        let paging_state_bytes_start = self.body_start(12);
         if has_more_pages {
             // decode PagingState
-            let paging_state_bytes_start = self.flags().body_start+12;
             let paging_state_value_start = paging_state_bytes_start+4;
             let paging_state_len = i32::from_be_bytes(
                 self.buffer_as_ref()[paging_state_bytes_start..paging_state_value_start].try_into().unwrap());
@@ -162,7 +166,7 @@ impl Frame for Decoder {
                 PagingState::new(Some((self.buffer_as_ref()[paging_state_value_start..paging_state_end]).to_vec()), paging_state_end)
             }
         } else {
-            PagingState::new(None, self.flags().body_start+12)
+            PagingState::new(None, paging_state_bytes_start)
         }
     }
     fn metadata(&self) -> Metadata {
@@ -190,3 +194,5 @@ pub fn string_list(buffer: &[u8]) -> Vec<String> {
     }
     list
 }
+
+// helper traits

@@ -1,7 +1,10 @@
 mod flags;
-pub mod opcode;
-pub mod result;
+mod opcode;
+mod result;
+mod header;
 pub mod decoder;
-mod frame_encoder;
+pub mod encoder;
+mod consistency;
+pub mod query;
 pub mod rows;
-pub mod types;
+mod types;
