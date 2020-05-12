@@ -1,4 +1,5 @@
 use std::net::{IpAddr,Ipv4Addr, Ipv6Addr};
+use std::collections::HashMap;
 
 pub const BE_16_BYTES_LEN: [u8; 4] = [0,0,0,16];
 pub const BE_8_BYTES_LEN: [u8; 4] = [0,0,0,8];
@@ -139,6 +140,43 @@ impl ColumnEncoder for Ipv6Addr {
     fn encode(&self, buffer: &mut Vec<u8>) {
         buffer.extend(&BE_16_BYTES_LEN);
         buffer.extend(&self.octets());
+    }
+}
+
+impl<E> ColumnEncoder for Vec<E>
+where E: ColumnEncoder {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        // total byte_size of the list is unknown,
+        // therefore we pad zero length for now.
+        buffer.extend(&BE_0_BYTES_LEN);
+        // in order to compute the byte_size we snapshot
+        // the current buffer length in advance
+        let current_length = buffer.len();
+        buffer.extend(&i32::to_be_bytes(self.len() as i32));
+        for e in self {
+            e.encode(buffer);
+        }
+        let list_byte_size = buffer.len() - current_length;
+        buffer[(current_length-4)..current_length].copy_from_slice(
+            &i32::to_be_bytes(list_byte_size as i32)
+        );
+    }
+}
+
+impl<K, V> ColumnEncoder for HashMap<K, V>
+where K: ColumnEncoder, V: ColumnEncoder {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&BE_0_BYTES_LEN);
+        let current_length = buffer.len();
+        buffer.extend(&i32::to_be_bytes(self.len() as i32));
+        for (k, v) in self {
+            k.encode(buffer);
+            v.encode(buffer);
+        }
+        let map_byte_size = buffer.len() - current_length;
+        buffer[(current_length-4)..current_length].copy_from_slice(
+            &i32::to_be_bytes(map_byte_size as i32)
+        );
     }
 }
 

@@ -177,6 +177,79 @@ impl Frame for Decoder {
     }
 }
 
+// helper decoder traits
+pub trait I64 {
+    fn decode(slice: &[u8], length: usize) -> i64 {
+        i64::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait U64 {
+    fn decode(slice: &[u8], length: usize) -> u64 {
+        u64::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait F64 {
+    fn decode(slice: &[u8], length: usize) -> f64 {
+        f64::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait I32 {
+    fn decode(slice: &[u8], length: usize) -> i32 {
+        i32::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait U32 {
+    fn decode(slice: &[u8], length: usize) -> u32 {
+        u32::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait F32 {
+    fn decode(slice: &[u8], length: usize) -> f32 {
+        f32::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait I16 {
+    fn decode(slice: &[u8], length: usize) -> i16 {
+        i16::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait U16 {
+    fn decode(slice: &[u8], length: usize) -> u16 {
+        u16::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait I8 {
+    fn decode(slice: &[u8], length: usize) -> i8 {
+        i8::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait U8 {
+    fn decode(slice: &[u8], length: usize) -> u8 {
+        u8::from_be_bytes(slice[..length].try_into().unwrap())
+    }
+}
+
+pub trait Blob {
+    fn decode(slice: &[u8], length: usize) -> Vec<u8> {
+        slice[..length].to_vec()
+    }
+}
+
+pub trait Text {
+    fn decode(slice: &[u8], length: usize) -> String {
+        String::from_utf8(slice[..length].to_vec()).unwrap()
+    }
+}
+
 // helper types decoder functions
 pub fn string_list(buffer: &[u8]) -> Vec<String> {
     let list_len = u16::from_be_bytes(buffer[0..2].try_into().unwrap()) as usize;

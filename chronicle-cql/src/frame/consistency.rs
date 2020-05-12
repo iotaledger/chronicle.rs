@@ -12,9 +12,3 @@ pub enum Consistency {
     LocalSerial = 0x9,
     LocalOne = 0xA,
 }
-
-#[test]
-fn test_name() {
-    let x = u16::to_be_bytes(Consistency::LocalOne as u16);
-    println!("consistency {:?}", x);
-}

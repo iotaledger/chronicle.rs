@@ -119,7 +119,7 @@ mod tests {
         .value(0 as i64) // last-index
         .value("BUNDLE_HASH_VALUE")
         .value("TRUNK_VALUE")
-        .value("BRANCH")
+        .value("BRANCH_VALUE")
         .value("TAG_VALUE")
         .value(0 as i64) // attachment_timestamp
         .value(0 as i64) // attachment_timestamp_lower
