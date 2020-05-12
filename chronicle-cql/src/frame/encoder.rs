@@ -185,3 +185,9 @@ impl ColumnEncoder for Unset {
         buffer.extend(&BE_UNSET_BYTES_LEN);
     }
 }
+
+impl ColumnEncoder for Null {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&BE_NULL_BYTES_LEN);
+    }
+}

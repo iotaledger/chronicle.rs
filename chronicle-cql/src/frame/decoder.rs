@@ -4,6 +4,8 @@ use super::opcode;
 use super::result;
 use crate::compression::Compression;
 use std::convert::TryInto;
+use std::collections::HashMap;
+use std::hash::Hash;
 
 pub trait Frame {
     fn version(&self) -> u8;
@@ -177,76 +179,105 @@ impl Frame for Decoder {
     }
 }
 
-// helper decoder traits
-pub trait I64 {
+pub trait ColumnDecoder {
+    fn decode(slice: &[u8], length: usize) -> Self;
+}
+
+impl ColumnDecoder for i64 {
     fn decode(slice: &[u8], length: usize) -> i64 {
         i64::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait U64 {
+impl ColumnDecoder for u64 {
     fn decode(slice: &[u8], length: usize) -> u64 {
         u64::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait F64 {
+impl ColumnDecoder for f64 {
     fn decode(slice: &[u8], length: usize) -> f64 {
         f64::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait I32 {
+impl ColumnDecoder for i32 {
     fn decode(slice: &[u8], length: usize) -> i32 {
         i32::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait U32 {
+impl ColumnDecoder for u32 {
     fn decode(slice: &[u8], length: usize) -> u32 {
         u32::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait F32 {
+impl ColumnDecoder for f32 {
     fn decode(slice: &[u8], length: usize) -> f32 {
         f32::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait I16 {
+impl ColumnDecoder for i16 {
     fn decode(slice: &[u8], length: usize) -> i16 {
         i16::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait U16 {
+impl ColumnDecoder for u16 {
     fn decode(slice: &[u8], length: usize) -> u16 {
         u16::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait I8 {
+impl ColumnDecoder for i8 {
     fn decode(slice: &[u8], length: usize) -> i8 {
         i8::from_be_bytes(slice[..length].try_into().unwrap())
     }
 }
 
-pub trait U8 {
+impl ColumnDecoder for u8 {
     fn decode(slice: &[u8], length: usize) -> u8 {
-        u8::from_be_bytes(slice[..length].try_into().unwrap())
+        slice[0]
     }
 }
 
-pub trait Blob {
-    fn decode(slice: &[u8], length: usize) -> Vec<u8> {
-        slice[..length].to_vec()
-    }
-}
-
-pub trait Text {
+impl ColumnDecoder for String {
     fn decode(slice: &[u8], length: usize) -> String {
         String::from_utf8(slice[..length].to_vec()).unwrap()
+    }
+}
+
+impl<E> ColumnDecoder for Vec<E>
+where E: ColumnDecoder {
+    fn decode(slice: &[u8], length: usize) -> Vec<E> {
+        let list_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
+        let mut list: Vec<E> = Vec::new();
+        for _ in 0..length {
+            let e = E::decode(slice, length);
+            list.push(e);
+        }
+        list
+    }
+}
+
+impl<K, V> ColumnDecoder for HashMap<K, V>
+where K: Eq + Hash + ColumnDecoder, V: ColumnDecoder {
+    fn decode(slice: &[u8], mut length: usize) -> HashMap<K, V> {
+        let map_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
+        let mut map: HashMap<K, V> = HashMap::new();
+        for _ in 0..map_len {
+            // decode key_byte_size
+            length = i32::from_be_bytes(slice[4..8].try_into().unwrap()) as usize;
+            let k = K::decode(&slice[8..], length);
+            // decode value_byte_size
+            length = i32::from_be_bytes(slice[(8+length)..(12+length)].try_into().unwrap()) as usize;
+            let v = V::decode(&slice[(12+length)..], length);
+            // insert key,value
+            map.insert(k, v);
+        }
+        map
     }
 }
 
