@@ -238,7 +238,7 @@ impl ColumnDecoder for i8 {
 }
 
 impl ColumnDecoder for u8 {
-    fn decode(slice: &[u8], length: usize) -> u8 {
+    fn decode(slice: &[u8], _length: usize) -> u8 {
         slice[0]
     }
 }
@@ -254,7 +254,7 @@ where E: ColumnDecoder {
     fn decode(slice: &[u8], length: usize) -> Vec<E> {
         let list_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
         let mut list: Vec<E> = Vec::new();
-        for _ in 0..length {
+        for _ in 0..list_len {
             let e = E::decode(slice, length);
             list.push(e);
         }
@@ -264,16 +264,16 @@ where E: ColumnDecoder {
 
 impl<K, V> ColumnDecoder for HashMap<K, V>
 where K: Eq + Hash + ColumnDecoder, V: ColumnDecoder {
-    fn decode(slice: &[u8], mut length: usize) -> HashMap<K, V> {
+    fn decode(slice: &[u8], mut _length: usize) -> HashMap<K, V> {
         let map_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
         let mut map: HashMap<K, V> = HashMap::new();
         for _ in 0..map_len {
             // decode key_byte_size
-            length = i32::from_be_bytes(slice[4..8].try_into().unwrap()) as usize;
-            let k = K::decode(&slice[8..], length);
+            _length = i32::from_be_bytes(slice[4..8].try_into().unwrap()) as usize;
+            let k = K::decode(&slice[8..], _length);
             // decode value_byte_size
-            length = i32::from_be_bytes(slice[(8+length)..(12+length)].try_into().unwrap()) as usize;
-            let v = V::decode(&slice[(12+length)..], length);
+            _length = i32::from_be_bytes(slice[(8+_length)..(12+_length)].try_into().unwrap()) as usize;
+            let v = V::decode(&slice[(12+_length)..], _length);
             // insert key,value
             map.insert(k, v);
         }
