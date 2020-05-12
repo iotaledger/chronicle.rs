@@ -251,12 +251,18 @@ impl ColumnDecoder for String {
 
 impl<E> ColumnDecoder for Vec<E>
 where E: ColumnDecoder {
-    fn decode(slice: &[u8], length: usize) -> Vec<E> {
+    fn decode(slice: &[u8], mut _length: usize) -> Vec<E> {
         let list_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
         let mut list: Vec<E> = Vec::new();
+        let mut element_start = 4;
         for _ in 0..list_len {
-            let e = E::decode(slice, length);
+            // decode element byte_size
+            let element_value_start = element_start+4;
+            _length = i32::from_be_bytes(slice[element_start..element_value_start].try_into().unwrap()) as usize;
+            let e = E::decode(&slice[element_value_start..], _length);
             list.push(e);
+            // next element start
+            element_start = element_value_start + _length;
         }
         list
     }
@@ -267,15 +273,21 @@ where K: Eq + Hash + ColumnDecoder, V: ColumnDecoder {
     fn decode(slice: &[u8], mut _length: usize) -> HashMap<K, V> {
         let map_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
         let mut map: HashMap<K, V> = HashMap::new();
+        let mut pair_start = 4;
         for _ in 0..map_len {
             // decode key_byte_size
-            _length = i32::from_be_bytes(slice[4..8].try_into().unwrap()) as usize;
-            let k = K::decode(&slice[8..], _length);
-            // decode value_byte_size
-            _length = i32::from_be_bytes(slice[(8+_length)..(12+_length)].try_into().unwrap()) as usize;
-            let v = V::decode(&slice[(12+_length)..], _length);
+            let key_start = pair_start+4;
+            _length = i32::from_be_bytes(slice[pair_start..key_start].try_into().unwrap()) as usize;
+            let k = K::decode(&slice[key_start..], _length);
+            // modify pair_start to be the vtype_start
+            pair_start = key_start+_length;
+            let value_start = pair_start+4;
+            _length = i32::from_be_bytes(slice[pair_start..value_start].try_into().unwrap()) as usize;
+            let v = V::decode(&slice[value_start..], _length);
             // insert key,value
             map.insert(k, v);
+            // next pair_start
+            pair_start = value_start + _length;
         }
         map
     }
