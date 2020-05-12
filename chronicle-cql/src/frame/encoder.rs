@@ -1,10 +1,17 @@
 use std::net::{IpAddr,Ipv4Addr, Ipv6Addr};
 
-const BE_16_BYTES_LEN: [u8; 4] = [0,0,0,16];
-const BE_8_BYTES_LEN: [u8; 4] = [0,0,0,8];
-const BE_4_BYTES_LEN: [u8; 4] = [0,0,0,4];
-const BE_2_BYTES_LEN: [u8; 4] = [0,0,0,2];
-const BE_1_BYTES_LEN: [u8; 4] = [0,0,0,1];
+pub const BE_16_BYTES_LEN: [u8; 4] = [0,0,0,16];
+pub const BE_8_BYTES_LEN: [u8; 4] = [0,0,0,8];
+pub const BE_4_BYTES_LEN: [u8; 4] = [0,0,0,4];
+pub const BE_2_BYTES_LEN: [u8; 4] = [0,0,0,2];
+pub const BE_1_BYTES_LEN: [u8; 4] = [0,0,0,1];
+pub const BE_0_BYTES_LEN: [u8; 4] = [0,0,0,0];
+pub const BE_NULL_BYTES_LEN: [u8; 4] = [255,255,255,255]; // -1 length
+pub const BE_UNSET_BYTES_LEN: [u8; 4] = [255,255,255,254]; // -2 length
+pub const NULL_VALUE: Null = Null;
+pub const UNSET_VALUE: Unset = Unset;
+pub struct Null;
+pub struct Unset;
 
 pub trait ColumnEncoder {
     fn encode(&self, buffer: &mut Vec<u8>);
@@ -93,6 +100,18 @@ impl ColumnEncoder for String {
         buffer.extend(self.bytes());
     }
 }
+impl ColumnEncoder for &str {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&i32::to_be_bytes(self.len() as i32));
+        buffer.extend(self.bytes());
+    }
+}
+impl ColumnEncoder for &[u8] {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&i32::to_be_bytes(self.len() as i32));
+        buffer.extend(*self);
+    }
+}
 
 impl ColumnEncoder for IpAddr {
     fn encode(&self, buffer: &mut Vec<u8>) {
@@ -120,5 +139,11 @@ impl ColumnEncoder for Ipv6Addr {
     fn encode(&self, buffer: &mut Vec<u8>) {
         buffer.extend(&BE_16_BYTES_LEN);
         buffer.extend(&self.octets());
+    }
+}
+
+impl ColumnEncoder for Unset {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&BE_UNSET_BYTES_LEN);
     }
 }

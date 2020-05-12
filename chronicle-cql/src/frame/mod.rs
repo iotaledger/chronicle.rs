@@ -1,4 +1,3 @@
-mod flags;
 mod opcode;
 mod result;
 mod header;
