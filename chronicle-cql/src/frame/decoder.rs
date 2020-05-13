@@ -3,6 +3,7 @@ use super::header;
 use super::opcode;
 use super::result;
 use crate::compression::Compression;
+use std::net::{IpAddr,Ipv4Addr, Ipv6Addr};
 use std::convert::TryInto;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -249,6 +250,37 @@ impl ColumnDecoder for String {
     }
 }
 
+impl ColumnDecoder for IpAddr {
+    fn decode(slice: &[u8], length: usize) -> Self {
+        if length == 4 {
+            IpAddr::V4(Ipv4Addr::decode(slice, length))
+        } else {
+            IpAddr::V6(Ipv6Addr::decode(slice, length))
+        }
+    }
+}
+
+impl ColumnDecoder for Ipv4Addr {
+    fn decode(slice: &[u8], _length: usize) -> Self {
+        Ipv4Addr::new(slice[0], slice[1], slice[2], slice[3])
+    }
+}
+
+impl ColumnDecoder for Ipv6Addr {
+    fn decode(slice: &[u8], _length: usize) -> Self {
+        Ipv6Addr::new(
+            ((slice[0] as u16) << 8) | slice[1] as u16,
+            ((slice[2] as u16) << 8) | slice[3] as u16,
+            ((slice[4] as u16) << 8) | slice[5] as u16,
+            ((slice[6] as u16) << 8) | slice[7] as u16,
+            ((slice[8] as u16) << 8) | slice[9] as u16,
+            ((slice[10] as u16) << 8) | slice[11] as u16,
+            ((slice[12] as u16) << 8) | slice[13] as u16,
+            ((slice[14] as u16) << 8) | slice[15] as u16,
+        )
+    }
+}
+
 impl<E> ColumnDecoder for Vec<E>
 where E: ColumnDecoder {
     fn decode(slice: &[u8], mut _length: usize) -> Vec<E> {
@@ -310,3 +342,4 @@ pub fn string_list(buffer: &[u8]) -> Vec<String> {
     }
     list
 }
+// todo inet fn (with port).
