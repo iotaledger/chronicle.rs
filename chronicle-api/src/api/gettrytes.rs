@@ -16,13 +16,13 @@ use cdrs::{
 };
 use chronicle_common::actor;
 use chronicle_cql::{
+    compression::UNCOMPRESSED,
     frame::decoder::{
         Decoder,
         Frame,
     },
     rows,
     statements::statements::SELECT_TX_QUERY,
-    compression::UNCOMPRESSED,
 };
 use chronicle_storage::{
     ring::ring::Ring,
@@ -210,7 +210,7 @@ impl Rows for Trytes {
 }
 // implementation to decoder the columns in order to form the trytes eventually
 impl TrytesDecoder for Hash {
-    fn decode_column(_start: usize, _lengthh: i32, _acc: &mut Trytes) {
+    fn decode_column(_start: usize, _length: i32, _acc: &mut Trytes) {
         // we don't need the hash to build the trytes, so nothing should be done.
     }
 }
