@@ -1,9 +1,10 @@
-mod opcode;
-mod result;
-mod header;
+mod consistency;
 pub mod decoder;
 pub mod encoder;
-mod consistency;
+pub mod execute;
+mod header;
+mod opcode;
 pub mod query;
+mod result;
 pub mod rows;
 mod types;
