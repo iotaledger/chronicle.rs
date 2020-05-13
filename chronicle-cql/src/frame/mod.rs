@@ -5,6 +5,7 @@ pub mod execute;
 mod header;
 mod opcode;
 pub mod query;
+mod queryflags;
 mod result;
 pub mod rows;
 mod types;

@@ -1,15 +1,31 @@
-use super::consistency::Consistency;
-use super::header::{self, Header};
-use super::opcode::QUERY;
-use crate::compression::{Compression, UNCOMPRESSED};
-use super::encoder::{ColumnEncoder, BE_8_BYTES_LEN, BE_0_BYTES_LEN, BE_UNSET_BYTES_LEN, BE_NULL_BYTES_LEN};
-// query flags
-pub const VALUES: u8 = 0x01;
-pub const SKIP_METADATA: u8 = 0x02;
-pub const PAGE_SIZE: u8 = 0x04;
-pub const PAGING_STATE: u8 = 0x08;
-pub const SERIAL_CONSISTENCY: u8 = 0x10;
-pub const TIMESTAMP: u8 = 0x20;
+use super::{
+    consistency::Consistency,
+    encoder::{
+        ColumnEncoder,
+        BE_0_BYTES_LEN,
+        BE_8_BYTES_LEN,
+        BE_NULL_BYTES_LEN,
+        BE_UNSET_BYTES_LEN,
+    },
+    header::{
+        self,
+        Header,
+    },
+    opcode::QUERY,
+};
+use crate::compression::{
+    Compression,
+    UNCOMPRESSED,
+};
+
+use super::queryflags::{
+    PAGE_SIZE,
+    PAGING_STATE,
+    SERIAL_CONSISTENCY,
+    SKIP_METADATA,
+    TIMESTAMP,
+    VALUES,
+};
 
 pub struct Query(Vec<u8>);
 
@@ -96,37 +112,40 @@ impl Query {
 mod tests {
     use super::*;
     use crate::statements::statements::INSERT_TX_QUERY;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{
+        Duration,
+        SystemTime,
+        UNIX_EPOCH,
+    };
     #[test]
     // note: junk data
     fn simple_query_builder_test() {
         let Query(payload) = Query::new()
-        .version()
-        .flags(header::IGNORE)
-        .stream(0)
-        .opcode(QUERY)
-        .length()
-        .statement(INSERT_TX_QUERY)
-        .consistency(Consistency::One)
-        .query_flags(SKIP_METADATA | VALUES)
-        .value("HASH_VALUE")
-        .value("PAYLOAD_VALUE")
-        .value("ADDRESS_VALUE")
-        .value(0 as i64) // tx-value as i64
-        .value("OBSOLETE_TAG_VALUE")
-        .value(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64) // junk timestamp
-        .value(0 as i64) // current-index
-        .value(0 as i64) // last-index
-        .value("BUNDLE_HASH_VALUE")
-        .value("TRUNK_VALUE")
-        .value("BRANCH_VALUE")
-        .value("TAG_VALUE")
-        .value(0 as i64) // attachment_timestamp
-        .value(0 as i64) // attachment_timestamp_lower
-        .value(0 as i64) // attachment_timestamp_upper
-        .value("NONCE_VALUE") // nonce
-        .unset_value() // not-set value for milestone
-        .build(UNCOMPRESSED); // build uncompressed
+            .version()
+            .flags(header::IGNORE)
+            .stream(0)
+            .opcode(QUERY)
+            .length()
+            .statement(INSERT_TX_QUERY)
+            .consistency(Consistency::One)
+            .query_flags(SKIP_METADATA | VALUES)
+            .value("HASH_VALUE")
+            .value("PAYLOAD_VALUE")
+            .value("ADDRESS_VALUE")
+            .value(0 as i64) // tx-value as i64
+            .value("OBSOLETE_TAG_VALUE")
+            .value(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64) // junk timestamp
+            .value(0 as i64) // current-index
+            .value(0 as i64) // last-index
+            .value("BUNDLE_HASH_VALUE")
+            .value("TRUNK_VALUE")
+            .value("BRANCH_VALUE")
+            .value("TAG_VALUE")
+            .value(0 as i64) // attachment_timestamp
+            .value(0 as i64) // attachment_timestamp_lower
+            .value(0 as i64) // attachment_timestamp_upper
+            .value("NONCE_VALUE") // nonce
+            .unset_value() // not-set value for milestone
+            .build(UNCOMPRESSED); // build uncompressed
     }
-
 }
