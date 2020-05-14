@@ -16,16 +16,17 @@ impl Compression for Lz4 {
 
         // Decompress the body by lz4
         let decompressed_buffer: Vec<u8> =
-            lz4::block::decompress(&buffer[9..(9 + compressed_body_length)], None).unwrap();
+            lz4::block::decompress(&buffer[13..(13 + compressed_body_length)], None).unwrap();
 
-        // Clip the buffer to be header only
-        *buffer = buffer[..9].to_vec();
+        // Truncate the buffer to be header, followed by the first 4 bytes of the body
+        buffer.truncate(13);
 
-        // Update the compressed body length to be the body length
-        let body_length = i32::to_be_bytes((decompressed_buffer.len() as i32) - 9);
-        buffer[5..9].copy_from_slice(&body_length);
+        // Replace the body length w/ the decompressed body length
+        let mut decompressed_length_array: [u8; 4] = [0, 0, 0, 0];
+        decompressed_length_array.copy_from_slice(&buffer[9..13]);
+        buffer[5..9].copy_from_slice(&decompressed_length_array);
 
-        // Extend the body
+        // Extend the decompressed body
         buffer.extend(&decompressed_buffer)
     }
     fn compress(&self, buffer: &mut Vec<u8>) {
@@ -37,14 +38,17 @@ impl Compression for Lz4 {
         // Compress the body
         let compressed_buffer: Vec<u8> = lz4::block::compress(&buffer[9..(9 + body_length)], None, true).unwrap();
 
-        // Clip the buffer to be header only
-        *buffer = buffer[..9].to_vec();
+        // Truncate the buffer to be header only
+        buffer.truncate(9);
+
+        // The first 4 bytes of the body is the uncompressed length
+        buffer.extend(length_array.iter().copied());
 
         // Update the body length to be the compressed body length
-        let compressed_body_length = i32::to_be_bytes((compressed_buffer.len() as i32) - 9);
+        let compressed_body_length = i32::to_be_bytes(compressed_buffer.len() as i32);
         buffer[5..9].copy_from_slice(&compressed_body_length);
 
-        // Update the body
+        // Extend the compressed body
         buffer.extend(&compressed_buffer)
     }
 }
@@ -63,11 +67,11 @@ impl Compression for Snappy {
             .decompress_vec(&buffer[9..(9 + compressed_body_length)])
             .unwrap();
 
-        // Clip the buffer to be header only
-        *buffer = buffer[..9].to_vec();
+        // Truncate the buffer to be header only
+        buffer.truncate(9);
 
         // Update the compressed body length to be the body length
-        let body_length = i32::to_be_bytes((decompressed_buffer.len() as i32) - 9);
+        let body_length = i32::to_be_bytes(decompressed_buffer.len() as i32);
         buffer[5..9].copy_from_slice(&body_length);
 
         // Extend the body
@@ -84,14 +88,14 @@ impl Compression for Snappy {
             .compress_vec(&buffer[9..(9 + body_length)])
             .unwrap();
 
-        // Clip the buffer to be header only
-        *buffer = buffer[..9].to_vec();
+        // Truncate the buffer to be header only
+        buffer.truncate(9);
 
         // Update the body length to be the compressed body length
-        let compressed_body_length = i32::to_be_bytes((compressed_buffer.len() as i32) - 9);
+        let compressed_body_length = i32::to_be_bytes(compressed_buffer.len() as i32);
         buffer[5..9].copy_from_slice(&compressed_body_length);
 
-        // Update the body
+        // Extend the compressed body
         buffer.extend(&compressed_buffer)
     }
 }
