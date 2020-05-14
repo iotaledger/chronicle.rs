@@ -46,8 +46,8 @@ impl Header for Execute {
         self.0.extend(&i16::to_be_bytes(stream));
         self
     }
-    fn opcode(mut self, opcode: u8) -> Self {
-        self.0.push(opcode);
+    fn opcode(mut self) -> Self {
+        self.0.push(EXECUTE);
         self
     }
     fn length(mut self) -> Self {
@@ -121,7 +121,7 @@ mod tests {
             .version()
             .flags(header::IGNORE)
             .stream(0)
-            .opcode(EXECUTE)
+            .opcode()
             .length()
             .id("TestID")
             .consistency(Consistency::One)

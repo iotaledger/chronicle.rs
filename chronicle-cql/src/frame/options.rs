@@ -1,6 +1,7 @@
 use super::{
     encoder::BE_0_BYTES_LEN,
     header::Header,
+    opcode::OPTIONS,
 };
 
 pub struct Options(Vec<u8>);
@@ -24,8 +25,8 @@ impl Header for Options {
         self.0.extend(&i16::to_be_bytes(stream));
         self
     }
-    fn opcode(mut self, opcode: u8) -> Self {
-        self.0.push(opcode);
+    fn opcode(mut self) -> Self {
+        self.0.push(OPTIONS);
         self
     }
     fn length(mut self) -> Self {
@@ -43,10 +44,7 @@ impl Options {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{
-        header,
-        opcode::OPTIONS,
-    };
+    use crate::frame::header;
 
     #[test]
     // note: junk data
@@ -55,7 +53,7 @@ mod tests {
             .version()
             .flags(header::IGNORE)
             .stream(0)
-            .opcode(OPTIONS)
+            .opcode()
             .length()
             .build(); // build uncompressed
     }

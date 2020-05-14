@@ -10,6 +10,6 @@ pub trait Header {
     fn version(self) -> Self;
     fn flags(self, flags: u8) -> Self;
     fn stream(self, stream: i16) -> Self;
-    fn opcode(self, opcode: u8) -> Self;
+    fn opcode(self) -> Self;
     fn length(self) -> Self;
 }

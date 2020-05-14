@@ -1,6 +1,7 @@
 use super::{
     encoder::BE_0_BYTES_LEN,
     header::Header,
+    opcode::PREPARE,
 };
 
 use crate::compression::Compression;
@@ -26,8 +27,8 @@ impl Header for Prepare {
         self.0.extend(&i16::to_be_bytes(stream));
         self
     }
-    fn opcode(mut self, opcode: u8) -> Self {
-        self.0.push(opcode);
+    fn opcode(mut self) -> Self {
+        self.0.push(PREPARE);
         self
     }
     fn length(mut self) -> Self {
@@ -53,10 +54,7 @@ mod tests {
     use super::*;
     use crate::{
         compression::UNCOMPRESSED,
-        frame::{
-            header,
-            opcode::PREPARE,
-        },
+        frame::header,
         statements::statements::INSERT_TX_QUERY,
     };
     #[test]
@@ -66,7 +64,7 @@ mod tests {
             .version()
             .flags(header::IGNORE)
             .stream(0)
-            .opcode(PREPARE)
+            .opcode()
             .length()
             .statement(INSERT_TX_QUERY)
             .build(UNCOMPRESSED); // build uncompressed
