@@ -28,7 +28,7 @@ impl ReceiverBuilder {
         let reporters_len = reporters.len();
         let buffer_size = self.buffer_size.unwrap();
         Receiver {
-            reporters: reporters,
+            reporters,
             socket: self.socket_rx.unwrap(),
             stream_id: 0,
             total_length: 0,

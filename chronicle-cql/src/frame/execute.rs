@@ -70,6 +70,10 @@ impl Execute {
         self.0.push(query_flags);
         self
     }
+    fn value_count(mut self, value_count: u16) -> Self {
+        self.0.extend(&u16::to_be_bytes(value_count));
+        self
+    }
     fn value(mut self, value: impl ColumnEncoder) -> Self {
         value.encode(&mut self.0);
         self
@@ -123,9 +127,10 @@ mod tests {
             .stream(0)
             .opcode()
             .length()
-            .id("TestID")
+            .id("HASHED_MD5_STATEMENT")
             .consistency(Consistency::One)
             .query_flags(SKIP_METADATA | VALUES)
+            .value_count(17) // number of values
             .value("HASH_VALUE")
             .value("PAYLOAD_VALUE")
             .value("ADDRESS_VALUE")
