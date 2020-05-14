@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS tangle.edge (
   kind text,
   timestamp i64,
   tx blob,
-  PRIMARY KEY(vertex, kind, timestamp)
+  value i64,
+  milestone i64,
+  extra blob,
+  PRIMARY KEY(vertex, kind, timestamp, tx)
 );
 "#;
 
@@ -65,8 +68,11 @@ pub const INSERT_EDGE_QUERY: &str = r#"
     vertex,
     kind,
     timestamp,
-    tx
-  ) VALUES (?,?,?,?);
+    tx,
+    value,
+    milestone,
+    extra
+) VALUES (?,?,?,?,?,?,?);
 "#;
 
 pub const SELECT_TX_QUERY: &str = r#"
