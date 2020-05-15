@@ -57,54 +57,54 @@ impl Header for Execute {
 }
 
 impl Execute {
-    fn id(mut self, id: &str) -> Self {
+    pub fn id(mut self, id: &str) -> Self {
         self.0.extend(&u16::to_be_bytes(id.len() as u16));
         self.0.extend(id.bytes());
         self
     }
-    fn consistency(mut self, consistency: Consistency) -> Self {
+    pub fn consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
-    fn query_flags(mut self, query_flags: u8) -> Self {
+    pub fn query_flags(mut self, query_flags: u8) -> Self {
         self.0.push(query_flags);
         self
     }
-    fn value_count(mut self, value_count: u16) -> Self {
+    pub fn value_count(mut self, value_count: u16) -> Self {
         self.0.extend(&u16::to_be_bytes(value_count));
         self
     }
-    fn value(mut self, value: impl ColumnEncoder) -> Self {
+    pub fn value(mut self, value: impl ColumnEncoder) -> Self {
         value.encode(&mut self.0);
         self
     }
-    fn unset_value(mut self) -> Self {
+    pub fn unset_value(mut self) -> Self {
         self.0.extend(&BE_UNSET_BYTES_LEN);
         self
     }
-    fn null_value(mut self) -> Self {
+    pub fn null_value(mut self) -> Self {
         self.0.extend(&BE_NULL_BYTES_LEN);
         self
     }
-    fn page_size(mut self, page_size: i32) -> Self {
+    pub fn page_size(mut self, page_size: i32) -> Self {
         self.0.extend(&i32::to_be_bytes(page_size));
         self
     }
-    fn paging_state(mut self, paging_state: String) -> Self {
+    pub fn paging_state(mut self, paging_state: String) -> Self {
         self.0.extend(&i32::to_be_bytes(paging_state.len() as i32));
         self.0.extend(paging_state.bytes());
         self
     }
-    fn serial_consistency(mut self, consistency: Consistency) -> Self {
+    pub fn serial_consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
-    fn timestamp(mut self, timestamp: i64) -> Self {
+    pub fn timestamp(mut self, timestamp: i64) -> Self {
         self.0.extend(&BE_8_BYTES_LEN);
         self.0.extend(&i64::to_be_bytes(timestamp));
         self
     }
-    fn build(mut self, compression: impl Compression) -> Self {
+    pub fn build(mut self, compression: impl Compression) -> Self {
         compression.compress(&mut self.0);
         self
     }

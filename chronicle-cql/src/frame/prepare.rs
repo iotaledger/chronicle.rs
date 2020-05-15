@@ -38,12 +38,12 @@ impl Header for Prepare {
 }
 
 impl Prepare {
-    fn statement(mut self, statement: &str) -> Self {
+    pub fn statement(mut self, statement: &str) -> Self {
         self.0.extend(&i32::to_be_bytes(statement.len() as i32));
         self.0.extend(statement.bytes());
         self
     }
-    fn build(mut self, compression: impl Compression) -> Self {
+    pub fn build(mut self, compression: impl Compression) -> Self {
         compression.compress(&mut self.0);
         self
     }

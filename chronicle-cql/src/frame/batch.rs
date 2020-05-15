@@ -51,12 +51,12 @@ impl Header for Batch {
 }
 
 impl Batch {
-    fn batch_type(mut self, batch_type: BatchTypes) -> Self {
+    pub fn batch_type(mut self, batch_type: BatchTypes) -> Self {
         // push batch_type and pad zero querycount
         self.0.extend(&[batch_type as u8,0,0]);
         self
     }
-    fn statement(mut self, statement: &str) -> Self {
+    pub fn statement(mut self, statement: &str) -> Self {
         // normal query
         self.0.push(0);
         self.0.extend(&i32::to_be_bytes(statement.len() as i32));
@@ -64,7 +64,7 @@ impl Batch {
         self.1 += 1; // update querycount
         self
     }
-    fn id(mut self, id: &str) -> Self {
+    pub fn id(mut self, id: &str) -> Self {
         // prepared query
         self.0.push(1);
         self.0.extend(&u16::to_be_bytes(id.len() as u16));
@@ -72,40 +72,40 @@ impl Batch {
         self.1 += 1;
         self
     }
-    fn value_count(mut self, value_count: u16) -> Self {
+    pub fn value_count(mut self, value_count: u16) -> Self {
         self.0.extend(&u16::to_be_bytes(value_count));
         self
     }
-    fn value(mut self, value: impl ColumnEncoder) -> Self {
+    pub fn value(mut self, value: impl ColumnEncoder) -> Self {
         value.encode(&mut self.0);
         self
     }
-    fn unset_value(mut self) -> Self {
+    pub fn unset_value(mut self) -> Self {
         self.0.extend(&BE_UNSET_BYTES_LEN);
         self
     }
-    fn null_value(mut self) -> Self {
+    pub fn null_value(mut self) -> Self {
         self.0.extend(&BE_NULL_BYTES_LEN);
         self
     }
-    fn consistency(mut self, consistency: Consistency) -> Self {
+    pub fn consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
-    fn batch_flags(mut self, batch_flags: u8) -> Self {
+    pub fn batch_flags(mut self, batch_flags: u8) -> Self {
         self.0.push(batch_flags);
         self
     }
-    fn serial_consistency(mut self, consistency: Consistency) -> Self {
+    pub fn serial_consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
-    fn timestamp(mut self, timestamp: i64) -> Self {
+    pub fn timestamp(mut self, timestamp: i64) -> Self {
         self.0.extend(&BE_8_BYTES_LEN);
         self.0.extend(&i64::to_be_bytes(timestamp));
         self
     }
-    fn build(mut self, compression: impl Compression) -> Self {
+    pub fn build(mut self, compression: impl Compression) -> Self {
         // adjust the querycount
         self.0[10..12].copy_from_slice(&u16::to_be_bytes(self.1));
         compression.compress(&mut self.0);

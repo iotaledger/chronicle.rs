@@ -38,7 +38,7 @@ impl Header for Startup {
 }
 
 impl Startup {
-    fn options(mut self, map: &HashMap<&str, &str>) -> Self {
+    pub fn options(mut self, map: &HashMap<&str, &str>) -> Self {
         self.0.extend(&u16::to_be_bytes(map.keys().len() as u16));
         for (k, v) in map {
             self.0.extend(&u16::to_be_bytes(k.len() as u16));
@@ -50,7 +50,7 @@ impl Startup {
         self.0[5..9].copy_from_slice(&body_length);
         self
     }
-    fn build(mut self, compression: impl Compression) -> Self {
+    pub fn build(mut self, compression: impl Compression) -> Self {
         compression.compress(&mut self.0);
         self
     }

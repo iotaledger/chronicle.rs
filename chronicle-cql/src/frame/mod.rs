@@ -3,7 +3,7 @@ pub mod decoder;
 pub mod encoder;
 pub mod execute;
 pub mod batch;
-mod header;
+pub mod header;
 mod opcode;
 pub mod options;
 pub mod prepare;
