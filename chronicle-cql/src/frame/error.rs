@@ -20,56 +20,56 @@ impl From<&[u8]> for CqlError {
             ErrorCodes::UnavailableException => {
                 additional = Some(
                     Additional::UnavailableException(
-                        UnavailableException::from(&slice[(4+message.len()..)])
+                        UnavailableException::from(&slice[(6+message.len()..)])
                     )
                 )
             },
             ErrorCodes::WriteTimeout => {
                 additional = Some(
                     Additional::WriteTimeout(
-                        WriteTimeout::from(&slice[(4+message.len()..)])
+                        WriteTimeout::from(&slice[(6+message.len()..)])
                     )
                 )
             },
             ErrorCodes::ReadTimeout => {
                 additional = Some(
                     Additional::ReadTimeout(
-                        ReadTimeout::from(&slice[(4+message.len()..)])
+                        ReadTimeout::from(&slice[(6+message.len()..)])
                     )
                 )
             },
             ErrorCodes::ReadFailure => {
                 additional = Some(
                     Additional::ReadFailure(
-                        ReadFailure::from(&slice[(4+message.len()..)])
+                        ReadFailure::from(&slice[(6+message.len()..)])
                     )
                 )
             },
             ErrorCodes::FunctionFailure => {
                 additional = Some(
                     Additional::FunctionFailure(
-                        FunctionFailure::from(&slice[(4+message.len()..)])
+                        FunctionFailure::from(&slice[(6+message.len()..)])
                     )
                 )
             },
             ErrorCodes::WriteFailure => {
                 additional = Some(
                     Additional::WriteFailure(
-                        WriteFailure::from(&slice[(4+message.len()..)])
+                        WriteFailure::from(&slice[(6+message.len()..)])
                     )
                 )
             },
             ErrorCodes::AlreadyExists => {
                 additional = Some(
                     Additional::AlreadyExists(
-                        AlreadyExists::from(&slice[(4+message.len()..)])
+                        AlreadyExists::from(&slice[(6+message.len()..)])
                     )
                 )
             },
             ErrorCodes::Unprepared => {
                 additional = Some(
                     Additional::Unprepared(
-                        Unprepared::from(&slice[(4+message.len()..)])
+                        Unprepared::from(&slice[(6+message.len()..)])
                     )
                 )
             },
