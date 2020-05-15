@@ -7,6 +7,7 @@ use std::net::{IpAddr,Ipv4Addr, Ipv6Addr};
 use std::convert::TryInto;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::str;
 
 pub trait Frame {
     fn version(&self) -> u8;
@@ -326,20 +327,31 @@ where K: Eq + Hash + ColumnDecoder, V: ColumnDecoder {
 }
 
 // helper types decoder functions
-pub fn string_list(buffer: &[u8]) -> Vec<String> {
-    let list_len = u16::from_be_bytes(buffer[0..2].try_into().unwrap()) as usize;
+pub fn string_list(slice: &[u8]) -> Vec<String> {
+    let list_len = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
     let mut list: Vec<String> = Vec::with_capacity(list_len);
     // current_string_start
     let mut s = 2;
     for _ in 0..list_len {
         // ie first string length is buffer[2..4]
-        let string_len = u16::from_be_bytes(buffer[s..(s+2)].try_into().unwrap()) as usize;
+        let string_len = u16::from_be_bytes(slice[s..(s+2)].try_into().unwrap()) as usize;
         s += 2;
         let e = s + string_len;
-        let string = String::from_utf8_lossy(&buffer[s..e]);
+        let string = String::from_utf8_lossy(&slice[s..e]);
         list.push(string.to_string());
         s = e;
     }
     list
 }
+
+pub fn string(slice: &[u8]) -> String {
+    let length = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
+    String::decode(&slice[2..], length)
+}
+
+pub fn str(slice: &[u8]) -> &str {
+    let length = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
+    str::from_utf8(&slice[2..length]).unwrap()
+}
+
 // todo inet fn (with port).

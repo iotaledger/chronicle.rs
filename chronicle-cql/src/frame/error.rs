@@ -1,11 +1,88 @@
 // work in progress
 use std::convert::From;
 use std::mem::transmute;
+use super::decoder;
+use super::consistency::Consistency;
+use std::convert::TryInto;
 
 pub struct CqlError {
-    code: ErrorCodes,
-    message: String,
-    additional: Option<Additional>,
+    pub code: ErrorCodes,
+    pub message: String,
+    pub additional: Option<Additional>,
+}
+
+impl From<&[u8]> for CqlError {
+    fn from(slice: &[u8]) -> Self {
+        let code = ErrorCodes::from(slice);
+        let message = decoder::string(&slice[4..]);
+        let additional: Option<Additional>;
+        match code {
+            ErrorCodes::UnavailableException => {
+                additional = Some(
+                    Additional::UnavailableException(
+                        UnavailableException::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            ErrorCodes::WriteTimeout => {
+                additional = Some(
+                    Additional::WriteTimeout(
+                        WriteTimeout::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            ErrorCodes::ReadTimeout => {
+                additional = Some(
+                    Additional::ReadTimeout(
+                        ReadTimeout::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            ErrorCodes::ReadFailure => {
+                additional = Some(
+                    Additional::ReadFailure(
+                        ReadFailure::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            ErrorCodes::FunctionFailure => {
+                additional = Some(
+                    Additional::FunctionFailure(
+                        FunctionFailure::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            ErrorCodes::WriteFailure => {
+                additional = Some(
+                    Additional::WriteFailure(
+                        WriteFailure::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            ErrorCodes::AlreadyExists => {
+                additional = Some(
+                    Additional::AlreadyExists(
+                        AlreadyExists::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            ErrorCodes::Unprepared => {
+                additional = Some(
+                    Additional::Unprepared(
+                        Unprepared::from(&slice[(4+message.len()..)])
+                    )
+                )
+            },
+            _ => {
+                additional = None;
+            }
+        }
+        CqlError {
+            code,
+            message,
+            additional,
+        }
+    }
 }
 
 #[repr(i32)]
@@ -31,11 +108,213 @@ pub enum ErrorCodes {
 }
 
 pub enum Additional {
-
+    UnavailableException(UnavailableException),
+    WriteTimeout(WriteTimeout),
+    ReadTimeout(ReadTimeout),
+    ReadFailure(ReadFailure),
+    FunctionFailure(FunctionFailure),
+    WriteFailure(WriteFailure),
+    AlreadyExists(AlreadyExists),
+    Unprepared(Unprepared),
 }
 
-impl From<i32> for ErrorCodes {
-    fn from(error_code: i32) -> ErrorCodes {
-        unsafe { transmute(error_code) }
+pub struct UnavailableException {
+    pub cl: Consistency,
+    pub required: i32,
+    pub alive: i32,
+}
+impl From<&[u8]> for UnavailableException {
+    fn from(slice: &[u8]) -> Self {
+        let cl = Consistency::from(slice);
+        let required = i32::from_be_bytes(slice[2..6].try_into().unwrap());
+        let alive = i32::from_be_bytes(slice[6..10].try_into().unwrap());
+        Self {
+            cl,
+            required,
+            alive,
+        }
+    }
+}
+pub struct WriteTimeout {
+    pub cl: Consistency,
+    pub received: i32,
+    pub blockfor: i32,
+    pub writetype: WriteType,
+}
+impl From<&[u8]> for WriteTimeout {
+    fn from(slice: &[u8]) -> Self {
+        let cl = Consistency::from(slice);
+        let received = i32::from_be_bytes(slice[2..6].try_into().unwrap());
+        let blockfor = i32::from_be_bytes(slice[6..10].try_into().unwrap());
+        let writetype = WriteType::from(&slice[10..]);
+        Self {
+            cl,
+            received,
+            blockfor,
+            writetype,
+        }
+    }
+}
+
+pub struct ReadTimeout {
+    pub cl: Consistency,
+    pub received: i32,
+    pub blockfor: i32,
+    pub data_present: u8,
+}
+impl ReadTimeout {
+    pub fn replica_had_not_responded(&self) -> bool {
+        self.data_present == 0
+    }
+}
+impl From<&[u8]> for ReadTimeout {
+    fn from(slice: &[u8]) -> Self {
+        let cl = Consistency::from(slice);
+        let received = i32::from_be_bytes(slice[2..6].try_into().unwrap());
+        let blockfor = i32::from_be_bytes(slice[6..10].try_into().unwrap());
+        let data_present = slice[10];
+        Self {
+            cl,
+            received,
+            blockfor,
+            data_present,
+        }
+    }
+}
+
+pub struct ReadFailure {
+    pub cl: Consistency,
+    pub received: i32,
+    pub blockfor: i32,
+    pub num_failures: i32,
+    pub data_present: u8,
+}
+impl ReadFailure {
+    pub fn replica_had_not_responded(&self) -> bool {
+        self.data_present == 0
+    }
+}
+impl From<&[u8]> for ReadFailure {
+    fn from(slice: &[u8]) -> Self {
+        let cl = Consistency::from(slice);
+        let received = i32::from_be_bytes(slice[2..6].try_into().unwrap());
+        let blockfor = i32::from_be_bytes(slice[6..10].try_into().unwrap());
+        let num_failures = i32::from_be_bytes(slice[10..14].try_into().unwrap());
+        let data_present = slice[14];
+        Self {
+            cl,
+            received,
+            blockfor,
+            num_failures,
+            data_present,
+        }
+    }
+}
+pub struct FunctionFailure {
+    pub keyspace: String,
+    pub function: String,
+    pub arg_types: Vec<String>,
+}
+
+impl From<&[u8]> for FunctionFailure {
+    fn from(slice: &[u8]) -> Self {
+        let keyspace = decoder::string(slice);
+        let function = decoder::string(&slice[2+keyspace.len()..]);
+        let arg_types = decoder::string_list(&slice[4+keyspace.len()+function.len()..]);
+        Self {
+            keyspace,
+            function,
+            arg_types,
+        }
+    }
+}
+
+pub struct WriteFailure {
+    pub cl: Consistency,
+    pub received: i32,
+    pub blockfor: i32,
+    pub num_failures: i32,
+    pub writetype: WriteType,
+}
+
+impl From<&[u8]> for WriteFailure {
+    fn from(slice: &[u8]) -> Self {
+        let cl = Consistency::from(slice);
+        let received = i32::from_be_bytes(slice[2..6].try_into().unwrap());
+        let blockfor = i32::from_be_bytes(slice[6..10].try_into().unwrap());
+        let num_failures = i32::from_be_bytes(slice[10..14].try_into().unwrap());
+        let writetype = WriteType::from(&slice[14..]);
+        Self {
+            cl,
+            received,
+            blockfor,
+            num_failures,
+            writetype,
+        }
+    }
+}
+
+pub struct AlreadyExists {
+    pub ks: String,
+    pub table: String,
+}
+
+impl From<&[u8]> for AlreadyExists {
+    fn from(slice: &[u8]) -> Self {
+        let ks = decoder::string(slice);
+        let table = decoder::string(slice[2+ks.len()..].try_into().unwrap());
+        Self {
+            ks,
+            table,
+        }
+    }
+}
+
+pub struct Unprepared {
+    pub id: String,
+}
+
+impl From<&[u8]> for Unprepared {
+    fn from(slice: &[u8]) -> Self {
+        let id = decoder::string(slice);
+        Self {
+            id,
+        }
+    }
+}
+pub enum WriteType {
+    Simple,
+    Batch,
+    UnloggedBatch,
+    Counter,
+    BatchLog,
+    Cas,
+    View,
+    Cdc,
+}
+
+impl From<&[u8]> for WriteType {
+    fn from(slice: &[u8]) -> Self {
+        match decoder::str(slice) {
+            "SIMPLE" => WriteType::Simple,
+            "BATCH" => WriteType::Batch,
+            "UNLOGGED_BATCH" => WriteType::UnloggedBatch,
+            "COUNTER" => WriteType::Counter,
+            "BATCH_LOG" => WriteType::BatchLog,
+            "CAS" => WriteType::Cas,
+            "VIEW" => WriteType::View,
+            "CDC" => WriteType::Cdc,
+            _ => {
+                panic!("unexpected writetype error");
+            }
+        }
+    }
+}
+
+impl From<&[u8]> for ErrorCodes {
+    fn from(slice: &[u8]) -> ErrorCodes {
+        unsafe {
+            transmute(i32::from_be_bytes(slice[0..4].try_into().unwrap()))
+        }
     }
 }

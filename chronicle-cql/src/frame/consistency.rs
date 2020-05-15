@@ -1,3 +1,6 @@
+use std::mem::transmute;
+use std::convert::TryInto;
+
 #[repr(u16)]
 pub enum Consistency {
     Any = 0x0,
@@ -11,4 +14,12 @@ pub enum Consistency {
     Serial = 0x8,
     LocalSerial = 0x9,
     LocalOne = 0xA,
+}
+
+impl From<&[u8]> for Consistency {
+    fn from(slice: &[u8]) -> Self {
+        unsafe {
+            transmute(u16::from_be_bytes(slice[0..2].try_into().unwrap()))
+        }
+    }
 }

@@ -4,6 +4,7 @@ pub mod encoder;
 pub mod execute;
 pub mod batch;
 pub mod header;
+pub mod error;
 mod opcode;
 pub mod options;
 pub mod prepare;

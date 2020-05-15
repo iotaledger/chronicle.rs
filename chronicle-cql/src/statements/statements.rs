@@ -1,7 +1,3 @@
-use crate::frame::query::Query;
-use crate::frame::header::{self, Header};
-use crate::frame::queryflags;
-
 pub const CREATE_KEYSPACE_QUERY: &str = r#"
 CREATE KEYSPACE IF NOT EXISTS chronicle
 WITH REPLICATION = {
