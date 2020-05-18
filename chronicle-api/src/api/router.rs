@@ -13,17 +13,19 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use serde_json::Value;
+use serde_json::{
+    Value
+};
 use std::convert::Infallible;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct ReqBody {
     command: String,
     hashes: Option<Vec<String>>,
-    bundle: Option<Vec<String>>,
-    address: Option<Vec<String>>,
-    tag: Option<Vec<String>>,
-    approvee: Option<Vec<String>>,
+    bundles: Option<Vec<String>>,
+    addresses: Option<Vec<String>>,
+    hints: Option<Vec<Value>>,
+    approvees: Option<Vec<String>>,
 }
 
 pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
@@ -85,6 +87,9 @@ async fn route(request: ReqBody) -> Response<Body> {
             } else {
                 response!(status: BAD_REQUEST, body: r#"{"error":"No Hashes"}"#)
             }
+        }
+        "findTransactions" => {
+            todo!()
         }
         _ => response!(status: BAD_REQUEST, body: r#"{"error":"Invalid Request Command"}"#),
     }

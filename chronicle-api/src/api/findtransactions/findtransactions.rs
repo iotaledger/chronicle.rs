@@ -45,19 +45,19 @@ type Receiver = mpsc::UnboundedReceiver<Event>;
 pub struct FindTransactionsId(Sender);
 
 actor!(FindTransactionsBuilder {
-    addresses: Option<Vec<String>>,
-    bundles: Option<Vec<String>>,
-    approvees: Option<Vec<String>>,
-    hints: Option<Vec<JsonValue>>
+    addresses: Vec<String>,
+    bundles: Vec<String>,
+    approvees: Vec<String>,
+    hints: Vec<JsonValue>
 });
 
 impl FindTransactionsBuilder {
     pub fn build(self) -> FindTransactions {
         FindTransactions {
-            addresses: self.addresses.unwrap(),
-            bundles: self.bundles.unwrap(),
-            approvees: self.approvees.unwrap(),
-            hints: self.hints.unwrap(),
+            addresses: self.addresses,
+            bundles: self.bundles,
+            approvees: self.approvees,
+            hints: self.hints,
         }
     }
 }
