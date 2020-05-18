@@ -98,3 +98,8 @@ pub const SELECT_EDGE_QUERY: &str = r#"
   SELECT * FROM tangle.edge
   WHERE vertex = ?;
 "#;
+
+pub const SELECT_TX_BY_BUNDLE_QUERY: &str = r#"
+  SELECT * FROM tangle.transaction
+  WHERE bundle = ?;
+"#;
