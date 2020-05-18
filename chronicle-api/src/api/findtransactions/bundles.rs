@@ -39,7 +39,7 @@ impl Rows for Hashes {
             // return HashSet
             Some(self.hashes)
         } else {
-            // we didn't have any transaction row for the provided bundle.
+            // we didn't have any row for the provided bundle.
             None
         }
     }
@@ -58,7 +58,7 @@ impl BundlesDecoder for Hash {
 
 // ----------- encoding scope -----------
 
-/// Create a query frame to lookup for a tx-hash in the edge table using a bundle
+/// Create a query frame to lookup for tx-hashes in the edge table using a bundle
 pub fn query(bundle: String) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
