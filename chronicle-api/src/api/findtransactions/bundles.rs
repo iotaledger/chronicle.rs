@@ -36,12 +36,12 @@ impl Rows for Hashes {
                 .insert(String::from_utf8(self.decoder.into_buffer()).unwrap());
             Some(self.hashes)
         } else {
-            // we didn't have any transaction row for the provided hash.
+            // we didn't have any transaction row for the provided bundle.
             None
         }
     }
 }
-// implementation to decoder the columns in order to form the trytes eventually
+// implementation to decoder the columns in order to form the hash eventually
 impl BundlesDecoder for Hash {
     fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
         acc.buffer().copy_within(start..(start + length as usize), 81)
