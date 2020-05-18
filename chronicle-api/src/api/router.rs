@@ -1,4 +1,5 @@
 use super::gettrytes::GetTrytesBuilder;
+use super::findtransactions::hints::Hint;
 use hyper::{
     body::{
         aggregate,
@@ -13,9 +14,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use serde_json::{
-    Value
-};
+use serde_json::Value;
 use std::convert::Infallible;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -24,7 +23,7 @@ struct ReqBody {
     hashes: Option<Vec<String>>,
     bundles: Option<Vec<String>>,
     addresses: Option<Vec<String>>,
-    hints: Option<Vec<Value>>,
+    hints: Option<Vec<Hint>>,
     approvees: Option<Vec<String>>,
 }
 
