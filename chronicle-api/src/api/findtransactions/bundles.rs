@@ -1,11 +1,20 @@
 use chronicle_cql::{
     frame::decoder::{
         Decoder,
+        ColumnDecoder,
         Frame,
     },
+    frame::query::Query,
+    frame::header::{self, Header},
+    frame::consistency::Consistency,
+    frame::queryflags::{SKIP_METADATA, VALUES},
+    compression::compression::UNCOMPRESSED,
     rows,
 };
 use std::collections::HashSet;
+
+// ----------- decoding scope -----------
+
 rows!(
     rows: Hashes {hashes: HashSet<String>},
     row: Row(
@@ -14,26 +23,20 @@ rows!(
     column_decoder: BundlesDecoder
 );
 
-// define decoder trait as you wish
 trait Rows {
-    // to decode the rows
     fn decode(self) -> Self;
-    // to finalize it as the expected result (trytes or none)
     fn finalize(self) -> Option<HashSet<String>>;
 }
 
 impl Rows for Hashes {
     fn decode(mut self) -> Self {
-        // each next() call will decode one row
-        self.next();
-        // return
+        while let Some(_) = self.next() {};
         self
     }
-    fn finalize(mut self) -> Option<HashSet<String>> {
+    fn finalize(self) -> Option<HashSet<String>> {
         // check if result was not empty
-        if self.rows_count == 1 {
-            self.hashes
-                .insert(String::from_utf8(self.decoder.into_buffer()).unwrap());
+        if self.rows_count != 0 {
+            // return HashSet
             Some(self.hashes)
         } else {
             // we didn't have any transaction row for the provided bundle.
@@ -41,9 +44,33 @@ impl Rows for Hashes {
         }
     }
 }
-// implementation to decoder the columns in order to form the hash eventually
+// implementation to decode the columns in order to form the hash eventually
 impl BundlesDecoder for Hash {
     fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
-        acc.buffer().copy_within(start..(start + length as usize), 81)
+        // decode transaction hash
+        let hash = String::decode(
+            &acc.buffer()[start..(start + length as usize)], length as usize
+        );
+        // insert hash into hashset
+        acc.hashes.insert(hash);
     }
+}
+
+// ----------- encoding scope -----------
+
+/// Create a query frame to lookup for a tx-hash in the edge table using a bundle
+pub fn query(bundle: String) -> Vec<u8> {
+    let Query(payload) = Query::new()
+        .version()
+        .flags(header::IGNORE)
+        .stream(0)
+        .opcode()
+        .length()
+        .statement("SELECT tx FROM tangle.edge WHERE vertex = ?")
+        .consistency(Consistency::One)
+        .query_flags(SKIP_METADATA | VALUES)
+        .value_count(1)
+        .value(bundle)
+        .build(UNCOMPRESSED);
+    payload
 }

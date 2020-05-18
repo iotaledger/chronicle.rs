@@ -1,4 +1,4 @@
-mod consistency;
+pub mod consistency;
 pub mod decoder;
 pub mod encoder;
 pub mod execute;

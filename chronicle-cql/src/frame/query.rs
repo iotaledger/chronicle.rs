@@ -27,7 +27,7 @@ use super::queryflags::{
     VALUES,
 };
 
-pub struct Query(Vec<u8>);
+pub struct Query(pub Vec<u8>);
 
 impl Header for Query {
     fn new() -> Self {
