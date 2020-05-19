@@ -15,15 +15,16 @@ use chronicle_common::actor;
 use chronicle_cql::{
     compression::compression::UNCOMPRESSED,
     frame::{
-        batch::{
-            Batch,
-            BatchTypes,
-        },
         batchflags::NOFLAGS,
         consistency::Consistency,
         header::{
             Header,
             IGNORE,
+        },
+        query::Query,
+        queryflags::{
+            SKIP_METADATA,
+            VALUES,
         },
     },
     statements::statements::INSERT_TX_QUERY,
@@ -57,22 +58,22 @@ type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
 pub struct InsertTransactionsTrytesId(Sender);
+
+// TODO: optimize it to be (&str, &str)
 type HashRawtx = (String, String);
 
-actor!(InsertTransactionsBuilder {
-    hashes_rawtxs: Vec<HashRawtx>
-});
+actor!(InsertTransactionsBuilder { hash_rawtx: HashRawtx });
 
 impl InsertTransactionsBuilder {
     pub fn build(self) -> InsertTransactions {
         InsertTransactions {
-            hashes_rawtxs: self.hashes_rawtxs.unwrap(),
+            hash_rawtx: self.hash_rawtx.unwrap(),
         }
     }
 }
 
 pub struct InsertTransactions {
-    hashes_rawtxs: Vec<HashRawtx>,
+    hash_rawtx: HashRawtx,
 }
 
 pub enum Event {
@@ -118,14 +119,11 @@ impl InsertTransactions {
     pub async fn run(mut self) {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(InsertTransactionsTrytesId(tx));
-        let mut hashes_rawtxs = self.hashes_rawtxs.iter_mut();
-        while let Some(hash_rawtx) = hashes_rawtxs.next() {
-            worker = Self::process(hash_rawtx, worker, &mut rx).await;
-        }
+        worker = Self::process(self.hash_rawtx, worker, &mut rx).await;
     }
 
     async fn process(
-        hash_rawtx: &HashRawtx,
+        hash_rawtx: HashRawtx,
         worker: Box<InsertTransactionsTrytesId>,
         rx: &mut Receiver,
     ) -> Box<InsertTransactionsTrytesId> {
@@ -148,15 +146,18 @@ impl InsertTransactions {
             }
         }
     }
-    fn query(hash_rawtx: &HashRawtx) -> Vec<u8> {
-        let (hash, rawtx) = (&hash_rawtx.0, &hash_rawtx.1);
-        let Batch(payload, _querycount) = Batch::new()
+    fn query(hash_rawtx: HashRawtx) -> Vec<u8> {
+        let (hash, rawtx) = (hash_rawtx.0, hash_rawtx.1);
+        let Query(payload) = Query::new()
             .version()
             .flags(IGNORE)
             .stream(0)
             .opcode()
             .length()
-            .batch_type(BatchTypes::Logged)
+            .statement(INSERT_TX_QUERY)
+            .consistency(Consistency::One)
+            .query_flags(SKIP_METADATA | VALUES)
+            .value_count(1)
             .statement(INSERT_TX_QUERY)
             .value_count(17) // the total value count
             .value(&hash[..])
@@ -177,8 +178,7 @@ impl InsertTransactions {
             .value(&rawtx[2646..2673]) // Nonce
             .unset_value() // not-set value for milestone
             .consistency(Consistency::One)
-            .batch_flags(NOFLAGS) // no remaing flags
-            .build(UNCOMPRESSED); // build uncompressed batch
+            .build(UNCOMPRESSED);
         payload
     }
 }
@@ -214,10 +214,15 @@ async fn read_file(file_name: &str) -> Result<(), Box<dyn Error>> {
     );
     // Show the progress when every 1MB are processed
     let mut next_progress = PROGRESS_STEP;
-    let mut hashes_rawtxs: Vec<HashRawtx> = Vec::new();
     while let Some(line) = lines.next().await {
         let v: Vec<&str> = line.split(',').collect();
-        hashes_rawtxs.push((v[0].to_string(), v[1].to_string()));
+
+        // Currently we insert the transaction after reading one line
+        InsertTransactionsBuilder::new()
+            .hash_rawtx((v[0].to_string(), v[1].to_string()))
+            .build()
+            .run()
+            .await;
         // Add 1 for the endline
         cur_pos += line.len() as u64 + 1;
         if cur_pos > next_progress {
@@ -228,11 +233,7 @@ async fn read_file(file_name: &str) -> Result<(), Box<dyn Error>> {
     // Complete the progress, minus 1 due to no endline in the last line
     pb.set_position(cur_pos - 1);
     pb.finish_with_message(&format!("{} is processed succesfully.", file_name));
-    InsertTransactionsBuilder::new()
-        .hashes_rawtxs(hashes_rawtxs)
-        .build()
-        .run()
-        .await;
+
     Ok(())
 }
 
