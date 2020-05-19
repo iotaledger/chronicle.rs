@@ -1,4 +1,5 @@
 use super::gettrytes::GetTrytesBuilder;
+use super::findtransactions::findtransactions::FindTransactionsBuilder;
 use super::findtransactions::hints::Hint;
 use hyper::{
     body::{
@@ -88,7 +89,12 @@ async fn route(request: ReqBody) -> Response<Body> {
             }
         }
         "findTransactions" => {
-            todo!()
+            FindTransactionsBuilder::new()
+            .addresses(request.addresses)
+            .approvees(request.approvees)
+            .bundles(request.bundles)
+            .hints(request.hints)
+            .build().run().await
         }
         _ => response!(status: BAD_REQUEST, body: r#"{"error":"Invalid Request Command"}"#),
     }
