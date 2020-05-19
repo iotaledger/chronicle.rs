@@ -79,7 +79,7 @@ impl FindTransactions {
     pub async fn run(mut self) -> Response<Body> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(FindTransactionsId(tx));
-
+        
         // Use the worker to get the hases from each parameters
         // Use HashSet to perfrom intersection by BitAnd
         todo!()

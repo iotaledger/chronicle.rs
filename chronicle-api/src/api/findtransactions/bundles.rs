@@ -25,7 +25,7 @@ rows!(
 
 trait Rows {
     fn decode(self) -> Self;
-    fn finalize(self) -> Option<HashSet<String>>;
+    fn finalize(self) -> HashSet<String>;
 }
 
 impl Rows for Hashes {
@@ -33,15 +33,8 @@ impl Rows for Hashes {
         while let Some(_) = self.next() {};
         self
     }
-    fn finalize(self) -> Option<HashSet<String>> {
-        // check if result was not empty
-        if self.rows_count != 0 {
-            // return HashSet
-            Some(self.hashes)
-        } else {
-            // we didn't have any row for the provided bundle.
-            None
-        }
+    fn finalize(self) -> HashSet<String> {
+        self.hashes
     }
 }
 // implementation to decode the columns in order to form the hash eventually
@@ -49,7 +42,7 @@ impl BundlesDecoder for Hash {
     fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
         // decode transaction hash
         let hash = String::decode(
-            &acc.buffer()[start..(start + length as usize)], length as usize
+            &acc.buffer()[start..], length as usize
         );
         // insert hash into hashset
         acc.hashes.insert(hash);
@@ -66,7 +59,9 @@ pub fn query(bundle: String) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT tx FROM tangle.edge WHERE vertex = ?")
+        .statement(
+            "SELECT tx FROM tangle.edge WHERE vertex = ? AND kind = 'bundle'"
+        )
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)

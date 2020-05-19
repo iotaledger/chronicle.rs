@@ -11,3 +11,18 @@ pub struct Hint {
     year: u16,
     month: u8,
 }
+
+impl Hint {
+    pub fn new_address_hint(
+        address: String,
+        paging_state: Option<String>,
+        year: u16, month: u8) -> Self {
+        Self {
+            address: Some(address),
+            tag: None,
+            paging_state,
+            year,
+            month
+        }
+    }
+}
