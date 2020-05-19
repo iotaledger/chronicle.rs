@@ -57,39 +57,36 @@ use tokio::{
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
-pub struct InsertTransactionsTrytesId(Sender);
+pub struct InsertTransactionsFromFileTrytesId(Sender);
 
-// TODO: optimize it to be (&str, &str)
-type HashRawtx = (String, String);
+actor!(InsertTransactionsFromFileBuilder { filepath: String });
 
-actor!(InsertTransactionsBuilder { hash_rawtx: HashRawtx });
-
-impl InsertTransactionsBuilder {
-    pub fn build(self) -> InsertTransactions {
-        InsertTransactions {
-            hash_rawtx: self.hash_rawtx.unwrap(),
+impl InsertTransactionsFromFileBuilder {
+    pub fn build(self) -> InsertTransactionsFromFile {
+        InsertTransactionsFromFile {
+            filepath: self.filepath.unwrap(),
         }
     }
 }
 
-pub struct InsertTransactions {
-    hash_rawtx: HashRawtx,
+pub struct InsertTransactionsFromFile {
+    filepath: String,
 }
 
 pub enum Event {
     Response {
         giveload: Vec<u8>,
-        pid: Box<InsertTransactionsTrytesId>,
+        pid: Box<InsertTransactionsFromFileTrytesId>,
     },
     Error {
         kind: worker::Error,
-        pid: Box<InsertTransactionsTrytesId>,
+        pid: Box<InsertTransactionsFromFileTrytesId>,
     },
 }
 
 static PROGRESS_STEP: u64 = 1000000;
 
-impl Worker for InsertTransactionsTrytesId {
+impl Worker for InsertTransactionsFromFileTrytesId {
     fn send_response(self: Box<Self>, _: &Option<reporter::Sender>, giveload: Vec<u8>) {
         // to enable reusable self(Sender), we will do unsafe trick
         unsafe {
@@ -115,20 +112,65 @@ impl Worker for InsertTransactionsTrytesId {
     }
 }
 
-impl InsertTransactions {
-    pub async fn run(mut self) {
+impl InsertTransactionsFromFile {
+    pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
-        let mut worker = Box::new(InsertTransactionsTrytesId(tx));
-        worker = Self::process(self.hash_rawtx, worker, &mut rx).await;
+        let mut worker = Box::new(InsertTransactionsFromFileTrytesId(tx));
+
+        let mut file = File::open(&self.filepath).await?;
+        // Get the total file length
+        let total_size = file.seek(SeekFrom::End(0)).await?;
+
+        // Back to the starting location of file
+        file.seek(SeekFrom::Start(0)).await?;
+        let reader = BufReader::new(&mut file);
+        let mut lines = reader.lines().map(|res| res.unwrap());
+        let mut cur_pos = 0;
+
+        // The progress bar in CLI
+        let pb = ProgressBar::new(total_size);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) \n {msg}",
+                )
+                .progress_chars("#>-"),
+        );
+        // Show the progress when every 1MB are processed
+        let mut next_progress = PROGRESS_STEP;
+
+        // Back to the starting location of file
+        file.seek(SeekFrom::Start(0)).await?;
+        let reader = BufReader::new(&mut file);
+        let mut lines = reader.lines().map(|res| res.unwrap());
+
+        // Show the progress when every 1MB are processed
+        let mut next_progress = PROGRESS_STEP;
+        while let Some(line) = lines.next().await {
+            let v: Vec<&str> = line.split(',').collect();
+            worker = Self::process(v[0], v[1], worker, &mut rx).await;
+            // Add 1 for the endline
+            cur_pos += line.len() as u64 + 1;
+            if cur_pos > next_progress {
+                next_progress += PROGRESS_STEP;
+                pb.set_position(cur_pos);
+            }
+        }
+        // Complete the progress, minus 1 due to no endline in the last line
+        pb.set_position(cur_pos - 1);
+        pb.finish_with_message(&format!("{} is processed succesfully.", self.filepath));
+
+        Ok(())
     }
 
     async fn process(
-        hash_rawtx: HashRawtx,
-        worker: Box<InsertTransactionsTrytesId>,
+        hash: &str,
+        rawtx: &str,
+        worker: Box<InsertTransactionsFromFileTrytesId>,
         rx: &mut Receiver,
-    ) -> Box<InsertTransactionsTrytesId> {
+    ) -> Box<InsertTransactionsFromFileTrytesId> {
         let request = reporter::Event::Request {
-            payload: Self::query(hash_rawtx),
+            payload: Self::query(hash, rawtx),
             worker,
         };
         // use random token till murmur3 hash function algo impl is ready
@@ -146,8 +188,7 @@ impl InsertTransactions {
             }
         }
     }
-    fn query(hash_rawtx: HashRawtx) -> Vec<u8> {
-        let (hash, rawtx) = (hash_rawtx.0, hash_rawtx.1);
+    fn query(hash: &str, rawtx: &str) -> Vec<u8> {
         let Query(payload) = Query::new()
             .version()
             .flags(IGNORE)
@@ -187,54 +228,6 @@ fn str_to_i64(slice: &str) -> i64 {
     let trytes = TryteBuf::try_from_str(slice);
     let trit_buf: TritBuf<T1B1Buf> = trytes.unwrap().as_trits().encode();
     i64::try_from(trit_buf).unwrap()
-}
-
-// TODO: error handling
-#[allow(dead_code)]
-/// Read the file from file_path w/ progress calculation
-async fn read_file(file_name: &str) -> Result<(), Box<dyn Error>> {
-    let mut file = File::open(file_name).await?;
-    // Get the total file length
-    let total_size = file.seek(SeekFrom::End(0)).await?;
-
-    // Back to the starting location of file
-    file.seek(SeekFrom::Start(0)).await?;
-    let reader = BufReader::new(&mut file);
-    let mut lines = reader.lines().map(|res| res.unwrap());
-    let mut cur_pos = 0;
-
-    // The progress bar in CLI
-    let pb = ProgressBar::new(total_size);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template(
-                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) \n {msg}",
-            )
-            .progress_chars("#>-"),
-    );
-    // Show the progress when every 1MB are processed
-    let mut next_progress = PROGRESS_STEP;
-    while let Some(line) = lines.next().await {
-        let v: Vec<&str> = line.split(',').collect();
-
-        // Currently we insert the transaction after reading one line
-        InsertTransactionsBuilder::new()
-            .hash_rawtx((v[0].to_string(), v[1].to_string()))
-            .build()
-            .run()
-            .await;
-        // Add 1 for the endline
-        cur_pos += line.len() as u64 + 1;
-        if cur_pos > next_progress {
-            next_progress += PROGRESS_STEP;
-            pb.set_position(cur_pos);
-        }
-    }
-    // Complete the progress, minus 1 due to no endline in the last line
-    pb.set_position(cur_pos - 1);
-    pb.finish_with_message(&format!("{} is processed succesfully.", file_name));
-
-    Ok(())
 }
 
 #[allow(dead_code)]
@@ -288,9 +281,14 @@ mod tests {
         assert_eq!(hash.len(), 64);
     }
 
+    // // Uncommet the following codes for quick test
     // #[tokio::test]
-    // Uncomment here for quick test
     // async fn test_load_file() {
-    //     let _ = read_file("YOUR_DUMP_FILE_PATH").await.unwrap();
+    //     let _ = InsertTransactionsFromFileBuilder::new()
+    //         .filepath("YOUR_FILE_PATH".to_string())
+    //         .build()
+    //         .run()
+    //         .await
+    //         .unwrap();
     // }
 }
