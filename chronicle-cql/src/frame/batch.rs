@@ -1,18 +1,20 @@
-use super::header::Header;
-use super::encoder::{
-    BE_8_BYTES_LEN,
-    BE_0_BYTES_LEN,
-    BE_NULL_BYTES_LEN,
-    BE_UNSET_BYTES_LEN,
-    ColumnEncoder,
+use super::{
+    consistency::Consistency,
+    encoder::{
+        ColumnEncoder,
+        BE_0_BYTES_LEN,
+        BE_8_BYTES_LEN,
+        BE_NULL_BYTES_LEN,
+        BE_UNSET_BYTES_LEN,
+    },
+    header::Header,
+    opcode::BATCH,
 };
-use super::opcode::BATCH;
-use super::consistency::Consistency;
 use crate::compression::compression::Compression;
 
 type QueryCount = u16;
 
-pub struct Batch(Vec<u8>, QueryCount);
+pub struct Batch(pub Vec<u8>, pub QueryCount);
 
 #[repr(u8)]
 pub enum BatchTypes {
@@ -53,7 +55,7 @@ impl Header for Batch {
 impl Batch {
     pub fn batch_type(mut self, batch_type: BatchTypes) -> Self {
         // push batch_type and pad zero querycount
-        self.0.extend(&[batch_type as u8,0,0]);
+        self.0.extend(&[batch_type as u8, 0, 0]);
         self
     }
     pub fn statement(mut self, statement: &str) -> Self {
@@ -115,10 +117,14 @@ impl Batch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::statements::statements::INSERT_TX_QUERY;
-    use crate::compression::compression::UNCOMPRESSED;
-    use crate::frame::header::IGNORE;
-    use crate::frame::batchflags::NOFLAGS;
+    use crate::{
+        compression::compression::UNCOMPRESSED,
+        frame::{
+            batchflags::NOFLAGS,
+            header::IGNORE,
+        },
+        statements::statements::INSERT_TX_QUERY,
+    };
     use std::time::{
         SystemTime,
         UNIX_EPOCH,

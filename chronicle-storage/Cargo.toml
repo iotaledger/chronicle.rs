@@ -5,6 +5,7 @@ authors = ["Chronicle developers"]
 edition = "2018"
 
 [dependencies]
+bee-ternary = { git = "https://github.com/Alex6323/bee-p", branch = "master"}
 chronicle-common = { path = "../chronicle-common" }
 chronicle-cql = { path = "../chronicle-cql" }
 futures = "0.3"
