@@ -35,6 +35,7 @@ use hyper::{
     Body,
     Response,
 };
+use super::hints::Hint;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -45,19 +46,19 @@ type Receiver = mpsc::UnboundedReceiver<Event>;
 pub struct FindTransactionsId(Sender);
 
 actor!(FindTransactionsBuilder {
-    addresses: Vec<String>,
-    bundles: Vec<String>,
-    approvees: Vec<String>,
-    hints: Vec<JsonValue>
+    addresses: Option<Vec<String>>,
+    bundles: Option<Vec<String>>,
+    approvees: Option<Vec<String>>,
+    hints: Option<Vec<Hint>>
 });
 
 impl FindTransactionsBuilder {
     pub fn build(self) -> FindTransactions {
         FindTransactions {
-            addresses: self.addresses,
-            bundles: self.bundles,
-            approvees: self.approvees,
-            hints: self.hints,
+            addresses: self.addresses.unwrap(),
+            bundles: self.bundles.unwrap(),
+            approvees: self.approvees.unwrap(),
+            hints: self.hints.unwrap(),
         }
     }
 }
@@ -66,7 +67,7 @@ pub struct FindTransactions {
     addresses: Option<Vec<String>>,
     bundles: Option<Vec<String>>,
     approvees: Option<Vec<String>>,
-    hints: Option<Vec<JsonValue>>,
+    hints: Option<Vec<Hint>>,
 }
 
 #[derive(Serialize)]
@@ -80,8 +81,6 @@ impl FindTransactions {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(FindTransactionsId(tx));
         
-        // Use the worker to get the hases from each parameters
-        // Use HashSet to perfrom intersection by BitAnd
         todo!()
     }
 
