@@ -19,11 +19,11 @@ impl Flags {
 }
 
 pub struct PagingState {
-    paging_state: Option<Vec<u8>>,
+    paging_state: Option<String>,
     end: usize,
 }
 impl PagingState {
-    pub fn new(paging_state: Option<Vec<u8>>, end: usize) -> Self {
+    pub fn new(paging_state: Option<String>, end: usize) -> Self {
         PagingState {
             paging_state,
             end,
@@ -46,6 +46,9 @@ impl Metadata {
     }
     pub fn rows_start(&self) -> usize {
         self.paging_state.end
+    }
+    pub fn take_paging_state(&mut self) -> Option<String> {
+        self.paging_state.paging_state.take()
     }
 }
 
