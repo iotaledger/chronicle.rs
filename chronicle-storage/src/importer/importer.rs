@@ -198,8 +198,6 @@ impl InsertTransactionsFromFile {
             .statement(INSERT_TX_QUERY)
             .consistency(Consistency::One)
             .query_flags(SKIP_METADATA | VALUES)
-            .value_count(1)
-            .statement(INSERT_TX_QUERY)
             .value_count(17) // the total value count
             .value(&hash[..])
             .value(&rawtx[..2187]) // PAYLOAD
