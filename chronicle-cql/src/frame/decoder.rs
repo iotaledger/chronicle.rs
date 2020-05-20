@@ -126,7 +126,7 @@ impl Frame for Decoder {
     }
     fn body(&self) -> &[u8] {
         let body_start = self.header_flags.body_start;
-        &self.buffer_as_ref()[body_start..(body_start +self.length())]
+        &self.buffer_as_ref()[body_start..]
     }
     fn body_start(&self, padding: usize) -> usize {
         self.header_flags.body_start+padding
