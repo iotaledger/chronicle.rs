@@ -11,12 +11,11 @@ use chronicle_cql::{
     compression::compression::UNCOMPRESSED,
     rows,
 };
-use std::collections::HashSet;
 
 // ----------- decoding scope -----------
 
 rows!(
-    rows: Hashes {hashes: HashSet<String>},
+    rows: Hashes {hashes: Vec<String>},
     row: Row(
         Hash
     ),
@@ -25,7 +24,7 @@ rows!(
 
 trait Rows {
     fn decode(self) -> Self;
-    fn finalize(self) -> HashSet<String>;
+    fn finalize(self) -> Vec<String>;
 }
 
 impl Rows for Hashes {
@@ -33,7 +32,7 @@ impl Rows for Hashes {
         while let Some(_) = self.next() {};
         self
     }
-    fn finalize(self) -> HashSet<String> {
+    fn finalize(self) -> Vec<String> {
         self.hashes
     }
 }
@@ -45,7 +44,7 @@ impl BundlesDecoder for Hash {
             &acc.buffer()[start..], length as usize
         );
         // insert hash into hashset
-        acc.hashes.insert(hash);
+        acc.hashes.push(hash);
     }
 }
 

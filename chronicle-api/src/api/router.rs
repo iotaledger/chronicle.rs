@@ -1,6 +1,7 @@
 use super::gettrytes::GetTrytesBuilder;
 use super::findtransactions::findtransactions::FindTransactionsBuilder;
 use super::findtransactions::hints::Hint;
+use super::types::Trytes81;
 use hyper::{
     body::{
         aggregate,
@@ -18,14 +19,14 @@ use serde::{
 use serde_json::Value;
 use std::convert::Infallible;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize)]
 struct ReqBody {
     command: String,
-    hashes: Option<Vec<String>>,
-    bundles: Option<Vec<String>>,
-    addresses: Option<Vec<String>>,
+    hashes: Option<Vec<Trytes81>>,
+    bundles: Option<Vec<Trytes81>>,
+    addresses: Option<Vec<Trytes81>>,
     hints: Option<Vec<Hint>>,
-    approvees: Option<Vec<String>>,
+    approvees: Option<Vec<Trytes81>>,
 }
 
 pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {

@@ -19,3 +19,4 @@ pub mod endpoint;
 pub mod findtransactions;
 pub mod gettrytes;
 pub mod router;
+pub mod types;

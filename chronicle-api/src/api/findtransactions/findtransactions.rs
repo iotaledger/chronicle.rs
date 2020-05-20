@@ -36,6 +36,7 @@ use hyper::{
     Response,
 };
 use super::hints::Hint;
+use crate::api::types::Trytes81;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -46,9 +47,9 @@ type Receiver = mpsc::UnboundedReceiver<Event>;
 pub struct FindTransactionsId(Sender);
 
 actor!(FindTransactionsBuilder {
-    addresses: Option<Vec<String>>,
-    bundles: Option<Vec<String>>,
-    approvees: Option<Vec<String>>,
+    addresses: Option<Vec<Trytes81>>,
+    bundles: Option<Vec<Trytes81>>,
+    approvees: Option<Vec<Trytes81>>,
     hints: Option<Vec<Hint>>
 });
 
@@ -64,9 +65,9 @@ impl FindTransactionsBuilder {
 }
 
 pub struct FindTransactions {
-    addresses: Option<Vec<String>>,
-    bundles: Option<Vec<String>>,
-    approvees: Option<Vec<String>>,
+    addresses: Option<Vec<Trytes81>>,
+    bundles: Option<Vec<Trytes81>>,
+    approvees: Option<Vec<Trytes81>>,
     hints: Option<Vec<Hint>>,
 }
 
@@ -78,19 +79,16 @@ struct ResTransactions {
 
 impl FindTransactions {
     pub async fn run(mut self) -> Response<Body> {
+        println!("hints is_some {:?}", self.hints);
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(FindTransactionsId(tx));
-        
+        // create hashes vector
+        let mut hashes: Vec<String> = Vec::new();
+        // process param by param
+
         todo!()
     }
 
-    async fn process(
-        value: &mut JsonValue,
-        worker: Box<FindTransactionsId>,
-        rx: &mut Receiver,
-    ) -> Box<FindTransactionsId> {
-        todo!()
-    }
     fn query_by_addresses(addresses: String) -> Vec<u8> {
         todo!()
     }

@@ -12,13 +12,12 @@ use chronicle_cql::{
     rows,
 };
 use super::hints::Hint;
-use std::collections::HashSet;
 
 // ----------- decoding scope -----------
 
 rows!(
     rows: Hashes {
-        hashes: HashSet<String>,
+        hashes: Vec<String>,
         hints: Option<Vec<Hint>>,
         is_hint: bool,
         address: Option<String>
@@ -32,7 +31,7 @@ rows!(
 
 trait Rows {
     fn decode(self) -> Self;
-    fn finalize(self) -> (HashSet<String>, Option<Vec<Hint>>);
+    fn finalize(self) -> (Vec<String>, Option<Vec<Hint>>);
 }
 
 impl Rows for Hashes {
@@ -40,7 +39,7 @@ impl Rows for Hashes {
         while let Some(_) = self.next() {};
         self
     }
-    fn finalize(self) -> (HashSet<String>, Option<Vec<Hint>>) {
+    fn finalize(self) -> (Vec<String>, Option<Vec<Hint>>) {
         (self.hashes, self.hints)
     }
 }
@@ -56,7 +55,7 @@ impl AddressesDecoder for Hash {
                 &acc.buffer()[start..], length as usize
             );
             // insert hash into hashset
-            acc.hashes.insert(hash);
+            acc.hashes.push(hash);
         }
     }
 }
