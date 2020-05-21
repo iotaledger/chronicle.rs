@@ -36,7 +36,7 @@ impl Header for Options {
 }
 
 impl Options {
-    pub fn build(mut self) -> Self {
+    pub fn build(self) -> Self {
         self
     }
 }

@@ -1,14 +1,27 @@
-use super::rows::{Flags, ColumnsCount, PagingState, Metadata};
-use super::header;
-use super::opcode;
-use super::result;
-use super::error;
+use super::{
+    error,
+    header,
+    opcode,
+    result,
+    rows::{
+        ColumnsCount,
+        Flags,
+        Metadata,
+        PagingState,
+    },
+};
 use crate::compression::Compression;
-use std::net::{IpAddr,Ipv4Addr, Ipv6Addr};
-use std::convert::TryInto;
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::str;
+use std::{
+    collections::HashMap,
+    convert::TryInto,
+    hash::Hash,
+    net::{
+        IpAddr,
+        Ipv4Addr,
+        Ipv6Addr,
+    },
+    str,
+};
 
 pub trait Frame {
     fn version(&self) -> u8;
@@ -17,7 +30,7 @@ pub trait Frame {
     fn opcode(&self) -> u8;
     fn length(&self) -> usize;
     fn body(&self) -> &[u8];
-    fn body_start(&self,padding: usize) -> usize;
+    fn body_start(&self, padding: usize) -> usize;
     fn body_kind(&self) -> i32;
     fn is_void(&self) -> bool;
     fn is_rows(&self) -> bool;
@@ -53,10 +66,7 @@ impl Decoder {
     pub fn new(mut buffer: Vec<u8>, decompressor: impl Compression) -> Self {
         buffer = decompressor.decompress(buffer);
         let header_flags = HeaderFlags::new(&mut buffer);
-        Decoder {
-            buffer,
-            header_flags,
-        }
+        Decoder { buffer, header_flags }
     }
     pub fn buffer_as_ref(&self) -> &Vec<u8> {
         &self.buffer
@@ -69,15 +79,17 @@ impl Decoder {
     }
 }
 
+#[allow(dead_code)]
 pub struct HeaderFlags {
     compression: bool,
-    tracing: Option<[u8;16]>,
+    tracing: Option<[u8; 16]>,
     custom_payload: bool,
     warnings: Option<Vec<String>>,
     // this not a flag, but it indicates the body start in the buffer.
     body_start: usize,
 }
 
+#[allow(dead_code)]
 impl HeaderFlags {
     pub fn new(buffer: &mut Vec<u8>) -> Self {
         let mut body_start = 9;
@@ -85,7 +97,7 @@ impl HeaderFlags {
         let compression = flags & header::COMPRESSION == header::COMPRESSION;
         let tracing;
         if flags & header::TRACING == header::TRACING {
-            let mut tracing_id = [0;16];
+            let mut tracing_id = [0; 16];
             tracing_id.copy_from_slice(&buffer[9..25]);
             tracing = Some(tracing_id);
             // add tracing_id length = 16
@@ -97,7 +109,7 @@ impl HeaderFlags {
         if flags & header::WARNING == header::WARNING {
             let string_list = string_list(&buffer[body_start..]);
             // add all [short] length to the body_start
-            body_start += 2*(string_list.len()+1);
+            body_start += 2 * (string_list.len() + 1);
             // add the warning length
             for warning in &string_list {
                 // add the warning.len to the body_start
@@ -119,7 +131,7 @@ impl HeaderFlags {
     pub fn compression(&self) -> bool {
         self.compression
     }
-    pub fn take_tracing_id(&mut self) -> Option<[u8;16]>{
+    pub fn take_tracing_id(&mut self) -> Option<[u8; 16]> {
         self.tracing.take()
     }
     fn take_warnings(&mut self) -> Option<Vec<String>> {
@@ -148,12 +160,10 @@ impl Frame for Decoder {
         &self.buffer_as_ref()[body_start..]
     }
     fn body_start(&self, padding: usize) -> usize {
-        self.header_flags.body_start+padding
+        self.header_flags.body_start + padding
     }
     fn body_kind(&self) -> i32 {
-        i32::from_be_bytes(
-            self.body()[0..4].try_into().unwrap()
-        )
+        i32::from_be_bytes(self.body()[0..4].try_into().unwrap())
     }
     fn is_void(&self) -> bool {
         (self.opcode() == opcode::RESULT) && (self.body_kind() == result::VOID)
@@ -221,28 +231,41 @@ impl Frame for Decoder {
     fn rows_flags(&self) -> Flags {
         // cql rows specs, flags is [int] and protocol is big-endian
         let flags = i32::from_be_bytes(
-            self.buffer_as_ref()[self.body_start(4)..self.body_start(8)].try_into().unwrap()
+            self.buffer_as_ref()[self.body_start(4)..self.body_start(8)]
+                .try_into()
+                .unwrap(),
         );
         Flags::from_i32(flags)
     }
     fn columns_count(&self) -> ColumnsCount {
         // column count located right after flags, therefore
         i32::from_be_bytes(
-            self.buffer_as_ref()[self.body_start(8)..self.body_start(12)].try_into().unwrap()
+            self.buffer_as_ref()[self.body_start(8)..self.body_start(12)]
+                .try_into()
+                .unwrap(),
         )
     }
     fn paging_state(&self, has_more_pages: bool) -> PagingState {
         let paging_state_bytes_start = self.body_start(12);
         if has_more_pages {
             // decode PagingState
-            let paging_state_value_start = paging_state_bytes_start+4;
+            let paging_state_value_start = paging_state_bytes_start + 4;
             let paging_state_len = i32::from_be_bytes(
-                self.buffer_as_ref()[paging_state_bytes_start..paging_state_value_start].try_into().unwrap());
+                self.buffer_as_ref()[paging_state_bytes_start..paging_state_value_start]
+                    .try_into()
+                    .unwrap(),
+            );
             if paging_state_len == -1 {
                 PagingState::new(None, paging_state_value_start)
             } else {
-                let paging_state_end: usize = paging_state_value_start+(paging_state_len as usize);
-                PagingState::new(Some(String::from_utf8(self.buffer_as_ref()[paging_state_value_start..paging_state_end].to_vec()).unwrap()), paging_state_end)
+                let paging_state_end: usize = paging_state_value_start + (paging_state_len as usize);
+                PagingState::new(
+                    Some(
+                        String::from_utf8(self.buffer_as_ref()[paging_state_value_start..paging_state_end].to_vec())
+                            .unwrap(),
+                    ),
+                    paging_state_end,
+                )
             }
         } else {
             PagingState::new(None, paging_state_bytes_start)
@@ -252,7 +275,7 @@ impl Frame for Decoder {
         let flags = self.rows_flags();
         let columns_count = self.columns_count();
         let paging_state = self.paging_state(flags.has_more_pages());
-        Metadata::new(flags,columns_count,paging_state)
+        Metadata::new(flags, columns_count, paging_state)
     }
 }
 
@@ -358,14 +381,16 @@ impl ColumnDecoder for Ipv6Addr {
 }
 
 impl<E> ColumnDecoder for Vec<E>
-where E: ColumnDecoder {
+where
+    E: ColumnDecoder,
+{
     fn decode(slice: &[u8], mut _length: usize) -> Vec<E> {
         let list_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
         let mut list: Vec<E> = Vec::new();
         let mut element_start = 4;
         for _ in 0..list_len {
             // decode element byte_size
-            let element_value_start = element_start+4;
+            let element_value_start = element_start + 4;
             _length = i32::from_be_bytes(slice[element_start..element_value_start].try_into().unwrap()) as usize;
             let e = E::decode(&slice[element_value_start..], _length);
             list.push(e);
@@ -377,19 +402,22 @@ where E: ColumnDecoder {
 }
 
 impl<K, V> ColumnDecoder for HashMap<K, V>
-where K: Eq + Hash + ColumnDecoder, V: ColumnDecoder {
+where
+    K: Eq + Hash + ColumnDecoder,
+    V: ColumnDecoder,
+{
     fn decode(slice: &[u8], mut _length: usize) -> HashMap<K, V> {
         let map_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
         let mut map: HashMap<K, V> = HashMap::new();
         let mut pair_start = 4;
         for _ in 0..map_len {
             // decode key_byte_size
-            let key_start = pair_start+4;
+            let key_start = pair_start + 4;
             _length = i32::from_be_bytes(slice[pair_start..key_start].try_into().unwrap()) as usize;
             let k = K::decode(&slice[key_start..], _length);
             // modify pair_start to be the vtype_start
-            pair_start = key_start+_length;
-            let value_start = pair_start+4;
+            pair_start = key_start + _length;
+            let value_start = pair_start + 4;
             _length = i32::from_be_bytes(slice[pair_start..value_start].try_into().unwrap()) as usize;
             let v = V::decode(&slice[value_start..], _length);
             // insert key,value
@@ -409,7 +437,7 @@ pub fn string_list(slice: &[u8]) -> Vec<String> {
     let mut s = 2;
     for _ in 0..list_len {
         // ie first string length is buffer[2..4]
-        let string_len = u16::from_be_bytes(slice[s..(s+2)].try_into().unwrap()) as usize;
+        let string_len = u16::from_be_bytes(slice[s..(s + 2)].try_into().unwrap()) as usize;
         s += 2;
         let e = s + string_len;
         let string = String::from_utf8_lossy(&slice[s..e]);

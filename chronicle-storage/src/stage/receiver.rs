@@ -109,6 +109,7 @@ impl Receiver {
             self.header = true;
         }
     }
+    #[allow(unused_must_use)]
     fn handle_frame(&mut self, n: usize, mut padding: usize) {
         if self.current_length >= self.total_length {
             // get mut ref to payload for stream_id as giveload

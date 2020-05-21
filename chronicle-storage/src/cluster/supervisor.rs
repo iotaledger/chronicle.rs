@@ -21,10 +21,7 @@ use crate::{
 };
 use chronicle_common::{
     actor,
-    traits::{
-        launcher::LauncherTx,
-        shutdown::ShutdownTx,
-    }
+    traits::launcher::LauncherTx,
 };
 use std::{
     collections::HashMap,
@@ -37,7 +34,6 @@ pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type Tokens = Vec<(Token, NodeId, DC, Msb, ShardCount)>;
 pub type Address = String;
 pub type Nodes = HashMap<Address, NodeInfo>;
-
 
 pub struct NodeInfo {
     node_tx: node::supervisor::Sender,

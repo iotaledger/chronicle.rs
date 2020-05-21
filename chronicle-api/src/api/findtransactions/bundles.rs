@@ -1,17 +1,25 @@
+use crate::api::types::Trytes81;
 use chronicle_cql::{
-    frame::decoder::{
-        Decoder,
-        ColumnDecoder,
-        Frame,
-    },
-    frame::query::Query,
-    frame::header::{self, Header},
-    frame::consistency::Consistency,
-    frame::queryflags::{SKIP_METADATA, VALUES},
     compression::compression::UNCOMPRESSED,
+    frame::{
+        consistency::Consistency,
+        decoder::{
+            ColumnDecoder,
+            Decoder,
+            Frame,
+        },
+        header::{
+            self,
+            Header,
+        },
+        query::Query,
+        queryflags::{
+            SKIP_METADATA,
+            VALUES,
+        },
+    },
     rows,
 };
-use crate::api::types::Trytes81;
 
 // ----------- decoding scope -----------
 rows!(
@@ -29,7 +37,7 @@ pub trait Rows {
 
 impl Rows for Hashes {
     fn decode(mut self) -> Self {
-        while let Some(_) = self.next() {};
+        while let Some(_) = self.next() {}
         self
     }
     fn finalize(self) -> Vec<Trytes81> {
@@ -40,9 +48,7 @@ impl Rows for Hashes {
 impl BundlesDecoder for Hash {
     fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
         // decode transaction hash
-        let hash = Trytes81::decode(
-            &acc.buffer()[start..], length as usize
-        );
+        let hash = Trytes81::decode(&acc.buffer()[start..], length as usize);
         acc.hashes.push(hash);
     }
 }
@@ -57,9 +63,7 @@ pub fn query(bundle: &Trytes81) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement(
-            "SELECT tx FROM tangle.edge WHERE vertex = ? AND kind = 'bundle'"
-        )
+        .statement("SELECT tx FROM tangle.edge WHERE vertex = ? AND kind = 'bundle'")
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)

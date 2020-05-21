@@ -1,18 +1,26 @@
-use chronicle_cql::{
-    frame::decoder::{
-        Decoder,
-        ColumnDecoder,
-        Frame,
-    },
-    frame::query::Query,
-    frame::header::{self, Header},
-    frame::consistency::Consistency,
-    frame::queryflags::{SKIP_METADATA, VALUES},
-    compression::compression::UNCOMPRESSED,
-    rows,
-};
 use super::hints::Hint;
 use crate::api::types::Trytes81;
+use chronicle_cql::{
+    compression::compression::UNCOMPRESSED,
+    frame::{
+        consistency::Consistency,
+        decoder::{
+            ColumnDecoder,
+            Decoder,
+            Frame,
+        },
+        header::{
+            self,
+            Header,
+        },
+        query::Query,
+        queryflags::{
+            SKIP_METADATA,
+            VALUES,
+        },
+    },
+    rows,
+};
 
 // ----------- decoding scope -----------
 
@@ -37,7 +45,7 @@ pub trait Rows {
 
 impl Rows for Hashes {
     fn decode(mut self) -> Self {
-        while let Some(_) = self.next() {};
+        while let Some(_) = self.next() {}
         self
     }
     fn finalize(self) -> (Vec<Trytes81>, Vec<Hint>) {
@@ -48,13 +56,12 @@ impl Rows for Hashes {
 impl AddressesDecoder for Hash {
     fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
         // check if the current row is a hint by checking the length
-        if length == 1 { // it means the hash is "0",
+        if length == 1 {
+            // it means the hash is "0",
             acc.is_hint = true
         } else {
             // decode transaction hash
-            let hash = Trytes81::decode(
-                &acc.buffer()[start..], length as usize
-            );
+            let hash = Trytes81::decode(&acc.buffer()[start..], length as usize);
             acc.hashes.push(hash);
         }
     }
@@ -64,7 +71,7 @@ impl AddressesDecoder for Extra {
     fn decode_column(start: usize, _length: i32, acc: &mut Hashes) {
         if acc.is_hint {
             // create a hint and push it to hints
-            let end = start+2;
+            let end = start + 2;
             let year = u16::from_be_bytes(acc.buffer()[start..end].try_into().unwrap());
             let month = acc.buffer()[end];
             let hint = Hint::new_address_hint(acc.address, None, year, month);
@@ -84,9 +91,7 @@ pub fn query(address: &Trytes81) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement(
-            "SELECT tx FROM tangle.edge WHERE vertex = ? AND kind in ['input','output','hint']"
-        )
+        .statement("SELECT tx FROM tangle.edge WHERE vertex = ? AND kind in ['input','output','hint']")
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)

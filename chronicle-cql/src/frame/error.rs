@@ -1,9 +1,15 @@
 // work in progress
-use std::convert::From;
-use std::mem::transmute;
-use super::decoder;
-use super::consistency::Consistency;
-use std::convert::TryInto;
+use super::{
+    consistency::Consistency,
+    decoder,
+};
+use std::{
+    convert::{
+        From,
+        TryInto,
+    },
+    mem::transmute,
+};
 
 pub struct CqlError {
     pub code: ErrorCodes,
@@ -18,61 +24,43 @@ impl From<&[u8]> for CqlError {
         let additional: Option<Additional>;
         match code {
             ErrorCodes::UnavailableException => {
-                additional = Some(
-                    Additional::UnavailableException(
-                        UnavailableException::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::UnavailableException(UnavailableException::from(
+                    &slice[(6 + message.len()..)],
+                )))
+            }
             ErrorCodes::WriteTimeout => {
-                additional = Some(
-                    Additional::WriteTimeout(
-                        WriteTimeout::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::WriteTimeout(WriteTimeout::from(
+                    &slice[(6 + message.len()..)],
+                )))
+            }
             ErrorCodes::ReadTimeout => {
-                additional = Some(
-                    Additional::ReadTimeout(
-                        ReadTimeout::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::ReadTimeout(ReadTimeout::from(
+                    &slice[(6 + message.len()..)],
+                )))
+            }
             ErrorCodes::ReadFailure => {
-                additional = Some(
-                    Additional::ReadFailure(
-                        ReadFailure::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::ReadFailure(ReadFailure::from(
+                    &slice[(6 + message.len()..)],
+                )))
+            }
             ErrorCodes::FunctionFailure => {
-                additional = Some(
-                    Additional::FunctionFailure(
-                        FunctionFailure::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::FunctionFailure(FunctionFailure::from(
+                    &slice[(6 + message.len()..)],
+                )))
+            }
             ErrorCodes::WriteFailure => {
-                additional = Some(
-                    Additional::WriteFailure(
-                        WriteFailure::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::WriteFailure(WriteFailure::from(
+                    &slice[(6 + message.len()..)],
+                )))
+            }
             ErrorCodes::AlreadyExists => {
-                additional = Some(
-                    Additional::AlreadyExists(
-                        AlreadyExists::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::AlreadyExists(AlreadyExists::from(
+                    &slice[(6 + message.len()..)],
+                )))
+            }
             ErrorCodes::Unprepared => {
-                additional = Some(
-                    Additional::Unprepared(
-                        Unprepared::from(&slice[(6+message.len()..)])
-                    )
-                )
-            },
+                additional = Some(Additional::Unprepared(Unprepared::from(&slice[(6 + message.len()..)])))
+            }
             _ => {
                 additional = None;
             }
@@ -148,11 +136,7 @@ impl From<&[u8]> for UnavailableException {
         let cl = Consistency::from(slice);
         let required = i32::from_be_bytes(slice[2..6].try_into().unwrap());
         let alive = i32::from_be_bytes(slice[6..10].try_into().unwrap());
-        Self {
-            cl,
-            required,
-            alive,
-        }
+        Self { cl, required, alive }
     }
 }
 pub struct WriteTimeout {
@@ -239,8 +223,8 @@ pub struct FunctionFailure {
 impl From<&[u8]> for FunctionFailure {
     fn from(slice: &[u8]) -> Self {
         let keyspace = decoder::string(slice);
-        let function = decoder::string(&slice[2+keyspace.len()..]);
-        let arg_types = decoder::string_list(&slice[4+keyspace.len()+function.len()..]);
+        let function = decoder::string(&slice[2 + keyspace.len()..]);
+        let arg_types = decoder::string_list(&slice[4 + keyspace.len() + function.len()..]);
         Self {
             keyspace,
             function,
@@ -282,11 +266,8 @@ pub struct AlreadyExists {
 impl From<&[u8]> for AlreadyExists {
     fn from(slice: &[u8]) -> Self {
         let ks = decoder::string(slice);
-        let table = decoder::string(slice[2+ks.len()..].try_into().unwrap());
-        Self {
-            ks,
-            table,
-        }
+        let table = decoder::string(slice[2 + ks.len()..].try_into().unwrap());
+        Self { ks, table }
     }
 }
 
@@ -297,9 +278,7 @@ pub struct Unprepared {
 impl From<&[u8]> for Unprepared {
     fn from(slice: &[u8]) -> Self {
         let id = decoder::string(slice);
-        Self {
-            id,
-        }
+        Self { id }
     }
 }
 pub enum WriteType {
@@ -333,8 +312,6 @@ impl From<&[u8]> for WriteType {
 
 impl From<&[u8]> for ErrorCodes {
     fn from(slice: &[u8]) -> ErrorCodes {
-        unsafe {
-            transmute(i32::from_be_bytes(slice[0..4].try_into().unwrap()))
-        }
+        unsafe { transmute(i32::from_be_bytes(slice[0..4].try_into().unwrap())) }
     }
 }

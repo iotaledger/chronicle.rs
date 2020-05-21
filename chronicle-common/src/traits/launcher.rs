@@ -1,6 +1,6 @@
 use super::{
-    shutdown::ShutdownTx,
     dashboard::DashboardTx,
+    shutdown::ShutdownTx,
 };
 pub trait LauncherTx: Send + LauncherTxClone {
     fn start_app(&mut self, app_name: String);

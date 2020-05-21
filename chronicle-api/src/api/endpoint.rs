@@ -1,9 +1,11 @@
-use chronicle_common::traits::{
-    shutdown::ShutdownTx,
-    launcher::LauncherTx,
-};
 use super::router::handle;
-use chronicle_common::actor;
+use chronicle_common::{
+    actor,
+    traits::{
+        launcher::LauncherTx,
+        shutdown::ShutdownTx,
+    },
+};
 use hyper::{
     server::Server,
     service::{
@@ -28,8 +30,7 @@ impl EndpointBuilder {
 
 pub struct Endpoint {
     addr: SocketAddr,
-    launcher_tx: Box<dyn LauncherTx>
-
+    launcher_tx: Box<dyn LauncherTx>,
 }
 impl ShutdownTx for Shutdown {
     fn shutdown(self: Box<Self>) {
@@ -43,10 +44,9 @@ impl Endpoint {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         // register api app with launcher
         self.launcher_tx.register_app("api".to_string(), Box::new(Shutdown(tx)));
-        let graceful = server
-            .with_graceful_shutdown(async {
-                rx.await.ok();
-            });
+        let graceful = server.with_graceful_shutdown(async {
+            rx.await.ok();
+        });
         if let Err(e) = graceful.await {
             eprintln!("error: {}, endpoint: {}", e, self.addr);
         }

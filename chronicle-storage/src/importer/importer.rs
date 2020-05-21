@@ -15,7 +15,6 @@ use chronicle_common::actor;
 use chronicle_cql::{
     compression::compression::UNCOMPRESSED,
     frame::{
-        batchflags::NOFLAGS,
         consistency::Consistency,
         decoder::{
             Decoder,
@@ -31,7 +30,6 @@ use chronicle_cql::{
             VALUES,
         },
     },
-    statements::statements::INSERT_TX_QUERY,
 };
 use indicatif::{
     ProgressBar,
@@ -122,7 +120,7 @@ impl Worker for InsertTransactionsFromFileId {
 }
 
 impl InsertTransactionsFromFile {
-    pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn run(self) -> Result<(), Box<dyn Error>> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(InsertTransactionsFromFileId(tx));
 
@@ -130,10 +128,7 @@ impl InsertTransactionsFromFile {
         // Get the total file length
         let total_size = file.seek(SeekFrom::End(0)).await?;
 
-        // Back to the starting location of file
-        file.seek(SeekFrom::Start(0)).await?;
-        let reader = BufReader::new(&mut file);
-        let mut lines = reader.lines().map(|res| res.unwrap());
+        // Init the current position
         let mut cur_pos = 0;
 
         // The progress bar in CLI
@@ -145,8 +140,6 @@ impl InsertTransactionsFromFile {
                 )
                 .progress_chars("#>-"),
         );
-        // Show the progress when every 1MB are processed
-        let mut next_progress = PROGRESS_STEP;
 
         // Back to the starting location of file
         file.seek(SeekFrom::Start(0)).await?;

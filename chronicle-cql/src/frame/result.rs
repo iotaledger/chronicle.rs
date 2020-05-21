@@ -1,3 +1,4 @@
+#![allow(unused)]
 pub const VOID: i32 = 0x0001;
 pub const ROWS: i32 = 0x0002;
 pub const SETKEYSPACE: i32 = 0x0003;

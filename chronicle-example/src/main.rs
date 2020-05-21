@@ -7,7 +7,6 @@ use chronicle_common::{
 use chronicle_cql::{
     compression::compression::UNCOMPRESSED,
     frame::{
-        batchflags::NOFLAGS,
         consistency::Consistency,
         decoder::{
             Decoder,
@@ -36,7 +35,6 @@ use chronicle_storage::{
 };
 use rand;
 use std::{
-    env,
     error::Error,
     time::Duration,
 };
@@ -144,11 +142,10 @@ impl Worker for CqlQueryId {
 }
 
 impl CqlQuery {
-    pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn run(self) -> Result<(), Box<dyn Error>> {
         let (tx, mut rx) = mpsc::unbounded_channel::<CqlQueryEvent>();
-        let mut worker = Box::new(CqlQueryId(tx));
-        // worker = Self::start(worker, &mut rx).await;
-        worker = Self::process(&self.statement, worker, &mut rx).await;
+        let worker = Box::new(CqlQueryId(tx));
+        let _ = Self::process(&self.statement, worker, &mut rx).await;
         Ok(())
     }
 
@@ -231,6 +228,7 @@ async fn delay_for_10_sec() {
 }
 
 #[tokio::main(core_threads = 8)]
+#[allow(unused_must_use)]
 async fn main() {
     println!("Starting chronicle-example");
     // instead you can define your own .run() strategy
@@ -270,6 +268,7 @@ async fn main() {
 }
 
 /// Useful function to exit program using ctrl_c signal
+#[allow(dead_code)]
 async fn ctrl_c(mut launcher: Sender) {
     // await on ctrl_c
     tokio::signal::ctrl_c().await.unwrap();

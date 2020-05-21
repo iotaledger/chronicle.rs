@@ -1,5 +1,7 @@
-use std::mem::transmute;
-use std::convert::TryInto;
+use std::{
+    convert::TryInto,
+    mem::transmute,
+};
 
 #[repr(u16)]
 pub enum Consistency {
@@ -18,8 +20,6 @@ pub enum Consistency {
 
 impl From<&[u8]> for Consistency {
     fn from(slice: &[u8]) -> Self {
-        unsafe {
-            transmute(u16::from_be_bytes(slice[0..2].try_into().unwrap()))
-        }
+        unsafe { transmute(u16::from_be_bytes(slice[0..2].try_into().unwrap())) }
     }
 }

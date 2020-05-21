@@ -1,14 +1,10 @@
-use bee_ternary::{
-    num_conversions,
-    TryteBuf,
-};
+use bee_ternary::num_conversions;
 
 use cdrs::{
     frame::{
         Flag,
         Frame as CdrsFrame,
         IntoBytes,
-        Opcode,
     },
     query,
     query::QueryFlags,

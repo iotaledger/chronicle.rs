@@ -7,25 +7,10 @@ use super::{
         BE_NULL_BYTES_LEN,
         BE_UNSET_BYTES_LEN,
     },
-    header::{
-        self,
-        Header,
-    },
+    header::Header,
     opcode::QUERY,
 };
-use crate::compression::{
-    Compression,
-    UNCOMPRESSED,
-};
-
-use super::queryflags::{
-    PAGE_SIZE,
-    PAGING_STATE,
-    SERIAL_CONSISTENCY,
-    SKIP_METADATA,
-    TIMESTAMP,
-    VALUES,
-};
+use crate::compression::Compression;
 
 pub struct Query(pub Vec<u8>);
 

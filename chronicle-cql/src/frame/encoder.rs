@@ -1,14 +1,20 @@
-use std::net::{IpAddr,Ipv4Addr, Ipv6Addr};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    net::{
+        IpAddr,
+        Ipv4Addr,
+        Ipv6Addr,
+    },
+};
 
-pub const BE_16_BYTES_LEN: [u8; 4] = [0,0,0,16];
-pub const BE_8_BYTES_LEN: [u8; 4] = [0,0,0,8];
-pub const BE_4_BYTES_LEN: [u8; 4] = [0,0,0,4];
-pub const BE_2_BYTES_LEN: [u8; 4] = [0,0,0,2];
-pub const BE_1_BYTES_LEN: [u8; 4] = [0,0,0,1];
-pub const BE_0_BYTES_LEN: [u8; 4] = [0,0,0,0];
-pub const BE_NULL_BYTES_LEN: [u8; 4] = [255,255,255,255]; // -1 length
-pub const BE_UNSET_BYTES_LEN: [u8; 4] = [255,255,255,254]; // -2 length
+pub const BE_16_BYTES_LEN: [u8; 4] = [0, 0, 0, 16];
+pub const BE_8_BYTES_LEN: [u8; 4] = [0, 0, 0, 8];
+pub const BE_4_BYTES_LEN: [u8; 4] = [0, 0, 0, 4];
+pub const BE_2_BYTES_LEN: [u8; 4] = [0, 0, 0, 2];
+pub const BE_1_BYTES_LEN: [u8; 4] = [0, 0, 0, 1];
+pub const BE_0_BYTES_LEN: [u8; 4] = [0, 0, 0, 0];
+pub const BE_NULL_BYTES_LEN: [u8; 4] = [255, 255, 255, 255]; // -1 length
+pub const BE_UNSET_BYTES_LEN: [u8; 4] = [255, 255, 255, 254]; // -2 length
 pub const NULL_VALUE: Null = Null;
 pub const UNSET_VALUE: Unset = Unset;
 pub struct Null;
@@ -144,7 +150,9 @@ impl ColumnEncoder for Ipv6Addr {
 }
 
 impl<E> ColumnEncoder for Vec<E>
-where E: ColumnEncoder {
+where
+    E: ColumnEncoder,
+{
     fn encode(&self, buffer: &mut Vec<u8>) {
         // total byte_size of the list is unknown,
         // therefore we pad zero length for now.
@@ -157,14 +165,15 @@ where E: ColumnEncoder {
             e.encode(buffer);
         }
         let list_byte_size = buffer.len() - current_length;
-        buffer[(current_length-4)..current_length].copy_from_slice(
-            &i32::to_be_bytes(list_byte_size as i32)
-        );
+        buffer[(current_length - 4)..current_length].copy_from_slice(&i32::to_be_bytes(list_byte_size as i32));
     }
 }
 
 impl<K, V> ColumnEncoder for HashMap<K, V>
-where K: ColumnEncoder, V: ColumnEncoder {
+where
+    K: ColumnEncoder,
+    V: ColumnEncoder,
+{
     fn encode(&self, buffer: &mut Vec<u8>) {
         buffer.extend(&BE_0_BYTES_LEN);
         let current_length = buffer.len();
@@ -174,9 +183,7 @@ where K: ColumnEncoder, V: ColumnEncoder {
             v.encode(buffer);
         }
         let map_byte_size = buffer.len() - current_length;
-        buffer[(current_length-4)..current_length].copy_from_slice(
-            &i32::to_be_bytes(map_byte_size as i32)
-        );
+        buffer[(current_length - 4)..current_length].copy_from_slice(&i32::to_be_bytes(map_byte_size as i32));
     }
 }
 

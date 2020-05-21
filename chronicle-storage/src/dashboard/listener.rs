@@ -1,8 +1,12 @@
 // uses
-use futures::Future;
-use futures::future::Abortable;
-use futures::future::AbortHandle;
-use futures::future::abortable;
+use futures::{
+    future::{
+        abortable,
+        AbortHandle,
+        Abortable,
+    },
+    Future,
+};
 
 use super::{
     dashboard,
@@ -34,7 +38,7 @@ pub struct Listener {
 }
 
 impl Listener {
-    pub async fn run(listener: Abortable<impl Future>, dashboard_tx: dashboard::Sender) {
+    pub async fn run(listener: Abortable<impl Future>, _dashboard_tx: dashboard::Sender) {
         // await abortable_listener
         let _aborted_or_ok = listener.await;
         // aknowledge shutdown

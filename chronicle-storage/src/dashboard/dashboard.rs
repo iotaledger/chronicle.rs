@@ -1,12 +1,4 @@
 // work in progress
-use futures::future::AbortHandle;
-use chronicle_common::traits::{
-    launcher::LauncherTx,
-    dashboard::{
-        DashboardTx,
-        AppStatus,
-    }
-};
 use super::listener;
 use crate::{
     cluster::supervisor,
@@ -14,9 +6,19 @@ use crate::{
 };
 use chronicle_common::{
     actor,
-    traits::shutdown::ShutdownTx,
+    traits::{
+        dashboard::{
+            AppStatus,
+            DashboardTx,
+        },
+        launcher::LauncherTx,
+        shutdown::ShutdownTx,
+    },
 };
-use futures::stream::SplitSink;
+use futures::{
+    future::AbortHandle,
+    stream::SplitSink,
+};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -58,6 +60,7 @@ pub struct Shutdown(Sender);
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 type WsTx = SplitSink<WebSocketStream<TcpStream>, Message>;
 
+#[allow(unused_must_use)]
 impl ShutdownTx for Shutdown {
     fn shutdown(self: Box<Self>) {
         (self.0).0.send(Event::Shutdown);
@@ -89,7 +92,7 @@ pub enum Result {
 
 pub enum Launcher {
     App(AppStatus),
-    Apps(HashMap<String, AppStatus>)
+    Apps(HashMap<String, AppStatus>),
 }
 
 actor!(
@@ -133,11 +136,10 @@ impl Dashboard {
         // register listener abort_handle
         self.listener = Some(abort_handle);
         // spawn dashboard listener
-        tokio::spawn(
-            listener::Listener::run(abortable_listener, self.clone_tx())
-        );
+        tokio::spawn(listener::Listener::run(abortable_listener, self.clone_tx()));
         // register storage/dashboard app in launcher
-        self.launcher_tx.register_app("storage".to_string(), Box::new(Shutdown(self.clone_tx())));
+        self.launcher_tx
+            .register_app("storage".to_string(), Box::new(Shutdown(self.clone_tx())));
         while let Some(event) = self.rx.recv().await {
             // events from websocket(read-half)
             match event {

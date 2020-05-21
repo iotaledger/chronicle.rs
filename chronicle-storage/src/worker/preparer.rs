@@ -12,6 +12,7 @@ use crate::stage::reporter::{
 #[derive(Debug)]
 pub struct QueryRef {}
 
+#[allow(dead_code)]
 impl QueryRef {
     fn new() -> Self {
         QueryRef {}
@@ -28,6 +29,7 @@ impl Worker for Preparer {
     fn send_error(self: Box<Self>, _error: Error) {}
 }
 
+#[allow(dead_code)]
 pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Giveload) {
     // check if the giveload is unprepared_error.
     if check_unprepared(giveload) {
@@ -45,6 +47,7 @@ pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Givel
     }
 }
 
+#[allow(dead_code)]
 fn check_unprepared(giveload: &Giveload) -> bool {
     giveload[4] == 0 && giveload[9..13] == [0, 0, 37, 0] // cql specs
 }

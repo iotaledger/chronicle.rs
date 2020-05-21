@@ -212,7 +212,7 @@ impl Ring {
                 VERSION = version;
                 old_weak
             };
-            (arc_ring, Some(unsafe {Box::from_raw(old_weak)}))
+            (arc_ring, Some(unsafe { Box::from_raw(old_weak) }))
         } else {
             unsafe {
                 GLOBAL_RING = Some(atomic_ptr);
@@ -220,7 +220,6 @@ impl Ring {
             }
             (arc_ring, None)
         }
-
     }
 }
 trait SmartId {
