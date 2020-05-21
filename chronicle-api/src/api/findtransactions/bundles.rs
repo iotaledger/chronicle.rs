@@ -11,20 +11,20 @@ use chronicle_cql::{
     compression::compression::UNCOMPRESSED,
     rows,
 };
+use crate::api::types::Trytes81;
 
 // ----------- decoding scope -----------
-
 rows!(
-    rows: Hashes {hashes: Vec<String>},
+    rows: Hashes {hashes: Vec<Trytes81>},
     row: Row(
         Hash
     ),
     column_decoder: BundlesDecoder
 );
 
-trait Rows {
+pub trait Rows {
     fn decode(self) -> Self;
-    fn finalize(self) -> Vec<String>;
+    fn finalize(self) -> Vec<Trytes81>;
 }
 
 impl Rows for Hashes {
@@ -32,7 +32,7 @@ impl Rows for Hashes {
         while let Some(_) = self.next() {};
         self
     }
-    fn finalize(self) -> Vec<String> {
+    fn finalize(self) -> Vec<Trytes81> {
         self.hashes
     }
 }
@@ -40,7 +40,7 @@ impl Rows for Hashes {
 impl BundlesDecoder for Hash {
     fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
         // decode transaction hash
-        let hash = String::decode(
+        let hash = Trytes81::decode(
             &acc.buffer()[start..], length as usize
         );
         // insert hash into hashset
@@ -51,7 +51,7 @@ impl BundlesDecoder for Hash {
 // ----------- encoding scope -----------
 
 /// Create a query frame to lookup for tx-hashes in the edge table using a bundle
-pub fn query(bundle: String) -> Vec<u8> {
+pub fn query(bundle: &Trytes81) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(header::IGNORE)

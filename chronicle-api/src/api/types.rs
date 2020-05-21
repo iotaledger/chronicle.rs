@@ -1,8 +1,11 @@
 use serde;
 use serde::Serialize;
 use serde::Deserialize;
-
+use chronicle_cql::frame::encoder::ColumnEncoder;
+use chronicle_cql::frame::decoder::ColumnDecoder;
+#[derive(Copy, Clone)]
 pub struct Trytes81([u8;81]);
+pub const BE_81_BYTES_LENGTH: [u8;4] = [0,0,0,81];
 
 impl Serialize for Trytes81 {
 
@@ -42,5 +45,20 @@ impl<'de> Deserialize<'de> for Trytes81 {
             }
         }
         deserializer.deserialize_str(Visitor)
+    }
+}
+
+impl ColumnEncoder for &Trytes81 {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&BE_81_BYTES_LENGTH);
+        buffer.extend(&self.0[..]);
+    }
+}
+
+impl ColumnDecoder for Trytes81 {
+    fn decode(slice: &[u8], _: usize) -> Self {
+        let mut trytes81 = [0;81];
+        trytes81.copy_from_slice(&slice[..81]);
+        Trytes81(trytes81)
     }
 }

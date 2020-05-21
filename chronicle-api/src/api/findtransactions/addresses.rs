@@ -29,7 +29,7 @@ rows!(
     column_decoder: AddressesDecoder
 );
 
-trait Rows {
+pub trait Rows {
     fn decode(self) -> Self;
     fn finalize(self) -> (Vec<String>, Option<Vec<Hint>>);
 }

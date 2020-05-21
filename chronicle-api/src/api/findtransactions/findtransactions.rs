@@ -2,17 +2,6 @@ use bee_ternary::{
     num_conversions,
     TryteBuf,
 };
-use cdrs::{
-    frame::{
-        Flag,
-        Frame as CdrsFrame,
-        IntoBytes,
-        Opcode,
-    },
-    query,
-    query::QueryFlags,
-    query_values,
-};
 use chronicle_common::actor;
 use chronicle_cql::{
     compression::UNCOMPRESSED,
@@ -36,9 +25,13 @@ use hyper::{
     Response,
 };
 use super::hints::Hint;
+use super::bundles;
+use super::bundles::Rows as BundlesRows;
+use super::approvees;
+use super::approvees::Rows as ApproveesRows;
+use super::addresses::Rows as AddressesRows;
 use crate::api::types::Trytes81;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
@@ -71,35 +64,130 @@ pub struct FindTransactions {
     hints: Option<Vec<Hint>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize,Default)]
 struct ResTransactions {
-    hashes: Option<Vec<String>>,
-    hints: Option<Vec<JsonValue>>,
+    hashes: Option<Vec<Trytes81>>,
+    hints: Option<Vec<Hint>>,
 }
 
 impl FindTransactions {
     pub async fn run(mut self) -> Response<Body> {
-        println!("hints is_some {:?}", self.hints);
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
-        let mut worker = Box::new(FindTransactionsId(tx));
-        // create hashes vector
-        let mut hashes: Vec<String> = Vec::new();
-        // process param by param
-
-        todo!()
+        let worker = Box::new(FindTransactionsId(tx));
+        let mut res_txs = ResTransactions::default();
+        // process param by param, starting by bundles
+        match self.process_bundles(&mut res_txs, worker, &mut rx).await {
+            Ok(worker) => {
+                // process approvees
+                match self.process_approvees(&mut res_txs, worker, &mut rx).await {
+                    Ok(worker) => {
+                        todo!()
+                    }
+                    Err(response) => {
+                        return response
+                    }
+                }
+            }
+            Err(response) => {
+                return response
+            }
+        }
     }
 
-    fn query_by_addresses(addresses: String) -> Vec<u8> {
-        todo!()
+    async fn process_bundles(
+        &mut self,res_txs: &mut ResTransactions,
+        mut worker: Box<FindTransactionsId>,
+        rx: &mut Receiver) -> Result<Box<FindTransactionsId>, Response<Body>> {
+        // create empty hashes;
+        let mut hashes: Vec<Trytes81> = Vec::new();
+        if let Some(bundles) = self.bundles.as_ref() {
+            for bundle in bundles {
+                // create request
+                let payload = bundles::query(bundle);
+                let request = reporter::Event::Request{payload, worker};
+                // send request using ring, todo use shard-awareness algo
+                Ring::send_local_random_replica(0, request);
+                loop {
+                    match rx.recv().await.unwrap() {
+                        Event::Response { giveload, pid } => {
+                            // return the ownership of the pid.
+                            worker = pid;
+                            let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                            if decoder.is_rows() {
+                                hashes = bundles::Hashes::new(decoder, hashes).decode().finalize();
+                                break
+                            } else {
+                                // it's for future impl to be used with execute
+                                if decoder.is_unprepared() {
+                                    // retry using normal query
+                                    todo!();
+                                } else {
+                                    return Err(
+                                        response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"scylla error while processing a bundle"}"#)
+                                    );
+                                }
+                            }
+                        }
+                        Event::Error { kind: error, pid } => {
+                            return Err(
+                                response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing a bundle"}"#)
+                            );
+                        }
+                    }
+                }
+            };
+            // update hashes
+            res_txs.hashes = Some(hashes);
+        }
+        Ok(worker)
     }
-    fn query_by_bundles(bundles: String) -> Vec<u8> {
-        todo!()
-    }
-    fn query_by_approvees(approvees: String) -> Vec<u8> {
-        todo!()
-    }
-    fn query_by_hints(hints: HashMap<String, String>) -> Vec<u8> {
-        todo!()
+
+    async fn process_approvees(
+        &mut self,res_txs: &mut ResTransactions,
+        mut worker: Box<FindTransactionsId>,
+        rx: &mut Receiver) -> Result<Box<FindTransactionsId>, Response<Body>> {
+        if let Some(approvees) = self.approvees.as_ref() {
+            for approvee in approvees {
+                // create request
+                let payload = approvees::query(approvee);
+                let request = reporter::Event::Request{payload, worker};
+                // send request using ring, todo use shard-awareness algo
+                Ring::send_local_random_replica(0, request);
+                loop {
+                    match rx.recv().await.unwrap() {
+                        Event::Response { giveload, pid } => {
+                            // return the ownership of the pid.
+                            worker = pid;
+                            let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                            if decoder.is_rows() {
+                                let hashes = res_txs.hashes.take().unwrap();
+                                res_txs.hashes.replace(
+                                    approvees::Hashes::new(decoder,hashes)
+                                    .decode().finalize()
+                                );
+                                break
+                            } else {
+                                // it's for future impl to be used with execute
+                                if decoder.is_unprepared() {
+                                    // retry using normal query
+                                    todo!();
+                                } else {
+                                    return Err(
+                                        response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"scylla error while processing an approvee"}"#)
+                                    );
+                                }
+                            }
+                        }
+                        Event::Error { kind: _, pid: _ } => {
+                            return Err(
+                                response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing an approvee"}"#)
+                            );
+                        }
+                    }
+                }
+            };
+        }
+        Ok(worker)
     }
 }
 
