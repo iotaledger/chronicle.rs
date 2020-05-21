@@ -85,6 +85,26 @@ impl From<&[u8]> for CqlError {
     }
 }
 
+// ErrorCodes as consts
+pub const SERVER_ERROR: i32 = 0x0000;
+pub const PROTOCOL_ERROR: i32 = 0x000A;
+pub const AUTHENTICATION_ERROR: i32 = 0x0100;
+pub const UNAVAILABLE_EXCEPTION: i32 = 0x1000;
+pub const OVERLOADED: i32 = 0x1001;
+pub const IS_BOOSTRAPPING: i32 = 0x1002;
+pub const TRUNCATE_ERROR: i32 = 0x1003;
+pub const WRITE_TIMEOUT: i32 = 0x1100;
+pub const READ_TIMEOUT: i32 = 0x1200;
+pub const READ_FAILURE: i32 = 0x1300;
+pub const FUNCTION_FAILURE: i32 = 0x1400;
+pub const WRITE_FAILURE: i32 = 0x1500;
+pub const SYNTAX_ERROR: i32 = 0x2000;
+pub const UNAUTHORIZED: i32 = 0x2100;
+pub const INVALID: i32 = 0x2200;
+pub const CONFIGURE_ERROR: i32 = 0x2300;
+pub const ALREADY_EXISTS: i32 = 0x2400;
+pub const UNPREPARED: i32 = 0x2500;
+
 #[repr(i32)]
 pub enum ErrorCodes {
     ServerError = 0x0000,

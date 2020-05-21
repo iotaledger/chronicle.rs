@@ -2,6 +2,7 @@ use super::rows::{Flags, ColumnsCount, PagingState, Metadata};
 use super::header;
 use super::opcode;
 use super::result;
+use super::error;
 use crate::compression::Compression;
 use std::net::{IpAddr,Ipv4Addr, Ipv6Addr};
 use std::convert::TryInto;
@@ -17,8 +18,28 @@ pub trait Frame {
     fn length(&self) -> usize;
     fn body(&self) -> &[u8];
     fn body_start(&self,padding: usize) -> usize;
+    fn body_kind(&self) -> i32;
     fn is_void(&self) -> bool;
     fn is_rows(&self) -> bool;
+    fn is_error(&self) -> bool;
+    fn is_unprepared(&self) -> bool;
+    fn is_already_exists(&self) -> bool;
+    fn is_configure_error(&self) -> bool;
+    fn is_invalid(&self) -> bool;
+    fn is_unauthorized(&self) -> bool;
+    fn is_syntax_error(&self) -> bool;
+    fn is_write_failure(&self) -> bool;
+    fn is_function_failure(&self) -> bool;
+    fn is_read_failure(&self) -> bool;
+    fn is_read_timeout(&self) -> bool;
+    fn is_write_timeout(&self) -> bool;
+    fn is_truncate_error(&self) -> bool;
+    fn is_boostrapping(&self) -> bool;
+    fn is_overloaded(&self) -> bool;
+    fn is_unavailable_exception(&self) -> bool;
+    fn is_authentication_error(&self) -> bool;
+    fn is_protocol_error(&self) -> bool;
+    fn is_server_error(&self) -> bool;
     fn rows_flags(&self) -> Flags;
     fn columns_count(&self) -> ColumnsCount;
     fn paging_state(&self, has_more_pages: bool) -> PagingState;
@@ -131,17 +152,73 @@ impl Frame for Decoder {
     fn body_start(&self, padding: usize) -> usize {
         self.header_flags.body_start+padding
     }
-    fn is_void(&self) -> bool {
-        let body_kind = i32::from_be_bytes(
+    fn body_kind(&self) -> i32 {
+        i32::from_be_bytes(
             self.body()[0..4].try_into().unwrap()
-        );
-        (self.opcode() == opcode::RESULT) && (body_kind == result::VOID)
+        )
+    }
+    fn is_void(&self) -> bool {
+        (self.opcode() == opcode::RESULT) && (self.body_kind() == result::VOID)
     }
     fn is_rows(&self) -> bool {
-        let body_kind = i32::from_be_bytes(
-            self.body()[0..4].try_into().unwrap()
-        );
-        (self.opcode() == opcode::RESULT) && (body_kind == result::ROWS)
+        (self.opcode() == opcode::RESULT) && (self.body_kind() == result::ROWS)
+    }
+    fn is_error(&self) -> bool {
+        self.opcode() == opcode::ERROR
+    }
+    fn is_unprepared(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::UNPREPARED
+    }
+    fn is_already_exists(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::ALREADY_EXISTS
+    }
+    fn is_configure_error(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::CONFIGURE_ERROR
+    }
+    fn is_invalid(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::INVALID
+    }
+    fn is_unauthorized(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::UNAUTHORIZED
+    }
+    fn is_syntax_error(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::SYNTAX_ERROR
+    }
+    fn is_write_failure(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::WRITE_FAILURE
+    }
+    fn is_function_failure(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::FUNCTION_FAILURE
+    }
+    fn is_read_failure(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::READ_FAILURE
+    }
+    fn is_read_timeout(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::READ_TIMEOUT
+    }
+    fn is_write_timeout(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::WRITE_TIMEOUT
+    }
+    fn is_truncate_error(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::TRUNCATE_ERROR
+    }
+    fn is_boostrapping(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::IS_BOOSTRAPPING
+    }
+    fn is_overloaded(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::OVERLOADED
+    }
+    fn is_unavailable_exception(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::UNAVAILABLE_EXCEPTION
+    }
+    fn is_authentication_error(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::AUTHENTICATION_ERROR
+    }
+    fn is_protocol_error(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::PROTOCOL_ERROR
+    }
+    fn is_server_error(&self) -> bool {
+        self.opcode() == opcode::ERROR && self.body_kind() == error::SERVER_ERROR
     }
     fn rows_flags(&self) -> Flags {
         // cql rows specs, flags is [int] and protocol is big-endian
