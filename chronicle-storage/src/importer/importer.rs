@@ -17,6 +17,10 @@ use chronicle_cql::{
     frame::{
         batchflags::NOFLAGS,
         consistency::Consistency,
+        decoder::{
+            Decoder,
+            Frame,
+        },
         header::{
             Header,
             IGNORE,
@@ -57,36 +61,41 @@ use tokio::{
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
-pub struct InsertTransactionsFromFileTrytesId(Sender);
+pub struct InsertTransactionsFromFileId(Sender);
 
-actor!(InsertTransactionsFromFileBuilder { filepath: String });
+actor!(InsertTransactionsFromFileBuilder {
+    filepath: String,
+    statement: String
+});
 
 impl InsertTransactionsFromFileBuilder {
     pub fn build(self) -> InsertTransactionsFromFile {
         InsertTransactionsFromFile {
             filepath: self.filepath.unwrap(),
+            statement: self.statement.unwrap(),
         }
     }
 }
 
 pub struct InsertTransactionsFromFile {
     filepath: String,
+    statement: String,
 }
 
 pub enum Event {
     Response {
         giveload: Vec<u8>,
-        pid: Box<InsertTransactionsFromFileTrytesId>,
+        pid: Box<InsertTransactionsFromFileId>,
     },
     Error {
         kind: worker::Error,
-        pid: Box<InsertTransactionsFromFileTrytesId>,
+        pid: Box<InsertTransactionsFromFileId>,
     },
 }
 
 static PROGRESS_STEP: u64 = 1000000;
 
-impl Worker for InsertTransactionsFromFileTrytesId {
+impl Worker for InsertTransactionsFromFileId {
     fn send_response(self: Box<Self>, _: &Option<reporter::Sender>, giveload: Vec<u8>) {
         // to enable reusable self(Sender), we will do unsafe trick
         unsafe {
@@ -115,7 +124,7 @@ impl Worker for InsertTransactionsFromFileTrytesId {
 impl InsertTransactionsFromFile {
     pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
-        let mut worker = Box::new(InsertTransactionsFromFileTrytesId(tx));
+        let mut worker = Box::new(InsertTransactionsFromFileId(tx));
 
         let mut file = File::open(&self.filepath).await?;
         // Get the total file length
@@ -148,7 +157,7 @@ impl InsertTransactionsFromFile {
         let mut next_progress = PROGRESS_STEP;
         while let Some(line) = lines.next().await {
             let v: Vec<&str> = line.split(',').collect();
-            worker = Self::process(v[0], v[1], worker, &mut rx).await;
+            worker = Self::process(v[0], v[1], &self.statement, worker, &mut rx).await;
             // Add 1 for the endline
             cur_pos += line.len() as u64 + 1;
             if cur_pos > next_progress {
@@ -166,19 +175,25 @@ impl InsertTransactionsFromFile {
     async fn process(
         hash: &str,
         rawtx: &str,
-        worker: Box<InsertTransactionsFromFileTrytesId>,
+        statement: &str,
+        worker: Box<InsertTransactionsFromFileId>,
         rx: &mut Receiver,
-    ) -> Box<InsertTransactionsFromFileTrytesId> {
+    ) -> Box<InsertTransactionsFromFileId> {
         let request = reporter::Event::Request {
-            payload: Self::query(hash, rawtx),
+            payload: Self::query(hash, rawtx, statement),
             worker,
         };
         // use random token till murmur3 hash function algo impl is ready
         // send_local_random_replica will select random replica for token.
         Ring::send_local_random_replica(rand::random::<i64>(), request);
         match rx.recv().await.unwrap() {
-            Event::Response { giveload: _, pid } => {
-                // TODO: process the responsed giveload
+            Event::Response { giveload, pid } => {
+                let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                if decoder.is_void() {
+                    // Nothing to do
+                } else {
+                    // TODO: Add retry mechanism
+                }
                 return pid;
             }
             Event::Error { kind: _, pid } => {
@@ -188,32 +203,32 @@ impl InsertTransactionsFromFile {
             }
         }
     }
-    fn query(hash: &str, rawtx: &str) -> Vec<u8> {
+    fn query(hash: &str, rawtx: &str, statement: &str) -> Vec<u8> {
         let Query(payload) = Query::new()
             .version()
             .flags(IGNORE)
             .stream(0)
             .opcode()
             .length()
-            .statement(INSERT_TX_QUERY)
+            .statement(statement)
             .consistency(Consistency::One)
             .query_flags(SKIP_METADATA | VALUES)
             .value_count(17) // the total value count
             .value(&hash[..])
             .value(&rawtx[..2187]) // PAYLOAD
             .value(&rawtx[2187..2268]) // ADDRESS
-            .value(str_to_i64(&rawtx[2268..2295])) // VALUE as i64
+            .value(&rawtx[2268..2295]) // VALUE
             .value(&rawtx[2295..2322]) // OBSOLETE_TAG
-            .value(str_to_i64(&rawtx[2322..2331])) // TIMESTAMP
-            .value(str_to_i64(&rawtx[2331..2340])) // CURRENT_IDX
-            .value(str_to_i64(&rawtx[2340..2349])) // LAST_IDX
+            .value(&rawtx[2322..2331]) // TIMESTAMP
+            .value(&rawtx[2331..2340]) // CURRENT_IDX
+            .value(&rawtx[2340..2349]) // LAST_IDX
             .value(&rawtx[2349..2430]) // BUNDLE_HASH
             .value(&rawtx[2430..2511]) // TRUNK
             .value(&rawtx[2511..2592]) // BRANCH
             .value(&rawtx[2592..2619]) // TAG
-            .value(str_to_i64(&rawtx[2619..2628])) // ATCH_TIMESTAMP
-            .value(str_to_i64(&rawtx[2628..2637])) // ATCH_TIMESTAMP_LOWER
-            .value(str_to_i64(&rawtx[2637..2646])) // ATCH_TIMESTAMP_UPPER
+            .value(&rawtx[2619..2628]) // ATCH_TIMESTAMP
+            .value(&rawtx[2628..2637]) // ATCH_TIMESTAMP_LOWER
+            .value(&rawtx[2637..2646]) // ATCH_TIMESTAMP_UPPER
             .value(&rawtx[2646..2673]) // Nonce
             .unset_value() // not-set value for milestone
             .build(UNCOMPRESSED);
@@ -221,6 +236,8 @@ impl InsertTransactionsFromFile {
     }
 }
 
+#[allow(dead_code)]
+// This conversion is for milestone insertion
 fn str_to_i64(slice: &str) -> i64 {
     let trytes = TryteBuf::try_from_str(slice);
     let trit_buf: TritBuf<T1B1Buf> = trytes.unwrap().as_trits().encode();
@@ -283,6 +300,7 @@ mod tests {
     // async fn test_load_file() {
     //     let _ = InsertTransactionsFromFileBuilder::new()
     //         .filepath("YOUR_FILE_PATH".to_string())
+    //         .statement(INSERT_TX_QUERY.to_string())
     //         .build()
     //         .run()
     //         .await
