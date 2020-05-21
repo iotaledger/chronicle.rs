@@ -216,7 +216,6 @@ impl InsertTransactionsFromFile {
             .value(str_to_i64(&rawtx[2637..2646])) // ATCH_TIMESTAMP_UPPER
             .value(&rawtx[2646..2673]) // Nonce
             .unset_value() // not-set value for milestone
-            .consistency(Consistency::One)
             .build(UNCOMPRESSED);
         payload
     }

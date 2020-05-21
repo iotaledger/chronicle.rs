@@ -1,5 +1,5 @@
 pub const CREATE_KEYSPACE_QUERY: &str = r#"
-CREATE KEYSPACE IF NOT EXISTS chronicle
+CREATE KEYSPACE IF NOT EXISTS tangle
 WITH REPLICATION = {
   'class': 'SimpleStrategy',
   'replication_factor': 1
