@@ -110,7 +110,7 @@ impl Batch {
     pub fn build(mut self, compression: impl Compression) -> Self {
         // adjust the querycount
         self.0[10..12].copy_from_slice(&u16::to_be_bytes(self.1));
-        compression.compress(&mut self.0);
+        self.0 = compression.compress(self.0);
         self
     }
 }

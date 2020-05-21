@@ -44,7 +44,7 @@ impl Prepare {
         self
     }
     pub fn build(mut self, compression: impl Compression) -> Self {
-        compression.compress(&mut self.0);
+        self.0 = compression.compress(self.0);
         self
     }
 }

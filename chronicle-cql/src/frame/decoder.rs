@@ -51,7 +51,8 @@ pub struct Decoder {
 }
 impl Decoder {
     pub fn new(mut buffer: Vec<u8>, decompressor: impl Compression) -> Self {
-        let header_flags = HeaderFlags::new(&mut buffer, decompressor);
+        buffer = decompressor.decompress(buffer);
+        let header_flags = HeaderFlags::new(&mut buffer);
         Decoder {
             buffer,
             header_flags,
@@ -78,13 +79,10 @@ pub struct HeaderFlags {
 }
 
 impl HeaderFlags {
-    pub fn new(buffer: &mut Vec<u8>,decompressor: impl Compression) -> Self {
+    pub fn new(buffer: &mut Vec<u8>) -> Self {
         let mut body_start = 9;
         let flags = buffer[1];
         let compression = flags & header::COMPRESSION == header::COMPRESSION;
-        if compression {
-            decompressor.decompress(buffer);
-        }
         let tracing;
         if flags & header::TRACING == header::TRACING {
             let mut tracing_id = [0;16];
