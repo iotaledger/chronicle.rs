@@ -12,15 +12,16 @@ use chronicle_cql::{
     rows,
 };
 use super::hints::Hint;
+use crate::api::types::Trytes81;
 
 // ----------- decoding scope -----------
 
 rows!(
     rows: Hashes {
-        hashes: Vec<String>,
-        hints: Option<Vec<Hint>>,
+        hashes: Vec<Trytes81>,
+        hints: Vec<Hint>,
         is_hint: bool,
-        address: Option<String>
+        address: Trytes81
     },
     row: Row(
         Hash,
@@ -31,7 +32,7 @@ rows!(
 
 pub trait Rows {
     fn decode(self) -> Self;
-    fn finalize(self) -> (Vec<String>, Option<Vec<Hint>>);
+    fn finalize(self) -> (Vec<Trytes81>, Vec<Hint>);
 }
 
 impl Rows for Hashes {
@@ -39,7 +40,7 @@ impl Rows for Hashes {
         while let Some(_) = self.next() {};
         self
     }
-    fn finalize(self) -> (Vec<String>, Option<Vec<Hint>>) {
+    fn finalize(self) -> (Vec<Trytes81>, Vec<Hint>) {
         (self.hashes, self.hints)
     }
 }
@@ -51,10 +52,9 @@ impl AddressesDecoder for Hash {
             acc.is_hint = true
         } else {
             // decode transaction hash
-            let hash = String::decode(
+            let hash = Trytes81::decode(
                 &acc.buffer()[start..], length as usize
             );
-            // insert hash into hashset
             acc.hashes.push(hash);
         }
     }
@@ -62,21 +62,22 @@ impl AddressesDecoder for Hash {
 
 impl AddressesDecoder for Extra {
     fn decode_column(start: usize, _length: i32, acc: &mut Hashes) {
-        if acc.is_hint == true {
-            // create a hint
+        if acc.is_hint {
+            // create a hint and push it to hints
             let end = start+2;
             let year = u16::from_be_bytes(acc.buffer()[start..end].try_into().unwrap());
             let month = acc.buffer()[end];
-            let address = acc.address.take().unwrap();
-            Hint::new_address_hint(address, None, year, month);
+            let hint = Hint::new_address_hint(acc.address, None, year, month);
+            acc.hints.push(hint);
             // reset is_hint to be false for next() rows if any.
             acc.is_hint = false;
         }
     }
 }
+
 // ----------- encoding scope -----------
 
-pub fn query(address: &str) -> Vec<u8> {
+pub fn query(address: &Trytes81) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(header::IGNORE)

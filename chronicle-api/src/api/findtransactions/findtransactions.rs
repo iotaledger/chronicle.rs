@@ -9,8 +9,6 @@ use chronicle_cql::{
         Decoder,
         Frame,
     },
-    rows,
-    statements::statements::SELECT_TX_QUERY,
 };
 use chronicle_storage::{
     ring::ring::Ring,
@@ -29,10 +27,10 @@ use super::bundles;
 use super::bundles::Rows as BundlesRows;
 use super::approvees;
 use super::approvees::Rows as ApproveesRows;
+use super::addresses;
 use super::addresses::Rows as AddressesRows;
 use crate::api::types::Trytes81;
 use serde::Serialize;
-use std::collections::HashMap;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -81,7 +79,17 @@ impl FindTransactions {
                 // process approvees
                 match self.process_approvees(&mut res_txs, worker, &mut rx).await {
                     Ok(worker) => {
-                        todo!()
+                        // process addresses
+                        match self.process_addresses(&mut res_txs, worker, &mut rx).await {
+                            Ok(worker) => {
+                                // process hints
+                                todo!()
+                            }
+                            Err(response) => {
+                                return response
+                            }
+                        }
+
                     }
                     Err(response) => {
                         return response
@@ -189,6 +197,60 @@ impl FindTransactions {
         }
         Ok(worker)
     }
+
+    async fn process_addresses(
+        &mut self,res_txs: &mut ResTransactions,
+        mut worker: Box<FindTransactionsId>,
+        rx: &mut Receiver) -> Result<Box<FindTransactionsId>, Response<Body>> {
+        // create empty hints
+        let mut hints: Vec<Hint> = Vec::new();
+        if let Some(addresses) = self.addresses.as_ref() {
+            let mut hashes = res_txs.hashes.take().unwrap();
+            for address in addresses {
+                // create request
+                let payload = addresses::query(&address);
+                let request = reporter::Event::Request{payload, worker};
+                // send request using ring, todo use shard-awareness algo
+                Ring::send_local_random_replica(0, request);
+                loop {
+                    match rx.recv().await.unwrap() {
+                        Event::Response { giveload, pid } => {
+                            // return the ownership of the pid.
+                            worker = pid;
+                            let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                            if decoder.is_rows() {
+                                let (updated_hashes, updated_hints) = addresses::Hashes::new(decoder, hashes, hints, false, *address)
+                                .decode().finalize();
+                                hashes = updated_hashes;
+                                hints = updated_hints;
+                                break
+                            } else {
+                                // it's for future impl to be used with execute
+                                if decoder.is_unprepared() {
+                                    // retry using normal query
+                                    todo!();
+                                } else {
+                                    return Err(
+                                        response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"scylla error while processing an address"}"#)
+                                    );
+                                }
+                            }
+                        }
+                        Event::Error { kind: _, pid: _ } => {
+                            return Err(
+                                response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing an address"}"#)
+                            );
+                        }
+                    }
+                }
+            };
+            res_txs.hashes.replace(hashes);
+        }
+        res_txs.hints.replace(hints);
+        Ok(worker)
+    }
+
+
 }
 
 pub enum Event {

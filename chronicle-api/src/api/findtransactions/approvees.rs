@@ -44,7 +44,6 @@ impl ApproveesDecoder for Hash {
         let hash = Trytes81::decode(
             &acc.buffer()[start..], length as usize
         );
-        // insert hash into hashset
         acc.hashes.push(hash);
     }
 }

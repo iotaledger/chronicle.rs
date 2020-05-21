@@ -2,10 +2,11 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use crate::api::types::Trytes81;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Hint {
-    address: Option<String>,
+    address: Option<Trytes81>,
     tag: Option<String>,
     paging_state: Option<String>,
     year: u16,
@@ -14,7 +15,7 @@ pub struct Hint {
 
 impl Hint {
     pub fn new_address_hint(
-        address: String,
+        address: Trytes81,
         paging_state: Option<String>,
         year: u16, month: u8) -> Self {
         Self {
