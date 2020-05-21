@@ -100,16 +100,26 @@ impl Query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::statements::statements::INSERT_TX_QUERY;
+    use crate::{
+        compression::compression::UNCOMPRESSED,
+        frame::{
+            consistency::Consistency,
+            header,
+            queryflags::{
+                SKIP_METADATA,
+                VALUES,
+            },
+        },
+        statements::statements::INSERT_TX_QUERY,
+    };
     use std::time::{
-        Duration,
         SystemTime,
         UNIX_EPOCH,
     };
     #[test]
     // note: junk data
     fn simple_query_builder_test() {
-        let Query(payload) = Query::new()
+        let Query(_payload) = Query::new()
             .version()
             .flags(header::IGNORE)
             .stream(0)

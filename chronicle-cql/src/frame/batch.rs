@@ -132,7 +132,7 @@ mod tests {
     #[test]
     // note: junk data
     fn simple_query_builder_test() {
-        let Batch(payload, _querycount) = Batch::new()
+        let Batch(_payload, _querycount) = Batch::new()
             .version()
             .flags(IGNORE)
             .stream(0)

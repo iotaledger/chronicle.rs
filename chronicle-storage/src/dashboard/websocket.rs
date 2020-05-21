@@ -99,7 +99,7 @@ mod tests {
         let peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let socket = TcpStream::connect(peer).await.unwrap();
         let ws_stream = accept_async(socket).await.unwrap();
-        let (mut dashboard_tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
+        let (dashboard_tx, _) = mpsc::unbounded_channel::<dashboard::Event>();
         let _ = WebsocketdBuilder::new()
             .peer(peer)
             .stream(ws_stream)

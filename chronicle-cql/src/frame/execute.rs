@@ -99,15 +99,25 @@ impl Execute {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        compression::compression::UNCOMPRESSED,
+        frame::{
+            consistency::Consistency,
+            header,
+            queryflags::{
+                SKIP_METADATA,
+                VALUES,
+            },
+        },
+    };
     use std::time::{
-        Duration,
         SystemTime,
         UNIX_EPOCH,
     };
     #[test]
     // note: junk data
     fn simple_execute_builder_test() {
-        let Execute(payload) = Execute::new()
+        let Execute(_payload) = Execute::new()
             .version()
             .flags(header::IGNORE)
             .stream(0)
