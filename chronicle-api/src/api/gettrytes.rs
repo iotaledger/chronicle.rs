@@ -15,7 +15,12 @@ use chronicle_cql::{
         Decoder,
         Frame,
     },
+    frame::header::Header,
+    frame::header,
+    frame::queryflags,
+    frame::query::Query,
     frame::error,
+    frame::consistency::Consistency,
     rows,
     statements::statements::SELECT_TX_QUERY,
 };
@@ -110,16 +115,19 @@ impl GetTrytes {
     // unfortunately for now a lot of un necessarily heap allocation in cdrs.
     // this is a cql query frame, later we will impl execute frame.
     fn query(hash: String) -> Vec<u8> {
-        let params = query::QueryParamsBuilder::new()
-            .values(query_values!(hash))
-            .page_size(1)
-            .flags(vec![QueryFlags::SkipMetadata])
-            .finalize();
-        let query = query::Query {
-            query: SELECT_TX_QUERY.to_string(),
-            params,
-        };
-        CdrsFrame::new_query(query, vec![Flag::Ignore]).into_cbytes()
+        let Query(payload) = Query::new()
+            .version()
+            .flags(header::IGNORE)
+            .stream(0)
+            .opcode()
+            .length()
+            .statement(SELECT_TX_QUERY)
+            .consistency(Consistency::One)
+            .query_flags(queryflags::SKIP_METADATA | queryflags::VALUES)
+            .value_count(1) // the total value count
+            .value(hash)
+            .build(UNCOMPRESSED);
+        payload
     }
 }
 
@@ -207,6 +215,7 @@ impl Rows for Trytes {
 // implementation to decoder the columns in order to form the trytes eventually
 impl TrytesDecoder for Payload {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        println!("payload column, length: {}", length);
         // Payload trytes offest is 0..2187, note: assuming length != -1(indicate empty column).
         // copy_within so a buffer[0..2187] will = buffer[start..length]
         acc.buffer().copy_within(start..(start + length as usize), 0)
@@ -214,12 +223,14 @@ impl TrytesDecoder for Payload {
 }
 impl TrytesDecoder for Address {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        println!("address column, length: {}", length);
         // Address trytes offest is 2187..2268, note: we assume the length value is also correct
         acc.buffer().copy_within(start..(start + length as usize), 2187)
     }
 }
 impl TrytesDecoder for Value {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        println!("address column, length: {}", length);
         // Value tryte offset is 2268..2295
         acc.buffer().copy_within(start..(start + length as usize), 2268);
     }

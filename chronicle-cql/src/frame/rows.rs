@@ -1,4 +1,5 @@
 pub type ColumnsCount = i32;
+#[derive(Debug)]
 #[allow(dead_code)]
 pub struct Flags {
     global_table_spec: bool,
@@ -18,7 +19,7 @@ impl Flags {
         self.has_more_pages
     }
 }
-
+#[derive(Debug)]
 pub struct PagingState {
     paging_state: Option<String>,
     end: usize,
@@ -28,6 +29,7 @@ impl PagingState {
         PagingState { paging_state, end }
     }
 }
+#[derive(Debug)]
 #[allow(unused)]
 pub struct Metadata {
     flags: Flags,
@@ -102,6 +104,7 @@ macro_rules! rows {
         impl $rows {
             pub fn new(mut decoder: Decoder, $($field: $type,)*) -> Self {
                 let metadata = decoder.metadata();
+                println!("metadata {:?}", metadata);
                 let column_start = metadata.rows_start();
                 let rows_count = i32::from_be_bytes(decoder.buffer_as_ref()[column_start..(column_start+4)].try_into().unwrap());
                 Self{
