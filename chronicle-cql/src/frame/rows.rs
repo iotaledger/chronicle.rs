@@ -83,7 +83,6 @@ macro_rules! rows {
             fn next(&mut self) -> Option<<Self as Iterator>::Item> {
                 if self.remaining_rows_count > 0 {
                     self.remaining_rows_count -= 1;
-                    println!("remaining_rows_count {}", self.column_start);
                     $(
                         let length = i32::from_be_bytes(
                             self.decoder.buffer_as_ref()[self.column_start..(self.column_start+4)].try_into().unwrap()
