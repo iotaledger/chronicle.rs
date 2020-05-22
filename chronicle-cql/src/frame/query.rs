@@ -77,9 +77,9 @@ impl Query {
         self.0.extend(&i32::to_be_bytes(page_size));
         self
     }
-    pub fn paging_state(mut self, paging_state: String) -> Self {
+    pub fn paging_state(mut self, paging_state: Vec<u8>) -> Self {
         self.0.extend(&i32::to_be_bytes(paging_state.len() as i32));
-        self.0.extend(paging_state.bytes());
+        self.0.extend(paging_state);
         self
     }
     pub fn serial_consistency(mut self, consistency: Consistency) -> Self {

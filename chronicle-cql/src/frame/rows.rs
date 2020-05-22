@@ -21,11 +21,11 @@ impl Flags {
 }
 #[derive(Debug)]
 pub struct PagingState {
-    paging_state: Option<String>,
+    paging_state: Option<Vec<u8>>,
     end: usize,
 }
 impl PagingState {
-    pub fn new(paging_state: Option<String>, end: usize) -> Self {
+    pub fn new(paging_state: Option<Vec<u8>>, end: usize) -> Self {
         PagingState { paging_state, end }
     }
 }
@@ -48,7 +48,7 @@ impl Metadata {
     pub fn rows_start(&self) -> usize {
         self.paging_state.end
     }
-    pub fn take_paging_state(&mut self) -> Option<String> {
+    pub fn take_paging_state(&mut self) -> Option<Vec<u8>> {
         self.paging_state.paging_state.take()
     }
 }
@@ -104,7 +104,6 @@ macro_rules! rows {
         impl $rows {
             pub fn new(mut decoder: Decoder, $($field: $type,)*) -> Self {
                 let metadata = decoder.metadata();
-                println!("metadata {:?}", metadata);
                 let rows_start = metadata.rows_start();
                 let column_start = rows_start+4;
                 let rows_count = i32::from_be_bytes(decoder.buffer_as_ref()[rows_start..column_start].try_into().unwrap());

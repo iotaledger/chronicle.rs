@@ -113,9 +113,10 @@ impl GetTrytes {
             .length()
             .statement(SELECT_TX_QUERY)
             .consistency(Consistency::One)
-            .query_flags(queryflags::SKIP_METADATA | queryflags::VALUES)
+            .query_flags(queryflags::SKIP_METADATA | queryflags::VALUES | queryflags::PAGE_SIZE)
             .value_count(1) // the total value count
             .value(hash)
+            .page_size(1)
             .build(UNCOMPRESSED);
         payload
     }
