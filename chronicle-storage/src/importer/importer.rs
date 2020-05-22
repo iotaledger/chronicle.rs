@@ -123,14 +123,11 @@ impl InsertTransactionsFromFile {
     pub async fn run(self) -> Result<(), Box<dyn Error>> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(InsertTransactionsFromFileId(tx));
-
         let mut file = File::open(&self.filepath).await?;
         // Get the total file length
         let total_size = file.seek(SeekFrom::End(0)).await?;
-
         // Init the current position
         let mut cur_pos = 0;
-
         // The progress bar in CLI
         let pb = ProgressBar::new(total_size);
         pb.set_style(

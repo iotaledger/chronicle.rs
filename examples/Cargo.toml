@@ -1,0 +1,22 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2018"
+
+[workspace]
+
+
+[dependencies]
+# essential
+tokio = { version = "0.2", features = ["full"] }
+chronicle-common = { path = "../chronicle-common" }
+chronicle-cql = {path = "../chronicle-cql"}
+# apps
+chronicle-storage = { path = "../chronicle-storage" }
+chronicle-api = { path = "../chronicle-api" }
+rand = "0.7"
+
+[[example]]
+name = "cqlquery"
+path = "cqlquery/main.rs"
