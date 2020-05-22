@@ -1,13 +1,3 @@
-use cdrs::{
-    frame::{
-        Flag,
-        Frame as CdrsFrame,
-        IntoBytes,
-    },
-    query,
-    query::QueryFlags,
-    query_values,
-};
 use chronicle_common::actor;
 use chronicle_cql::{
     compression::UNCOMPRESSED,
@@ -215,7 +205,6 @@ impl Rows for Trytes {
 // implementation to decoder the columns in order to form the trytes eventually
 impl TrytesDecoder for Payload {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        println!("payload column, length: {}", length);
         // Payload trytes offest is 0..2187, note: assuming length != -1(indicate empty column).
         // copy_within so a buffer[0..2187] will = buffer[start..length]
         acc.buffer().copy_within(start..(start + length as usize), 0)
@@ -223,14 +212,12 @@ impl TrytesDecoder for Payload {
 }
 impl TrytesDecoder for Address {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        println!("address column, length: {}", length);
         // Address trytes offest is 2187..2268, note: we assume the length value is also correct
         acc.buffer().copy_within(start..(start + length as usize), 2187)
     }
 }
 impl TrytesDecoder for Value {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        println!("address column, length: {}", length);
         // Value tryte offset is 2268..2295
         acc.buffer().copy_within(start..(start + length as usize), 2268);
     }

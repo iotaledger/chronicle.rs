@@ -83,6 +83,7 @@ macro_rules! rows {
             fn next(&mut self) -> Option<<Self as Iterator>::Item> {
                 if self.remaining_rows_count > 0 {
                     self.remaining_rows_count -= 1;
+                    println!("remaining_rows_count {}", self.column_start);
                     $(
                         let length = i32::from_be_bytes(
                             self.decoder.buffer_as_ref()[self.column_start..(self.column_start+4)].try_into().unwrap()
@@ -105,8 +106,9 @@ macro_rules! rows {
             pub fn new(mut decoder: Decoder, $($field: $type,)*) -> Self {
                 let metadata = decoder.metadata();
                 println!("metadata {:?}", metadata);
-                let column_start = metadata.rows_start();
-                let rows_count = i32::from_be_bytes(decoder.buffer_as_ref()[column_start..(column_start+4)].try_into().unwrap());
+                let rows_start = metadata.rows_start();
+                let column_start = rows_start+4;
+                let rows_count = i32::from_be_bytes(decoder.buffer_as_ref()[rows_start..column_start].try_into().unwrap());
                 Self{
                     decoder,
                     metadata,
