@@ -11,6 +11,7 @@ use std::{
     mem::transmute,
 };
 
+#[derive(Debug)]
 pub struct CqlError {
     pub code: ErrorCodes,
     pub message: String,
@@ -92,7 +93,7 @@ pub const INVALID: i32 = 0x2200;
 pub const CONFIGURE_ERROR: i32 = 0x2300;
 pub const ALREADY_EXISTS: i32 = 0x2400;
 pub const UNPREPARED: i32 = 0x2500;
-
+#[derive(Debug)]
 #[repr(i32)]
 pub enum ErrorCodes {
     ServerError = 0x0000,
@@ -114,7 +115,7 @@ pub enum ErrorCodes {
     AlreadyExists = 0x2400,
     Unprepared = 0x2500,
 }
-
+#[derive(Debug)]
 pub enum Additional {
     UnavailableException(UnavailableException),
     WriteTimeout(WriteTimeout),
@@ -125,7 +126,7 @@ pub enum Additional {
     AlreadyExists(AlreadyExists),
     Unprepared(Unprepared),
 }
-
+#[derive(Debug)]
 pub struct UnavailableException {
     pub cl: Consistency,
     pub required: i32,
@@ -139,6 +140,7 @@ impl From<&[u8]> for UnavailableException {
         Self { cl, required, alive }
     }
 }
+#[derive(Debug)]
 pub struct WriteTimeout {
     pub cl: Consistency,
     pub received: i32,
@@ -159,7 +161,7 @@ impl From<&[u8]> for WriteTimeout {
         }
     }
 }
-
+#[derive(Debug)]
 pub struct ReadTimeout {
     pub cl: Consistency,
     pub received: i32,
@@ -185,7 +187,7 @@ impl From<&[u8]> for ReadTimeout {
         }
     }
 }
-
+#[derive(Debug)]
 pub struct ReadFailure {
     pub cl: Consistency,
     pub received: i32,
@@ -214,6 +216,7 @@ impl From<&[u8]> for ReadFailure {
         }
     }
 }
+#[derive(Debug)]
 pub struct FunctionFailure {
     pub keyspace: String,
     pub function: String,
@@ -232,7 +235,7 @@ impl From<&[u8]> for FunctionFailure {
         }
     }
 }
-
+#[derive(Debug)]
 pub struct WriteFailure {
     pub cl: Consistency,
     pub received: i32,
@@ -257,7 +260,7 @@ impl From<&[u8]> for WriteFailure {
         }
     }
 }
-
+#[derive(Debug)]
 pub struct AlreadyExists {
     pub ks: String,
     pub table: String,
@@ -270,7 +273,7 @@ impl From<&[u8]> for AlreadyExists {
         Self { ks, table }
     }
 }
-
+#[derive(Debug)]
 pub struct Unprepared {
     pub id: String,
 }
@@ -281,6 +284,7 @@ impl From<&[u8]> for Unprepared {
         Self { id }
     }
 }
+#[derive(Debug)]
 pub enum WriteType {
     Simple,
     Batch,

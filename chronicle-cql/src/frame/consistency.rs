@@ -2,7 +2,7 @@ use std::{
     convert::TryInto,
     mem::transmute,
 };
-
+#[derive(Debug)]
 #[repr(u16)]
 pub enum Consistency {
     Any = 0x0,

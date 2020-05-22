@@ -1,5 +1,3 @@
-use bee_ternary::num_conversions;
-
 use cdrs::{
     frame::{
         Flag,
@@ -17,6 +15,7 @@ use chronicle_cql::{
         Decoder,
         Frame,
     },
+    frame::error,
     rows,
     statements::statements::SELECT_TX_QUERY,
 };
@@ -92,6 +91,9 @@ impl GetTrytes {
                         if let Some(trytes) = Trytes::new(decoder).decode().finalize() {
                             *value = serde_json::value::Value::String(trytes);
                         };
+                    } else {
+                        let error = error::CqlError::from(decoder.body());
+                        println!("GetTrytes: {:?}", error);
                     }
                     return pid;
                 }
@@ -156,7 +158,6 @@ impl Worker for GetTrytesId {
 rows!(
     rows: Trytes {},
     row: Row(
-        Hash,
         Payload,
         Address,
         Value,
@@ -171,8 +172,7 @@ rows!(
         AttachmentTimestamp,
         AttachmentTimestampLower,
         AttachmentTimestampUpper,
-        Nonce,
-        Milestone
+        Nonce
     ),
     column_decoder: TrytesDecoder
 );
@@ -205,11 +205,6 @@ impl Rows for Trytes {
     }
 }
 // implementation to decoder the columns in order to form the trytes eventually
-impl TrytesDecoder for Hash {
-    fn decode_column(_start: usize, _length: i32, _acc: &mut Trytes) {
-        // we don't need the hash to build the trytes, so nothing should be done.
-    }
-}
 impl TrytesDecoder for Payload {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // Payload trytes offest is 0..2187, note: assuming length != -1(indicate empty column).
@@ -225,13 +220,8 @@ impl TrytesDecoder for Address {
 }
 impl TrytesDecoder for Value {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // value is represented as i64
-        let value = i64::from_be_bytes(acc.buffer()[start..(start + length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2268..2295]
-
-        //buff.encode::<TryteBuf>();
-        todo!()
+        // Value tryte offset is 2268..2295
+        acc.buffer().copy_within(start..(start + length as usize), 2268);
     }
 }
 impl TrytesDecoder for ObsoleteTag {
@@ -242,35 +232,20 @@ impl TrytesDecoder for ObsoleteTag {
 }
 impl TrytesDecoder for Timestamp {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // Timestamp is represented as i64
-        let value = i64::from_be_bytes(acc.buffer()[start..(start + length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2322..2331]
-
-        //buff.encode::<TryteBuf>();
-        todo!()
+        // Timestamp tryte offset is 2322..2331
+        acc.buffer().copy_within(start..(start + length as usize), 2322);
     }
 }
 impl TrytesDecoder for CurrentIndex {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // CurrentIndex is represented as i64
-        let value = i64::from_be_bytes(acc.buffer()[start..(start + length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2331..2340]
-
-        //buff.encode::<TryteBuf>();
-        todo!()
+        // CurrentIndex tryte offset is 2331..2340
+        acc.buffer().copy_within(start..(start + length as usize), 2331);
     }
 }
 impl TrytesDecoder for LastIndex {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // LastIndex is represented as i64
-        let value = i64::from_be_bytes(acc.buffer()[start..(start + length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2340..2349]
-
-        //buff.encode::<TryteBuf>();
-        todo!()
+        // LastIndex tryte offset is 2340..2349
+        acc.buffer().copy_within(start..(start + length as usize), 2340);
     }
 }
 impl TrytesDecoder for Bundle {
@@ -299,45 +274,25 @@ impl TrytesDecoder for Tag {
 }
 impl TrytesDecoder for AttachmentTimestamp {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // AttachmentTimestamp is represented as i64
-        let value = i64::from_be_bytes(acc.buffer()[start..(start + length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2619..2628]
-
-        //buff.encode::<TryteBuf>();
-        todo!()
+        // AttachmentTimestamp tryte offset is 2619..2628
+        acc.buffer().copy_within(start..(start + length as usize), 2619);
     }
 }
 impl TrytesDecoder for AttachmentTimestampLower {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // LastIndex is represented as i64
-        let value = i64::from_be_bytes(acc.buffer()[start..(start + length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2628..2637]
-
-        //buff.encode::<TryteBuf>();
-        todo!()
+        // AttachmentTimestampLower tryte offset is 2628..2637
+        acc.buffer().copy_within(start..(start + length as usize), 2628);
     }
 }
 impl TrytesDecoder for AttachmentTimestampUpper {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
-        // LastIndex is represented as i64
-        let value = i64::from_be_bytes(acc.buffer()[start..(start + length as usize)].try_into().unwrap());
-        let _buff = num_conversions::TritBuf::<num_conversions::T1B1Buf>::from(value);
-        // convert TritBuf to trytes and put it in acc.buffer[2637..2646]
-
-        //buff.encode::<TryteBuf>();
-        todo!()
+        // AttachmentTimestampUpper tryte offset is 2637..2646
+        acc.buffer().copy_within(start..(start + length as usize), 2637);
     }
 }
 impl TrytesDecoder for Nonce {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // Tag tryte offset is 2646..2673
         acc.buffer().copy_within(start..(start + length as usize), 2646)
-    }
-}
-impl TrytesDecoder for Milestone {
-    fn decode_column(_start: usize, _length: i32, _acc: &mut Trytes) {
-        // we don't need the milestone to build the trytes, so nothing should be done.
     }
 }

@@ -90,7 +90,23 @@ pub const INSERT_EDGE_QUERY: &str = r#"
 "#;
 
 pub const SELECT_TX_QUERY: &str = r#"
-  SELECT * FROM tangle.transaction
+  SELECT
+  payload,
+  address,
+  value,
+  obsolete_tag,
+  timestamp,
+  current_index,
+  last_index,
+  bundle,
+  trunk,
+  branch,
+  tag,
+  attachment_timestamp,
+  attachment_timestamp_lower,
+  attachment_timestamp_upper,
+  nonce
+  FROM tangle.transaction
   WHERE hash = ?;
 "#;
 

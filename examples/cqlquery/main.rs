@@ -214,7 +214,7 @@ async fn delay_for_10_sec() {
 #[tokio::main(core_threads = 8)]
 #[allow(unused_must_use)]
 async fn main() {
-    println!("Starting chronicle-example");
+    println!("Starting cqlquery example");
     // instead you can define your own .run() strategy
     AppsBuilder::new()
         .build()
