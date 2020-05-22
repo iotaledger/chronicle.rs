@@ -9,7 +9,6 @@ use chronicle_cql::{
     frame::header,
     frame::queryflags,
     frame::query::Query,
-    frame::error,
     frame::consistency::Consistency,
     rows,
     statements::statements::SELECT_TX_QUERY,
@@ -87,8 +86,7 @@ impl GetTrytes {
                             *value = serde_json::value::Value::String(trytes);
                         };
                     } else {
-                        let error = error::CqlError::from(decoder.body());
-                        println!("GetTrytes: {:?}", error);
+                        println!("GetTrytes: {:?}", decoder.get_error());
                     }
                     return pid;
                 }

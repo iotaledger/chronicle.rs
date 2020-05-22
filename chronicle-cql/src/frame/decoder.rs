@@ -35,6 +35,7 @@ pub trait Frame {
     fn is_void(&self) -> bool;
     fn is_rows(&self) -> bool;
     fn is_error(&self) -> bool;
+    fn get_error(&self) -> error::CqlError;
     fn is_unprepared(&self) -> bool;
     fn is_already_exists(&self) -> bool;
     fn is_configure_error(&self) -> bool;
@@ -173,6 +174,9 @@ impl Frame for Decoder {
     }
     fn is_error(&self) -> bool {
         self.opcode() == opcode::ERROR
+    }
+    fn get_error(&self) -> error::CqlError {
+        error::CqlError::from(self.body())
     }
     fn is_unprepared(&self) -> bool {
         self.opcode() == opcode::ERROR && self.body_kind() == error::UNPREPARED
