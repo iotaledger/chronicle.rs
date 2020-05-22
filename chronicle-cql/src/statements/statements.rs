@@ -106,7 +106,7 @@ pub const SELECT_TX_QUERY: &str = r#"
   attachment_timestamp_lower,
   attachment_timestamp_upper,
   nonce
-  FROM chronicle_example.transaction
+  FROM tangle.transaction
   WHERE hash = ?;
 "#;
 
