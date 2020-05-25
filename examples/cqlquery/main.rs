@@ -64,6 +64,30 @@ CREATE TABLE IF NOT EXISTS chronicle_example.transaction (
   milestone bigint,
 );
 "#;
+pub const CREATE_EXAMPLE_EDGE_TABLE_QUERY: &str = r#"
+CREATE TABLE IF NOT EXISTS chronicle_example.edge (
+  vertex blob,
+  kind text,
+  timestamp bigint,
+  tx blob,
+  value bigint,
+  extra blob,
+  PRIMARY KEY(vertex, kind, timestamp, tx)
+);
+"#;
+
+pub const CREATE_EXAMPLE_DATA_TABLE_QUERY: &str = r#"
+CREATE TABLE IF NOT EXISTS chronicle_example.data (
+  vertex blob,
+  year smallint,
+  month tinyint,
+  kind text,
+  timestamp bigint,
+  tx blob,
+  extra blob,
+  PRIMARY KEY((vertex,year,month), kind, timestamp, tx)
+);
+"#;
 
 const INSERT_EXAMPLE_TX_QUERY: &str = r#"
   INSERT INTO chronicle_example.transaction (
@@ -88,7 +112,7 @@ const INSERT_EXAMPLE_TX_QUERY: &str = r#"
 "#;
 
 pub const INSERT_EXAMPLE_EDGE_QUERY: &str = r#"
-  INSERT INTO tangle.edge (
+  INSERT INTO chronicle_example.edge (
     vertex,
     kind,
     timestamp,
@@ -99,7 +123,7 @@ pub const INSERT_EXAMPLE_EDGE_QUERY: &str = r#"
 "#;
 
 pub const INSERT_EXAMPLE_DATA_QUERY: &str = r#"
-  INSERT INTO tangle.edge (
+  INSERT INTO chronicle_example.edge (
     vertex,
     year,
     month,
@@ -251,6 +275,16 @@ async fn main() {
                 .await;
             CqlQueryBuilder::new()
                 .statement(CREATE_EXAMPLE_TX_TABLE_QUERY.to_string())
+                .build()
+                .run()
+                .await;
+            CqlQueryBuilder::new()
+                .statement(CREATE_EXAMPLE_EDGE_TABLE_QUERY.to_string())
+                .build()
+                .run()
+                .await;
+            CqlQueryBuilder::new()
+                .statement(CREATE_EXAMPLE_DATA_TABLE_QUERY.to_string())
                 .build()
                 .run()
                 .await;
