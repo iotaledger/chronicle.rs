@@ -12,4 +12,3 @@ chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-cql = {path = "../chronicle-cql"}
-rand = "0.7"

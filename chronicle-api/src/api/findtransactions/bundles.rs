@@ -51,6 +51,9 @@ impl BundlesDecoder for Hash {
         let hash = Trytes81::decode(&acc.buffer()[start..], length as usize);
         acc.hashes.push(hash);
     }
+    fn handle_null(_: &mut Hashes) {
+        unreachable!()
+    }
 }
 
 // ----------- encoding scope -----------

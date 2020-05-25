@@ -107,7 +107,7 @@ impl CqlQueryBuilder {
 pub struct CqlQuery {
     statement: String,
 }
-
+#[derive(Debug)]
 // Note that this event name should not be Event to avoid naming collision w/ the event in launcher
 pub enum CqlQueryEvent {
     Response { giveload: Vec<u8>, pid: Box<CqlQueryId> },
@@ -132,7 +132,6 @@ impl Worker for CqlQueryId {
         }
     }
 }
-
 impl CqlQuery {
     pub async fn run(self) -> Result<(), Box<dyn Error>> {
         let (tx, mut rx) = mpsc::unbounded_channel::<CqlQueryEvent>();

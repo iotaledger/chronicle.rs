@@ -207,11 +207,17 @@ impl TrytesDecoder for Payload {
         // copy_within so a buffer[0..2187] will = buffer[start..length]
         acc.buffer().copy_within(start..(start + length as usize), 0)
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for Address {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // Address trytes offest is 2187..2268, note: we assume the length value is also correct
         acc.buffer().copy_within(start..(start + length as usize), 2187)
+    }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
     }
 }
 impl TrytesDecoder for Value {
@@ -219,11 +225,17 @@ impl TrytesDecoder for Value {
         // Value tryte offset is 2268..2295
         acc.buffer().copy_within(start..(start + length as usize), 2268);
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for ObsoleteTag {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // ObsoleteTag tryte offset is 2295..2322
         acc.buffer().copy_within(start..(start + length as usize), 2295)
+    }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
     }
 }
 impl TrytesDecoder for Timestamp {
@@ -231,11 +243,17 @@ impl TrytesDecoder for Timestamp {
         // Timestamp tryte offset is 2322..2331
         acc.buffer().copy_within(start..(start + length as usize), 2322);
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for CurrentIndex {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // CurrentIndex tryte offset is 2331..2340
         acc.buffer().copy_within(start..(start + length as usize), 2331);
+    }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
     }
 }
 impl TrytesDecoder for LastIndex {
@@ -243,11 +261,17 @@ impl TrytesDecoder for LastIndex {
         // LastIndex tryte offset is 2340..2349
         acc.buffer().copy_within(start..(start + length as usize), 2340);
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for Bundle {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // Bundle tryte offset is 2349..2430
         acc.buffer().copy_within(start..(start + length as usize), 2349)
+    }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
     }
 }
 impl TrytesDecoder for Trunk {
@@ -255,11 +279,17 @@ impl TrytesDecoder for Trunk {
         // Trunk tryte offset is 2430..2511
         acc.buffer().copy_within(start..(start + length as usize), 2430)
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for Branch {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // Branch tryte offset is 2511..2592
         acc.buffer().copy_within(start..(start + length as usize), 2511)
+    }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
     }
 }
 impl TrytesDecoder for Tag {
@@ -267,11 +297,17 @@ impl TrytesDecoder for Tag {
         // Tag tryte offset is 2592..2619
         acc.buffer().copy_within(start..(start + length as usize), 2592)
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for AttachmentTimestamp {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // AttachmentTimestamp tryte offset is 2619..2628
         acc.buffer().copy_within(start..(start + length as usize), 2619);
+    }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
     }
 }
 impl TrytesDecoder for AttachmentTimestampLower {
@@ -279,16 +315,25 @@ impl TrytesDecoder for AttachmentTimestampLower {
         // AttachmentTimestampLower tryte offset is 2628..2637
         acc.buffer().copy_within(start..(start + length as usize), 2628);
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for AttachmentTimestampUpper {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // AttachmentTimestampUpper tryte offset is 2637..2646
         acc.buffer().copy_within(start..(start + length as usize), 2637);
     }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
+    }
 }
 impl TrytesDecoder for Nonce {
     fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
         // Tag tryte offset is 2646..2673
         acc.buffer().copy_within(start..(start + length as usize), 2646)
+    }
+    fn handle_null(_: &mut Trytes) {
+        unreachable!()
     }
 }

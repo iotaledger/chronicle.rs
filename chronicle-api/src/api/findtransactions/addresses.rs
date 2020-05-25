@@ -65,6 +65,9 @@ impl AddressesDecoder for Hash {
             acc.hashes.push(hash);
         }
     }
+    fn handle_null(_: &mut Hashes) {
+        unreachable!()
+    }
 }
 
 impl AddressesDecoder for Extra {
@@ -79,6 +82,9 @@ impl AddressesDecoder for Extra {
             // reset is_hint to be false for next() rows if any.
             acc.is_hint = false;
         }
+    }
+    fn handle_null(_: &mut Hashes) {
+        unreachable!()
     }
 }
 

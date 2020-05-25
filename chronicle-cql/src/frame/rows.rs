@@ -60,6 +60,7 @@ macro_rules! rows {
         use chronicle_cql::compression::Compression;
         trait $decoder {
             fn decode_column(start: usize, length: i32, acc: &mut $rows);
+            fn handle_null(acc: &mut $rows);
         }
         pub struct $rows {
             decoder: Decoder,
@@ -87,11 +88,13 @@ macro_rules! rows {
                         let length = i32::from_be_bytes(
                             self.decoder.buffer_as_ref()[self.column_start..(self.column_start+4)].try_into().unwrap()
                         );
-                        self.column_start += 4; // now it become the column_value start.
-                        $col_type::decode_column(self.column_start, length, self);
-                        // update the next column_start to start from next column
+                        self.column_start += 4; // now it become the column_value start, or next column_start if length < 0
                         if length > 0 {
+                            $col_type::decode_column(self.column_start, length, self);
+                            // update the next column_start to start from next column
                             self.column_start += (length as usize);
+                        } else {
+                            $col_type::handle_null(self);
                         }
                     )*
                     Some(self.remaining_rows_count)
