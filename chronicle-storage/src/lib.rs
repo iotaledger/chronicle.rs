@@ -9,3 +9,5 @@ pub mod stage;
 pub mod storage;
 pub mod worker;
 extern crate cdrs_helpers_derive;
+#[macro_use]
+extern crate lazy_static;

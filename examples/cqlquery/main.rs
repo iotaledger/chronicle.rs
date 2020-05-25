@@ -1,4 +1,3 @@
-use chronicle_api::api::api::ApiBuilder;
 use chronicle_common::{
     actor,
     launcher,
@@ -16,10 +15,7 @@ use chronicle_cql::{
             IGNORE,
         },
         query::Query,
-        queryflags::{
-            SKIP_METADATA,
-            VALUES,
-        },
+        queryflags::SKIP_METADATA,
     },
 };
 use chronicle_storage::{
@@ -89,6 +85,29 @@ const INSERT_EXAMPLE_TX_QUERY: &str = r#"
     nonce,
     milestone
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+"#;
+
+pub const INSERT_EXAMPLE_EDGE_QUERY: &str = r#"
+  INSERT INTO tangle.edge (
+    vertex,
+    kind,
+    timestamp,
+    tx,
+    value,
+    extra
+) VALUES (?,?,?,?,?,?,?);
+"#;
+
+pub const INSERT_EXAMPLE_DATA_QUERY: &str = r#"
+  INSERT INTO tangle.edge (
+    vertex,
+    year,
+    month,
+    kind,
+    timestamp,
+    tx,
+    extra,
+) VALUES (?,?,?,?,?,?,?);
 "#;
 
 #[derive(Debug)]
@@ -236,8 +255,10 @@ async fn main() {
                 .run()
                 .await;
             InsertTransactionsFromFileBuilder::new()
-                .filepath("./cqlquery/dmp/18675_head10.dmp".to_string())
-                .statement(INSERT_EXAMPLE_TX_QUERY.to_string())
+                .filepath("./cqlquery/dmp/18675.dmp".to_string())
+                .statement_tx_table(INSERT_EXAMPLE_TX_QUERY.to_string())
+                .statement_edge_table(INSERT_EXAMPLE_EDGE_QUERY.to_string())
+                .statement_data_table(INSERT_EXAMPLE_DATA_QUERY.to_string())
                 .build()
                 .run()
                 .await;

@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS tangle.edge (
   timestamp bigint,
   tx blob,
   value bigint,
-  milestone bigint,
   extra blob,
   PRIMARY KEY(vertex, kind, timestamp, tx)
 );
@@ -49,7 +48,6 @@ CREATE TABLE IF NOT EXISTS tangle.data (
   kind text,
   timestamp bigint,
   tx blob,
-  milestone bigint,
   extra blob,
   PRIMARY KEY((vertex,year,month), kind, timestamp, tx)
 );
@@ -84,8 +82,19 @@ pub const INSERT_EDGE_QUERY: &str = r#"
     timestamp,
     tx,
     value,
-    milestone,
     extra
+) VALUES (?,?,?,?,?,?,?);
+"#;
+
+pub const INSERT_DATA_QUERY: &str = r#"
+  INSERT INTO tangle.edge (
+  vertex,
+    year,
+    month,
+    kind,
+    timestamp,
+    tx,
+    extra,
 ) VALUES (?,?,?,?,?,?,?);
 "#;
 
@@ -113,9 +122,4 @@ pub const SELECT_TX_QUERY: &str = r#"
 pub const SELECT_EDGE_QUERY: &str = r#"
   SELECT * FROM tangle.edge
   WHERE vertex = ?;
-"#;
-
-pub const SELECT_TX_BY_BUNDLE_QUERY: &str = r#"
-  SELECT * FROM tangle.transaction
-  WHERE bundle = ?;
 "#;
