@@ -100,8 +100,9 @@ impl Query {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compression::compression::MyCompression;
+
     use crate::{
-        compression::compression::UNCOMPRESSED,
         frame::{
             consistency::Consistency,
             header,
@@ -146,6 +147,6 @@ mod tests {
             .value(0 as i64) // attachment_timestamp_upper
             .value("NONCE_VALUE") // nonce
             .unset_value() // not-set value for milestone
-            .build(UNCOMPRESSED); // build uncompressed
+            .build(MyCompression::get());
     }
 }

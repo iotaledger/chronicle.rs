@@ -2,7 +2,7 @@ use lz4;
 use snap;
 use std::convert::TryInto;
 
-pub trait Compression {
+pub trait Compression: Sync {
     fn decompress(&self, compressed: Vec<u8>) -> Vec<u8>;
     fn compress(&self, uncompressed: Vec<u8>) -> Vec<u8>;
 }
@@ -76,5 +76,43 @@ impl Compression for Uncompressed {
         let body_length = i32::to_be_bytes((buffer.len() as i32) - 9);
         buffer[5..9].copy_from_slice(&body_length);
         buffer
+    }
+}
+// to enable user defines a global compression
+pub static mut MY_COMPRESSION: MyCompression = MyCompression(&UNCOMPRESSED);
+#[derive(Copy, Clone)]
+pub struct MyCompression(pub &'static dyn Compression);
+
+impl MyCompression {
+    pub fn set_lz4() {
+        unsafe {
+            MY_COMPRESSION = MyCompression(&LZ4);
+        }
+    }
+    pub fn set_snappy() {
+        unsafe {
+            MY_COMPRESSION = MyCompression(&SNAPPY);
+        }
+    }
+    pub fn set_uncompressed() {
+        unsafe {
+            MY_COMPRESSION = MyCompression(&UNCOMPRESSED);
+        }
+    }
+    pub fn get() -> impl Compression {
+        unsafe {
+            MY_COMPRESSION
+        }
+    }
+}
+
+impl Compression for MyCompression {
+    fn decompress(&self, buffer: Vec<u8>) -> Vec<u8> {
+        // get the inner compression and then decompress
+        self.0.decompress(buffer)
+    }
+    fn compress(&self, buffer: Vec<u8>) -> Vec<u8> {
+        // get the inner compression and then compress
+        self.0.compress(buffer)
     }
 }
