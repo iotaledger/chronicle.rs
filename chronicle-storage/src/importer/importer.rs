@@ -191,7 +191,7 @@ impl InsertTransactionsFromFile {
             // Insert information to tables
             worker = Self::process(tx_table_payload, worker, &mut rx).await;
             if value == 0 {
-                let edge_table_hint = Self::insert_to_edge_table_for_hint_vertex(&self.statement_edge_table, address);
+                let edge_table_hint = Self::insert_to_edge_table_for_hint_vertex(&self.statement_edge_table, address, year, month);
                 worker = Self::process(edge_table_hint, worker, &mut rx).await;
 
                 let (data_table_address, data_table_tag) = (
@@ -293,7 +293,7 @@ impl InsertTransactionsFromFile {
         }
     }
 
-    fn insert_to_edge_table_for_hint_vertex(statement: &str, address: &str) -> Vec<u8> {
+    fn insert_to_edge_table_for_hint_vertex(statement: &str, address: &str, year: i16, month: i8) -> Vec<u8> {
         // Note for hint kind, we only store the lastest inserted 0-value tx time
         // The user can query all the 0-value txs in data table by the returned hint information
         let Query(payload) = Query::new()
@@ -311,7 +311,7 @@ impl InsertTransactionsFromFile {
             .value(0 as i64) // timestamp
             .value("0") // tx-hash
             .value(0 as i64) // value
-            .unset_value() // not-set value for extra
+            .value(YearMonth(year, month)) // not-set value for extra
             .build(UNCOMPRESSED);
         payload
     }
@@ -562,6 +562,15 @@ async fn download_file(url: &str) -> Result<String, Box<dyn Error>> {
     std::io::copy(&mut std_file, &mut sha256)?;
     let hash = sha256.result();
     Ok(format!("{:x}", hash))
+}
+const BE_3_BYTES_LENGTH: [u8;4] = [0,0,0,3];
+struct YearMonth(i16, i8);
+impl chronicle_cql::frame::encoder::ColumnEncoder for YearMonth {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&BE_3_BYTES_LENGTH);
+        buffer.extend(&i16::to_be_bytes(self.0));
+        buffer.push(self.1 as u8);
+    }
 }
 
 #[cfg(test)]

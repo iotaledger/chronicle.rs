@@ -74,6 +74,7 @@ impl AddressesDecoder for Extra {
     fn decode_column(start: usize, _length: i32, acc: &mut Hashes) {
         if acc.is_hint {
             // create a hint and push it to hints
+            println!("len {}", _length);
             let end = start + 2;
             let year = u16::from_be_bytes(acc.buffer()[start..end].try_into().unwrap());
             let month = acc.buffer()[end];
@@ -97,7 +98,7 @@ pub fn query(address: &Trytes81) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT tx FROM tangle.edge WHERE vertex = ? AND kind in ['input','output','hint']")
+        .statement("SELECT tx, extra FROM chronicle_example.edge WHERE vertex = ? AND kind in ('input','output','hint')")
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)
