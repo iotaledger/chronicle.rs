@@ -168,6 +168,7 @@ impl InsertTransactionsFromFile {
             let bundle = &rawtx[2349..2430];
             let trunk = &rawtx[2430..2511];
             let branch = &rawtx[2511..2592];
+            let tag = &rawtx[2592..2619];
             let mut kind = "hint";
             let mut timestamp_address: i64 = 0;
             let timestamp: i64 = str_to_i64(&rawtx[2322..2331]);
@@ -239,38 +240,21 @@ impl InsertTransactionsFromFile {
                 ),
             );
 
-            let (data_table_address, data_table_bundle, data_table_trunk, data_table_branch) = (
+            let (data_table_address, data_table_tag) = (
                 Self::insert_to_data_table_for_address_vertex(
                     &self.statement_data_table,
                     address,
                     year,
                     month,
-                    kind,
                     timestamp_address,
                     hash,
                 ),
-                Self::insert_to_data_table_for_bundle_vertex(
+                Self::insert_to_data_table_for_tag_vertex(
                     &self.statement_data_table,
-                    bundle,
+                    tag,
                     year,
                     month,
                     timestamp,
-                    hash,
-                ),
-                Self::insert_to_data_table_for_trunk_vertex(
-                    &self.statement_data_table,
-                    trunk,
-                    year,
-                    month,
-                    atchtimestamp,
-                    hash,
-                ),
-                Self::insert_to_data_table_for_branch_vertex(
-                    &self.statement_data_table,
-                    branch,
-                    year,
-                    month,
-                    atchtimestamp,
                     hash,
                 ),
             );
@@ -282,9 +266,8 @@ impl InsertTransactionsFromFile {
             worker = Self::process(edge_table_trunk, worker, &mut rx).await;
             worker = Self::process(edge_table_branch, worker, &mut rx).await;
             worker = Self::process(data_table_address, worker, &mut rx).await;
-            worker = Self::process(data_table_bundle, worker, &mut rx).await;
-            worker = Self::process(data_table_trunk, worker, &mut rx).await;
-            worker = Self::process(data_table_branch, worker, &mut rx).await;
+            worker = Self::process(data_table_tag, worker, &mut rx).await;
+
             // Add 1 for the endline
             cur_pos += line.len() as u64 + 1;
             if cur_pos > next_progress {
@@ -331,9 +314,15 @@ impl InsertTransactionsFromFile {
         address: &str,
         kind: &str,
         timestamp: i64,
-        tx: &str,
+        mut tx: &str,
         value: i64,
     ) -> Vec<u8> {
+        // Note for hint kind, we only store the lastest inserted 0-value tx time
+        // The user can query all the 0-value txs in data table by the returned hint information
+        if kind == "hint" {
+            tx = "0"; // dummy tx to enable overwriting
+        }
+
         let Query(payload) = Query::new()
             .version()
             .flags(IGNORE)
@@ -440,7 +429,6 @@ impl InsertTransactionsFromFile {
         address: &str,
         year: i16,
         month: i8,
-        kind: &str,
         timestamp: i64,
         tx: &str,
     ) -> Vec<u8> {
@@ -457,7 +445,7 @@ impl InsertTransactionsFromFile {
             .value(address) // vertex
             .value(year) // year
             .value(month) // month
-            .value(kind) // kind
+            .value("address") // kind
             .value(timestamp) // timestamp
             .value(tx) // tx-hash
             .unset_value() // not-set value for extra
@@ -465,9 +453,9 @@ impl InsertTransactionsFromFile {
         payload
     }
 
-    fn insert_to_data_table_for_bundle_vertex(
+    fn insert_to_data_table_for_tag_vertex(
         statement: &str,
-        bundle: &str,
+        tag: &str,
         year: i16,
         month: i8,
         timestamp: i64,
@@ -483,68 +471,10 @@ impl InsertTransactionsFromFile {
             .consistency(Consistency::One)
             .query_flags(SKIP_METADATA | VALUES)
             .value_count(7) // the total value count
-            .value(bundle) // vertex
+            .value(tag) // vertex
             .value(year) // year
             .value(month) // month
-            .value("bundle") // kind
-            .value(timestamp) // timestamp
-            .value(tx) // tx-hash
-            .unset_value() // not-set value for extra
-            .build(UNCOMPRESSED);
-        payload
-    }
-
-    fn insert_to_data_table_for_trunk_vertex(
-        statement: &str,
-        trunk: &str,
-        year: i16,
-        month: i8,
-        timestamp: i64,
-        tx: &str,
-    ) -> Vec<u8> {
-        let Query(payload) = Query::new()
-            .version()
-            .flags(IGNORE)
-            .stream(0)
-            .opcode()
-            .length()
-            .statement(statement)
-            .consistency(Consistency::One)
-            .query_flags(SKIP_METADATA | VALUES)
-            .value_count(7) // the total value count
-            .value(trunk) // vertex
-            .value(year) // year
-            .value(month) // month
-            .value("trunk") // kind
-            .value(timestamp) // timestamp
-            .value(tx) // tx-hash
-            .unset_value() // not-set value for extra
-            .build(UNCOMPRESSED);
-        payload
-    }
-
-    fn insert_to_data_table_for_branch_vertex(
-        statement: &str,
-        branch: &str,
-        year: i16,
-        month: i8,
-        timestamp: i64,
-        tx: &str,
-    ) -> Vec<u8> {
-        let Query(payload) = Query::new()
-            .version()
-            .flags(IGNORE)
-            .stream(0)
-            .opcode()
-            .length()
-            .statement(statement)
-            .consistency(Consistency::One)
-            .query_flags(SKIP_METADATA | VALUES)
-            .value_count(7) // the total value count
-            .value(branch) // vertex
-            .value(year) // year
-            .value(month) // month
-            .value("branch") // kind
+            .value("tag") // kind
             .value(timestamp) // timestamp
             .value(tx) // tx-hash
             .unset_value() // not-set value for extra
