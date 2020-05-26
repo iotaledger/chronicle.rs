@@ -173,7 +173,6 @@ impl InsertTransactionsFromFile {
             let mut kind = "hint";
             let mut timestamp_address: i64 = 0;
             let timestamp: i64 = str_to_i64(&rawtx[2322..2331]);
-            let mut atchtimestamp: i64 = str_to_i64(&rawtx[2619..2628]);
             let value: i64 = str_to_i64(&rawtx[2268..2295]);
             let naive = NaiveDateTime::from_timestamp(timestamp, 0);
 
@@ -189,13 +188,6 @@ impl InsertTransactionsFromFile {
             } else if value < 0 {
                 kind = "input";
                 timestamp_address = timestamp;
-            } else {
-                // Do nothing
-            }
-
-            // If the attachtime equals zero then use timestamp for trunk/branch kind
-            if atchtimestamp == 0 {
-                atchtimestamp = timestamp;
             } else {
                 // Do nothing
             }
@@ -225,17 +217,11 @@ impl InsertTransactionsFromFile {
                     hash,
                     value,
                 ),
-                Self::insert_to_edge_table_for_trunk_vertex(
-                    &self.statement_edge_table,
-                    trunk,
-                    atchtimestamp,
-                    hash,
-                    value,
-                ),
+                Self::insert_to_edge_table_for_trunk_vertex(&self.statement_edge_table, trunk, timestamp, hash, value),
                 Self::insert_to_edge_table_for_branch_vertex(
                     &self.statement_edge_table,
                     branch,
-                    atchtimestamp,
+                    timestamp,
                     hash,
                     value,
                 ),
@@ -247,7 +233,7 @@ impl InsertTransactionsFromFile {
                     address,
                     year,
                     month,
-                    atchtimestamp,
+                    timestamp,
                     hash,
                 ),
                 Self::insert_to_data_table_for_tag_vertex(
@@ -255,7 +241,7 @@ impl InsertTransactionsFromFile {
                     tag,
                     year,
                     month,
-                    atchtimestamp,
+                    timestamp,
                     hash,
                 ),
             );
