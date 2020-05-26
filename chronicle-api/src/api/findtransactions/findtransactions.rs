@@ -149,9 +149,9 @@ impl FindTransactions {
                     }
                 }
             }
-            // update hashes
-            res_txs.hashes = Some(hashes);
         }
+        // update hashes
+        res_txs.hashes.replace(hashes);
         Ok(worker)
     }
 
@@ -162,6 +162,7 @@ impl FindTransactions {
         rx: &mut Receiver,
     ) -> Result<Box<FindTransactionsId>, Response<Body>> {
         if let Some(approvees) = self.approvees.as_ref() {
+            let mut hashes = res_txs.hashes.take().unwrap();
             for approvee in approvees {
                 // create request
                 let payload = approvees::query(approvee);
@@ -175,10 +176,7 @@ impl FindTransactions {
                             worker = pid;
                             let decoder = Decoder::new(giveload, MyCompression::get());
                             if decoder.is_rows() {
-                                let hashes = res_txs.hashes.take().unwrap();
-                                res_txs
-                                    .hashes
-                                    .replace(approvees::Hashes::new(decoder, hashes).decode().finalize());
+                                hashes = approvees::Hashes::new(decoder, hashes).decode().finalize();
                                 break;
                             } else {
                                 // it's for future impl to be used with execute
@@ -200,6 +198,7 @@ impl FindTransactions {
                     }
                 }
             }
+            res_txs.hashes.replace(hashes);
         }
         Ok(worker)
     }
