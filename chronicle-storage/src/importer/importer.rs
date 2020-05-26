@@ -247,7 +247,7 @@ impl InsertTransactionsFromFile {
                     address,
                     year,
                     month,
-                    timestamp_address,
+                    atchtimestamp,
                     hash,
                 ),
                 Self::insert_to_data_table_for_tag_vertex(
@@ -255,7 +255,7 @@ impl InsertTransactionsFromFile {
                     tag,
                     year,
                     month,
-                    timestamp,
+                    atchtimestamp,
                     hash,
                 ),
             );
