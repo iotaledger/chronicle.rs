@@ -36,14 +36,11 @@ use indicatif::{
     ProgressBar,
     ProgressStyle,
 };
-use lazy_static;
-// use lazy_static;
 use sha2::{
     Digest,
     Sha256,
 };
 use std::{
-    collections::HashSet,
     convert::TryFrom,
     error::Error,
     io::SeekFrom,
@@ -64,16 +61,7 @@ type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
 pub struct InsertTransactionsFromFileId(Sender);
-
-lazy_static! {
-    static ref MILESTONE_FILENAME: HashSet<&'static str> = {
-        let mut hs = HashSet::new();
-        hs.insert("6000");
-        hs.insert("13157");
-        hs.insert("18675");
-        hs
-    };
-}
+const MILESTONE_FILENAME: [&'static str; 3] = ["6000", "13157", "18675"];
 
 actor!(InsertTransactionsFromFileBuilder {
     filepath: String,
@@ -166,8 +154,9 @@ impl InsertTransactionsFromFile {
 
         let path = Path::new(&self.filepath);
         let file_stem = path.file_stem().unwrap().to_str().unwrap();
-        if MILESTONE_FILENAME.contains(file_stem) {
-            milestone = file_stem.parse::<i64>().unwrap();
+        let mut use_file_stem_as_milstone = false;
+        if MILESTONE_FILENAME.iter().any(|&i| i == file_stem) {
+            use_file_stem_as_milstone = true;
         }
 
         // Show the progress when every 1MB are processed
@@ -210,7 +199,7 @@ impl InsertTransactionsFromFile {
             }
 
             // Get the milestone if the file stem is not used
-            if MILESTONE_FILENAME.contains(file_stem) == false {
+            if use_file_stem_as_milstone == false {
                 milestone = v[2].parse::<i64>().unwrap();
             }
 
