@@ -131,7 +131,7 @@ const INSERT_EXAMPLE_DATA_QUERY: &str = r#"
     kind,
     timestamp,
     tx,
-    extra,
+    extra
 ) VALUES (?,?,?,?,?,?,?);
 "#;
 

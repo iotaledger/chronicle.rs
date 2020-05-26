@@ -157,6 +157,7 @@ impl InsertTransactionsFromFile {
         let mut use_file_stem_as_milstone = false;
         if MILESTONE_FILENAME.iter().any(|&i| i == file_stem) {
             use_file_stem_as_milstone = true;
+            milestone = file_stem.parse::<i64>().unwrap();
         }
 
         // Show the progress when every 1MB are processed

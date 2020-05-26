@@ -83,18 +83,18 @@ pub const INSERT_EDGE_QUERY: &str = r#"
     tx,
     value,
     extra
-) VALUES (?,?,?,?,?,?,?);
+) VALUES (?,?,?,?,?,?);
 "#;
 
 pub const INSERT_DATA_QUERY: &str = r#"
   INSERT INTO tangle.data (
-  vertex,
+    vertex,
     year,
     month,
     kind,
     timestamp,
     tx,
-    extra,
+    extra
 ) VALUES (?,?,?,?,?,?,?);
 "#;
 
