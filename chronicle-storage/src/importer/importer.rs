@@ -227,33 +227,36 @@ impl InsertTransactionsFromFile {
                 ),
             );
 
-            let (data_table_address, data_table_tag) = (
-                Self::insert_to_data_table_for_address_vertex(
-                    &self.statement_data_table,
-                    address,
-                    year,
-                    month,
-                    timestamp,
-                    hash,
-                ),
-                Self::insert_to_data_table_for_tag_vertex(
-                    &self.statement_data_table,
-                    tag,
-                    year,
-                    month,
-                    timestamp,
-                    hash,
-                ),
-            );
-
             // Insert information to tables
             worker = Self::process(tx_table_payload, worker, &mut rx).await;
             worker = Self::process(edge_table_address, worker, &mut rx).await;
             worker = Self::process(edge_table_bundle, worker, &mut rx).await;
             worker = Self::process(edge_table_trunk, worker, &mut rx).await;
             worker = Self::process(edge_table_branch, worker, &mut rx).await;
-            worker = Self::process(data_table_address, worker, &mut rx).await;
-            worker = Self::process(data_table_tag, worker, &mut rx).await;
+
+            // Insert zero-value transactions to data table
+            if value == 0 {
+                let (data_table_address, data_table_tag) = (
+                    Self::insert_to_data_table_for_address_vertex(
+                        &self.statement_data_table,
+                        address,
+                        year,
+                        month,
+                        timestamp,
+                        hash,
+                    ),
+                    Self::insert_to_data_table_for_tag_vertex(
+                        &self.statement_data_table,
+                        tag,
+                        year,
+                        month,
+                        timestamp,
+                        hash,
+                    ),
+                );
+                worker = Self::process(data_table_address, worker, &mut rx).await;
+                worker = Self::process(data_table_tag, worker, &mut rx).await;
+            }
 
             // Add 1 for the endline
             cur_pos += line.len() as u64 + 1;
