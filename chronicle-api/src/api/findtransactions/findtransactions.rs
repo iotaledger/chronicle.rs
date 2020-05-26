@@ -110,10 +110,10 @@ impl FindTransactions {
     ) -> Result<Box<FindTransactionsId>, Response<Body>> {
         // create empty hashes;
         let mut hashes: Vec<Trytes81> = Vec::new();
-        if let Some(bundles) = self.bundles.as_ref() {
+        if let Some(bundles) = self.bundles.take() {
             for bundle in bundles {
                 // create request
-                let payload = bundles::query(bundle);
+                let payload = bundles::query(&bundle);
                 let request = reporter::Event::Request { payload, worker };
                 // send request using ring, todo use shard-awareness algo
                 Ring::send_local_random_replica(0, request);
@@ -161,11 +161,11 @@ impl FindTransactions {
         mut worker: Box<FindTransactionsId>,
         rx: &mut Receiver,
     ) -> Result<Box<FindTransactionsId>, Response<Body>> {
-        if let Some(approvees) = self.approvees.as_ref() {
+        if let Some(approvees) = self.approvees.take() {
             let mut hashes = res_txs.hashes.take().unwrap();
             for approvee in approvees {
                 // create request
-                let payload = approvees::query(approvee);
+                let payload = approvees::query(&approvee);
                 let request = reporter::Event::Request { payload, worker };
                 // send request using ring, todo use shard-awareness algo
                 Ring::send_local_random_replica(0, request);
@@ -211,7 +211,7 @@ impl FindTransactions {
     ) -> Result<Box<FindTransactionsId>, Response<Body>> {
         // create empty hints
         let mut hints: Vec<Hint> = Vec::new();
-        if let Some(addresses) = self.addresses.as_ref() {
+        if let Some(addresses) = self.addresses.take() {
             let mut hashes = res_txs.hashes.take().unwrap();
             for address in addresses {
                 // create request
@@ -227,7 +227,7 @@ impl FindTransactions {
                             let decoder = Decoder::new(giveload, MyCompression::get());
                             if decoder.is_rows() {
                                 let (updated_hashes, updated_hints) =
-                                    addresses::Hashes::new(decoder, hashes, hints, false, *address)
+                                    addresses::Hashes::new(decoder, hashes, hints, false, address)
                                         .decode()
                                         .finalize();
                                 hashes = updated_hashes;
