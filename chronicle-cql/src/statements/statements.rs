@@ -87,7 +87,7 @@ pub const INSERT_EDGE_QUERY: &str = r#"
 "#;
 
 pub const INSERT_DATA_QUERY: &str = r#"
-  INSERT INTO tangle.edge (
+  INSERT INTO tangle.data (
   vertex,
     year,
     month,
