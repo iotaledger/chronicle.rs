@@ -170,8 +170,6 @@ impl InsertTransactionsFromFile {
             let trunk = &rawtx[2430..2511];
             let branch = &rawtx[2511..2592];
             let tag = &rawtx[2592..2619];
-            let mut kind = "hint";
-            let mut timestamp_address: i64 = 0;
             let timestamp: i64 = str_to_i64(&rawtx[2322..2331]);
             let value: i64 = str_to_i64(&rawtx[2268..2295]);
             let naive = NaiveDateTime::from_timestamp(timestamp, 0);
@@ -182,16 +180,6 @@ impl InsertTransactionsFromFile {
             // Get the year and month from timestamp
             let (year, month) = (datetime.year() as i16, datetime.month() as i8);
 
-            if value > 0 {
-                kind = "output";
-                timestamp_address = timestamp;
-            } else if value < 0 {
-                kind = "input";
-                timestamp_address = timestamp;
-            } else {
-                // Do nothing
-            }
-
             // Get the milestone if the file stem is not used
             if use_file_stem_as_milstone == false {
                 milestone = v[2].parse::<i64>().unwrap();
@@ -200,42 +188,13 @@ impl InsertTransactionsFromFile {
             // Create payload for tx table insertion
             let tx_table_payload = Self::insert_to_tx_table(&self.statement_tx_table, hash, rawtx, milestone);
 
-            // Create payload for edgetable insertion
-            let (edge_table_address, edge_table_bundle, edge_table_trunk, edge_table_branch) = (
-                Self::insert_to_edge_table_for_address_vertex(
-                    &self.statement_edge_table,
-                    address,
-                    kind,
-                    timestamp_address,
-                    hash,
-                    value,
-                ),
-                Self::insert_to_edge_table_for_bundle_vertex(
-                    &self.statement_edge_table,
-                    bundle,
-                    timestamp,
-                    hash,
-                    value,
-                ),
-                Self::insert_to_edge_table_for_trunk_vertex(&self.statement_edge_table, trunk, timestamp, hash, value),
-                Self::insert_to_edge_table_for_branch_vertex(
-                    &self.statement_edge_table,
-                    branch,
-                    timestamp,
-                    hash,
-                    value,
-                ),
-            );
-
             // Insert information to tables
             worker = Self::process(tx_table_payload, worker, &mut rx).await;
-            worker = Self::process(edge_table_address, worker, &mut rx).await;
-            worker = Self::process(edge_table_bundle, worker, &mut rx).await;
-            worker = Self::process(edge_table_trunk, worker, &mut rx).await;
-            worker = Self::process(edge_table_branch, worker, &mut rx).await;
-
-            // Insert zero-value transactions to data table
             if value == 0 {
+                let edge_table_hint =
+                    Self::insert_to_edge_table_for_hint_vertex(&self.statement_edge_table, address, timestamp);
+                worker = Self::process(edge_table_hint, worker, &mut rx).await;
+
                 let (data_table_address, data_table_tag) = (
                     Self::insert_to_data_table_for_address_vertex(
                         &self.statement_data_table,
@@ -256,7 +215,43 @@ impl InsertTransactionsFromFile {
                 );
                 worker = Self::process(data_table_address, worker, &mut rx).await;
                 worker = Self::process(data_table_tag, worker, &mut rx).await;
+            } else {
+                let mut kind = "input";
+                if value > 0 {
+                    kind = "output";
+                } else {
+                    // Do nothing
+                }
+                let edge_table_address = Self::insert_to_edge_table_for_address_vertex(
+                    &self.statement_edge_table,
+                    address,
+                    kind,
+                    timestamp,
+                    hash,
+                    value,
+                );
+                worker = Self::process(edge_table_address, worker, &mut rx).await;
             }
+            let (edge_table_bundle, edge_table_trunk, edge_table_branch) = (
+                Self::insert_to_edge_table_for_bundle_vertex(
+                    &self.statement_edge_table,
+                    bundle,
+                    timestamp,
+                    hash,
+                    value,
+                ),
+                Self::insert_to_edge_table_for_trunk_vertex(&self.statement_edge_table, trunk, timestamp, hash, value),
+                Self::insert_to_edge_table_for_branch_vertex(
+                    &self.statement_edge_table,
+                    branch,
+                    timestamp,
+                    hash,
+                    value,
+                ),
+            );
+            worker = Self::process(edge_table_bundle, worker, &mut rx).await;
+            worker = Self::process(edge_table_trunk, worker, &mut rx).await;
+            worker = Self::process(edge_table_branch, worker, &mut rx).await;
 
             // Add 1 for the endline
             cur_pos += line.len() as u64 + 1;
@@ -299,20 +294,37 @@ impl InsertTransactionsFromFile {
         }
     }
 
+    fn insert_to_edge_table_for_hint_vertex(statement: &str, address: &str, timestamp: i64) -> Vec<u8> {
+        // Note for hint kind, we only store the lastest inserted 0-value tx time
+        // The user can query all the 0-value txs in data table by the returned hint information
+        let Query(payload) = Query::new()
+            .version()
+            .flags(IGNORE)
+            .stream(0)
+            .opcode()
+            .length()
+            .statement(statement)
+            .consistency(Consistency::One)
+            .query_flags(SKIP_METADATA | VALUES)
+            .value_count(6) // the total value count
+            .value(address) // vertex
+            .value("hint") // kind
+            .value(timestamp) // timestamp
+            .value("0") // tx-hash
+            .value(0) // value
+            .unset_value() // not-set value for extra
+            .build(UNCOMPRESSED);
+        payload
+    }
+
     fn insert_to_edge_table_for_address_vertex(
         statement: &str,
         address: &str,
         kind: &str,
         timestamp: i64,
-        mut tx: &str,
+        tx: &str,
         value: i64,
     ) -> Vec<u8> {
-        // Note for hint kind, we only store the lastest inserted 0-value tx time
-        // The user can query all the 0-value txs in data table by the returned hint information
-        if kind == "hint" {
-            tx = "0"; // dummy tx to enable overwriting
-        }
-
         let Query(payload) = Query::new()
             .version()
             .flags(IGNORE)
