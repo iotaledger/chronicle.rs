@@ -191,8 +191,7 @@ impl InsertTransactionsFromFile {
             // Insert information to tables
             worker = Self::process(tx_table_payload, worker, &mut rx).await;
             if value == 0 {
-                let edge_table_hint =
-                    Self::insert_to_edge_table_for_hint_vertex(&self.statement_edge_table, address, timestamp);
+                let edge_table_hint = Self::insert_to_edge_table_for_hint_vertex(&self.statement_edge_table, address);
                 worker = Self::process(edge_table_hint, worker, &mut rx).await;
 
                 let (data_table_address, data_table_tag) = (
@@ -294,7 +293,7 @@ impl InsertTransactionsFromFile {
         }
     }
 
-    fn insert_to_edge_table_for_hint_vertex(statement: &str, address: &str, timestamp: i64) -> Vec<u8> {
+    fn insert_to_edge_table_for_hint_vertex(statement: &str, address: &str) -> Vec<u8> {
         // Note for hint kind, we only store the lastest inserted 0-value tx time
         // The user can query all the 0-value txs in data table by the returned hint information
         let Query(payload) = Query::new()
@@ -309,9 +308,9 @@ impl InsertTransactionsFromFile {
             .value_count(6) // the total value count
             .value(address) // vertex
             .value("hint") // kind
-            .value(timestamp) // timestamp
+            .value(0 as i64) // timestamp
             .value("0") // tx-hash
-            .value(0) // value
+            .value(0 as i64) // value
             .unset_value() // not-set value for extra
             .build(UNCOMPRESSED);
         payload
