@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS chronicle_example.transaction (
   milestone bigint,
 );
 "#;
-pub const CREATE_EXAMPLE_EDGE_TABLE_QUERY: &str = r#"
+
+const CREATE_EXAMPLE_EDGE_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS chronicle_example.edge (
   vertex blob,
   kind text,
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS chronicle_example.edge (
 );
 "#;
 
-pub const CREATE_EXAMPLE_DATA_TABLE_QUERY: &str = r#"
+const CREATE_EXAMPLE_DATA_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS chronicle_example.data (
   vertex blob,
   year smallint,
@@ -111,7 +112,7 @@ const INSERT_EXAMPLE_TX_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
-pub const INSERT_EXAMPLE_EDGE_QUERY: &str = r#"
+const INSERT_EXAMPLE_EDGE_QUERY: &str = r#"
   INSERT INTO chronicle_example.edge (
     vertex,
     kind,
@@ -119,11 +120,11 @@ pub const INSERT_EXAMPLE_EDGE_QUERY: &str = r#"
     tx,
     value,
     extra
-) VALUES (?,?,?,?,?,?,?);
+) VALUES (?,?,?,?,?,?);
 "#;
 
-pub const INSERT_EXAMPLE_DATA_QUERY: &str = r#"
-  INSERT INTO chronicle_example.edge (
+const INSERT_EXAMPLE_DATA_QUERY: &str = r#"
+  INSERT INTO chronicle_example.data (
     vertex,
     year,
     month,
