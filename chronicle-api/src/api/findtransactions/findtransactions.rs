@@ -6,11 +6,13 @@ use super::{
     bundles,
     bundles::Rows as BundlesRows,
     hints::Hint,
+    hints,
+    hints::Rows as HintsRows,
 };
 use crate::api::types::Trytes81;
 use chronicle_common::actor;
 use chronicle_cql::{
-    compression::UNCOMPRESSED,
+    compression::MyCompression,
     frame::decoder::{
         Decoder,
         Frame,
@@ -72,7 +74,7 @@ impl FindTransactions {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let worker = Box::new(FindTransactionsId(tx));
         let mut res_txs = ResTransactions::default();
-        // process param by param, starting by bundles
+        // process param by param, starting from bundles
         match self.process_bundles(&mut res_txs, worker, &mut rx).await {
             Ok(worker) => {
                 // process approvees
@@ -80,9 +82,15 @@ impl FindTransactions {
                     Ok(worker) => {
                         // process addresses
                         match self.process_addresses(&mut res_txs, worker, &mut rx).await {
-                            Ok(_worker) => {
+                            Ok(worker) => {
                                 // process hints
-                                todo!()
+                                match self.process_hints(&mut res_txs, worker, &mut rx).await {
+                                    Ok(_) => {
+                                        // complete result is ready
+                                        response!(body: serde_json::to_string(&res_txs).unwrap())
+                                    }
+                                    Err(response) => return response,
+                                }
                             }
                             Err(response) => return response,
                         }
@@ -114,7 +122,7 @@ impl FindTransactions {
                         Event::Response { giveload, pid } => {
                             // return the ownership of the pid.
                             worker = pid;
-                            let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                            let decoder = Decoder::new(giveload, MyCompression::get());
                             if decoder.is_rows() {
                                 hashes = bundles::Hashes::new(decoder, hashes).decode().finalize();
                                 break;
@@ -165,7 +173,7 @@ impl FindTransactions {
                         Event::Response { giveload, pid } => {
                             // return the ownership of the pid.
                             worker = pid;
-                            let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                            let decoder = Decoder::new(giveload, MyCompression::get());
                             if decoder.is_rows() {
                                 let hashes = res_txs.hashes.take().unwrap();
                                 res_txs
@@ -217,7 +225,7 @@ impl FindTransactions {
                         Event::Response { giveload, pid } => {
                             // return the ownership of the pid.
                             worker = pid;
-                            let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                            let decoder = Decoder::new(giveload, MyCompression::get());
                             if decoder.is_rows() {
                                 let (updated_hashes, updated_hints) =
                                     addresses::Hashes::new(decoder, hashes, hints, false, *address)
@@ -251,6 +259,63 @@ impl FindTransactions {
         res_txs.hints.replace(hints);
         Ok(worker)
     }
+
+    async fn process_hints(
+        &mut self,
+        res_txs: &mut ResTransactions,
+        mut worker: Box<FindTransactionsId>,
+        rx: &mut Receiver,
+    ) -> Result<Box<FindTransactionsId>, Response<Body>> {
+        if let Some(hints) = self.hints.take() {
+            // take ownership of the already found (hashes, hints)
+            let mut hashes = res_txs.hashes.take().unwrap();
+            let mut hintz = res_txs.hints.take().unwrap();
+            for hint in hints {
+                // create request
+                let payload = hints::query(&hint);
+                let request = reporter::Event::Request { payload, worker };
+                // send request using ring, todo use shard-awareness algo
+                Ring::send_local_random_replica(0, request);
+                loop {
+                    match rx.recv().await.unwrap() {
+                        Event::Response { giveload, pid } => {
+                            // return the ownership of the pid.
+                            worker = pid;
+                            let decoder = Decoder::new(giveload, MyCompression::get());
+                            if decoder.is_rows() {
+                                let (updated_hashes, updated_hints) =
+                                    hints::Hashes::new(decoder, hashes, hintz, hint)
+                                        .decode()
+                                        .finalize();
+                                hashes = updated_hashes;
+                                hintz = updated_hints;
+                                break;
+                            } else {
+                                // it's for future impl to be used with execute
+                                if decoder.is_unprepared() {
+                                    // retry using normal query
+                                    todo!();
+                                } else {
+                                    return Err(
+                                        response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"scylla error while processing a hint"}"#),
+                                    );
+                                }
+                            }
+                        }
+                        Event::Error { kind: _, pid: _ } => {
+                            return Err(
+                                response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing a hint"}"#),
+                            );
+                        }
+                    }
+                }
+            }
+            res_txs.hashes.replace(hashes);
+            res_txs.hints.replace(hintz);
+        }
+        Ok(worker)
+    }
+
 }
 
 pub enum Event {
