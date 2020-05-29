@@ -1,5 +1,8 @@
 // work in progress
-use super::listener;
+use super::{
+    listener,
+    websocket::SocketMsg,
+};
 use crate::{
     cluster::supervisor,
     connection::cql::Address,
@@ -31,6 +34,7 @@ use tokio_tungstenite::{
     tungstenite::Message,
     WebSocketStream,
 };
+use futures::SinkExt;
 
 #[derive(Clone)]
 pub struct Sender(pub mpsc::UnboundedSender<Event>);
@@ -77,6 +81,7 @@ pub enum Event {
 pub enum Session {
     // todo auth events
     Socket { peer: SocketAddr, ws_tx: WsTx },
+    Close(SocketAddr),
 }
 
 pub enum Toplogy {
@@ -151,6 +156,9 @@ impl Dashboard {
                             // therefore we add the peer to the sockets we are handling right now
                             self.sockets.insert(peer, ws_tx);
                         }
+                        Session::Close(peer) => {
+                            self.sockets.remove(&peer);
+                        }
                     }
                 }
                 Event::Toplogy(toplogy) => match toplogy {
@@ -171,13 +179,34 @@ impl Dashboard {
                     match result {
                         Result::Ok(address) => {
                             // successfully spawned the node
-                            println!("addnode ok address: {}", address);
+                            println!("Dashboard: AddNode: Ok({})", address);
+                            // NOTE: for now we tell all the active sockets
+                            for (_, socket) in &mut self.sockets {
+                                let msg = SocketMsg::Ok(address.clone());
+                                let j = serde_json::to_string(&msg).unwrap();
+                                let m = Message::text(j);
+                                let _ = socket.send(m).await;
+                            }
                         }
                         Result::Err(address) => {
-                            println!("addnode err address: {}", address);
+                            println!("Dashboard: AddNode: Err({})", address);
+                            // NOTE: for now we tell all the active sockets
+                            for (_, socket) in &mut self.sockets {
+                                let msg = SocketMsg::Err(address.clone());
+                                let j = serde_json::to_string(&msg).unwrap();
+                                let m = Message::text(j);
+                                let _ = socket.send(m).await;
+                            }
                         }
                         Result::TryBuild(built) => {
-                            println!("built status: {}", built);
+                            println!("Dashboard: Built Ring: {}", built);
+                            // NOTE: for now we tell all the active sockets
+                            for (_, socket) in &mut self.sockets {
+                                let msg = SocketMsg::BuiltRing(built);
+                                let j = serde_json::to_string(&msg).unwrap();
+                                let m = Message::text(j);
+                                let _ = socket.send(m).await;
+                            }
                         }
                     }
                 } /* todo handle websocket decoded msgs (add node, remove node, build,

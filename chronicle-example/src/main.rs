@@ -3,6 +3,8 @@ use chronicle_storage::storage::storage::StorageBuilder;
 use chronicle_api::api::api::ApiBuilder;
 // import launcher macro
 use chronicle_common::launcher;
+// import helper async fn to add scylla nodes and build ring
+use chronicle_storage::dashboard::client::add_nodes;
 
 launcher!(
     apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder}, // Apps
@@ -14,7 +16,7 @@ impl AppsBuilder {
     fn build(self) -> Apps {
         // - storage app:
         let storage = StorageBuilder::new()
-        .listen_address("0.0.0.0:8080".to_string())
+        .listen_address("localhost:8080".to_string())
         .thread_count(8)
         .local_dc("datacenter1".to_string())
         .reporter_count(1)
@@ -24,7 +26,7 @@ impl AppsBuilder {
         .nodes(vec!["172.17.0.2:9042".to_string()]);
         // - api app
         let api = ApiBuilder::new()
-        .listen_address("0.0.0.0:4000".to_string());
+        .listen_address("localhost:4000".to_string());
         // add app to AppsBuilder then transform it to Apps
         self.storage(storage)
         .api(api)
@@ -43,6 +45,12 @@ async fn main() {
     }).await // you can start some function(it must never block)
     .storage().await // start storage app
     .api().await // start api app
+    .future(|apps| async {
+        if add_nodes("ws://localhost:8080/", vec!["172.17.0.2:9042".to_string()], 1).await {
+            println!("Added nodes")
+        }
+        apps
+    }).await
     .one_for_one().await; // instead you can define your own .run() strategy
 }
 

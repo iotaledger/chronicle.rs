@@ -22,6 +22,11 @@ use tokio_tungstenite::{
     },
     WebSocketStream,
 };
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use serde_json;
 
 actor!(
     WebsocketdBuilder {
@@ -36,7 +41,7 @@ impl WebsocketdBuilder {
         let (ws_tx, ws_rx) = self.stream.unwrap().split();
         Websocket {
             peer: self.peer.unwrap(),
-            ws_rx: ws_rx,
+            ws_rx,
             ws_tx: Some(ws_tx),
             dashboard_tx: self.dashboard_tx.unwrap(),
         }
@@ -48,6 +53,15 @@ pub struct Websocket {
     ws_rx: SplitStream<WebSocketStream<TcpStream>>,
     ws_tx: Option<SplitSink<WebSocketStream<TcpStream>, Message>>,
     dashboard_tx: dashboard::Sender,
+}
+#[derive(Deserialize, Serialize, Debug)]
+pub enum SocketMsg {
+    AddNode(String),
+    RemoveNode(String),
+    TryBuild(u8),
+    Ok(String),
+    Err(String),
+    BuiltRing(bool),
 }
 
 impl Websocket {
@@ -63,10 +77,33 @@ impl Websocket {
             // event loop for websocket
             while let Some(res) = self.ws_rx.next().await {
                 let msg = res?;
-                match msg {
-                    // handle websockets msgs (binary, text, ping, pong) and then encode them into
-                    // dashboard events
-                    _ => {}
+                if msg.is_text() {
+                    let event: SocketMsg = serde_json::from_str(msg.to_text().unwrap()).expect("invalid SocketMsg");
+                    match event {
+                        SocketMsg::AddNode(address) => {
+                            let _ = self.dashboard_tx.0.send(
+                                dashboard::Event::Toplogy(dashboard::Toplogy::AddNode(address))
+                            );
+                        },
+                        SocketMsg::RemoveNode(address) => {
+                            let _ = self.dashboard_tx.0.send(
+                                dashboard::Event::Toplogy(dashboard::Toplogy::RemoveNode(address))
+                            );
+                        },
+                        SocketMsg::TryBuild(uniform_rf) => {
+                            let _ = self.dashboard_tx.0.send(
+                                dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild(uniform_rf as usize))
+                            );
+                        },
+                        _ => {
+                            panic!("unexpected SocketMsg")
+                        }
+                    }
+                }
+                if msg.is_close() {
+                    let _ = self.dashboard_tx.0.send(
+                        dashboard::Event::Session(dashboard::Session::Close(self.peer))
+                    );
                 }
             }
         }
