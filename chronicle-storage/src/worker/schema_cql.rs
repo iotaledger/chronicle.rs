@@ -38,7 +38,7 @@ impl SchemaCqlBuilder {
 pub struct SchemaCql { statement: String }
 
 impl SchemaCql {
-    async fn run(mut self) -> Result<(), Error> {
+    pub async fn run(self) -> Result<(), Error> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let Query(payload) = Query::new()
             .version()

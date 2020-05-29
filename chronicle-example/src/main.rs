@@ -3,8 +3,9 @@ use chronicle_storage::storage::storage::StorageBuilder;
 use chronicle_api::api::api::ApiBuilder;
 // import launcher macro
 use chronicle_common::launcher;
-// import helper async fn to add scylla nodes and build ring
+// import helper async fns to add scylla nodes and build ring, initialize schema
 use chronicle_storage::dashboard::client::add_nodes;
+use chronicle_storage::worker::schema_cql::SchemaCqlBuilder;
 
 launcher!(
     apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder}, // Apps
@@ -50,10 +51,24 @@ async fn main() {
         add_nodes(
             "ws://0.0.0.0:8080/",
             vec!["172.17.0.2:9042".to_string()],
-            1
+            1 // the least replication_factor in all data_centers .
         ).await.expect("failed to add nodes");
-        // TODO initialize tangle keyspace and tables
-
+        // create tangle keyspace
+        SchemaCqlBuilder::new()
+        .statement(CREATE_TANGLE_KEYSPACE_QUERY.to_string())
+        .build().run().await.expect("failed to create tangle keyspace");
+        // create transaction table
+        SchemaCqlBuilder::new()
+        .statement(CREATE_TANGLE_TX_TABLE_QUERY.to_string())
+        .build().run().await.expect("failed to create tangle.transaction table");
+        // create edge table
+        SchemaCqlBuilder::new()
+        .statement(CREATE_TANGLE_EDGE_TABLE_QUERY.to_string())
+        .build().run().await.expect("failed to create tangle.edge table");
+        // create data table
+        SchemaCqlBuilder::new()
+        .statement(CREATE_TANGLE_DATA_TABLE_QUERY.to_string())
+        .build().run().await.expect("failed to create tangle.data table");
         // TODO start importing the dmps files
 
         apps
@@ -68,3 +83,59 @@ async fn ctrl_c(mut launcher: Sender) {
     // exit program using launcher
     launcher.exit_program();
 }
+
+// useful consts for the example
+const CREATE_TANGLE_KEYSPACE_QUERY: &str = r#"
+CREATE KEYSPACE IF NOT EXISTS tangle
+WITH REPLICATION = {
+  'class': 'SimpleStrategy',
+  'replication_factor': 1
+};
+"#;
+
+const CREATE_TANGLE_TX_TABLE_QUERY: &str = r#"
+CREATE TABLE IF NOT EXISTS chronicle_example.transaction (
+  hash blob PRIMARY KEY,
+  payload blob,
+  address blob,
+  value blob,
+  obsolete_tag blob,
+  timestamp blob,
+  current_index blob,
+  last_index blob,
+  bundle blob,
+  trunk blob,
+  branch blob,
+  tag blob,
+  attachment_timestamp blob,
+  attachment_timestamp_lower blob,
+  attachment_timestamp_upper blob,
+  nonce blob,
+  milestone bigint,
+);
+"#;
+
+const CREATE_TANGLE_EDGE_TABLE_QUERY: &str = r#"
+CREATE TABLE IF NOT EXISTS chronicle_example.edge (
+  vertex blob,
+  kind text,
+  timestamp bigint,
+  tx blob,
+  value bigint,
+  extra blob,
+  PRIMARY KEY(vertex, kind, timestamp, tx)
+);
+"#;
+
+const CREATE_TANGLE_DATA_TABLE_QUERY: &str = r#"
+CREATE TABLE IF NOT EXISTS chronicle_example.data (
+  vertex blob,
+  year smallint,
+  month tinyint,
+  kind text,
+  timestamp bigint,
+  tx blob,
+  extra blob,
+  PRIMARY KEY((vertex,year,month), kind, timestamp, tx)
+);
+"#;
