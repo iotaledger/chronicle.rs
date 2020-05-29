@@ -4,7 +4,7 @@ use url::Url;
 use tokio_tungstenite::tungstenite::Message;
 use super::websocket::SocketMsg;
 
-pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> bool {
+pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> Result<(), ()> {
     let request = Url::parse(ws).unwrap();
     // connect to dashboard
     match connect_async(request).await {
@@ -22,12 +22,12 @@ pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> bool 
                     if let SocketMsg::Ok(_) = event {
                     } else {
                         ws_stream.close(None).await.unwrap();
-                        return false
+                        return Err(())
                     }
                 } else {
                     println!("unable to reach the websocket server");
                     ws_stream.close(None).await.unwrap();
-                    return false
+                    return Err(())
                 };
             }
             // build the ring
@@ -37,10 +37,10 @@ pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> bool 
             ws_stream.send(m).await.unwrap();
             // close socket and return true.
             ws_stream.close(None).await.unwrap();
-            true
+            Ok(())
         }
         Err(_) => {
-            false
+            Err(())
         }
     }
 }
