@@ -94,7 +94,7 @@ WITH REPLICATION = {
 "#;
 
 const CREATE_TANGLE_TX_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS chronicle_example.transaction (
+CREATE TABLE IF NOT EXISTS tangle.transaction (
   hash blob PRIMARY KEY,
   payload blob,
   address blob,
@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS chronicle_example.transaction (
 "#;
 
 const CREATE_TANGLE_EDGE_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS chronicle_example.edge (
+CREATE TABLE IF NOT EXISTS tangle.edge (
   vertex blob,
   kind text,
   timestamp bigint,
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS chronicle_example.edge (
 "#;
 
 const CREATE_TANGLE_DATA_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS chronicle_example.data (
+CREATE TABLE IF NOT EXISTS tangle.data (
   vertex blob,
   year smallint,
   month tinyint,
