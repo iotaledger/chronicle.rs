@@ -80,6 +80,7 @@ impl Compression for Uncompressed {
 }
 // to enable user defines a global compression
 pub static mut MY_COMPRESSION: MyCompression = MyCompression(&UNCOMPRESSED);
+pub static mut MY_COMPRESSION_FLAG: u8 = 0;
 #[derive(Copy, Clone)]
 pub struct MyCompression(pub &'static dyn Compression);
 
@@ -87,16 +88,19 @@ impl MyCompression {
     pub fn set_lz4() {
         unsafe {
             MY_COMPRESSION = MyCompression(&LZ4);
+            MY_COMPRESSION_FLAG = 1;
         }
     }
     pub fn set_snappy() {
         unsafe {
             MY_COMPRESSION = MyCompression(&SNAPPY);
+            MY_COMPRESSION_FLAG = 1;
         }
     }
     pub fn set_uncompressed() {
         unsafe {
             MY_COMPRESSION = MyCompression(&UNCOMPRESSED);
+            MY_COMPRESSION_FLAG = 0;
         }
     }
     pub fn get() -> impl Compression {
@@ -104,6 +108,12 @@ impl MyCompression {
             MY_COMPRESSION
         }
     }
+    pub fn flag() -> u8 {
+        unsafe {
+            MY_COMPRESSION_FLAG
+        }
+    }
+
 }
 
 impl Compression for MyCompression {

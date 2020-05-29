@@ -61,7 +61,7 @@ impl SupervisorBuilder {
             tx: self.tx,
             rx: self.rx.unwrap(),
             node_tx: self.node_tx.unwrap(),
-            payloads: payloads,
+            payloads,
             buffer_size: self.buffer_size.unwrap(),
             recv_buffer_size: self.recv_buffer_size.unwrap(),
             send_buffer_size: self.send_buffer_size.unwrap(),

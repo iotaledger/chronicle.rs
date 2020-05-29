@@ -35,6 +35,13 @@ pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> Resul
             let j = serde_json::to_string(&msg).unwrap();
             let m = Message::text(j);
             ws_stream.send(m).await.unwrap();
+            // await till the ring is built
+            if let Some(msg) = ws_stream.next().await {
+                if let SocketMsg::BuiltRing(true) = serde_json::from_str(msg.unwrap().to_text().unwrap()).unwrap(){
+                } else {
+                    unreachable!("add nodes fn");
+                };
+            };
             // close socket and return true.
             ws_stream.close(None).await.unwrap();
             Ok(())

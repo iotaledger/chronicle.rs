@@ -42,7 +42,7 @@ impl SenderBuilder {
         let reporters = self.reporters.unwrap();
         let reporters_len = reporters.len();
         SenderState {
-            reporters: reporters,
+            reporters,
             session_id: self.session_id.unwrap(),
             socket: self.socket_tx.unwrap(),
             rx: self.rx.unwrap(),
