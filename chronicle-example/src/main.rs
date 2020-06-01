@@ -69,16 +69,14 @@ async fn main() {
         SchemaCqlBuilder::new()
         .statement(CREATE_TANGLE_DATA_TABLE_QUERY.to_string())
         .build().run().await.expect("failed to create tangle.data table");
-        // uncomment to start importing the dmps files
-        /*
+        // add the dmps files you want to import in order (from oldest to recent)
         ImporterBuilder::new()
             .filepath("./chronicle-example/dmp/6000.dmp".to_string())
             .milestone(6000)
-            .max_retries(0)
+            .max_retries(0) 
             .build()
             .run()
             .await.expect("failed to import 6000");
-        */
         apps
     }).await
     .one_for_one().await; // instead you can define your own .run() strategy
