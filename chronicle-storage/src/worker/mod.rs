@@ -1,5 +1,7 @@
 pub mod preparer;
 pub mod schema_cql;
+use std::error::Error as StdError;
+use std::fmt;
 use crate::stage::reporter::{
     Giveload,
     Sender,
@@ -20,3 +22,11 @@ pub enum Error {
     Lost,
     NoRing,
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Worker Error!")
+    }
+}
+
+impl StdError for Error {}

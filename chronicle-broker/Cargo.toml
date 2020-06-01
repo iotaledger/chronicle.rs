@@ -5,3 +5,11 @@ authors = ["Chronicle developers"]
 edition = "2018"
 
 [dependencies]
+chronicle-common = { path = "../chronicle-common" }
+chronicle-cql = { path = "../chronicle-cql" }
+chronicle-storage = { path = "../chronicle-storage" }
+tokio = { version = "0.2", features = ["fs", "macros", "stream", "sync", "net", "io-util", "rt-threaded", "time"] }
+indicatif = "0.14"
+bee-ternary = { git = "https://github.com/Alex6323/bee-p", branch = "master"}
+chrono = "0.4"
+rand = "0.7"

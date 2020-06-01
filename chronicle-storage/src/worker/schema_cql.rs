@@ -16,7 +16,7 @@ use chronicle_cql::frame::query::Query;
 use chronicle_cql::frame::header::Header;
 use chronicle_cql::compression::MyCompression;
 use chronicle_cql::frame::consistency::Consistency;
-
+use chronicle_cql::frame::queryflags::SKIP_METADATA;
 #[derive(Debug)]
 pub struct SchemaCqlId(mpsc::UnboundedSender<Event>);
 
@@ -48,6 +48,7 @@ impl SchemaCql {
             .length()
             .statement(&self.statement)
             .consistency(Consistency::Quorum)
+            .query_flags(SKIP_METADATA)
             .build(MyCompression::get());
         // send query to the ring
         Ring::send_local_random_replica(0,

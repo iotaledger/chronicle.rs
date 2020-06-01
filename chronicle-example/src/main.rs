@@ -3,9 +3,10 @@ use chronicle_storage::storage::storage::StorageBuilder;
 use chronicle_api::api::api::ApiBuilder;
 // import launcher macro
 use chronicle_common::launcher;
-// import helper async fns to add scylla nodes and build ring, initialize schema
+// import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_storage::dashboard::client::add_nodes;
 use chronicle_storage::worker::schema_cql::SchemaCqlBuilder;
+use chronicle_broker::importer::importer::ImporterBuilder;
 
 launcher!(
     apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder}, // Apps
@@ -23,8 +24,7 @@ impl AppsBuilder {
         .reporter_count(1)
         .buffer_size(1024000)
         .recv_buffer_size(1024000)
-        .send_buffer_size(1024000)
-        .nodes(vec!["172.17.0.2:9042".to_string()]);
+        .send_buffer_size(1024000);
         // - api app
         let api = ApiBuilder::new()
         .listen_address("0.0.0.0:4000".to_string());
@@ -69,8 +69,16 @@ async fn main() {
         SchemaCqlBuilder::new()
         .statement(CREATE_TANGLE_DATA_TABLE_QUERY.to_string())
         .build().run().await.expect("failed to create tangle.data table");
-        // TODO start importing the dmps files
-
+        // uncomment to start importing the dmps files
+        /*
+        ImporterBuilder::new()
+            .filepath("./chronicle-example/dmp/6000.dmp".to_string())
+            .milestone(6000)
+            .max_retries(0)
+            .build()
+            .run()
+            .await.expect("failed to import 6000");
+        */
         apps
     }).await
     .one_for_one().await; // instead you can define your own .run() strategy
