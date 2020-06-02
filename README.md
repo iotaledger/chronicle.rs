@@ -83,7 +83,7 @@ cargo build
 ```
 - Go to the example folder to run the example
 ```bash
-cd chronicle-example
+cd examples
 cargo run --example [EXAMPLE_NAME]
 ```
 
