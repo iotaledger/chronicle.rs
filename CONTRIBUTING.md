@@ -45,8 +45,6 @@ This section guides you through reporting a bug. Following these guidelines help
 
 Please check the following list:
 
-- **Do not open a GitHub issue for [security vulnerabilities](SECURITY.MD)**, instead, please submit a report to our [Bugcrowd program](https://bugcrowd.com/iota).
-
 - **Ensure the bug was not already reported** by searching on GitHub under [**Issues**](https://github.com/iotaledger/chronicle.rs/issues). If the bug has already been reported **and the issue is still open**, add a comment to the existing issue instead of opening a new one.
 
 **Note:** If you find a **Closed** issue that seems similar to what you're experiencing, open a new issue and include a link to the original issue in the body of your new one.
