@@ -38,14 +38,22 @@
 
 ## About
 
-The Chronile is open-source Rust software that provides solution for efficient online big data storing, as well as reliable and efficient runtime framework based on [tokio](https://docs.rs/crate/tokio). This software uses IOTA protocol as an example to demonstrate
+The Chronile is an open-source Rust framework that provides solution for efficient online big data access with databases, as well as reliable and efficient runtime framework based on [tokio](https://docs.rs/crate/tokio). This framework uses IOTA protocol as an example to demonstrate
 
 - Store transactions to a [ScyllaDB](https://www.scylladb.com/) asynchronously in real time
-- Retreive transactions based on a predefined data model in efficient ways
+- Get transactions based on a predefined data model in efficient ways
 - Allow users to interact with the database through an HTTP API
 - Build and run asynchronous rust applications
 
-Chronicle also provides a Rust asynchronous Cassandra driver based on [CQL BINARY PROTOCOL v4](https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec), which allows users to encode/decode/send/retreive frames with Cassandra databses.
+Chronicle also provides a Rust asynchronous Cassandra driver based on [CQL BINARY PROTOCOL v4](https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec), which allows users to encode/decode frames with Cassandra databases. The details of other crates in Chronicle frame are as follows
+
+- [Chronicle API](chronicle-api/README.md)
+- [Chronicle Broker](chronicle-broker/README.md)
+- [Chronicle Common](chronicle-common/README.md)
+- [Chronicle Cql](chronicle-cql/README.md)
+- [Chronicle Storage](chronicle-storage/README.md)
+
+Examples of using Chronicle frame work can be found in [Examples](examples/README.md)
 
 This is beta software, so there may be performance and stability issues.
 Please report any issues in our [issue tracker](https://github.com/iotaledger/chronicle.rs/issues/new).
