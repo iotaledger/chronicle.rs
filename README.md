@@ -32,6 +32,7 @@
 ## TO-DO
 - Modify the links for official documentations
 - Modify the Chronicle.png
+- Move chronicle-example to examples
 - Update the current supported APIs
   - getTrytes
   - findTransactions 
@@ -50,12 +51,12 @@ Chronicle also provides a Rust asynchronous Cassandra driver based on [CQL BINAR
 - [Chronicle API](chronicle-api/README.md)
 - [Chronicle Broker](chronicle-broker/README.md)
 - [Chronicle Common](chronicle-common/README.md)
-- [Chronicle Cql](chronicle-cql/README.md)
+- [Chronicle CQL](chronicle-cql/README.md)
 - [Chronicle Storage](chronicle-storage/README.md)
 
 Examples of using Chronicle frame work can be found in [Examples](examples/README.md)
 
-This is beta software, so there may be performance and stability issues.
+This is alpha software, so there may be performance and stability issues.
 Please report any issues in our [issue tracker](https://github.com/iotaledger/chronicle.rs/issues/new).
 
 ## Prerequisites
@@ -73,7 +74,7 @@ To run Chronicle, you need the following:
 - Install [Docker](https://docs.docker.com/get-docker/)
 - Install [ScyllaDB](https://docs.scylladb.com/getting-started/)
 
-## Build and Run
+## Build and run
 - [Run ScyllaDB in Docker](https://docs.scylladb.com/operating-scylla/procedures/tips/best_practices_scylla_on_docker/)
 - Clone and build Chronicle
 ```bash
