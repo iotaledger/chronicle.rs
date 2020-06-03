@@ -74,7 +74,6 @@ impl AddressesDecoder for Extra {
     fn decode_column(start: usize, _length: i32, acc: &mut Hashes) {
         if acc.is_hint {
             // create a hint and push it to hints
-            println!("len {}", _length);
             let end = start + 2;
             let year = u16::from_be_bytes(acc.buffer()[start..end].try_into().unwrap());
             let month = acc.buffer()[end];
@@ -84,9 +83,7 @@ impl AddressesDecoder for Extra {
             acc.is_hint = false;
         }
     }
-    fn handle_null(_: &mut Hashes) {
-        unreachable!()
-    }
+    fn handle_null(_: &mut Hashes) {}
 }
 
 // ----------- encoding scope -----------

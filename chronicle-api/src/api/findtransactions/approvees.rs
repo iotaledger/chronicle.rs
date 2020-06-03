@@ -67,7 +67,7 @@ pub fn query(approve: &Trytes81) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT tx FROM tangle.edge WHERE vertex = ? AND kind in ['trunk','branch']")
+        .statement("SELECT tx FROM tangle.edge WHERE vertex = ? AND kind in ('trunk','branch')")
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)
