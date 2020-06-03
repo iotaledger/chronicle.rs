@@ -116,7 +116,7 @@ impl Receiver {
             let giveload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // memcpy the current bytes from self.buffer into payload
             giveload[(self.current_length - n)..self.total_length]
-                .copy_from_slice(&self.buffer[padding..(padding + self.total_length)]);
+                .copy_from_slice(&self.buffer[padding..(padding + n)]);
             // tell reporter that giveload is ready.
             self.reporters
                 .get(&compute_reporter_num(self.stream_id, self.appends_num))
