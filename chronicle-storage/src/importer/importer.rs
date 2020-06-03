@@ -191,7 +191,8 @@ impl InsertTransactionsFromFile {
             // Insert information to tables
             worker = Self::process(tx_table_payload, worker, &mut rx).await;
             if value == 0 {
-                let edge_table_hint = Self::insert_to_edge_table_for_hint_vertex(&self.statement_edge_table, address, year, month);
+                let edge_table_hint =
+                    Self::insert_to_edge_table_for_hint_vertex(&self.statement_edge_table, address, year, month);
                 worker = Self::process(edge_table_hint, worker, &mut rx).await;
 
                 let (data_table_address, data_table_tag) = (
@@ -563,7 +564,7 @@ async fn download_file(url: &str) -> Result<String, Box<dyn Error>> {
     let hash = sha256.result();
     Ok(format!("{:x}", hash))
 }
-const BE_3_BYTES_LENGTH: [u8;4] = [0,0,0,3];
+const BE_3_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 3];
 struct YearMonth(i16, i8);
 impl chronicle_cql::frame::encoder::ColumnEncoder for YearMonth {
     fn encode(&self, buffer: &mut Vec<u8>) {

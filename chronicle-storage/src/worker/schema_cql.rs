@@ -1,22 +1,26 @@
-use chronicle_common::actor;
-use crate::{
-    stage::reporter,
-    ring::ring::Ring,
-};
-use tokio::sync::mpsc;
 use super::{
     Error,
     Worker,
 };
-use chronicle_cql::frame::decoder::{
-    Frame,
-    Decoder,
+use crate::{
+    ring::ring::Ring,
+    stage::reporter,
 };
-use chronicle_cql::frame::query::Query;
-use chronicle_cql::frame::header::Header;
-use chronicle_cql::compression::MyCompression;
-use chronicle_cql::frame::consistency::Consistency;
-use chronicle_cql::frame::queryflags::SKIP_METADATA;
+use chronicle_common::actor;
+use chronicle_cql::{
+    compression::MyCompression,
+    frame::{
+        consistency::Consistency,
+        decoder::{
+            Decoder,
+            Frame,
+        },
+        header::Header,
+        query::Query,
+        queryflags::SKIP_METADATA,
+    },
+};
+use tokio::sync::mpsc;
 #[derive(Debug)]
 pub struct SchemaCqlId(mpsc::UnboundedSender<Event>);
 
@@ -35,7 +39,9 @@ impl SchemaCqlBuilder {
     }
 }
 
-pub struct SchemaCql { statement: String }
+pub struct SchemaCql {
+    statement: String,
+}
 
 impl SchemaCql {
     pub async fn run(self) -> Result<(), Error> {
@@ -51,26 +57,24 @@ impl SchemaCql {
             .query_flags(SKIP_METADATA)
             .build(MyCompression::get());
         // send query to the ring
-        Ring::send_local_random_replica(0,
+        Ring::send_local_random_replica(
+            0,
             reporter::Event::Request {
                 worker: Box::new(SchemaCqlId(tx)),
-                payload
-            }
+                payload,
+            },
         );
         if let Some(event) = rx.recv().await {
             match event {
-                Event::Response{decoder: _} => {
+                Event::Response { decoder: _ } => {
                     // TODO add extra check if is_schema.
-                    return Ok(())
+                    return Ok(());
                 }
-                Event::Error{kind} => {
-                    return Err(kind)
-                }
+                Event::Error { kind } => return Err(kind),
             }
         } else {
             unreachable!()
         }
-
     }
 }
 
@@ -81,9 +85,11 @@ impl Worker for SchemaCqlId {
         let event;
         // check if is_error
         if decoder.is_error() {
-            event = Event::Error{kind: Error::Cql(decoder.get_error())};
+            event = Event::Error {
+                kind: Error::Cql(decoder.get_error()),
+            };
         } else {
-            event = Event::Response { decoder};
+            event = Event::Response { decoder };
         }
         let _ = self.0.send(event);
     }

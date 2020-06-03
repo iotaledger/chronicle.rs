@@ -1,15 +1,17 @@
 use chronicle_common::actor;
 use chronicle_cql::{
     compression::UNCOMPRESSED,
-    frame::decoder::{
-        Decoder,
-        Frame,
+    frame::{
+        consistency::Consistency,
+        decoder::{
+            Decoder,
+            Frame,
+        },
+        header,
+        header::Header,
+        query::Query,
+        queryflags,
     },
-    frame::header::Header,
-    frame::header,
-    frame::queryflags,
-    frame::query::Query,
-    frame::consistency::Consistency,
     rows,
     statements::statements::SELECT_TX_QUERY,
 };

@@ -5,9 +5,11 @@ use super::{
     approvees::Rows as ApproveesRows,
     bundles,
     bundles::Rows as BundlesRows,
-    hints::Hint,
     hints,
-    hints::Rows as HintsRows,
+    hints::{
+        Hint,
+        Rows as HintsRows,
+    },
 };
 use crate::api::types::Trytes81;
 use chronicle_common::actor;
@@ -284,9 +286,7 @@ impl FindTransactions {
                             let decoder = Decoder::new(giveload, MyCompression::get());
                             if decoder.is_rows() {
                                 let (updated_hashes, updated_hints) =
-                                    hints::Hashes::new(decoder, hashes, hintz, hint)
-                                        .decode()
-                                        .finalize();
+                                    hints::Hashes::new(decoder, hashes, hintz, hint).decode().finalize();
                                 hashes = updated_hashes;
                                 hintz = updated_hints;
                                 break;
@@ -315,7 +315,6 @@ impl FindTransactions {
         }
         Ok(worker)
     }
-
 }
 
 pub enum Event {

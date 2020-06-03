@@ -1,26 +1,35 @@
 // TODO compute token to enable shard_awareness.
-use chronicle_common::actor;
-use chronicle_storage::worker;
-use chronicle_storage::stage::reporter;
-use chronicle_storage::ring::ring::Ring;
-use chronicle_cql::frame::encoder::ColumnEncoder;
-use chronicle_cql::frame::encoder::UNSET_VALUE;
-use chrono::NaiveDateTime;
-use chrono::Datelike;
-use tokio::sync::mpsc;
-use tokio::fs::File;
-use std::error::Error;
-use tokio::fs::metadata;
-use indicatif::{
-    ProgressBar,
-    ProgressStyle,
-};
 use bee_ternary::{
     t1b1::T1B1Buf,
     TritBuf,
     TryteBuf,
 };
-use std::convert::TryFrom;
+use chronicle_common::actor;
+use chronicle_cql::frame::encoder::{
+    ColumnEncoder,
+    UNSET_VALUE,
+};
+use chronicle_storage::{
+    ring::ring::Ring,
+    stage::reporter,
+    worker,
+};
+use chrono::{
+    Datelike,
+    NaiveDateTime,
+};
+use indicatif::{
+    ProgressBar,
+    ProgressStyle,
+};
+use std::{
+    convert::TryFrom,
+    error::Error,
+};
+use tokio::{
+    fs::File,
+    sync::mpsc,
+};
 
 use chronicle_cql::{
     compression::compression::MyCompression,
@@ -30,10 +39,7 @@ use chronicle_cql::{
             Decoder,
             Frame,
         },
-        header::{
-            Header,
-            IGNORE,
-        },
+        header::Header,
         query::Query,
         queryflags::{
             SKIP_METADATA,
@@ -42,11 +48,11 @@ use chronicle_cql::{
     },
 };
 
-use tokio::io::BufReader;
-use tokio::io::AsyncBufReadExt;
-use tokio::stream::StreamExt;
-use tokio::prelude::*;
-const BE_3_BYTES_LENGTH: [u8;4] = [0,0,0,3];
+use tokio::io::{
+    AsyncBufReadExt,
+    BufReader,
+};
+const BE_3_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 3];
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 struct YearMonth(u16, u8);
@@ -68,14 +74,8 @@ actor!(ImporterBuilder {
 });
 
 pub enum Event {
-    Response {
-        decoder: Decoder,
-        pid: Box<ImporterId>,
-    },
-    Error {
-        kind: worker::Error,
-        pid: Box<ImporterId>,
-    },
+    Response { decoder: Decoder, pid: Box<ImporterId> },
+    Error { kind: worker::Error, pid: Box<ImporterId> },
 }
 
 impl ImporterBuilder {
@@ -132,14 +132,14 @@ impl Importer {
         let reader = BufReader::new(&mut file);
         self.handle_dmp(reader).await
     }
-    async fn handle_dmp(&mut self, mut reader: BufReader<&mut File>) -> Result<(), Box<dyn Error>>  {
+    async fn handle_dmp(&mut self, mut reader: BufReader<&mut File>) -> Result<(), Box<dyn Error>> {
         let mut line = String::new();
         // start processing the file line by line
         loop {
             let line_length = reader.read_line(&mut line).await?;
             // break if EOF
             if line_length == 0 {
-                break
+                break;
             }
             assert!(self.pending == 0);
             self.pending += 6; // 1 tx_query + 5 edge_table queries
@@ -147,11 +147,14 @@ impl Importer {
             let txtrytes = &line[82..2755];
             // check if milestone is in the line
             if line_length > 2756 {
-                self.milestone = line[2756..(line_length -1)].parse::<u64>().unwrap();
+                self.milestone = line[2756..(line_length - 1)].parse::<u64>().unwrap();
             }
             // create tranasction table query (to presist the transaction in DB)
             let tx_query = insert_to_tx_table(hash, txtrytes, self.milestone);
-            let request = reporter::Event::Request { payload: tx_query, worker: self.pids.pop().unwrap() };
+            let request = reporter::Event::Request {
+                payload: tx_query,
+                worker: self.pids.pop().unwrap(),
+            };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             // extract the transaction value
             let value = trytes_to_i64(&txtrytes[2268..2295]);
@@ -163,37 +166,67 @@ impl Importer {
             // create queries related to the transaction value
             if value == 0 {
                 // create insert hint queries
-                let hint_query = insert_to_edge_table(&txtrytes[2187..2268], "hint", 0, "0", value, YearMonth(year, month));
-                let request = reporter::Event::Request { payload: hint_query, worker: self.pids.pop().unwrap() };
+                let hint_query =
+                    insert_to_edge_table(&txtrytes[2187..2268], "hint", 0, "0", value, YearMonth(year, month));
+                let request = reporter::Event::Request {
+                    payload: hint_query,
+                    worker: self.pids.pop().unwrap(),
+                };
                 Ring::send_local_random_replica(rand::random::<i64>(), request);
-                let address_query = insert_to_data_table(&txtrytes[2187..2268],year, month, "address", timestamp, hash);
-                let request = reporter::Event::Request { payload: address_query, worker: self.pids.pop().unwrap() };
+                let address_query =
+                    insert_to_data_table(&txtrytes[2187..2268], year, month, "address", timestamp, hash);
+                let request = reporter::Event::Request {
+                    payload: address_query,
+                    worker: self.pids.pop().unwrap(),
+                };
                 Ring::send_local_random_replica(rand::random::<i64>(), request);
                 // because it is a hint
                 self.pending += 1;
             } else if value > 0 {
                 // create insert output query
-                let output_query = insert_to_edge_table(&txtrytes[2187..2268], "output", timestamp, hash, value, UNSET_VALUE);
-                let request = reporter::Event::Request { payload: output_query, worker: self.pids.pop().unwrap() };
+                let output_query =
+                    insert_to_edge_table(&txtrytes[2187..2268], "output", timestamp, hash, value, UNSET_VALUE);
+                let request = reporter::Event::Request {
+                    payload: output_query,
+                    worker: self.pids.pop().unwrap(),
+                };
                 Ring::send_local_random_replica(rand::random::<i64>(), request);
             } else {
                 // create insert input query
-                let input_query = insert_to_edge_table(&txtrytes[2187..2268], "input", timestamp, hash, value, UNSET_VALUE);
-                let request = reporter::Event::Request { payload: input_query, worker: self.pids.pop().unwrap() };
+                let input_query =
+                    insert_to_edge_table(&txtrytes[2187..2268], "input", timestamp, hash, value, UNSET_VALUE);
+                let request = reporter::Event::Request {
+                    payload: input_query,
+                    worker: self.pids.pop().unwrap(),
+                };
                 Ring::send_local_random_replica(rand::random::<i64>(), request);
             }
             // insert queries not related to the transaction value
             let trunk_query = insert_to_edge_table(&txtrytes[2430..2511], "trunk", timestamp, hash, value, UNSET_VALUE);
-            let request = reporter::Event::Request { payload: trunk_query, worker: self.pids.pop().unwrap() };
+            let request = reporter::Event::Request {
+                payload: trunk_query,
+                worker: self.pids.pop().unwrap(),
+            };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
-            let branch_query = insert_to_edge_table(&txtrytes[2511..2592], "branch", timestamp, hash, value, UNSET_VALUE);
-            let request = reporter::Event::Request { payload: branch_query, worker: self.pids.pop().unwrap() };
+            let branch_query =
+                insert_to_edge_table(&txtrytes[2511..2592], "branch", timestamp, hash, value, UNSET_VALUE);
+            let request = reporter::Event::Request {
+                payload: branch_query,
+                worker: self.pids.pop().unwrap(),
+            };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
-            let bundle_query = insert_to_edge_table(&txtrytes[2349..2430], "bundle", timestamp, hash, value, UNSET_VALUE);
-            let request = reporter::Event::Request { payload: bundle_query, worker: self.pids.pop().unwrap() };
+            let bundle_query =
+                insert_to_edge_table(&txtrytes[2349..2430], "bundle", timestamp, hash, value, UNSET_VALUE);
+            let request = reporter::Event::Request {
+                payload: bundle_query,
+                worker: self.pids.pop().unwrap(),
+            };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
-            let tag_query = insert_to_data_table(&txtrytes[2592..2619],year, month, "tag", timestamp, hash);
-            let request = reporter::Event::Request { payload: tag_query, worker: self.pids.pop().unwrap() };
+            let tag_query = insert_to_data_table(&txtrytes[2592..2619], year, month, "tag", timestamp, hash);
+            let request = reporter::Event::Request {
+                payload: tag_query,
+                worker: self.pids.pop().unwrap(),
+            };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             // process the responses for the pending queries
             while let Some(event) = self.rx.recv().await {
@@ -203,13 +236,13 @@ impl Importer {
                         self.pids.push(pid);
                         assert!(decoder.is_void());
                         if self.pending == 0 {
-                            break
+                            break;
                         }
                     }
-                    Event::Error {kind, pid} => {
+                    Event::Error { kind, pid } => {
                         self.pids.push(pid);
                         if self.max_retries == 0 {
-                            return Err(Box::new(kind))
+                            return Err(Box::new(kind));
                         } else {
                             self.max_retries -= 1;
                             todo!("retry query");
@@ -223,7 +256,10 @@ impl Importer {
             self.processed_bytes += line_length as u64;
             self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
         }
-        self.progress_bar.as_ref().unwrap().finish_with_message(&format!("{} is processed succesfully.", self.filepath));
+        self.progress_bar
+            .as_ref()
+            .unwrap()
+            .finish_with_message(&format!("{} is processed succesfully.", self.filepath));
         Ok(())
     }
 }
@@ -237,7 +273,10 @@ impl worker::Worker for ImporterId {
             let event;
             if decoder.is_error() {
                 let error = decoder.get_error();
-                event = Event::Error{kind: worker::Error::Cql(error), pid}
+                event = Event::Error {
+                    kind: worker::Error::Cql(error),
+                    pid,
+                }
             } else {
                 event = Event::Response { decoder, pid };
             }
@@ -253,7 +292,6 @@ impl worker::Worker for ImporterId {
         }
     }
 }
-
 
 /// Create insert cql query in transaction table
 fn insert_to_tx_table(hash: &str, txtrytes: &str, milestone: u64) -> Vec<u8> {
@@ -317,14 +355,7 @@ fn insert_to_edge_table(
     payload
 }
 /// Create insert(index) cql query in data table
-fn insert_to_data_table(
-    vertex: &str,
-    year: u16,
-    month: u8,
-    kind: &str,
-    timestamp: i64,
-    tx: &str,
-) -> Vec<u8> {
+fn insert_to_data_table(vertex: &str, year: u16, month: u8, kind: &str, timestamp: i64, tx: &str) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())

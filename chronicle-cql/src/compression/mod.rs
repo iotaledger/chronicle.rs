@@ -1,8 +1,8 @@
 pub mod compression;
 pub use compression::{
     Compression,
-    MyCompression,
     Lz4,
+    MyCompression,
     Snappy,
     Uncompressed,
     LZ4,

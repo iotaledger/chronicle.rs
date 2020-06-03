@@ -1,10 +1,15 @@
-use futures::{StreamExt,SinkExt};
-use tokio_tungstenite::connect_async;
-use url::Url;
-use tokio_tungstenite::tungstenite::Message;
 use super::websocket::SocketMsg;
+use futures::{
+    SinkExt,
+    StreamExt,
+};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::Message,
+};
+use url::Url;
 
-pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> Result<(), ()> {
+pub async fn add_nodes(ws: &str, addresses: Vec<String>, uniform_rf: u8) -> Result<(), ()> {
     let request = Url::parse(ws).unwrap();
     // connect to dashboard
     match connect_async(request).await {
@@ -22,12 +27,12 @@ pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> Resul
                     if let SocketMsg::Ok(_) = event {
                     } else {
                         ws_stream.close(None).await.unwrap();
-                        return Err(())
+                        return Err(());
                     }
                 } else {
                     println!("unable to reach the websocket server");
                     ws_stream.close(None).await.unwrap();
-                    return Err(())
+                    return Err(());
                 };
             }
             // build the ring
@@ -37,7 +42,7 @@ pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> Resul
             ws_stream.send(m).await.unwrap();
             // await till the ring is built
             if let Some(msg) = ws_stream.next().await {
-                if let SocketMsg::BuiltRing(true) = serde_json::from_str(msg.unwrap().to_text().unwrap()).unwrap(){
+                if let SocketMsg::BuiltRing(true) = serde_json::from_str(msg.unwrap().to_text().unwrap()).unwrap() {
                 } else {
                     unreachable!("add nodes fn");
                 };
@@ -46,8 +51,6 @@ pub async fn add_nodes(ws: &str,addresses: Vec<String>, uniform_rf: u8) -> Resul
             ws_stream.close(None).await.unwrap();
             Ok(())
         }
-        Err(_) => {
-            Err(())
-        }
+        Err(_) => Err(()),
     }
 }

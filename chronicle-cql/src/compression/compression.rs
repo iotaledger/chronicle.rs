@@ -104,16 +104,11 @@ impl MyCompression {
         }
     }
     pub fn get() -> impl Compression {
-        unsafe {
-            MY_COMPRESSION
-        }
+        unsafe { MY_COMPRESSION }
     }
     pub fn flag() -> u8 {
-        unsafe {
-            MY_COMPRESSION_FLAG
-        }
+        unsafe { MY_COMPRESSION_FLAG }
     }
-
 }
 
 impl Compression for MyCompression {

@@ -21,6 +21,7 @@ use chronicle_common::{
 use futures::{
     future::AbortHandle,
     stream::SplitSink,
+    SinkExt,
 };
 use std::{
     collections::HashMap,
@@ -34,7 +35,6 @@ use tokio_tungstenite::{
     tungstenite::Message,
     WebSocketStream,
 };
-use futures::SinkExt;
 
 #[derive(Clone)]
 pub struct Sender(pub mpsc::UnboundedSender<Event>);

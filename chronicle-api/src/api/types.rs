@@ -67,7 +67,6 @@ impl ColumnDecoder for Trytes81 {
     }
 }
 
-
 #[derive(Copy, Clone)]
 pub struct Trytes27(pub [u8; 27]);
 pub const BE_27_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 27];

@@ -264,9 +264,7 @@ impl Frame for Decoder {
             } else {
                 let paging_state_end: usize = paging_state_value_start + (paging_state_len as usize);
                 PagingState::new(
-                    Some(
-                        self.buffer_as_ref()[paging_state_value_start..paging_state_end].to_vec()
-                    ),
+                    Some(self.buffer_as_ref()[paging_state_value_start..paging_state_end].to_vec()),
                     paging_state_end,
                 )
             }

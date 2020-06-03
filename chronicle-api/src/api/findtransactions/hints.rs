@@ -1,8 +1,6 @@
-use crate::api::types::Trytes81;
-use crate::api::types::Trytes27;
-use serde::{
-    Deserialize,
-    Serialize,
+use crate::api::types::{
+    Trytes27,
+    Trytes81,
 };
 use chronicle_cql::{
     compression::compression::UNCOMPRESSED,
@@ -25,7 +23,10 @@ use chronicle_cql::{
     },
     rows,
 };
-
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Hint {
@@ -55,7 +56,6 @@ impl Hint {
             unreachable!("get_vertex in hint struct")
         }
     }
-
 }
 
 // ----------- decoding scope -----------

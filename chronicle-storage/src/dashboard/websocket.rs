@@ -13,6 +13,11 @@ use futures::{
     },
     StreamExt,
 };
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use serde_json;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
@@ -22,11 +27,6 @@ use tokio_tungstenite::{
     },
     WebSocketStream,
 };
-use serde::{
-    Deserialize,
-    Serialize,
-};
-use serde_json;
 
 actor!(
     WebsocketdBuilder {
@@ -81,29 +81,33 @@ impl Websocket {
                     let event: SocketMsg = serde_json::from_str(msg.to_text().unwrap()).expect("invalid SocketMsg");
                     match event {
                         SocketMsg::AddNode(address) => {
-                            let _ = self.dashboard_tx.0.send(
-                                dashboard::Event::Toplogy(dashboard::Toplogy::AddNode(address))
-                            );
-                        },
-                        SocketMsg::RemoveNode(address) => {
-                            let _ = self.dashboard_tx.0.send(
-                                dashboard::Event::Toplogy(dashboard::Toplogy::RemoveNode(address))
-                            );
-                        },
-                        SocketMsg::TryBuild(uniform_rf) => {
-                            let _ = self.dashboard_tx.0.send(
-                                dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild(uniform_rf as usize))
-                            );
-                        },
-                        _ => {
-                            panic!("unexpected SocketMsg")
+                            let _ = self
+                                .dashboard_tx
+                                .0
+                                .send(dashboard::Event::Toplogy(dashboard::Toplogy::AddNode(address)));
                         }
+                        SocketMsg::RemoveNode(address) => {
+                            let _ = self
+                                .dashboard_tx
+                                .0
+                                .send(dashboard::Event::Toplogy(dashboard::Toplogy::RemoveNode(address)));
+                        }
+                        SocketMsg::TryBuild(uniform_rf) => {
+                            let _ = self
+                                .dashboard_tx
+                                .0
+                                .send(dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild(
+                                    uniform_rf as usize,
+                                )));
+                        }
+                        _ => panic!("unexpected SocketMsg"),
                     }
                 }
                 if msg.is_close() {
-                    let _ = self.dashboard_tx.0.send(
-                        dashboard::Event::Session(dashboard::Session::Close(self.peer))
-                    );
+                    let _ = self
+                        .dashboard_tx
+                        .0
+                        .send(dashboard::Event::Session(dashboard::Session::Close(self.peer)));
                 }
             }
         }
