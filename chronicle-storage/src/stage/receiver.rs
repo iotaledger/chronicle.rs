@@ -86,7 +86,7 @@ impl Receiver {
             }
         } else {
             self.handle_frame_header(i);
-            self.handle_frame(end - i, i);
+            self.handle_frame(self.current_length, i);
         }
     }
     fn handle_frame_header(&mut self, padding: usize) {
@@ -115,8 +115,9 @@ impl Receiver {
             // get mut ref to payload for stream_id as giveload
             let giveload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // memcpy the current bytes from self.buffer into payload
-            giveload[(self.current_length - n)..self.total_length]
-                .copy_from_slice(&self.buffer[padding..(padding + n)]);
+            let start = self.current_length - n;
+            giveload[start..self.total_length]
+                .copy_from_slice(&self.buffer[padding..(padding + self.total_length-start)]);
             // tell reporter that giveload is ready.
             self.reporters
                 .get(&compute_reporter_num(self.stream_id, self.appends_num))
