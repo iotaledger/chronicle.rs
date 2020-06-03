@@ -3,7 +3,7 @@ use crate::api::types::{
     Trytes81,
 };
 use chronicle_cql::{
-    compression::compression::UNCOMPRESSED,
+    compression::compression::MyCompression,
     frame::{
         consistency::Consistency,
         decoder::{
@@ -11,10 +11,7 @@ use chronicle_cql::{
             Decoder,
             Frame,
         },
-        header::{
-            self,
-            Header,
-        },
+        header::Header,
         query::Query,
         queryflags::{
             SKIP_METADATA,
@@ -108,7 +105,7 @@ impl HintsDecoder for Tx {
 pub fn query(hint: &Hint) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
-        .flags(header::IGNORE)
+        .flags(MyCompression::flag())
         .stream(0)
         .opcode()
         .length()
@@ -119,6 +116,6 @@ pub fn query(hint: &Hint) -> Vec<u8> {
         .value(hint.get_vertex()) // it might be tag or address
         .value(hint.year)
         .value(hint.month)
-        .build(UNCOMPRESSED);
+        .build(MyCompression::get());
     payload
 }

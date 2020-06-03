@@ -1,6 +1,6 @@
 use crate::api::types::Trytes81;
 use chronicle_cql::{
-    compression::compression::UNCOMPRESSED,
+    compression::compression::MyCompression,
     frame::{
         consistency::Consistency,
         decoder::{
@@ -8,10 +8,7 @@ use chronicle_cql::{
             Decoder,
             Frame,
         },
-        header::{
-            self,
-            Header,
-        },
+        header::Header,
         query::Query,
         queryflags::{
             SKIP_METADATA,
@@ -63,7 +60,7 @@ impl ApproveesDecoder for Hash {
 pub fn query(approve: &Trytes81) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
-        .flags(header::IGNORE)
+        .flags(MyCompression::flag())
         .stream(0)
         .opcode()
         .length()
@@ -72,6 +69,6 @@ pub fn query(approve: &Trytes81) -> Vec<u8> {
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)
         .value(approve)
-        .build(UNCOMPRESSED);
+        .build(MyCompression::get());
     payload
 }
