@@ -22,11 +22,11 @@
 
 ## About
 
-Chronicle-Broker crate is associated with Chronicle framework. It provides borkers for reliable and efficient asynchronous job dispatch and management.
+Chronicle-Broker crate provides the functionality of middle layer between the IOTA node-event sources and the chronicle. Now the file importer is provided for transactions storing in a database.
 
-## Getting started
+## Getting Started
 
-Currently in alpha version only an importer is provided. More broker features will be released in later versions.
+The historical dmp files can be downloaded [here](https://dbfiles.iota.org/?prefix=mainnet/history/). The usage example is provided at [examples](../examples/README.md) folder.
 
 ## Supporting the project
 

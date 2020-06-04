@@ -21,7 +21,6 @@
   <a href="#prerequisites">Prerequisites</a> ◈
   <a href="#installation">Installation</a> ◈
   <a href="#build-and-run">Build and Run</a> ◈
-  <a href="#getting-started">Getting started</a> ◈
   <a href="#api-reference">API reference</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
   <a href="#joining-the-discussion">Joining the discussion</a> 
@@ -30,12 +29,7 @@
 ---
 
 ## TO-DO
-- Modify the links for official documentations
-- Modify the Chronicle.png
 - Move chronicle-example to examples
-- Update the current supported APIs
-  - getTrytes
-  - findTransactions 
 
 ## About
 
@@ -66,16 +60,23 @@ To run Chronicle, you need the following:
 - 4GB RAM
 - 64-bit processor
 - [Rust](https://www.rust-lang.org/tools/install)
-- [ScyllaDB](https://docs.scylladb.com/getting-started/)
+
+To use the storage crate, you need:
+
+- [ScyllaDB](https://docs.scylladb.com/getting-started/) or other Cassandra databases to store and access historical transactions
 
 ## Installation
 
 - Install [Rust](https://www.rust-lang.org/tools/install)
-- Install [Docker](https://docs.docker.com/get-docker/)
-- Install [ScyllaDB](https://docs.scylladb.com/getting-started/)
+
+To use the storage crate, you need:
+
+- Install [ScyllaDB](https://docs.scylladb.com/getting-started/) or other Cassandra databases
+- Install [Docker](https://docs.docker.com/get-docker/) or other  containers for the database
 
 ## Build and run
-- [Run ScyllaDB in Docker](https://docs.scylladb.com/operating-scylla/procedures/tips/best_practices_scylla_on_docker/)
+
+- [Run ScyllaDB in Docker](https://docs.scylladb.com/operating-scylla/procedures/tips/best_practices_scylla_on_docker/) for quick usage of storage crate
 - Clone and build Chronicle
 ```bash
 git clone https://github.com/iotaledger/chronicle.rs.git
@@ -87,8 +88,7 @@ cargo build
 cd examples
 cargo run --example [EXAMPLE_NAME]
 ```
-
-## Getting started
+- The historical dmp files can be downloaded [here](https://dbfiles.iota.org/?prefix=mainnet/history/)
 
 For instructions on running Chronicle, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.0/tutorials/install-chronicle).
 

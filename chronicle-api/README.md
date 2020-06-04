@@ -13,6 +13,7 @@
       
 <p align="center">
   <a href="#about">About</a> ◈
+  <a href="#getting-started">Getting started</a> ◈
   <a href="#api-calls">API calls</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
   <a href="#joining-the-discussion">Joining the discussion</a> 
@@ -23,6 +24,10 @@
 ## About
 
 Chronicle-API crate is associated with Chronicle framework. It implements the functionalities of [APIs](https://docs.iota.org/docs/chronicle/1.0/references/chronicle-api-reference) those can be used for chronicle.
+
+## Getting Started
+
+The build and run process for Chronicle can be founded [here](../README.md).
 
 ## API calls
 
