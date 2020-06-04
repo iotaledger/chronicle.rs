@@ -11,13 +11,12 @@ edition = "2018"
 # essential
 tokio = { version = "0.2", features = ["full"] }
 chronicle-common = { path = "../chronicle-common" }
-chronicle-cql = {path = "../chronicle-cql"}
 # apps
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-api = { path = "../chronicle-api" }
-# extra
-rand = "0.7"
+chronicle-cql = {path = "../chronicle-cql"}
+chronicle-broker = { path = "../chronicle-broker" }
 
 [[example]]
-name = "cqlquery"
-path = "cqlquery/main.rs"
+name = "storage"
+path = "storage/main.rs"

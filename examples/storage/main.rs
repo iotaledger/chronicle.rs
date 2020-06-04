@@ -36,7 +36,7 @@ impl AppsBuilder {
 
 #[tokio::main(core_threads = 8)]
 async fn main() {
-    println!("Starting chronicle-example");
+    println!("Starting storage example");
     AppsBuilder::new()
         .build() // build apps first, then start them in order you want.
         .function(|apps| {
@@ -86,8 +86,9 @@ async fn main() {
                 .await
                 .expect("failed to create tangle.data table");
             // add the dmps files you want to import in order (from oldest to recent)
+            // Note that you need to download the 6000.dmp from https://dbfiles.iota.org/?prefix=mainnet/history/
             ImporterBuilder::new()
-                .filepath("./chronicle-example/dmp/6000.dmp".to_string())
+                .filepath("./storage/dmp/6000.dmp".to_string())
                 .milestone(6000)
                 .max_retries(0)
                 .build()

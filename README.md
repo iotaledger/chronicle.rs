@@ -28,9 +28,6 @@
 
 ---
 
-## TO-DO
-- Move chronicle-example to examples
-
 ## About
 
 The Chronile is an open-source Rust framework that provides solution for efficient online big data access with databases, as well as reliable and efficient runtime framework based on [tokio](https://docs.rs/crate/tokio). This framework uses IOTA protocol as an example to demonstrate

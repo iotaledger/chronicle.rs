@@ -6,5 +6,4 @@ members = [
     "chronicle-api",
     "chronicle-broker",
     "chronicle-common",
-    "chronicle-example",
 ]
