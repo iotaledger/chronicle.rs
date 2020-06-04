@@ -28,7 +28,7 @@ This folder contains examples of using Chronicle frame work.
 
 - For the build process please refer to [here](../README.md)
 - Please download the dmp files [here](https://dbfiles.iota.org/?prefix=mainnet/history/) for importing
-- Go to the example folder to run the example
+- To run an example
 ```bash
 cargo run --example [EXAMPLE_NAME]
 ```

@@ -45,7 +45,7 @@ Chronicle also provides a Rust asynchronous Cassandra driver based on [CQL BINAR
 - [Chronicle CQL](chronicle-cql/README.md)
 - [Chronicle Storage](chronicle-storage/README.md)
 
-Examples of using Chronicle frame work can be found in [Examples](examples/README.md)
+[Examples](examples/README.md) of using Chronicle framework is provided.
 
 This is alpha software, so there may be performance and stability issues.
 Please report any issues in our [issue tracker](https://github.com/iotaledger/chronicle.rs/issues/new).
@@ -60,7 +60,7 @@ To run Chronicle, you need the following:
 
 To use the storage crate, you need:
 
-- [ScyllaDB](https://docs.scylladb.com/getting-started/) or other Cassandra databases to store and access historical transactions
+- [ScyllaDB](https://docs.scylladb.com/getting-started/) or other [Cassandra](https://cassandra.apache.org/) databases to store and access historical transactions
 
 ## Installation
 

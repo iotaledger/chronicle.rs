@@ -21,7 +21,7 @@
 
 ## About
 
-Chronicle-CQL crate is for efficient decoding and encoding CQL frames in Rust language. The usage example of this crate can be found in [examples](../examples/README.md)
+Chronicle-CQL crate is for efficient decoding and encoding CQL frames in Rust language. The usage example of this crate can be found in [examples](../examples/README.md).
 
 ## Supporting the project
 

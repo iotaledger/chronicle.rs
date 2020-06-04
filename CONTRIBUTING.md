@@ -51,8 +51,7 @@ Please check the following list:
 
 ### Submitting A Bug Report
 
-To report a bug, [open a new issue](https://github.com/iotaledger/chronicle.rs/issues/new?labels=T+-+Bug&template=bug_report.md&title=), and be sure to include as many details as possible, using the template.
-- **TODO**: Create bug_report template
+To report a bug, [open a new issue](https://github.com/iotaledger/chronicle.rs/issues/new), and be sure to include as many details as possible.
 
 **Note:** Minor changes such as fixing a typo can but do not need an open issue.
 
@@ -94,12 +93,7 @@ Otherwise, your feature may not be approved at all.
 
 ### Building a new feature
 
-To build a new feature, check out a new branch based on the `develop` branch, and be sure to consider the following:
-
-- Make sure that your feature is supported on mobile and desktop devices
-
-- If the feature includes public-facing text, make sure to follow the [localization instructions](/docs/dev/localisation.md)
-- **TODO**: Update the localization.md
+To build a new feature, check out a new branch based on the `develop` branch.
 </details>
 
 <br>
@@ -131,8 +125,6 @@ When creating a pull request, please follow these steps to have your contributio
 
     **Note:** Minor changes such as fixing a typo can but do not need an open issue.
 
-- All code should be well tested and follow the [code styleguide](/docs/dev/styleguide.md)
-- **TODO**: Update the styleguide.md
 ### Submitting a pull request
 
 The following is a typical workflow for submitting a new pull request:

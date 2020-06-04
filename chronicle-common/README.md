@@ -21,7 +21,7 @@
 
 ## About
 
-Chronicle-Common crate is associated with Chronicle framework, which contains macros and traits to build actors and applications in chronicle-runtime engine.
+Chronicle-Common crate is associated with Chronicle framework, which contains macros and traits to build actors and applications in Chronicle runtime engine.
 
 ## Supporting the project
 

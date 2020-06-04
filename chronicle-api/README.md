@@ -31,7 +31,7 @@ The build and run process for Chronicle can be founded [here](../README.md).
 
 ## API calls
 
-- **getTrytes**
+- **getTrytes** by transaction hashes
 ```bash
 curl http://host:port/api
 -X POST
@@ -44,7 +44,7 @@ curl http://host:port/api
   ]
 }'
 ```
-- **findTransactions**
+- **findTransactions** by bundle hashes
 ```bash
 curl http://host:port/api
 -X POST
@@ -57,7 +57,7 @@ curl http://host:port/api
   ]
 }'
 ```
-- **findTransactions**
+- **findTransactions** by approvees
 ```bash
 curl http://host:port/api
 -X POST
@@ -70,7 +70,7 @@ curl http://host:port/api
   ]
 }'
 ```
-- **findTransactions**
+- **findTransactions** by addresses
 ```bash
 curl http://host:port/api
 -X POST
@@ -83,7 +83,7 @@ curl http://host:port/api
   ]
 }'
 ```
-- **findTransactions**
+- **findTransactions** by address, month, and year
 ```bash
 curl http://host:port/api
 -X POST
@@ -96,7 +96,7 @@ curl http://host:port/api
   ]
 }'
 ```
-- **findTransactions**
+- **findTransactions** by tag, month, and year
 ```bash
 curl http://host:port/api
 -X POST

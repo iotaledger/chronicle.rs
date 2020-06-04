@@ -26,7 +26,7 @@ Chronicle-Broker crate provides the functionality of middle layer between the IO
 
 ## Getting Started
 
-The historical dmp files can be downloaded [here](https://dbfiles.iota.org/?prefix=mainnet/history/). The usage example is provided at [examples](../examples/README.md) folder.
+The historical dmp files can be downloaded [here](https://dbfiles.iota.org/?prefix=mainnet/history/). The usage example is provided [here](../examples/README.md).
 
 ## Supporting the project
 
