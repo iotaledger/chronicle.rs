@@ -218,7 +218,23 @@ impl Supervisor {
                     // do self cleanup on weaks
                     self.cleanup();
                     // shutdown everything and drop self.tx
-                    // TODO
+                    for (_, mut node_info) in self.nodes.drain() {
+                        for shard_id in 0..node_info.shard_count {
+                            // make node_id to reflect the correct shard_id
+                            node_info.node_id[4] = shard_id;
+                            // remove the shard_reporters for "address" node in shard_id from registry
+                            self.registry.remove(&node_info.node_id);
+                        }
+                        // send shutdown event to node
+                        node_info.node_tx.send(node::supervisor::Event::Shutdown).unwrap();
+                    }
+                    // build empty ring to enable other threads to build empty ring(eventually)
+                    let version = self.new_version();
+                    let (new_arc_ring, old_weak_ring) = initialize_ring(version, true);
+                    self.arc_ring.replace(new_arc_ring);
+                    self.weak_rings.push(old_weak_ring.unwrap());
+                    // redo self cleanup on weaks
+                    self.cleanup();
                     // drop self.tx
                     self.tx = None;
                 }
