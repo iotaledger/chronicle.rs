@@ -73,6 +73,7 @@ pub struct Reusable {
     value: UnsafeCell<Option<sender::Payload>>,
 }
 impl Reusable {
+    #[allow(clippy::mut_from_ref)]
     pub fn as_mut(&self) -> &mut Option<sender::Payload> {
         unsafe { self.value.get().as_mut().unwrap() }
     }

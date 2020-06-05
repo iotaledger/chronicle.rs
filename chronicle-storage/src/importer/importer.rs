@@ -281,9 +281,10 @@ impl InsertTransactionsFromFile {
                 let decoder = Decoder::new(giveload, UNCOMPRESSED);
                 if decoder.is_void() {
                     // Nothing to do
-                } else {
-                    // TODO: Add retry mechanism
                 }
+                // } else {
+                //     // TODO: Add retry mechanism
+                // }
                 return pid;
             }
             Event::Error { kind: _, pid } => {
