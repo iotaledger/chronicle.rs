@@ -6,17 +6,7 @@ pub trait Compression: Sync {
 }
 pub const LZ4: Lz4 = Lz4;
 pub struct Lz4;
-// pub mod compression;
-// pub use self::{
-//     Compression,
-//     Lz4,
-//     MyCompression,
-//     Snappy,
-//     Uncompressed,
-//     LZ4,
-//     SNAPPY,
-//     UNCOMPRESSED,
-// };
+
 impl Compression for Lz4 {
     fn decompress(&self, mut buffer: Vec<u8>) -> Vec<u8> {
         let compressed_body_length = i32::from_be_bytes(buffer[5..9].try_into().unwrap()) as usize;

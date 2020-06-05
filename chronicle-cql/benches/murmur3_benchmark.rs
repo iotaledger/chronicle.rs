@@ -1,4 +1,4 @@
-use chronicle_cql::murmur3_cassandra_x64_128;
+use chronicle_cql::murmur3::murmur3_cassandra_x64_128;
 use criterion::{
     criterion_group,
     criterion_main,
