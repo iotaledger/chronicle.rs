@@ -109,7 +109,9 @@ pub fn query(hint: &Hint) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT tx FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('address','tag')")
+        .statement(
+            "SELECT tx FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('address','tag')",
+        )
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(3)

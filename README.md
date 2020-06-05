@@ -10,7 +10,8 @@
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
-    <a href="https://github.com/iotaledger/chronicle.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/chronicle.rs/workflows/Test%20on%20general/badge.svg" alt="Discord"></a>
+    <a href="https://github.com/iotaledger/chronicle.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/chronicle.rs/workflows/Build/badge.svg"></a>
+    <a href="https://github.com/iotaledger/chronicle.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/chronicle.rs/workflows/Test/badge.svg"></a>
     <a href="https://discord.iota.org/" style="text-decoration:none;"><img src="https://img.shields.io/badge/Discord-9cf.svg?logo=discord" alt="Discord"></a>
     <a href="https://iota.stackexchange.com/" style="text-decoration:none;"><img src="https://img.shields.io/badge/StackExchange-9cf.svg?logo=stackexchange" alt="StackExchange"></a>
     <a href="https://github.com/iotaledger/chronicle.rs/blob/master/LICENSE" style="text-decoration:none;"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="Apache 2.0 license"></a>

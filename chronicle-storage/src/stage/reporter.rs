@@ -140,7 +140,8 @@ impl Reporter {
                         Session::CheckPoint(old_session) => {
                             // check how many checkpoints we have.
                             if self.checkpoints == 1 {
-                                // first we drain workers map from stucked requests, to force_consistency of the old_session requests
+                                // first we drain workers map from stucked requests, to force_consistency of the
+                                // old_session requests
                                 force_consistency(&mut self.streams, &mut self.workers);
                                 // reset checkpoints to 0
                                 self.checkpoints = 0;
@@ -162,9 +163,12 @@ impl Reporter {
                             // set self.tx to None, otherwise reporter never shutdown.
                             self.tx = None;
                             // as we already dropped the sender_tx
-                            // dropping the sender_tx will drop the sender and eventaully drop receiver , this means our reporter_tx in both sender&reciever will be dropped.. finally the only reporter_tx left is in Rings which will eventaully be dropped.
-                            // techincally reporters are active till the last Ring::send(..) call.
-                            // this make sure we don't leave any requests behind and enabling the workers to async send requests with guarantee to be processed back
+                            // dropping the sender_tx will drop the sender and eventaully drop receiver , this means our
+                            // reporter_tx in both sender&reciever will be dropped.. finally the only reporter_tx left
+                            // is in Rings which will eventaully be dropped. techincally
+                            // reporters are active till the last Ring::send(..) call.
+                            // this make sure we don't leave any requests behind and enabling the workers to async send
+                            // requests with guarantee to be processed back
                         }
                     }
                 }
@@ -207,8 +211,8 @@ fn force_consistency(streams: &mut Streams, workers: &mut Workers) {
     for (stream_id, worker_id) in workers.drain() {
         // push the stream_id back into the streams vector
         streams.push(stream_id);
-        // tell worker_id that we lost the response for his request, because we lost scylla connection in middle of request cycle,
-        // still this is a rare case.
+        // tell worker_id that we lost the response for his request, because we lost scylla connection in middle of
+        // request cycle, still this is a rare case.
         worker_id.send_error(Error::Lost);
     }
 }

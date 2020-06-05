@@ -214,7 +214,8 @@ impl Supervisor {
                 }
                 Event::Reconnect(_) if self.reconnect_requests != reporters_num - 1 => {
                     // supervisor requires reconnect_requests from all its reporters in order to reconnect.
-                    // so in this scope we only count the reconnect_requests up to reporters_num-1, which means only one is left behind.
+                    // so in this scope we only count the reconnect_requests up to reporters_num-1, which means only one
+                    // is left behind.
                     self.reconnect_requests += 1;
                 }
                 Event::Reconnect(_) => {

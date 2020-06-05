@@ -117,7 +117,7 @@ impl Receiver {
             // memcpy the current bytes from self.buffer into payload
             let start = self.current_length - n;
             giveload[start..self.total_length]
-                .copy_from_slice(&self.buffer[padding..(padding + self.total_length-start)]);
+                .copy_from_slice(&self.buffer[padding..(padding + self.total_length - start)]);
             // tell reporter that giveload is ready.
             self.reporters
                 .get(&compute_reporter_num(self.stream_id, self.appends_num))

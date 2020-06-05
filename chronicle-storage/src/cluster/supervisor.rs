@@ -28,7 +28,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::mpsc;
-//types
+// types
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type Tokens = Vec<(Token, NodeId, DC, Msb, ShardCount)>;
@@ -204,7 +204,8 @@ impl Supervisor {
                             // push weak to weak_rings
                             self.weak_rings.push(old_weak_ring);
                         }
-                        // reset build state to false becaue we built it and we don't want to rebuild again incase of another TryBuild event
+                        // reset build state to false becaue we built it and we don't want to rebuild again incase of
+                        // another TryBuild event
                         self.build = false;
                         // reply to dashboard
                         let event = dashboard::Event::Result(dashboard::Result::TryBuild(true));

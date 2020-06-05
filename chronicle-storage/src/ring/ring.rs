@@ -500,7 +500,6 @@ pub fn build_ring(
     // randmoly didn't gen the MIN token by luck.
     // confirm if the vnode_min is not already exist in our token range
     if vnodes.first().unwrap().1 == MIN {
-        //
         // remove it, otherwise the first vnode will be(MIN, MIN, ..) and invalidate vnode conditions
         vnodes.remove(0);
     };

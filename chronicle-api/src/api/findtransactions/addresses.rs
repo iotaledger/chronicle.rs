@@ -92,9 +92,7 @@ pub fn query(address: &Trytes81) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement(
-            "SELECT tx, extra FROM tangle.edge WHERE vertex = ? AND kind in ('input','output','hint')",
-        )
+        .statement("SELECT tx, extra FROM tangle.edge WHERE vertex = ? AND kind in ('input','output','hint')")
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)
