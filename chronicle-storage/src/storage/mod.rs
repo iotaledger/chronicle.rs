@@ -90,7 +90,7 @@ impl Storage {
         tokio::spawn(dashboard.run(cluster.clone_tx()));
         // spawn cluster
         tokio::spawn(cluster.run());
-        if let Some(_) = self.nodes.as_ref() {
+        if self.nodes.as_ref().is_some() {
             dashboard_tx
         } else {
             None

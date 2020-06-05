@@ -125,7 +125,7 @@ impl Supervisor {
                     // only then we push it to cluster to use them to build the RING and
                     // expose it to the public
                     // push the reporters that belong to a given shard_id(stage_num)
-                    let mut node_id = self.node_id.clone();
+                    let mut node_id = self.node_id;
                     // assign shard_id to node_id to use it later as key in registry
                     node_id[4] = shard_id;
                     self.node_registry.push((node_id, reporters));
@@ -144,14 +144,12 @@ impl Supervisor {
     }
 }
 
-pub fn gen_node_id(address: &String) -> NodeId {
+pub fn gen_node_id(address: &str) -> NodeId {
     let address_port: Vec<&str> = address.split(':').collect();
     let ipv4: Vec<&str> = address_port.first().unwrap().split('.').collect();
     let mut node_id = [0; 5];
-    let mut i = 0;
-    for ipv4_byte in ipv4 {
+    for (i, ipv4_byte) in ipv4.into_iter().enumerate() {
         node_id[i] = ipv4_byte.parse::<u8>().unwrap();
-        i += 1;
     }
     node_id
 }

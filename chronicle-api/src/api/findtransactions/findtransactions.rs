@@ -91,16 +91,16 @@ impl FindTransactions {
                                         // complete result is ready
                                         response!(body: serde_json::to_string(&res_txs).unwrap())
                                     }
-                                    Err(response) => return response,
+                                    Err(response) => response,
                                 }
                             }
-                            Err(response) => return response,
+                            Err(response) => response,
                         }
                     }
-                    Err(response) => return response,
+                    Err(response) => response,
                 }
             }
-            Err(response) => return response,
+            Err(response) => response,
         }
     }
 
@@ -192,7 +192,7 @@ impl FindTransactions {
                                 }
                             }
                         }
-                        Event::Error { kind: _, pid: _ } => {
+                        Event::Error { .. } => {
                             return Err(
                                 response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing an approvee"}"#),
                             );
@@ -248,7 +248,7 @@ impl FindTransactions {
                                 }
                             }
                         }
-                        Event::Error { kind: _, pid: _ } => {
+                        Event::Error { .. } => {
                             return Err(
                                 response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing an address"}"#),
                             );
@@ -302,7 +302,7 @@ impl FindTransactions {
                                 }
                             }
                         }
-                        Event::Error { kind: _, pid: _ } => {
+                        Event::Error { .. } => {
                             return Err(
                                 response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing a hint"}"#),
                             );

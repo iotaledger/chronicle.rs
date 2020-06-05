@@ -66,11 +66,11 @@ impl SchemaCql {
         );
         if let Some(event) = rx.recv().await {
             match event {
-                Event::Response { decoder: _ } => {
+                Event::Response { .. } => {
                     // TODO add extra check if is_schema.
-                    return Ok(());
+                    Ok(())
                 }
-                Event::Error { kind } => return Err(kind),
+                Event::Error { kind } => Err(kind),
             }
         } else {
             unreachable!()
@@ -82,15 +82,13 @@ impl Worker for SchemaCqlId {
     fn send_response(self: Box<Self>, _: &Option<reporter::Sender>, giveload: Vec<u8>) {
         // create decoder for the giveload
         let decoder = Decoder::new(giveload, MyCompression::get());
-        let event;
-        // check if is_error
-        if decoder.is_error() {
-            event = Event::Error {
+        let event = if decoder.is_error() {
+            Event::Error {
                 kind: Error::Cql(decoder.get_error()),
-            };
+            }
         } else {
-            event = Event::Response { decoder };
-        }
+            Event::Response { decoder }
+        };
         let _ = self.0.send(event);
     }
     fn send_error(self: Box<Self>, kind: Error) {

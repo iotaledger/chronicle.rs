@@ -31,7 +31,7 @@ actor!(
 impl SenderBuilder {
     pub fn build(self) -> SenderState {
         // pass sender_tx to reporters
-        for (_, reporter_tx) in self.reporters.as_ref().unwrap() {
+        for reporter_tx in self.reporters.as_ref().unwrap().values() {
             reporter_tx
                 .send(reporter::Event::Session(reporter::Session::New(
                     self.session_id.as_ref().unwrap().clone(),
@@ -83,7 +83,7 @@ impl SenderState {
           // probably not needed
         self.socket.shutdown().await.unwrap();
         // send checkpoint to all reporters because the socket is mostly closed
-        for (_, reporter_tx) in &self.reporters {
+        for reporter_tx in self.reporters.values() {
             reporter_tx
                 .send(reporter::Event::Session(reporter::Session::CheckPoint(self.session_id)))
                 .unwrap();

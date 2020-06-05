@@ -95,7 +95,7 @@ thread_local! {
 }
 
 impl Ring {
-    pub fn send(data_center: &DC, replica_index: usize, token: Token, request: Event) {
+    pub fn send(data_center: &str, replica_index: usize, token: Token, request: Event) {
         RING.with(|local| {
             local
                 .borrow_mut()
@@ -123,10 +123,10 @@ impl Ring {
                     let (dcs, uniform_dcs, uniform_rf, uniform, version, registry, root) = Arc::make_mut(&mut arc);
                     // update the local ring
                     self.dcs = dcs.clone();
-                    self.uniform_dcs = uniform_dcs.clone();
-                    self.uniform_rf = uniform_rf.clone();
-                    self.uniform = uniform.clone();
-                    self.version = version.clone();
+                    self.uniform_dcs = *uniform_dcs;
+                    self.uniform_rf = *uniform_rf;
+                    self.uniform = *uniform;
+                    self.version = *version;
                     self.registry = registry.clone();
                     self.root = root.clone();
                     self.weak.replace(new_weak);
@@ -135,7 +135,7 @@ impl Ring {
         }
         self
     }
-    fn global(&mut self, data_center: &DC, replica_index: usize, token: Token, request: Event) {
+    fn global(&mut self, data_center: &str, replica_index: usize, token: Token, request: Event) {
         // send request.
         self.root.as_mut().search(token).send(
             data_center,
@@ -144,7 +144,7 @@ impl Ring {
             request,
             &mut self.registry,
             &mut self.rng,
-            &self.uniform,
+            self.uniform,
         );
     }
     fn local(&mut self, replica_index: usize, token: Token, request: Event) {
@@ -156,7 +156,7 @@ impl Ring {
             request,
             &mut self.registry,
             &mut self.rng,
-            &self.uniform,
+            self.uniform,
         );
     }
     fn local_random_replica(&mut self, token: Token, request: Event) {
@@ -168,7 +168,7 @@ impl Ring {
             request,
             &mut self.registry,
             &mut self.rng,
-            &self.uniform,
+            self.uniform,
         );
     }
     fn global_random_replica(&mut self, token: Token, request: Event) {
@@ -180,7 +180,7 @@ impl Ring {
             request,
             &mut self.registry,
             &mut self.rng,
-            &self.uniform,
+            self.uniform,
         );
     }
     fn initialize_ring(version: u8, rebuild: bool) -> (ArcRing, Option<Box<Weak<GlobalRing>>>) {
@@ -228,7 +228,7 @@ trait SmartId {
         token: Token,
         registry: &mut Registry,
         rng: &mut ThreadRng,
-        uniform: &Uniform<u8>,
+        uniform: Uniform<u8>,
         request: Event,
     );
 }
@@ -238,7 +238,7 @@ impl SmartId for Replica {
         token: Token,
         registry: &mut Registry,
         rng: &mut ThreadRng,
-        uniform: &Uniform<u8>,
+        uniform: Uniform<u8>,
         request: Event,
     ) {
         // shard awareness algo,
@@ -256,13 +256,13 @@ impl SmartId for Replica {
 pub trait Endpoints: EndpointsClone + Send + Sync {
     fn send(
         &mut self,
-        data_center: &DC,
+        data_center: &str,
         replica_index: usize,
         token: Token,
         request: Event,
         registry: &mut Registry,
         rng: &mut ThreadRng,
-        uniform: &Uniform<u8>,
+        uniform: Uniform<u8>,
     );
 }
 
@@ -288,13 +288,13 @@ impl Clone for Box<dyn Endpoints> {
 impl Endpoints for Replicas {
     fn send(
         &mut self,
-        data_center: &DC,
+        data_center: &str,
         replica_index: usize,
         token: Token,
         request: Event,
         mut registry: &mut Registry,
         mut rng: &mut ThreadRng,
-        uniform: &Uniform<u8>,
+        uniform: Uniform<u8>,
     ) {
         self.get_mut(data_center).unwrap()[replica_index].send_reporter(
             token,
@@ -310,16 +310,16 @@ impl Endpoints for Option<Replicas> {
     // used for initial ring to simulate the reporter and respond to worker(self) with NoRing error
     fn send(
         &mut self,
-        _: &DC,
+        _: &str,
         _: usize,
         _: Token,
         request: Event,
         _: &mut Registry,
         _: &mut ThreadRng,
-        _uniform: &Uniform<u8>,
+        _uniform: Uniform<u8>,
     ) {
         // simulate reporter,
-        if let Event::Request { worker, payload: _ } = request {
+        if let Event::Request { worker, .. } = request {
             worker.send_error(Error::NoRing);
         };
     }
@@ -448,9 +448,9 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
 }
 
 fn walk_clockwise(starting_index: usize, end_index: usize, vnodes: &Vec<VnodeTuple>, replicas: &mut Replicas) {
-    for i in starting_index..end_index {
+    for vnode in vnodes.iter().take(end_index).skip(starting_index) {
         // fetch replica
-        let (_, _, node_id, dc, msb, shard_count) = &vnodes[i];
+        let (_, _, node_id, dc, msb, shard_count) = &vnode;
         let replica: Replica = (*node_id, *msb, *shard_count);
         // now push it to Replicas
         match replicas.get_mut(dc) {
@@ -477,7 +477,7 @@ pub fn build_ring(
 ) -> (Arc<GlobalRing>, Box<Weak<GlobalRing>>) {
     let mut tokens = Vec::new(); // complete tokens-range
                                  // iter nodes
-    for (_, node_info) in nodes {
+    for node_info in nodes.values() {
         // we generate the tokens li
         for t in &node_info.tokens {
             tokens.push(t)

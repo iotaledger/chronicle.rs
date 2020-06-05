@@ -61,7 +61,7 @@ type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
 pub struct InsertTransactionsFromFileId(Sender);
-const MILESTONE_FILENAME: [&'static str; 3] = ["6000", "13157", "18675"];
+const MILESTONE_FILENAME: [&str; 3] = ["6000", "13157", "18675"];
 
 actor!(InsertTransactionsFromFileBuilder {
     filepath: String,
@@ -99,7 +99,7 @@ pub enum Event {
     },
 }
 
-static PROGRESS_STEP: u64 = 1000000;
+static PROGRESS_STEP: u64 = 1_000_000;
 
 impl Worker for InsertTransactionsFromFileId {
     fn send_response(self: Box<Self>, _: &Option<reporter::Sender>, giveload: Vec<u8>) {
@@ -181,7 +181,7 @@ impl InsertTransactionsFromFile {
             let (year, month) = (datetime.year() as i16, datetime.month() as i8);
 
             // Get the milestone if the file stem is not used
-            if use_file_stem_as_milstone == false {
+            if !use_file_stem_as_milstone {
                 milestone = v[2].parse::<i64>().unwrap();
             }
 
@@ -216,12 +216,7 @@ impl InsertTransactionsFromFile {
                 worker = Self::process(data_table_address, worker, &mut rx).await;
                 worker = Self::process(data_table_tag, worker, &mut rx).await;
             } else {
-                let mut kind = "input";
-                if value > 0 {
-                    kind = "output";
-                } else {
-                    // Do nothing
-                }
+                let kind = if value > 0 { "output" } else { "input" };
                 let edge_table_address = Self::insert_to_edge_table_for_address_vertex(
                     &self.statement_edge_table,
                     address,
@@ -285,12 +280,12 @@ impl InsertTransactionsFromFile {
                 // } else {
                 //     // TODO: Add retry mechanism
                 // }
-                return pid;
+                pid
             }
-            Event::Error { kind: _, pid } => {
+            Event::Error { pid, .. } => {
                 // do nothing as the value is already null,
                 // still we can apply other retry strategies
-                return pid;
+                pid
             }
         }
     }

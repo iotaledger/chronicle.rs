@@ -74,7 +74,7 @@ impl Receiver {
             }
         }
         // clean shutdown
-        for (_, reporter_tx) in &self.reporters {
+        for reporter_tx in self.reporters.values() {
             let _ = reporter_tx.send(reporter::Event::Session(reporter::Session::CheckPoint(self.session_id)));
         }
     }
@@ -148,7 +148,7 @@ fn get_total_length_usize(buffer: &[u8]) -> usize {
     ((buffer[5] as usize) << 24) +
     ((buffer[6] as usize) << 16) +
     ((buffer[7] as usize) <<  8) +
-    ((buffer[8] as usize) <<  0)
+    (buffer[8] as usize)
 }
 
 fn get_stream_id(buffer: &[u8]) -> reporter::Stream {

@@ -60,8 +60,8 @@ impl GetTrytes {
     pub async fn run(mut self) -> Response<Body> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(GetTrytesId(tx));
-        let mut hashes = self.hashes.iter_mut();
-        while let Some(value) = hashes.next() {
+        let hashes = self.hashes.iter_mut();
+        for value in hashes {
             worker = Self::process(value, worker, &mut rx).await;
         }
         let res_trytes = ResTrytes { trytes: self.hashes };
@@ -90,12 +90,12 @@ impl GetTrytes {
                     } else {
                         println!("GetTrytes: {:?}", decoder.get_error());
                     }
-                    return pid;
+                    pid
                 }
-                Event::Error { kind: _, pid } => {
+                Event::Error { pid, .. } => {
                     // do nothing as the value is already null,
                     // still we can apply other retry strategies
-                    return pid;
+                    pid
                 }
             }
         } else {

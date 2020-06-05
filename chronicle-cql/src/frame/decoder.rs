@@ -106,8 +106,7 @@ impl HeaderFlags {
         } else {
             tracing = None;
         }
-        let warnings;
-        if flags & header::WARNING == header::WARNING {
+        let warnings = if flags & header::WARNING == header::WARNING {
             let string_list = string_list(&buffer[body_start..]);
             // add all [short] length to the body_start
             body_start += 2 * (string_list.len() + 1);
@@ -116,10 +115,10 @@ impl HeaderFlags {
                 // add the warning.len to the body_start
                 body_start += warning.len();
             }
-            warnings = Some(string_list);
+            Some(string_list)
         } else {
-            warnings = None;
-        }
+            None
+        };
         let custom_payload = flags & header::CUSTOM_PAYLOAD == header::CUSTOM_PAYLOAD;
         Self {
             compression,
@@ -402,14 +401,15 @@ where
     }
 }
 
-impl<K, V> ColumnDecoder for HashMap<K, V>
+impl<K, V, S> ColumnDecoder for HashMap<K, V, S>
 where
     K: Eq + Hash + ColumnDecoder,
     V: ColumnDecoder,
+    S: ::std::hash::BuildHasher + Default,
 {
-    fn decode(slice: &[u8], mut _length: usize) -> HashMap<K, V> {
+    fn decode(slice: &[u8], mut _length: usize) -> HashMap<K, V, S> {
         let map_len = i32::from_be_bytes(slice[0..4].try_into().unwrap()) as usize;
-        let mut map: HashMap<K, V> = HashMap::new();
+        let mut map: HashMap<K, V, S> = HashMap::default();
         let mut pair_start = 4;
         for _ in 0..map_len {
             // decode key_byte_size

@@ -85,12 +85,12 @@ struct RowTokens {
 }
 
 pub async fn connect(
-    address: &Address,
+    address: &str,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
 ) -> Result<CqlConn, Error> {
     // connect using tokio and return
-    let mut stream = TcpStream::connect(address.clone()).await?;
+    let mut stream = TcpStream::connect(address).await?;
     // set socket flags
     if let Some(recv_buffer_size) = recv_buffer_size {
         stream.set_recv_buffer_size(recv_buffer_size)?
@@ -99,7 +99,7 @@ pub async fn connect(
         stream.set_send_buffer_size(send_buffer_size)?
     }
     // establish cql using startup frame and ensure is ready
-    let ref mut compression = Compression::None;
+    let compression = &mut Compression::None;
     let startup_frame = Frame::new_req_startup(compression.as_str()).into_cbytes();
     stream.write(startup_frame.as_slice()).await?;
     let mut ready_buffer = vec![0; 9];
@@ -176,7 +176,7 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
 }
 
 pub async fn connect_to_shard_id(
-    address: &Address,
+    address: &str,
     shard_id: u8,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
@@ -211,8 +211,5 @@ pub async fn connect_to_shard_id(
 }
 
 pub fn get_body_length_usize(buffer: &[u8]) -> usize {
-    ((buffer[5] as usize) << 24)
-        + ((buffer[6] as usize) << 16)
-        + ((buffer[7] as usize) << 8)
-        + ((buffer[8] as usize) << 0)
+    ((buffer[5] as usize) << 24) + ((buffer[6] as usize) << 16) + ((buffer[7] as usize) << 8) + (buffer[8] as usize)
 }

@@ -91,7 +91,7 @@ pub struct Reporter {
 }
 
 impl Reporter {
-    pub async fn run(mut self) -> () {
+    pub async fn run(mut self) {
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::Request { worker, mut payload } => {

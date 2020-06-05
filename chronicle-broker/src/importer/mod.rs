@@ -164,42 +164,46 @@ impl Importer {
             let year = naive.year() as u16;
             let month = naive.month() as u8;
             // create queries related to the transaction value
-            if value == 0 {
-                // create insert hint queries
-                let hint_query =
-                    insert_to_edge_table(&txtrytes[2187..2268], "hint", 0, "0", value, YearMonth(year, month));
-                let request = reporter::Event::Request {
-                    payload: hint_query,
-                    worker: self.pids.pop().unwrap(),
-                };
-                Ring::send_local_random_replica(rand::random::<i64>(), request);
-                let address_query =
-                    insert_to_data_table(&txtrytes[2187..2268], year, month, "address", timestamp, hash);
-                let request = reporter::Event::Request {
-                    payload: address_query,
-                    worker: self.pids.pop().unwrap(),
-                };
-                Ring::send_local_random_replica(rand::random::<i64>(), request);
-                // because it is a hint
-                self.pending += 1;
-            } else if value > 0 {
-                // create insert output query
-                let output_query =
-                    insert_to_edge_table(&txtrytes[2187..2268], "output", timestamp, hash, value, UNSET_VALUE);
-                let request = reporter::Event::Request {
-                    payload: output_query,
-                    worker: self.pids.pop().unwrap(),
-                };
-                Ring::send_local_random_replica(rand::random::<i64>(), request);
-            } else {
-                // create insert input query
-                let input_query =
-                    insert_to_edge_table(&txtrytes[2187..2268], "input", timestamp, hash, value, UNSET_VALUE);
-                let request = reporter::Event::Request {
-                    payload: input_query,
-                    worker: self.pids.pop().unwrap(),
-                };
-                Ring::send_local_random_replica(rand::random::<i64>(), request);
+            match value {
+                0 => {
+                    // create insert hint queries
+                    let hint_query =
+                        insert_to_edge_table(&txtrytes[2187..2268], "hint", 0, "0", value, YearMonth(year, month));
+                    let request = reporter::Event::Request {
+                        payload: hint_query,
+                        worker: self.pids.pop().unwrap(),
+                    };
+                    Ring::send_local_random_replica(rand::random::<i64>(), request);
+                    let address_query =
+                        insert_to_data_table(&txtrytes[2187..2268], year, month, "address", timestamp, hash);
+                    let request = reporter::Event::Request {
+                        payload: address_query,
+                        worker: self.pids.pop().unwrap(),
+                    };
+                    Ring::send_local_random_replica(rand::random::<i64>(), request);
+                    // because it is a hint
+                    self.pending += 1;
+                }
+                v if v > 0 => {
+                    // create insert output query
+                    let output_query =
+                        insert_to_edge_table(&txtrytes[2187..2268], "output", timestamp, hash, value, UNSET_VALUE);
+                    let request = reporter::Event::Request {
+                        payload: output_query,
+                        worker: self.pids.pop().unwrap(),
+                    };
+                    Ring::send_local_random_replica(rand::random::<i64>(), request);
+                }
+                _ => {
+                    // create insert input query
+                    let input_query =
+                        insert_to_edge_table(&txtrytes[2187..2268], "input", timestamp, hash, value, UNSET_VALUE);
+                    let request = reporter::Event::Request {
+                        payload: input_query,
+                        worker: self.pids.pop().unwrap(),
+                    };
+                    Ring::send_local_random_replica(rand::random::<i64>(), request);
+                }
             }
             // insert queries not related to the transaction value
             let trunk_query = insert_to_edge_table(&txtrytes[2430..2511], "trunk", timestamp, hash, value, UNSET_VALUE);

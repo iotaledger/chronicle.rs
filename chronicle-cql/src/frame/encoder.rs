@@ -122,12 +122,12 @@ impl ColumnEncoder for &[u8] {
 
 impl ColumnEncoder for IpAddr {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        match self {
-            &IpAddr::V4(ip) => {
+        match *self {
+            IpAddr::V4(ip) => {
                 buffer.extend(&BE_4_BYTES_LEN);
                 buffer.extend(&ip.octets());
             }
-            &IpAddr::V6(ip) => {
+            IpAddr::V6(ip) => {
                 buffer.extend(&BE_16_BYTES_LEN);
                 buffer.extend(&ip.octets());
             }
@@ -169,7 +169,7 @@ where
     }
 }
 
-impl<K, V> ColumnEncoder for HashMap<K, V>
+impl<K, V, S: ::std::hash::BuildHasher> ColumnEncoder for HashMap<K, V, S>
 where
     K: ColumnEncoder,
     V: ColumnEncoder,

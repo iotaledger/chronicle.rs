@@ -181,7 +181,7 @@ impl Dashboard {
                             // successfully spawned the node
                             println!("Dashboard: AddNode: Ok({})", address);
                             // NOTE: for now we tell all the active sockets
-                            for (_, socket) in &mut self.sockets {
+                            for socket in self.sockets.values_mut() {
                                 let msg = SocketMsg::Ok(address.clone());
                                 let j = serde_json::to_string(&msg).unwrap();
                                 let m = Message::text(j);
@@ -191,7 +191,7 @@ impl Dashboard {
                         Result::Err(address) => {
                             println!("Dashboard: AddNode: Err({})", address);
                             // NOTE: for now we tell all the active sockets
-                            for (_, socket) in &mut self.sockets {
+                            for socket in self.sockets.values_mut() {
                                 let msg = SocketMsg::Err(address.clone());
                                 let j = serde_json::to_string(&msg).unwrap();
                                 let m = Message::text(j);
@@ -201,7 +201,7 @@ impl Dashboard {
                         Result::TryBuild(built) => {
                             println!("Dashboard: Built Ring: {}", built);
                             // NOTE: for now we tell all the active sockets
-                            for (_, socket) in &mut self.sockets {
+                            for socket in self.sockets.values_mut() {
                                 let msg = SocketMsg::BuiltRing(built);
                                 let j = serde_json::to_string(&msg).unwrap();
                                 let m = Message::text(j);
