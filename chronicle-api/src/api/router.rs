@@ -1,7 +1,7 @@
 use super::{
     findtransactions::{
-        findtransactions::FindTransactionsBuilder,
         hints::Hint,
+        FindTransactionsBuilder,
     },
     gettrytes::GetTrytesBuilder,
     types::Trytes81,
