@@ -3,7 +3,7 @@ use super::{
     Worker,
 };
 use crate::{
-    ring::ring::Ring,
+    ring::Ring,
     stage::reporter,
 };
 use chronicle_common::actor;

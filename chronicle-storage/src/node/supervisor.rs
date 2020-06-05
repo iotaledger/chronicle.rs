@@ -1,7 +1,7 @@
 use super::stage;
 use crate::{
     cluster::supervisor,
-    ring::ring::{
+    ring::{
         NodeId,
         DC,
     },

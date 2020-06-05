@@ -100,7 +100,7 @@ impl Execute {
 mod tests {
     use super::*;
     use crate::{
-        compression::compression::UNCOMPRESSED,
+        compression::UNCOMPRESSED,
         frame::{
             consistency::Consistency,
             header,

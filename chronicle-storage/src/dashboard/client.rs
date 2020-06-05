@@ -1,4 +1,4 @@
-use super::websocket::SocketMsg;
+use crate::dashboard::websocket::SocketMsg;
 use futures::{
     SinkExt,
     StreamExt,

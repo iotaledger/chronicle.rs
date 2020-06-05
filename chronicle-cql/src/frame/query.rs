@@ -100,7 +100,7 @@ impl Query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compression::compression::MyCompression;
+    use crate::compression::MyCompression;
 
     use crate::{
         frame::{
@@ -111,7 +111,7 @@ mod tests {
                 VALUES,
             },
         },
-        statements::statements::INSERT_TX_QUERY,
+        statements::INSERT_TX_QUERY,
     };
     use std::time::{
         SystemTime,

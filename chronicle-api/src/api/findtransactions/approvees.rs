@@ -1,6 +1,6 @@
 use crate::api::types::Trytes81;
 use chronicle_cql::{
-    compression::compression::MyCompression,
+    compression::MyCompression,
     frame::{
         consistency::Consistency,
         decoder::{

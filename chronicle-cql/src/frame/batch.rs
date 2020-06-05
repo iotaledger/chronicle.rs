@@ -10,7 +10,7 @@ use super::{
     header::Header,
     opcode::BATCH,
 };
-use crate::compression::compression::Compression;
+use crate::compression::Compression;
 
 type QueryCount = u16;
 
@@ -118,12 +118,12 @@ impl Batch {
 mod tests {
     use super::*;
     use crate::{
-        compression::compression::UNCOMPRESSED,
+        compression::UNCOMPRESSED,
         frame::{
             batchflags::NOFLAGS,
             header::IGNORE,
         },
-        statements::statements::INSERT_TX_QUERY,
+        statements::INSERT_TX_QUERY,
     };
     use std::time::{
         SystemTime,

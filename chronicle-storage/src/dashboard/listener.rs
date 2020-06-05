@@ -8,8 +8,8 @@ use futures::{
     Future,
 };
 
-use super::{
-    dashboard,
+use crate::dashboard::{
+    self,
     websocket,
 };
 use chronicle_common::actor;

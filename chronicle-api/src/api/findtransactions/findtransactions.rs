@@ -21,7 +21,7 @@ use chronicle_cql::{
     },
 };
 use chronicle_storage::{
-    ring::ring::Ring,
+    ring::Ring,
     stage::reporter,
     worker::{
         Error,

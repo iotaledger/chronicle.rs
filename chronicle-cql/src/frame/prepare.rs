@@ -55,7 +55,7 @@ mod tests {
     use crate::{
         compression::UNCOMPRESSED,
         frame::header,
-        statements::statements::INSERT_TX_QUERY,
+        statements::INSERT_TX_QUERY,
     };
     #[test]
     // note: junk data

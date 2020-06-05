@@ -4,7 +4,7 @@
 // - block on read-half to recv headless packets from clients(admins)
 
 // uses
-use super::dashboard;
+use crate::dashboard;
 use chronicle_common::actor;
 use futures::{
     stream::{
@@ -17,7 +17,6 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use serde_json;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{

@@ -1,7 +1,7 @@
 use crate::{
     cluster::supervisor::Tokens,
     node::supervisor::gen_node_id,
-    ring::ring::{
+    ring::{
         Msb,
         ShardCount,
         DC,

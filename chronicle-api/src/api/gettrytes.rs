@@ -13,10 +13,10 @@ use chronicle_cql::{
         queryflags,
     },
     rows,
-    statements::statements::SELECT_TX_QUERY,
+    statements::SELECT_TX_QUERY,
 };
 use chronicle_storage::{
-    ring::ring::Ring,
+    ring::Ring,
     stage::reporter,
     worker::{
         Error,
