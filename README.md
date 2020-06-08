@@ -25,7 +25,8 @@
   <a href="#build-and-run">Build and Run</a> ◈
   <a href="#api-reference">API reference</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
-  <a href="#joining-the-discussion">Joining the discussion</a> 
+  <a href="#joining-the-discussion">Joining the discussion</a> ◈
+  <a href="#future-work">Future work</a>
 </p>
 
 ---
@@ -106,3 +107,11 @@ Please read the following before contributing:
 ## Joining the discussion
 
 If you want to get involved in the community, need help with getting set up, have any issues related to Chronicle, or just want to discuss IOTA, Distributed Registry Technology (DRT) and IoT with other people, feel free to join our [Discord](https://discord.iota.org/).
+
+## Future work
+
+- Add more examples and documentations
+- Add more test cases
+- Add more field tests
+- Enhance the data model of chronicle to enable efficient transaction lookup for a specific `tag`
+- Use stable published events from IOTA nodes for transaction storing
