@@ -34,7 +34,7 @@ impl SenderBuilder {
         for reporter_tx in self.reporters.as_ref().unwrap().values() {
             reporter_tx
                 .send(reporter::Event::Session(reporter::Session::New(
-                    self.session_id.as_ref().unwrap().clone(),
+                    *self.session_id.as_ref().unwrap(),
                     self.tx.as_ref().unwrap().clone(),
                 )))
                 .unwrap();

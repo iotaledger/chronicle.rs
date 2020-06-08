@@ -570,15 +570,12 @@ fn compute_chain(vnodes: &Vec<VnodeTuple>) -> Vec<(Token, Token, Replicas)> {
     // compute all possible replicas in advance for each vnode in vnodes
     // prepare ring chain
     let mut chain = Vec::new();
-    let mut starting_index = 0;
-    for (left, right, _, _, _, _) in vnodes {
+    for (starting_index, (left, right, _, _, _, _)) in vnodes.iter().enumerate() {
         let mut replicas: Replicas = HashMap::new();
         // first walk clockwise phase (start..end)
         walk_clockwise(starting_index, vnodes.len(), &vnodes, &mut replicas);
         // second walk clockwise phase (0..start)
         walk_clockwise(0, starting_index, &vnodes, &mut replicas);
-        // update starting_index
-        starting_index += 1;
         // create vnode
         chain.push((*left, *right, replicas));
     }

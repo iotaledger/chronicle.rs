@@ -130,7 +130,7 @@ impl Receiver {
             // update current_length
             self.current_length -= self.total_length;
             // update padding
-            padding = padding + self.total_length;
+            padding += self.total_length;
             self.handle_remaining_buffer(padding, padding + self.current_length);
         } else {
             // get mut ref to payload for stream_id
