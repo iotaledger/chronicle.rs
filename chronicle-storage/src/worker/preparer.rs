@@ -5,7 +5,6 @@ use super::{
 };
 use crate::stage::reporter::{
     Event,
-    Giveload,
     Sender,
 };
 
@@ -30,7 +29,7 @@ impl Worker for Preparer {
 }
 
 #[allow(dead_code)]
-pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Giveload) {
+pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &[u8]) {
     // check if the giveload is unprepared_error.
     if check_unprepared(giveload) {
         // create preparer
@@ -48,6 +47,6 @@ pub fn try_prepare(prepare_payload: &[u8], tx: &Option<Sender>, giveload: &Givel
 }
 
 #[allow(dead_code)]
-fn check_unprepared(giveload: &Giveload) -> bool {
+fn check_unprepared(giveload: &[u8]) -> bool {
     giveload[4] == 0 && giveload[9..13] == [0, 0, 37, 0] // cql specs
 }

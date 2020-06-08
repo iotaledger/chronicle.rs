@@ -447,7 +447,7 @@ fn compute_vnode(chain: &[(Token, Token, Replicas)]) -> Vcell {
     }
 }
 
-fn walk_clockwise(starting_index: usize, end_index: usize, vnodes: &Vec<VnodeTuple>, replicas: &mut Replicas) {
+fn walk_clockwise(starting_index: usize, end_index: usize, vnodes: &[VnodeTuple], replicas: &mut Replicas) {
     for vnode in vnodes.iter().take(end_index).skip(starting_index) {
         // fetch replica
         let (_, _, node_id, dc, msb, shard_count) = &vnode;
@@ -550,7 +550,7 @@ pub fn build_ring(
     (arc_ring, unsafe { Box::from_raw(old_weak) })
 }
 
-fn compute_ring(vnodes: &Vec<VnodeTuple>, dcs: &mut Vec<DC>) -> Vcell {
+fn compute_ring(vnodes: &[VnodeTuple], dcs: &mut Vec<DC>) -> Vcell {
     // compute chain (vnodes with replicas)
     let chain = compute_chain(vnodes);
     // clear dcs except the local_dc which is located at the header
@@ -566,7 +566,7 @@ fn compute_ring(vnodes: &Vec<VnodeTuple>, dcs: &mut Vec<DC>) -> Vcell {
     compute_vnode(&chain)
 }
 
-fn compute_chain(vnodes: &Vec<VnodeTuple>) -> Vec<(Token, Token, Replicas)> {
+fn compute_chain(vnodes: &[VnodeTuple]) -> Vec<(Token, Token, Replicas)> {
     // compute all possible replicas in advance for each vnode in vnodes
     // prepare ring chain
     let mut chain = Vec::new();
