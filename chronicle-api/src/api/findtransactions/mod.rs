@@ -60,7 +60,6 @@ impl FindTransactionsBuilder {
     }
 }
 
-#[allow(unused)]
 pub struct FindTransactions {
     addresses: Option<Vec<Trytes81>>,
     bundles: Option<Vec<Trytes81>>,

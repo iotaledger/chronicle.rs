@@ -1,6 +1,5 @@
 pub type ColumnsCount = i32;
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct Flags {
     global_table_spec: bool,
     has_more_pages: bool,
@@ -30,7 +29,6 @@ impl PagingState {
     }
 }
 #[derive(Debug)]
-#[allow(unused)]
 pub struct Metadata {
     flags: Flags,
     columns_count: ColumnsCount,
