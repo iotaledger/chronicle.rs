@@ -1,12 +1,6 @@
 use crate::dashboard::websocket::SocketMsg;
-use futures::{
-    SinkExt,
-    StreamExt,
-};
-use tokio_tungstenite::{
-    connect_async,
-    tungstenite::Message,
-};
+use futures::{SinkExt, StreamExt};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
 pub async fn add_nodes(ws: &str, addresses: Vec<String>, uniform_rf: u8) -> Result<(), ()> {

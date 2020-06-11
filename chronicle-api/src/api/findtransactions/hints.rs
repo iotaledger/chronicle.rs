@@ -1,29 +1,16 @@
-use crate::api::types::{
-    Trytes27,
-    Trytes81,
-};
+use crate::api::types::{Trytes27, Trytes81};
 use chronicle_cql::{
     compression::MyCompression,
     frame::{
         consistency::Consistency,
-        decoder::{
-            ColumnDecoder,
-            Decoder,
-            Frame,
-        },
+        decoder::{ColumnDecoder, Decoder, Frame},
         header::Header,
         query::Query,
-        queryflags::{
-            SKIP_METADATA,
-            VALUES,
-        },
+        queryflags::{SKIP_METADATA, VALUES},
     },
     rows,
 };
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Hint {

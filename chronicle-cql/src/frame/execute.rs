@@ -1,12 +1,6 @@
 use super::{
     consistency::Consistency,
-    encoder::{
-        ColumnEncoder,
-        BE_0_BYTES_LEN,
-        BE_8_BYTES_LEN,
-        BE_NULL_BYTES_LEN,
-        BE_UNSET_BYTES_LEN,
-    },
+    encoder::{ColumnEncoder, BE_0_BYTES_LEN, BE_8_BYTES_LEN, BE_NULL_BYTES_LEN, BE_UNSET_BYTES_LEN},
     header::Header,
     opcode::EXECUTE,
 };
@@ -104,16 +98,10 @@ mod tests {
         frame::{
             consistency::Consistency,
             header,
-            queryflags::{
-                SKIP_METADATA,
-                VALUES,
-            },
+            queryflags::{SKIP_METADATA, VALUES},
         },
     };
-    use std::time::{
-        SystemTime,
-        UNIX_EPOCH,
-    };
+    use std::time::{SystemTime, UNIX_EPOCH};
     #[test]
     // note: junk data
     fn simple_execute_builder_test() {

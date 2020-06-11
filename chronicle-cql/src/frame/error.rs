@@ -1,13 +1,7 @@
 // work in progress
-use super::{
-    consistency::Consistency,
-    decoder,
-};
+use super::{consistency::Consistency, decoder};
 use std::{
-    convert::{
-        From,
-        TryInto,
-    },
+    convert::{From, TryInto},
     mem::transmute,
 };
 

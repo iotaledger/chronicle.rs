@@ -1,8 +1,4 @@
-use super::{
-    encoder::BE_0_BYTES_LEN,
-    header::Header,
-    opcode::STARTUP,
-};
+use super::{encoder::BE_0_BYTES_LEN, header::Header, opcode::STARTUP};
 use crate::compression::Compression;
 use std::collections::HashMap;
 
@@ -59,10 +55,7 @@ impl Startup {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        compression::UNCOMPRESSED,
-        frame::header,
-    };
+    use crate::{compression::UNCOMPRESSED, frame::header};
     #[test]
     // note: junk data
     fn simple_startup_builder_test() {

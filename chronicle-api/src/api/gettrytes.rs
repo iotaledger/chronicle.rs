@@ -3,10 +3,7 @@ use chronicle_cql::{
     compression::UNCOMPRESSED,
     frame::{
         consistency::Consistency,
-        decoder::{
-            Decoder,
-            Frame,
-        },
+        decoder::{Decoder, Frame},
         header,
         header::Header,
         query::Query,
@@ -18,15 +15,9 @@ use chronicle_cql::{
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
-    worker::{
-        Error,
-        Worker,
-    },
+    worker::{Error, Worker},
 };
-use hyper::{
-    Body,
-    Response,
-};
+use hyper::{Body, Response};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;

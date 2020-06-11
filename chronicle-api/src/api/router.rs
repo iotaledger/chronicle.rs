@@ -1,25 +1,13 @@
 use super::{
-    findtransactions::{
-        hints::Hint,
-        FindTransactionsBuilder,
-    },
+    findtransactions::{hints::Hint, FindTransactionsBuilder},
     gettrytes::GetTrytesBuilder,
     types::Trytes81,
 };
 use hyper::{
-    body::{
-        aggregate,
-        Buf,
-    },
-    Body,
-    Method,
-    Request,
-    Response,
+    body::{aggregate, Buf},
+    Body, Method, Request, Response,
 };
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::convert::Infallible;
 

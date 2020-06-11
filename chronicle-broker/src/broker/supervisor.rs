@@ -1,8 +1,10 @@
-use chronicle_common::actor;
-use chronicle_common::traits::launcher::LauncherTx;
 use super::zmq;
-use tokio::sync::mpsc;
+use chronicle_common::{
+    actor,
+    traits::launcher::LauncherTx,
+};
 use std::string::ToString;
+use tokio::sync::mpsc;
 actor!(SupervisorBuilder {
     sn: Option<Vec<String>>,
     trytes: Option<Vec<String>>,
@@ -54,19 +56,31 @@ impl SupervisorBuilder {
         // create peers from sn nodes (if any)
         if let Some(mut addresses) = self.sn.unwrap().take() {
             for address in addresses.drain(..) {
-                peers.push(Peer{topic: Topic::Sn, address, connected: false})
+                peers.push(Peer {
+                    topic: Topic::Sn,
+                    address,
+                    connected: false,
+                })
             }
         }
         // create peers from trytes nodes (if any)
         if let Some(mut addresses) = self.trytes.unwrap().take() {
             for address in addresses.drain(..) {
-                peers.push(Peer{topic: Topic::Trytes, address, connected: false})
+                peers.push(Peer {
+                    topic: Topic::Trytes,
+                    address,
+                    connected: false,
+                })
             }
         }
         // create peers from sn_trytes nodes (if any)
         if let Some(mut addresses) = self.sn_trytes.unwrap().take() {
             for address in addresses.drain(..) {
-                peers.push(Peer{topic: Topic::SnTrytes, address, connected: false})
+                peers.push(Peer {
+                    topic: Topic::SnTrytes,
+                    address,
+                    connected: false,
+                })
             }
         }
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
@@ -87,14 +101,9 @@ pub struct Supervisor {
 
 impl Supervisor {
     pub async fn run(mut self) {
-        for mut peer in self.peers {
-            let zmq_worker = zmq::ZmqBuilder::new()
-                .peer(peer)
-                .supervisor_tx(self.tx.clone())
-                .build();
-            tokio::spawn(zmq_worker.run());
+        for peer in self.peers {
+            let zmq_worker = zmq::ZmqBuilder::new().peer(peer).supervisor_tx(self.tx.clone()).build();
         }
         // TODO await exit signal from zmq workers or dynamic topology events from dashboard
-
     }
 }

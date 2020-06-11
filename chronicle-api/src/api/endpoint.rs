@@ -1,22 +1,13 @@
 use super::router::handle;
 use chronicle_common::{
     actor,
-    traits::{
-        launcher::LauncherTx,
-        shutdown::ShutdownTx,
-    },
+    traits::{launcher::LauncherTx, shutdown::ShutdownTx},
 };
 use hyper::{
     server::Server,
-    service::{
-        make_service_fn,
-        service_fn,
-    },
+    service::{make_service_fn, service_fn},
 };
-use std::{
-    convert::Infallible,
-    net::SocketAddr,
-};
+use std::{convert::Infallible, net::SocketAddr};
 pub struct Shutdown(tokio::sync::oneshot::Sender<()>);
 actor!(EndpointBuilder { listen_address: String, launcher_tx: Box<dyn LauncherTx> });
 

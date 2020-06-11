@@ -1,14 +1,13 @@
+use super::supervisor::{Peer, Sender, Topic};
+use async_zmq::{errors::RecvError, subscribe::Subscribe, Result, StreamExt};
 use chronicle_common::actor;
-use super::supervisor::{
-    Peer,
-    Topic,
-};
-use tokio::sync::mpsc;
 use chronicle_storage::worker::Error;
-use super::supervisor::Sender;
-use async_zmq::{Result, StreamExt, subscribe::Subscribe, errors::RecvError};
+use tokio::sync::mpsc;
 
-actor!(ZmqBuilder { peer: Peer, supervisor_tx: Sender });
+actor!(ZmqBuilder {
+    peer: Peer,
+    supervisor_tx: Sender
+});
 
 impl ZmqBuilder {
     pub fn build(self) -> Zmq {
@@ -21,7 +20,7 @@ impl ZmqBuilder {
 
 pub struct Zmq {
     peer: Peer,
-    supervisor_tx: Sender
+    supervisor_tx: Sender,
 }
 pub struct ZmqId;
 
@@ -48,7 +47,8 @@ impl Zmq {
                             // we assume is retryable
                             continue;
                         } else {
-                            unreachable!("unexepcted error: bug {:?}", msgs);                }
+                            unreachable!("unexepcted error: bug {:?}", msgs);
+                        }
                     }
                 }
                 // this topic used to store confirmed transactions only
@@ -57,13 +57,13 @@ impl Zmq {
                         if let Ok(msgs) = msgs {
                             for msg in msgs {
                                 // process sn_trytes msg
-
                             }
                         } else if let Err(RecvError::Interrupted) = msgs {
                             // we assume is retryable
                             continue;
                         } else {
-                            unreachable!("unexepcted error: bug {:?}", msgs);                }
+                            unreachable!("unexepcted error: bug {:?}", msgs);
+                        }
                     }
                 }
                 // this topic used to upsert milestone column in transaction table (confirmed status)
@@ -77,7 +77,8 @@ impl Zmq {
                             // we assume is retryable
                             continue;
                         } else {
-                            unreachable!("unexepcted error: bug {:?}", msgs);                }
+                            unreachable!("unexepcted error: bug {:?}", msgs);
+                        }
                     }
                 }
             }

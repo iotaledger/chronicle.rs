@@ -11,13 +11,11 @@ impl BrokerBuilder {
             .sn_trytes(self.sn_trytes)
             .sn(self.sn)
             .launcher_tx(self.launcher_tx.unwrap());
-        Broker {
-            supervisor_builder,
-        }
+        Broker { supervisor_builder }
     }
 }
 pub struct Broker {
-    supervisor_builder: supervisor::SupervisorBuilder
+    supervisor_builder: supervisor::SupervisorBuilder,
 }
 impl Broker {
     pub async fn run(mut self) {

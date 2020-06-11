@@ -1,8 +1,5 @@
 use std::{
-    io::{
-        Read,
-        Result,
-    },
+    io::{Read, Result},
     ops::Shl,
 };
 
