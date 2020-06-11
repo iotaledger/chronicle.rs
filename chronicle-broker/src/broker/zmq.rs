@@ -43,7 +43,6 @@ impl Zmq {
                         if let Ok(msgs) = msgs {
                             for msg in msgs {
                                 // process trytes msg
-
                             }
                         } else if let Err(RecvError::Interrupted) = msgs {
                             // we assume is retryable

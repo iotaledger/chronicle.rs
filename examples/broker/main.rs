@@ -33,7 +33,7 @@ impl AppsBuilder {
         // - api app
         let api = ApiBuilder::new().listen_address("0.0.0.0:4000".to_string());
         // - broker app
-        let broker = BrokerBuilder::new().tx_trytes(vec!["tcp://zmq.iota.org:5556".to_owned()]);
+        let broker = BrokerBuilder::new().trytes(vec!["tcp://zmq.iota.org:5556".to_owned()]);
         // add app to AppsBuilder then transform it to Apps
         self.storage(storage).api(api).broker(broker).to_apps()
     }

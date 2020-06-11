@@ -69,14 +69,19 @@ impl SupervisorBuilder {
                 peers.push(Peer{topic: Topic::SnTrytes, address, connected: false})
             }
         }
+        let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Supervisor {
             peers,
+            tx,
+            rx,
             launcher_tx: self.launcher_tx.unwrap(),
         }
     }
 }
 pub struct Supervisor {
     peers: Vec<Peer>,
+    tx: Sender,
+    rx: Receiver,
     launcher_tx: Box<dyn LauncherTx>,
 }
 
@@ -85,6 +90,7 @@ impl Supervisor {
         for mut peer in self.peers {
             let zmq_worker = zmq::ZmqBuilder::new()
                 .peer(peer)
+                .supervisor_tx(self.tx.clone())
                 .build();
             tokio::spawn(zmq_worker.run());
         }
