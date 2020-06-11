@@ -1,25 +1,57 @@
 // TODO compute token to enable shard_awareness.
-use bee_ternary::{t1b1::T1B1Buf, TritBuf, TryteBuf};
+use bee_ternary::{
+    t1b1::T1B1Buf,
+    TritBuf,
+    TryteBuf,
+};
 use chronicle_common::actor;
-use chronicle_cql::frame::encoder::{ColumnEncoder, UNSET_VALUE};
-use chronicle_storage::{ring::Ring, stage::reporter, worker};
-use chrono::{Datelike, NaiveDateTime};
-use indicatif::{ProgressBar, ProgressStyle};
-use std::{convert::TryFrom, error::Error};
-use tokio::{fs::File, sync::mpsc};
+use chronicle_cql::frame::encoder::{
+    ColumnEncoder,
+    UNSET_VALUE,
+};
+use chronicle_storage::{
+    ring::Ring,
+    stage::reporter,
+    worker,
+};
+use chrono::{
+    Datelike,
+    NaiveDateTime,
+};
+use indicatif::{
+    ProgressBar,
+    ProgressStyle,
+};
+use std::{
+    convert::TryFrom,
+    error::Error,
+};
+use tokio::{
+    fs::File,
+    sync::mpsc,
+};
 
 use chronicle_cql::{
     compression::MyCompression,
     frame::{
         consistency::Consistency,
-        decoder::{Decoder, Frame},
+        decoder::{
+            Decoder,
+            Frame,
+        },
         header::Header,
         query::Query,
-        queryflags::{SKIP_METADATA, VALUES},
+        queryflags::{
+            SKIP_METADATA,
+            VALUES,
+        },
     },
 };
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{
+    AsyncBufReadExt,
+    BufReader,
+};
 const BE_3_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 3];
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;

@@ -1,11 +1,20 @@
-use super::{Error, Worker};
-use crate::{ring::Ring, stage::reporter};
+use super::{
+    Error,
+    Worker,
+};
+use crate::{
+    ring::Ring,
+    stage::reporter,
+};
 use chronicle_common::actor;
 use chronicle_cql::{
     compression::MyCompression,
     frame::{
         consistency::Consistency,
-        decoder::{Decoder, Frame},
+        decoder::{
+            Decoder,
+            Frame,
+        },
         header::Header,
         query::Query,
         queryflags::SKIP_METADATA,

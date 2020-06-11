@@ -1,4 +1,8 @@
-use super::{encoder::BE_0_BYTES_LEN, header::Header, opcode::OPTIONS};
+use super::{
+    encoder::BE_0_BYTES_LEN,
+    header::Header,
+    opcode::OPTIONS,
+};
 
 pub struct Options(Vec<u8>);
 

@@ -4,10 +4,17 @@ use chronicle_cql::{
     compression::MyCompression,
     frame::{
         consistency::Consistency,
-        decoder::{ColumnDecoder, Decoder, Frame},
+        decoder::{
+            ColumnDecoder,
+            Decoder,
+            Frame,
+        },
         header::Header,
         query::Query,
-        queryflags::{SKIP_METADATA, VALUES},
+        queryflags::{
+            SKIP_METADATA,
+            VALUES,
+        },
     },
     rows,
 };

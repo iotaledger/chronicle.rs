@@ -1,6 +1,12 @@
 // please note: preparer is not a real actor instead is a resumption actor (without its own mailbox/channel).
-use super::{Error, Worker};
-use crate::stage::reporter::{Event, Sender};
+use super::{
+    Error,
+    Worker,
+};
+use crate::stage::reporter::{
+    Event,
+    Sender,
+};
 
 #[derive(Debug)]
 pub struct QueryRef {}

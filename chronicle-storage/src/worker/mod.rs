@@ -1,8 +1,14 @@
 pub mod preparer;
 pub mod schema_cql;
-use crate::stage::reporter::{Giveload, Sender};
+use crate::stage::reporter::{
+    Giveload,
+    Sender,
+};
 use chronicle_cql::frame::error::CqlError;
-use std::{error::Error as StdError, fmt};
+use std::{
+    error::Error as StdError,
+    fmt,
+};
 
 // WorkerId trait type which will be implemented by worker in order to send their channel_tx.
 pub trait Worker: Send + std::fmt::Debug {

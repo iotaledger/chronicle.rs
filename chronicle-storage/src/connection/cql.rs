@@ -1,26 +1,54 @@
 use crate::{
     cluster::supervisor::Tokens,
     node::supervisor::gen_node_id,
-    ring::{Msb, ShardCount, DC},
+    ring::{
+        Msb,
+        ShardCount,
+        DC,
+    },
 };
 use cdrs::{
     compression::Compression,
-    frame::{frame_result, frame_supported, traits::FromCursor, Flag, Frame, IntoBytes, Opcode, TryFromRow},
+    frame::{
+        frame_result,
+        frame_supported,
+        traits::FromCursor,
+        Flag,
+        Frame,
+        IntoBytes,
+        Opcode,
+        TryFromRow,
+    },
     query,
     types::{
         from_cdrs::FromCDRSByName,
-        prelude::{Bytes, List, Row, Value},
+        prelude::{
+            Bytes,
+            List,
+            Row,
+            Value,
+        },
         AsRustType,
     },
 };
-use std::{i64, io::Cursor, net::IpAddr};
+use std::{
+    i64,
+    io::Cursor,
+    net::IpAddr,
+};
 use tokio::{
-    io::{Error, ErrorKind},
+    io::{
+        Error,
+        ErrorKind,
+    },
     net::TcpStream,
     prelude::*,
 };
 
-use cdrs_helpers_derive::{IntoCDRSValue, TryFromRow};
+use cdrs_helpers_derive::{
+    IntoCDRSValue,
+    TryFromRow,
+};
 
 pub type Address = String;
 

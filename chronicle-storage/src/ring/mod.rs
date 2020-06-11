@@ -1,17 +1,32 @@
 // uses (WIP)
 use crate::{
     cluster::supervisor::Nodes,
-    stage::{reporter::Event, supervisor::Reporters},
+    stage::{
+        reporter::Event,
+        supervisor::Reporters,
+    },
     worker::Error,
 };
-use rand::{distributions::Uniform, prelude::ThreadRng, thread_rng, Rng};
+use rand::{
+    distributions::Uniform,
+    prelude::ThreadRng,
+    thread_rng,
+    Rng,
+};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    i64::{MAX, MIN},
+    i64::{
+        MAX,
+        MIN,
+    },
     sync::{
-        atomic::{AtomicPtr, Ordering},
-        Arc, Weak,
+        atomic::{
+            AtomicPtr,
+            Ordering,
+        },
+        Arc,
+        Weak,
     },
 };
 // types

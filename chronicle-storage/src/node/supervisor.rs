@@ -1,11 +1,17 @@
 use super::stage;
 use crate::{
     cluster::supervisor,
-    ring::{NodeId, DC},
+    ring::{
+        NodeId,
+        DC,
+    },
 };
 use chronicle_common::actor;
 use std::collections::HashMap;
-use tokio::{self, sync::mpsc};
+use tokio::{
+    self,
+    sync::mpsc,
+};
 
 // types
 type Stages = HashMap<u8, stage::supervisor::Sender>;

@@ -1,4 +1,7 @@
-use std::{convert::TryInto, mem::transmute};
+use std::{
+    convert::TryInto,
+    mem::transmute,
+};
 #[derive(Debug)]
 #[repr(u16)]
 pub enum Consistency {

@@ -8,21 +8,33 @@ use crate::api::{
         addresses::Rows as AddressesRows,
         approvees::Rows as ApproveesRows,
         bundles::Rows as BundlesRows,
-        hints::{Hint, Rows as HintsRows},
+        hints::{
+            Hint,
+            Rows as HintsRows,
+        },
     },
     types::Trytes81,
 };
 use chronicle_common::actor;
 use chronicle_cql::{
     compression::MyCompression,
-    frame::decoder::{Decoder, Frame},
+    frame::decoder::{
+        Decoder,
+        Frame,
+    },
 };
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
-    worker::{Error, Worker},
+    worker::{
+        Error,
+        Worker,
+    },
 };
-use hyper::{Body, Response};
+use hyper::{
+    Body,
+    Response,
+};
 use serde::Serialize;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;

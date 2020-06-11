@@ -1,5 +1,14 @@
-use super::supervisor::{Peer, Sender, Topic};
-use async_zmq::{errors::RecvError, subscribe::Subscribe, Result, StreamExt};
+use super::supervisor::{
+    Peer,
+    Sender,
+    Topic,
+};
+use async_zmq::{
+    errors::RecvError,
+    subscribe::Subscribe,
+    Result,
+    StreamExt,
+};
 use chronicle_common::actor;
 use chronicle_storage::worker::Error;
 use tokio::sync::mpsc;

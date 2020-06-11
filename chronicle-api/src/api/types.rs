@@ -1,5 +1,12 @@
-use chronicle_cql::frame::{decoder::ColumnDecoder, encoder::ColumnEncoder};
-use serde::{self, Deserialize, Serialize};
+use chronicle_cql::frame::{
+    decoder::ColumnDecoder,
+    encoder::ColumnEncoder,
+};
+use serde::{
+    self,
+    Deserialize,
+    Serialize,
+};
 #[derive(Copy, Clone)]
 pub struct Trytes81(pub [u8; 81]);
 pub const BE_81_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 81];
