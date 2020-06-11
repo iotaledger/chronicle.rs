@@ -149,7 +149,6 @@ impl Importer {
             if line_length > 2756 {
                 self.milestone = line[2756..(line_length - 1)].parse::<u64>().unwrap();
             }
-            // create tranasction table query (to presist the transaction in DB)
             let tx_query = insert_to_tx_table(hash, txtrytes, self.milestone);
             let request = reporter::Event::Request {
                 payload: tx_query,

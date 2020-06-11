@@ -13,3 +13,4 @@ indicatif = "0.14"
 bee-ternary = { git = "https://github.com/Alex6323/bee-p", branch = "master"}
 chrono = "0.4"
 rand = "0.7"
+async_zmq = "0.3.2"

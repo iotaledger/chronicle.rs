@@ -20,3 +20,7 @@ chronicle-broker = { path = "../chronicle-broker" }
 [[example]]
 name = "storage"
 path = "storage/main.rs"
+
+[[example]]
+name = "broker"
+path = "broker/main.rs"
