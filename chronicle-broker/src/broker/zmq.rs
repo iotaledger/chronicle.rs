@@ -27,6 +27,7 @@ impl ZmqBuilder {
     }
 }
 
+#[allow(dead_code)]
 pub struct Zmq {
     peer: Peer,
     supervisor_tx: Sender,
@@ -38,10 +39,11 @@ pub enum Event {
     Error { kind: Error, pid: Box<ZmqId> },
 }
 
+#[allow(dead_code)]
 impl Zmq {
     pub async fn run(mut self) {
         // create channel
-        let (tx, rx) = mpsc::unbounded_channel::<Event>();
+        let (_tx, _rx) = mpsc::unbounded_channel::<Event>();
         if let Ok(mut zmq) = self.init() {
             // start recv msgs from zmq topic according the subscribed topic
             match self.peer.get_topic() {
@@ -49,7 +51,7 @@ impl Zmq {
                 Topic::Trytes => {
                     while let Some(msgs) = zmq.next().await {
                         if let Ok(msgs) = msgs {
-                            for msg in msgs {
+                            for _msg in msgs {
                                 // process trytes msg
                             }
                         } else if let Err(RecvError::Interrupted) = msgs {
@@ -64,7 +66,7 @@ impl Zmq {
                 Topic::SnTrytes => {
                     while let Some(msgs) = zmq.next().await {
                         if let Ok(msgs) = msgs {
-                            for msg in msgs {
+                            for _msg in msgs {
                                 // process sn_trytes msg
                             }
                         } else if let Err(RecvError::Interrupted) = msgs {
@@ -79,7 +81,7 @@ impl Zmq {
                 Topic::Sn => {
                     while let Some(msgs) = zmq.next().await {
                         if let Ok(msgs) = msgs {
-                            for msg in msgs {
+                            for _msg in msgs {
                                 // process sn msg
                             }
                         } else if let Err(RecvError::Interrupted) = msgs {

@@ -18,7 +18,7 @@ pub struct Broker {
     supervisor_builder: supervisor::SupervisorBuilder,
 }
 impl Broker {
-    pub async fn run(mut self) {
+    pub async fn run(self) {
         // build and spawn supervisor
         tokio::spawn(self.supervisor_builder.build().run());
     }
