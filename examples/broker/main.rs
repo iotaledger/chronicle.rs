@@ -94,7 +94,7 @@ async fn main() {
         })
         .await
         .broker()
-        .await
+        .await // start broker app
         .one_for_one()
         .await; // instead you can define your own .run() strategy
 }

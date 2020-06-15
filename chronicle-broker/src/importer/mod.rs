@@ -55,7 +55,12 @@ use tokio::io::{
 const BE_3_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 3];
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
-struct YearMonth(u16, u8);
+pub struct YearMonth(u16, u8);
+impl YearMonth {
+    pub fn new(year: u16, month: u8) -> Self {
+        YearMonth(year, month)
+    }
+}
 impl chronicle_cql::frame::encoder::ColumnEncoder for YearMonth {
     fn encode(&self, buffer: &mut Vec<u8>) {
         buffer.extend(&BE_3_BYTES_LENGTH);
@@ -297,14 +302,14 @@ impl worker::Worker for ImporterId {
 }
 
 /// Create insert cql query in transaction table
-fn insert_to_tx_table(hash: &str, txtrytes: &str, milestone: u64) -> Vec<u8> {
+pub fn insert_to_tx_table(hash: &str, txtrytes: &str, milestone: impl ColumnEncoder) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
         .stream(0)
         .opcode()
         .length()
-        .statement(INSERT_EXAMPLE_TX_QUERY)
+        .statement(INSERT_TANGLE_TX_QUERY)
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(17) // the total value count
@@ -330,7 +335,7 @@ fn insert_to_tx_table(hash: &str, txtrytes: &str, milestone: u64) -> Vec<u8> {
 }
 
 /// Create insert(index) cql query in edge table
-fn insert_to_edge_table(
+pub fn insert_to_edge_table(
     vertex: &str,
     kind: &str,
     timestamp: i64,
@@ -358,7 +363,7 @@ fn insert_to_edge_table(
     payload
 }
 /// Create insert(index) cql query in data table
-fn insert_to_data_table(vertex: &str, year: u16, month: u8, kind: &str, timestamp: i64, tx: &str) -> Vec<u8> {
+pub fn insert_to_data_table(vertex: &str, year: u16, month: u8, kind: &str, timestamp: i64, tx: &str) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
@@ -380,12 +385,12 @@ fn insert_to_data_table(vertex: &str, year: u16, month: u8, kind: &str, timestam
 }
 
 /// Convert valid trytes to i64
-fn trytes_to_i64(slice: &str) -> i64 {
+pub fn trytes_to_i64(slice: &str) -> i64 {
     let trytes = TryteBuf::try_from_str(slice);
     let trit_buf: TritBuf<T1B1Buf> = trytes.unwrap().as_trits().encode();
     i64::try_from(trit_buf).unwrap()
 }
-const INSERT_EXAMPLE_TX_QUERY: &str = r#"
+pub const INSERT_TANGLE_TX_QUERY: &str = r#"
   INSERT INTO tangle.transaction (
     hash,
     payload,
@@ -407,7 +412,7 @@ const INSERT_EXAMPLE_TX_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
-const INSERT_TANGLE_EDGE_STATMENT: &str = r#"
+pub const INSERT_TANGLE_EDGE_STATMENT: &str = r#"
   INSERT INTO tangle.edge (
     vertex,
     kind,
@@ -418,7 +423,7 @@ const INSERT_TANGLE_EDGE_STATMENT: &str = r#"
 ) VALUES (?,?,?,?,?,?);
 "#;
 
-const INSERT_TANGLE_DATA_STATMENT: &str = r#"
+pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
   INSERT INTO tangle.data (
     vertex,
     year,
