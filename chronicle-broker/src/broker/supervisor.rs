@@ -16,11 +16,7 @@ actor!(SupervisorBuilder {
 });
 pub enum Event {
     // TODO useful events to dyanmicly add/remove zmq nodes
-<<<<<<< HEAD
     Shutdown,
-=======
-    Shutdown
->>>>>>> d6e35edcc9ac6a3877429b93f8414a2277e9ba97
 }
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -124,27 +120,15 @@ impl Supervisor {
             tokio::spawn(zmq_worker.run());
         }
         // register broker app with launcher
-<<<<<<< HEAD
         self.launcher_tx
             .register_app("broker".to_string(), Box::new(Shutdown(self.tx.clone())));
-=======
-        self.launcher_tx.register_app("broker".to_string(), Box::new(Shutdown(self.tx.clone())));
->>>>>>> d6e35edcc9ac6a3877429b93f8414a2277e9ba97
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::Shutdown => {
                     // todo shutdown zmq worker
-<<<<<<< HEAD
                     break;
                 }
                 _ => todo!(),
-=======
-                    break
-                },
-                _ => {
-                    todo!()
-                }
->>>>>>> d6e35edcc9ac6a3877429b93f8414a2277e9ba97
             }
         }
         // TODO await exit signal from zmq workers or dynamic topology events from dashboard
