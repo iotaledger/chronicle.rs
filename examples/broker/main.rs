@@ -1,7 +1,7 @@
 // import the apps you want to build
 use chronicle_api::api::ApiBuilder;
-use chronicle_storage::storage::StorageBuilder;
 use chronicle_broker::broker::BrokerBuilder;
+use chronicle_storage::storage::StorageBuilder;
 // import launcher macro
 use chronicle_common::launcher;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
@@ -19,7 +19,7 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self) -> Apps {
-        //
+        // 
         // - storage app:
         let storage = StorageBuilder::new()
             .listen_address("0.0.0.0:8080".to_string())
@@ -29,11 +29,14 @@ impl AppsBuilder {
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
-        //
+        // 
         // - api app
         let api = ApiBuilder::new().listen_address("0.0.0.0:4000".to_string());
+        // 
         // - broker app
-        let broker = BrokerBuilder::new().trytes(vec!["tcp://zmq.iota.org:5556".to_owned()]);
+        let broker = BrokerBuilder::new()
+            .trytes(vec!["tcp://zmq.iota.org:5556".to_owned()])
+            .sn_trytes(vec!["tcp://zmq.iota.org:5556".to_owned()]);
         // add app to AppsBuilder then transform it to Apps
         self.storage(storage).api(api).broker(broker).to_apps()
     }
