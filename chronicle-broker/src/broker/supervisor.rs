@@ -1,7 +1,10 @@
 use super::zmq;
 use chronicle_common::{
     actor,
-    traits::launcher::LauncherTx,
+    traits::{
+        launcher::LauncherTx,
+        shutdown::ShutdownTx,
+    },
 };
 use std::string::ToString;
 use tokio::sync::mpsc;
@@ -13,9 +16,17 @@ actor!(SupervisorBuilder {
 });
 pub enum Event {
     // TODO useful events to dyanmicly add/remove zmq nodes
+    Shutdown,
 }
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
+pub struct Shutdown(Sender);
+
+impl ShutdownTx for Shutdown {
+    fn shutdown(self: Box<Self>) {
+        self.0.send(Event::Shutdown);
+    }
+}
 
 pub struct Peer {
     topic: Topic,
@@ -108,8 +119,22 @@ impl Supervisor {
             let zmq_worker = zmq::ZmqBuilder::new().peer(peer).supervisor_tx(self.tx.clone()).build();
             tokio::spawn(zmq_worker.run());
         }
+        // register broker app with launcher
+        self.launcher_tx
+            .register_app("broker".to_string(), Box::new(Shutdown(self.tx.clone())));
+        while let Some(event) = self.rx.recv().await {
+            match event {
+                Event::Shutdown => {
+                    // todo shutdown zmq worker
+                    break;
+                }
+                _ => todo!(),
+            }
+        }
         // TODO await exit signal from zmq workers or dynamic topology events from dashboard
         // TODO once the zmq worker got shutdown, take the ownership of the log and pass it to the dashboard.
         // in order to be reinserted at somepoint by admin.
+        // aknowledge_shutdown
+        self.launcher_tx.aknowledge_shutdown("broker".to_string());
     }
 }
