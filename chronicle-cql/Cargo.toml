@@ -1,8 +1,11 @@
 [package]
 name = "chronicle-cql"
 version = "0.1.0"
-authors = ["Chronicle developers"]
+authors = ["IOTA Stiftung"]
 edition = "2018"
+license = "APACHE 2.0"
+homepage = "https://docs.iota.org/docs/chronicle/1.0/overview"
+repository = "https://github.com/iotaledger/chronicle.rs"
 
 [dependencies]
 rand = "0.7"
