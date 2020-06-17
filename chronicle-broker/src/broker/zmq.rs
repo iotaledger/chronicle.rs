@@ -15,7 +15,6 @@ use chronicle_common::actor;
 use chronicle_cql::{
     compression::MyCompression,
     frame::{
-        consistency::Consistency,
         decoder::{
             Decoder,
             Frame,
@@ -23,12 +22,6 @@ use chronicle_cql::{
         encoder::{
             ColumnEncoder,
             UNSET_VALUE,
-        },
-        header::Header,
-        query::Query,
-        queryflags::{
-            SKIP_METADATA,
-            VALUES,
         },
     },
 };
@@ -71,6 +64,7 @@ impl ZmqBuilder {
     }
 }
 
+#[allow(dead_code)]
 pub struct Zmq {
     rx: Receiver,
     peer: Peer,
@@ -257,6 +251,7 @@ impl Zmq {
         self.send_insert_edge_query(&trytes[2349..2430], "bundle", timestamp, hash, value, UNSET_VALUE);
         self.send_insert_data_query(&trytes[2592..2619], year, month, "tag", timestamp, hash);
     }
+    #[allow(dead_code)]
     fn handle_sn(&mut self, _msg: &Message) {
         // let msg = &msg.as_str().unwrap()[..msg.len() - 328];
         // todo!

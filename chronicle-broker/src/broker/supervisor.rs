@@ -22,6 +22,7 @@ pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub struct Shutdown(Sender);
 
+#[allow(unused_must_use)]
 impl ShutdownTx for Shutdown {
     fn shutdown(self: Box<Self>) {
         self.0.send(Event::Shutdown);
@@ -65,7 +66,7 @@ impl ToString for Topic {
 }
 
 impl SupervisorBuilder {
-    pub fn build(mut self) -> Supervisor {
+    pub fn build(self) -> Supervisor {
         let mut peers = Vec::new();
         // create peers from sn nodes (if any)
         if let Some(mut addresses) = self.sn.unwrap().take() {
@@ -127,8 +128,7 @@ impl Supervisor {
                 Event::Shutdown => {
                     // todo shutdown zmq worker
                     break;
-                }
-                _ => todo!(),
+                } // _ => todo!(),
             }
         }
         // TODO await exit signal from zmq workers or dynamic topology events from dashboard
