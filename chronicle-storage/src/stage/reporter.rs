@@ -129,12 +129,9 @@ impl Reporter {
                         Session::New(new_session, new_sender_tx) => {
                             self.session_id = new_session;
                             self.sender_tx = Some(new_sender_tx);
-                            dbg!(
+                            println!(
                                 "address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}",
-                                &self.address,
-                                self.shard_id,
-                                self.reporter_id,
-                                self.session_id
+                                &self.address, self.shard_id, self.reporter_id, self.session_id
                             );
                         }
                         Session::CheckPoint(old_session) => {
@@ -145,12 +142,9 @@ impl Reporter {
                                 force_consistency(&mut self.streams, &mut self.workers);
                                 // reset checkpoints to 0
                                 self.checkpoints = 0;
-                                dbg!(
+                                println!(
                                     "address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}",
-                                    &self.address,
-                                    self.shard_id,
-                                    self.reporter_id,
-                                    old_session
+                                    &self.address, self.shard_id, self.reporter_id, old_session
                                 );
                                 // tell stage_tx to reconnect
                                 let event = supervisor::Event::Reconnect(old_session);
@@ -176,11 +170,9 @@ impl Reporter {
         } // reporter will reach this line only when it recvs shutdown event and eventually drains its rx.
           // therefore it must drains workers map from stucked requests(if any) to force_consistency.
         force_consistency(&mut self.streams, &mut self.workers);
-        dbg!(
+        println!(
             "reporter_id: {} of shard_id: {} in node: {}, gracefully shutting down.",
-            self.reporter_id,
-            self.shard_id,
-            &self.address
+            self.reporter_id, self.shard_id, &self.address
         );
     }
     fn handle_response(&mut self, stream: Stream) {

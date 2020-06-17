@@ -5,7 +5,6 @@ use chronicle_storage::storage::StorageBuilder;
 // import launcher macro
 use chronicle_common::launcher;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
-use chronicle_broker::importer::ImporterBuilder;
 use chronicle_storage::{
     dashboard::client::add_nodes,
     worker::schema_cql::SchemaCqlBuilder,
