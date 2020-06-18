@@ -20,6 +20,7 @@ chronicle-storage = { path = "../chronicle-storage" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-cql = {path = "../chronicle-cql"}
 chronicle-broker = { path = "../chronicle-broker" }
+structopt = "0.3"
 
 [[example]]
 name = "storage"
@@ -28,3 +29,7 @@ path = "storage/main.rs"
 [[example]]
 name = "broker"
 path = "broker/main.rs"
+
+[[example]]
+name = "chronicle-alpha-v0_0_1"
+path = "chronicle-alpha-v0_0_1/main.rs"
