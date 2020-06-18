@@ -10,76 +10,120 @@ use chronicle_storage::{
     dashboard::client::add_nodes,
     worker::schema_cql::SchemaCqlBuilder,
 };
-use std::path::PathBuf;
+use serde::Deserialize;
+use std::{
+    fs,
+    path::PathBuf,
+};
 use structopt::StructOpt;
+use tokio::runtime::Builder;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "chronicle-alpha-v0_0_1", about = "Chronicle Alpha v0.01")]
-struct Opt {
+#[structopt(name = "chronicle-alpha-v0_1_0", about = "Chronicle Permanode Alpha v0.1.0")]
+struct Args {
     /// Configure file
     #[structopt(parse(from_os_str))]
-    config_file_path: PathBuf,
+    path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    scylla_cluster: ScyllaCluster,
+    dmp_files: Option<DmpFiles>,
+    tokio: Tokio,
+    storage: Storage,
+    api: Api,
+    broker: Broker,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScyllaCluster {
+    addresses: Vec<String>,
+    keyspace_name: String,
+    replication_factor_per_data_center: u8,
+    data_centers: Vec<String>,
+    local_dc: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DmpFiles {
+    files: Option<Vec<(String, u64)>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Tokio {
+    core_threads: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Storage {
+    dashboard_websocket: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Api {
+    endpoint: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Broker {
+    trytes_nodes: Option<Vec<String>>,
+    sn_trytes_nodes: Option<Vec<String>>,
 }
 
 launcher!(
-    apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder, broker: BrokerBuilder}, // Apps
-    apps: Apps{} // Launcher state
+    apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder, broker: BrokerBuilder},
+    apps: Apps{config: Config}
 );
-
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct FileMilestones {
-    filename: String,
-    milestone: u64,
-}
-
-// TODO: Add Error Handling
-// TODO: Add CLI parsing for toml file
-async fn import_files(mut tuples: Vec<FileMilestones>) {
-    tuples.sort_by(|a, b| b.milestone.cmp(&a.milestone));
-    for t in tuples.iter() {
-        ImporterBuilder::new()
-            .filepath(t.filename.clone())
-            .milestone(t.milestone)
-            .max_retries(0)
-            .build()
-            .run()
-            .await
-            .expect("failed to open file!");
-    }
-}
 
 // build your apps
 impl AppsBuilder {
-    fn build(self) -> Apps {
+    fn build(self, config: Config) -> Apps {
         // 
         // - storage app:
         let storage = StorageBuilder::new()
-            .listen_address("0.0.0.0:8080".to_string())
-            .thread_count(8)
-            .local_dc("datacenter1".to_string())
-            .reporter_count(1)
+            .listen_address(config.storage.dashboard_websocket.clone())
+            .thread_count(config.tokio.core_threads)
+            .local_dc(config.scylla_cluster.local_dc.clone())
+            .reporter_count(2)
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
         // 
         // - api app
-        let api = ApiBuilder::new().listen_address("0.0.0.0:4000".to_string());
+        let api = ApiBuilder::new().listen_address(config.api.endpoint.clone());
         // 
         // - broker app
-        let broker = BrokerBuilder::new()
-            .trytes(vec!["tcp://zmq.iota.org:5556".to_owned()])
-            .sn_trytes(vec!["tcp://zmq.iota.org:5556".to_owned()]);
+        let mut broker = BrokerBuilder::new();
+        if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
+            broker = broker.trytes(trytes_nodes.to_vec());
+        }
+        if let Some(sn_trytes_nodes) = config.broker.sn_trytes_nodes.as_ref() {
+            broker = broker.sn_trytes(sn_trytes_nodes.to_vec());
+        }
         // add app to AppsBuilder then transform it to Apps
-        self.storage(storage).api(api).broker(broker).to_apps()
+        self.storage(storage).api(api).broker(broker).to_apps().config(config)
     }
 }
 
-#[tokio::main(core_threads = 8)]
-async fn main() {
-    println!("Starting broker example");
-    AppsBuilder::new()
-        .build() // build apps first, then start them in order you want.
-        .function(|apps| {
+fn main() {
+    let args = Args::from_args();
+    let config_as_string = fs::read_to_string(args.path).unwrap();
+    let config: Config = toml::from_str(&config_as_string).unwrap();
+    // build tokio runtime
+    let mut runtime = Builder::new()
+        .threaded_scheduler()
+        .core_threads(config.tokio.core_threads)
+        .enable_io()
+        .thread_name("chronicle")
+        .thread_stack_size(3 * 1024 * 1024)
+        .build()
+        .unwrap();
+    println!("Welcome to Chronicle Permanode Alpha v0.1.0");
+    let apps = AppsBuilder::new().build(config); // build apps first, then start them in order you want.
+                                                 // run chronicle.
+    runtime.block_on(async {
+        apps.function(|apps| {
             // for instance this is helpful to spawn ctrl_c future
             tokio::spawn(ctrl_c(apps.tx.clone()));
         })
@@ -88,15 +132,15 @@ async fn main() {
         .await // start storage app
         .api()
         .await // start api app
-        .future(|apps| async {
+        .future(|mut apps| async {
+            let mut config = apps.config.take().unwrap();
+            let dashboard_websocket = format!("ws://{}/", config.storage.dashboard_websocket);
+            let scylla_nodes = config.scylla_cluster.addresses.clone();
+            let rf = config.scylla_cluster.replication_factor_per_data_center;
             // add nodes and initialize ring
-            add_nodes(
-                "ws://0.0.0.0:8080/",
-                vec!["172.17.0.2:9042".to_string()],
-                1, // the least replication_factor in all data_centers .
-            )
-            .await
-            .expect("failed to add nodes");
+            add_nodes(dashboard_websocket.as_str(), scylla_nodes, rf)
+                .await
+                .expect("failed to add nodes");
             // create tangle keyspace
             SchemaCqlBuilder::new()
                 .statement(CREATE_TANGLE_KEYSPACE_QUERY.to_string())
@@ -125,13 +169,9 @@ async fn main() {
                 .run()
                 .await
                 .expect("failed to create tangle.data table");
-            // add the dmps files you want to import in order (from oldest to recent)
-            // Note that you need to download the 6000.dmp from https://dbfiles.iota.org/?prefix=mainnet/history/
-            import_files(vec![FileMilestones {
-                filename: "./dmp/6000.dmp".to_string(),
-                milestone: 6000,
-            }])
-            .await;
+            if let Some(dmp_files) = config.dmp_files {
+                import_files(dmp_files.files.unwrap()).await;
+            }
             apps
         })
         .await
@@ -139,6 +179,7 @@ async fn main() {
         .await // start broker app
         .one_for_one()
         .await; // instead you can define your own .run() strategy
+    });
 }
 
 /// Useful function to exit program using ctrl_c signal
@@ -147,6 +188,24 @@ async fn ctrl_c(mut launcher: Sender) {
     tokio::signal::ctrl_c().await.unwrap();
     // exit program using launcher
     launcher.exit_program();
+}
+
+async fn import_files(mut tuples: Vec<(String, u64)>) {
+    tuples.sort_by(|a, b| b.1.cmp(&a.1));
+    for t in tuples.iter() {
+        if let Ok(_) = ImporterBuilder::new()
+            .filepath(t.0.clone())
+            .milestone(t.1)
+            .max_retries(0)
+            .build()
+            .run()
+            .await
+        {
+            println!("succesfully imported: {}", t.0);
+        } else {
+            panic!("failed to import file: {}", t.0);
+        }
+    }
 }
 
 // useful consts for the example

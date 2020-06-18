@@ -1,23 +1,25 @@
 # chronicle-[alpha/beta/etc.]-v[x.x.x].[ext]
 [version]
-version = "chronicle-alpha-v0.0.1"
+version = "chronicle-alpha-v0.1.0"
 
 # More details: https://docs.scylladb.com/getting-started/ddl/
 [scylla_cluster]
 addresses = ["172.17.0.2:9042"] # scylla docker instance
-keyspace_name = "tangle" 
-replication_factor_per_data_center = 2
-data_centers = ["DC1"]
-local_dc = "DC1"
+keyspace_name = "tangle"
+replication_factor_per_data_center = 1
+data_centers = ["datacenter1"]
+local_dc = "datacenter1"
 
 # dmp file links: https://dbfiles.iota.org/?prefix=mainnet/history/
-# [[file_name1, milestone1], [file_name2, milestone2], ...]
+# [[file_path1, milestone1], [file_path2, milestone2], ...]
 [dmp_files]
-files = [["6000.dmp", "6000"]]
+files = [["./path/to/file.dmp", 6000]]
+
+[tokio]
+core_threads = 4 # should use even number > 2
 
 [storage]
 dashboard_websocket = "0.0.0.0:8080"
-number_of_used_threads = 4 # should use even number > 2
 
 [api]
 endpoint = "0.0.0.0:4000"
