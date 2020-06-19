@@ -12,6 +12,7 @@ use chronicle_storage::{
 };
 use serde::Deserialize;
 use std::{
+    fmt::Write as FmtWrite,
     fs,
     path::PathBuf,
 };
@@ -110,6 +111,7 @@ fn main() {
     let args = Args::from_args();
     let config_as_string = fs::read_to_string(args.path).unwrap();
     let config: Config = toml::from_str(&config_as_string).unwrap();
+    let statement_map = create_statements(&config.scylla_cluster.keyspace_name);
     // build tokio runtime
     let mut runtime = Builder::new()
         .threaded_scheduler()
@@ -133,7 +135,7 @@ fn main() {
         .api()
         .await // start api app
         .future(|mut apps| async {
-            let mut config = apps.config.take().unwrap();
+            let config = apps.config.take().unwrap();
             let dashboard_websocket = format!("ws://{}/", config.storage.dashboard_websocket);
             let scylla_nodes = config.scylla_cluster.addresses.clone();
             let rf = config.scylla_cluster.replication_factor_per_data_center;
@@ -143,32 +145,32 @@ fn main() {
                 .expect("failed to add nodes");
             // create tangle keyspace
             SchemaCqlBuilder::new()
-                .statement(CREATE_TANGLE_KEYSPACE_QUERY.to_string())
+                .statement(statement_map["CREATE_KEYSPACE_QUERY"].clone())
                 .build()
                 .run()
                 .await
-                .expect("failed to create tangle keyspace");
+                .expect("failed to create keyspace");
             // create transaction table
             SchemaCqlBuilder::new()
-                .statement(CREATE_TANGLE_TX_TABLE_QUERY.to_string())
+                .statement(statement_map["CREATE_TX_TABLE_QUERY"].clone())
                 .build()
                 .run()
                 .await
-                .expect("failed to create tangle.transaction table");
+                .expect("failed to create transaction table");
             // create edge table
             SchemaCqlBuilder::new()
-                .statement(CREATE_TANGLE_EDGE_TABLE_QUERY.to_string())
+                .statement(statement_map["CREATE_EDGE_TABLE_QUERY"].clone())
                 .build()
                 .run()
                 .await
-                .expect("failed to create tangle.edge table");
+                .expect("failed to create edge table");
             // create data table
             SchemaCqlBuilder::new()
-                .statement(CREATE_TANGLE_DATA_TABLE_QUERY.to_string())
+                .statement(statement_map["CREATE_DATE_TABLE_QUERY"].clone())
                 .build()
                 .run()
                 .await
-                .expect("failed to create tangle.data table");
+                .expect("failed to create data table");
             if let Some(dmp_files) = config.dmp_files {
                 import_files(dmp_files.files.unwrap()).await;
             }
@@ -180,6 +182,99 @@ fn main() {
         .one_for_one()
         .await; // instead you can define your own .run() strategy
     });
+}
+
+fn create_statements(keyspace_name: &str) -> HashMap<String, String> {
+    let mut statement_map: HashMap<String, String> = HashMap::new();
+    let mut create_key_space_statement = String::new();
+    let mut create_tx_table_statement = String::new();
+    let mut create_edge_table_statement = String::new();
+    let mut create_data_table_statement = String::new();
+
+    write!(
+        &mut create_key_space_statement,
+        "CREATE KEYSPACE IF NOT EXISTS {}
+            WITH REPLICATION = {{
+            \'class\': \'SimpleStrategy\',
+            \'replication_factor\': 1
+          }};",
+        keyspace_name
+    )
+    .unwrap();
+
+    write!(
+        &mut create_tx_table_statement,
+        "CREATE TABLE IF NOT EXISTS {}.transaction (
+            hash blob PRIMARY KEY,
+            payload blob,
+            address blob,
+            value blob,
+            obsolete_tag blob,
+            timestamp blob,
+            current_index blob,
+            last_index blob,
+            bundle blob,
+            trunk blob,
+            branch blob,
+            tag blob,
+            attachment_timestamp blob,
+            attachment_timestamp_lower blob,
+            attachment_timestamp_upper blob,
+            nonce blob,
+            milestone bigint,
+          );",
+        keyspace_name
+    )
+    .unwrap();
+
+    write!(
+        &mut create_edge_table_statement,
+        "CREATE TABLE IF NOT EXISTS {}.edge (
+            vertex blob,
+            kind text,
+            timestamp bigint,
+            tx blob,
+            value bigint,
+            extra blob,
+            PRIMARY KEY(vertex, kind, timestamp, tx)
+          );",
+        keyspace_name
+    )
+    .unwrap();
+
+    write!(
+        &mut create_data_table_statement,
+        "CREATE TABLE IF NOT EXISTS {}.data (
+            vertex blob,
+            year smallint,
+            month tinyint,
+            kind text,
+            timestamp bigint,
+            tx blob,
+            extra blob,
+            PRIMARY KEY((vertex,year,month), kind, timestamp, tx)
+          );",
+        keyspace_name
+    )
+    .unwrap();
+
+    statement_map.insert(
+        "CREATE_KEYSPACE_QUERY".to_string(),
+        create_key_space_statement.to_string(),
+    );
+    statement_map.insert(
+        "CREATE_TX_TABLE_QUERY".to_string(),
+        create_tx_table_statement.to_string(),
+    );
+    statement_map.insert(
+        "CREATE_EDGE_TABLE_QUERY".to_string(),
+        create_edge_table_statement.to_string(),
+    );
+    statement_map.insert(
+        "CREATE_DATE_TABLE_QUERY".to_string(),
+        create_data_table_statement.to_string(),
+    );
+    statement_map
 }
 
 /// Useful function to exit program using ctrl_c signal
@@ -207,59 +302,3 @@ async fn import_files(mut tuples: Vec<(String, u64)>) {
         }
     }
 }
-
-// useful consts for the example
-const CREATE_TANGLE_KEYSPACE_QUERY: &str = r#"
-CREATE KEYSPACE IF NOT EXISTS tangle
-WITH REPLICATION = {
-  'class': 'SimpleStrategy',
-  'replication_factor': 1
-};
-"#;
-
-const CREATE_TANGLE_TX_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS tangle.transaction (
-  hash blob PRIMARY KEY,
-  payload blob,
-  address blob,
-  value blob,
-  obsolete_tag blob,
-  timestamp blob,
-  current_index blob,
-  last_index blob,
-  bundle blob,
-  trunk blob,
-  branch blob,
-  tag blob,
-  attachment_timestamp blob,
-  attachment_timestamp_lower blob,
-  attachment_timestamp_upper blob,
-  nonce blob,
-  milestone bigint,
-);
-"#;
-
-const CREATE_TANGLE_EDGE_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS tangle.edge (
-  vertex blob,
-  kind text,
-  timestamp bigint,
-  tx blob,
-  value bigint,
-  extra blob,
-  PRIMARY KEY(vertex, kind, timestamp, tx)
-);
-"#;
-
-const CREATE_TANGLE_DATA_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS tangle.data (
-  vertex blob,
-  year smallint,
-  month tinyint,
-  kind text,
-  timestamp bigint,
-  tx blob,
-  extra blob,
-  PRIMARY KEY((vertex,year,month), kind, timestamp, tx)
-);
-"#;
