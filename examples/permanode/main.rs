@@ -111,7 +111,6 @@ fn main() {
     let args = Args::from_args();
     let config_as_string = fs::read_to_string(args.path).unwrap();
     let config: Config = toml::from_str(&config_as_string).unwrap();
-    let statement_map = create_statements(&config.scylla_cluster.keyspace_name);
     // build tokio runtime
     let mut runtime = Builder::new()
         .threaded_scheduler()
@@ -122,8 +121,8 @@ fn main() {
         .build()
         .unwrap();
     println!("Welcome to Chronicle Permanode Alpha v0.1.0");
-    let apps = AppsBuilder::new().build(config); // build apps first, then start them in order you want.
-                                                 // run chronicle.
+    let apps = AppsBuilder::new().build(config);
+    // run chronicle.
     runtime.block_on(async {
         apps.function(|apps| {
             // for instance this is helpful to spawn ctrl_c future
@@ -139,6 +138,7 @@ fn main() {
             let dashboard_websocket = format!("ws://{}/", config.storage.dashboard_websocket);
             let scylla_nodes = config.scylla_cluster.addresses.clone();
             let rf = config.scylla_cluster.replication_factor_per_data_center;
+            let statement_map = create_statements(config.scylla_cluster);
             // add nodes and initialize ring
             add_nodes(dashboard_websocket.as_str(), scylla_nodes, rf)
                 .await
@@ -184,24 +184,29 @@ fn main() {
     });
 }
 
-fn create_statements(keyspace_name: &str) -> HashMap<String, String> {
+fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
+    let keyspace_name = scylla_cluster.keyspace_name;
     let mut statement_map: HashMap<String, String> = HashMap::new();
-    let mut create_key_space_statement = String::new();
     let mut create_tx_table_statement = String::new();
     let mut create_edge_table_statement = String::new();
     let mut create_data_table_statement = String::new();
-
-    write!(
-        &mut create_key_space_statement,
-        "CREATE KEYSPACE IF NOT EXISTS {}
-            WITH REPLICATION = {{
-            \'class\': \'SimpleStrategy\',
-            \'replication_factor\': 1
-          }};",
-        keyspace_name
-    )
-    .unwrap();
-
+    let mut create_key_space_statement = String::from("CREATE KEYSPACE IF NOT EXISTS ");
+    create_key_space_statement.push_str(&keyspace_name);
+    create_key_space_statement.push_str(" ");
+    create_key_space_statement.push_str("WITH replication = {'class': 'NetworkTopologyStrategy',");
+    create_key_space_statement.push_str(" ");
+    for dc in &scylla_cluster.data_centers {
+        create_key_space_statement.push_str("'");
+        create_key_space_statement.push_str(dc);
+        create_key_space_statement.push_str("'");
+        create_key_space_statement.push_str(" : ");
+        create_key_space_statement.push_str(&scylla_cluster.replication_factor_per_data_center.to_string());
+        if dc != scylla_cluster.data_centers.last().unwrap() {
+            create_key_space_statement.push_str(", ")
+        }
+    }
+    create_key_space_statement.push_str("};");
+    println!("{:?}", create_key_space_statement);
     write!(
         &mut create_tx_table_statement,
         "CREATE TABLE IF NOT EXISTS {}.transaction (
