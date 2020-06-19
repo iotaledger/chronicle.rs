@@ -128,7 +128,7 @@ fn main() {
             // for instance this is helpful to spawn ctrl_c future
             tokio::spawn(ctrl_c(apps.tx.clone()));
         })
-        .await // you can start some function(it must never block)
+        .await
         .storage()
         .await // start storage app
         .api()
@@ -178,9 +178,9 @@ fn main() {
         })
         .await
         .broker()
-        .await // start broker app
+        .await
         .one_for_one()
-        .await; // instead you can define your own .run() strategy
+        .await;
     });
 }
 
@@ -206,7 +206,6 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
         }
     }
     create_key_space_statement.push_str("};");
-    println!("{:?}", create_key_space_statement);
     write!(
         &mut create_tx_table_statement,
         "CREATE TABLE IF NOT EXISTS {}.transaction (
