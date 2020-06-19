@@ -31,5 +31,5 @@ name = "broker"
 path = "broker/main.rs"
 
 [[example]]
-name = "chronicle-alpha-v0_1_0"
-path = "chronicle-alpha-v0.1.0/main.rs"
+name = "permanode"
+path = "permanode/main.rs"
