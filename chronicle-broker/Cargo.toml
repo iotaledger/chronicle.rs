@@ -13,7 +13,7 @@ chronicle-cql = { path = "../chronicle-cql" }
 chronicle-storage = { path = "../chronicle-storage" }
 tokio = { version = "0.2", features = ["fs", "macros", "stream", "sync", "net", "io-util", "rt-threaded", "time"] }
 indicatif = "0.14"
-bee-ternary = { git = "https://github.com/Alex6323/bee-p", branch = "master"}
+bee-ternary = { git = "https://github.com/Alex6323/bee-p", rev = "6083138"}
 chrono = "0.4"
 rand = "0.7"
 async_zmq = "0.3.2"

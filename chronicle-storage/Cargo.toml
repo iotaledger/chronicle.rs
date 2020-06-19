@@ -8,7 +8,7 @@ homepage = "https://docs.iota.org/docs/chronicle/1.0/overview"
 repository = "https://github.com/iotaledger/chronicle.rs"
 
 [dependencies]
-bee-ternary = { git = "https://github.com/Alex6323/bee-p", branch = "master"}
+bee-ternary = { git = "https://github.com/Alex6323/bee-p", rev = "6083138"}
 chronicle-common = { path = "../chronicle-common" }
 chronicle-cql = { path = "../chronicle-cql" }
 futures = "0.3"
