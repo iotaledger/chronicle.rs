@@ -14,10 +14,10 @@ use chronicle_cql::{
         header::Header,
         query::Query,
         queryflags::{
-            SKIP_METADATA,
-            VALUES,
             PAGE_SIZE,
             PAGING_STATE,
+            SKIP_METADATA,
+            VALUES,
         },
     },
     rows,
