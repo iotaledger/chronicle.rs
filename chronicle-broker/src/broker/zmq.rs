@@ -11,6 +11,7 @@ use async_zmq::{
     Result as ZmqResult,
     StreamExt,
 };
+use std::time::SystemTime;
 use chronicle_common::actor;
 use chronicle_cql::{
     compression::MyCompression,
@@ -188,9 +189,11 @@ impl Zmq {
         self.send_insert_tx_query(hash, trytes, UNSET_VALUE);
         // extract the transaction value
         let value = importer::trytes_to_i64(&trytes[2268..2295]);
-        // extract the timestamp and year, month
+        // extract the timestamp
         let timestamp = importer::trytes_to_i64(&trytes[2322..2331]);
-        let naive = NaiveDateTime::from_timestamp(timestamp, 0);
+        // get the SystemTime now to generate YearMonth
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let naive = NaiveDateTime::from_timestamp(now,0);
         let year = naive.year() as u16;
         let month = naive.month() as u8;
         // create queries related to the transaction value
@@ -224,9 +227,11 @@ impl Zmq {
         self.send_insert_tx_query(hash, trytes, milestone);
         // extract the transaction value
         let value = importer::trytes_to_i64(&trytes[2268..2295]);
-        // extract the timestamp and year, month
+        // extract the timestamp
         let timestamp = importer::trytes_to_i64(&trytes[2322..2331]);
-        let naive = NaiveDateTime::from_timestamp(timestamp, 0);
+        // get the SystemTime now to generate YearMonth
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let naive = NaiveDateTime::from_timestamp(now,0);
         let year = naive.year() as u16;
         let month = naive.month() as u8;
         // create queries related to the transaction value
