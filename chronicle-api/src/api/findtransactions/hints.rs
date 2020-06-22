@@ -16,6 +16,8 @@ use chronicle_cql::{
         queryflags::{
             SKIP_METADATA,
             VALUES,
+            PAGE_SIZE,
+            PAGING_STATE,
         },
     },
     rows,
@@ -102,7 +104,11 @@ impl HintsDecoder for Tx {
 
 // ----------- encoding scope -----------
 
-pub fn query(hint: &Hint) -> Vec<u8> {
+pub fn query(hint: &mut Hint) -> Vec<u8> {
+    let mut query_flags = SKIP_METADATA | VALUES | PAGE_SIZE;
+    if hint.paging_state.is_some() {
+        query_flags |= PAGING_STATE;
+    }
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
@@ -113,11 +119,13 @@ pub fn query(hint: &Hint) -> Vec<u8> {
             "SELECT tx FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('address','tag')",
         )
         .consistency(Consistency::One)
-        .query_flags(SKIP_METADATA | VALUES)
+        .query_flags(query_flags)
         .value_count(3)
         .value(hint.get_vertex()) // it might be tag or address
         .value(hint.year)
         .value(hint.month)
+        .page_size(255 as i32)
+        .paging_state(&hint.paging_state.take())
         .build(MyCompression::get());
     payload
 }

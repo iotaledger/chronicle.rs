@@ -274,9 +274,9 @@ impl FindTransactions {
             // take ownership of the already found (hashes, hints)
             let mut hashes = res_txs.hashes.take().unwrap();
             let mut hintz = res_txs.hints.take().unwrap();
-            for hint in hints {
+            for mut hint in hints {
                 // create request
-                let payload = hints::query(&hint);
+                let payload = hints::query(&mut hint);
                 let request = reporter::Event::Request { payload, worker };
                 // send request using ring, todo use shard-awareness algo
                 Ring::send_local_random_replica(0, request);
