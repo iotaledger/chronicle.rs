@@ -146,7 +146,6 @@ impl Importer {
             if line_length == 0 {
                 break;
             }
-            assert!(self.pending == 0);
             self.pending += 6; // 1 tx_query + 5 edge_table queries
             let hash = &line[..81];
             let txtrytes = &line[82..2755];

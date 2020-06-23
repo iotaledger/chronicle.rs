@@ -1,6 +1,7 @@
 # chronicle-[alpha/beta/etc.]-v[x.x.x].[ext]
 [version]
 version = "chronicle-alpha-v0.1.0"
+service = "Permanode"
 
 # More details: https://docs.scylladb.com/getting-started/ddl/
 [scylla_cluster]

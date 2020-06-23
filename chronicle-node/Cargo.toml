@@ -1,0 +1,19 @@
+[package]
+name = "chronicle-node"
+version = "0.1.0"
+authors = ["IOTA Stiftung"]
+edition = "2018"
+license = "APACHE 2.0"
+homepage = "https://docs.iota.org/docs/chronicle/1.0/overview"
+repository = "https://github.com/iotaledger/chronicle.rs"
+
+[dependencies]
+tokio = { version = "0.2", features = ["full"] }
+chronicle-common = { path = "../chronicle-common" }
+chronicle-storage = { path = "../chronicle-storage" }
+chronicle-api = { path = "../chronicle-api" }
+chronicle-cql = {path = "../chronicle-cql"}
+chronicle-broker = { path = "../chronicle-broker" }
+serde = { version = "1.0", features = ["derive"] }
+structopt = "0.3"
+toml = "0.5"
