@@ -62,6 +62,7 @@ struct ScyllaCluster {
 struct DmpFiles {
     files: Option<Vec<(String, u64)>>,
     import_only_confirmed_transactions: Option<bool>,
+    max_retries: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

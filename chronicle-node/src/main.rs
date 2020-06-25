@@ -62,6 +62,7 @@ struct ScyllaCluster {
 struct DmpFiles {
     files: Option<Vec<(String, u64)>>,
     import_only_confirmed_transactions: Option<bool>,
+    max_retries: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -308,13 +309,17 @@ async fn import_files(dmp_files: DmpFiles) {
     if let Some(is_only_confirmed) = dmp_files.import_only_confirmed_transactions {
         only_confirmed = is_only_confirmed;
     }
+    let mut max_retries = 1000;
+    if let Some(max) = dmp_files.max_retries {
+        max_retries = max;
+    }
     files.sort_by(|a, b| b.1.cmp(&a.1));
     for t in files.iter() {
         if let Ok(_) = ImporterBuilder::new()
             .filepath(t.0.clone())
             .milestone(t.1)
             .only_confirmed(only_confirmed)
-            .max_retries(0)
+            .max_retries(max_retries)
             .build()
             .run()
             .await

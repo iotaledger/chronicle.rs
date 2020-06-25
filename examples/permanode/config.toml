@@ -16,6 +16,7 @@ local_dc = "datacenter1"
 [dmp_files]
 files = [["./path/to/file.dmp", 6000]]
 import_only_confirmed_transactions = true
+max_retries = 1000
 
 [tokio]
 core_threads = 4 # should use even number > 2
