@@ -75,6 +75,7 @@ pub struct ImporterId(Sender);
 actor!(ImporterBuilder {
     filepath: String,
     milestone: u64,
+    only_confirmed: bool,
     max_retries: usize
 });
 
@@ -96,6 +97,7 @@ impl ImporterBuilder {
             filepath: self.filepath.unwrap(),
             processed_bytes: 0,
             milestone: self.milestone.unwrap(),
+            only_confirmed: self.only_confirmed.unwrap(),
             pids,
             progress_bar: None,
             pending: 0,
@@ -109,6 +111,7 @@ pub struct Importer {
     filepath: String,
     processed_bytes: u64,
     milestone: u64,
+    only_confirmed: bool,
     pids: Vec<Box<ImporterId>>,
     progress_bar: Option<ProgressBar>,
     pending: usize,
@@ -146,13 +149,17 @@ impl Importer {
             if line_length == 0 {
                 break;
             }
-            self.pending += 6; // 1 tx_query + 5 edge_table queries
             let hash = &line[..81];
             let txtrytes = &line[82..2755];
             // check if milestone is in the line
             if line_length > 2756 {
                 self.milestone = line[2756..(line_length - 1)].parse::<u64>().unwrap();
             }
+            // check whether to skip the transaction(line) if only_confirmed or not.
+            if self.only_confirmed && self.milestone == 0 {
+                continue;
+            }
+            self.pending += 6; // 1 tx_query + 5 edge_table queries
             let tx_query = insert_to_tx_table(hash, txtrytes, self.milestone);
             let request = reporter::Event::Request {
                 payload: tx_query,
