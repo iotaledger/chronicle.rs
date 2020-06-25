@@ -53,19 +53,41 @@ Chronicle includes the following crates that you can use as tools for building y
 
 To run Chronicle, you need the following:
 
+- A Linux LTS operating system such as [Ubuntu](https://ubuntu.com/download#download)
+
 - 4 GB RAM
+
 - 64-bit processor
+
+- At least 2 CPU cores
+
+    You can check how many CPU cores your device has, using the following command:
+
+    ```bash
+    nproc
+    ```
+
 - [Rust](https://www.rust-lang.org/tools/install)
+
 - At least one Scylla node. See the [Scylla documentation](https://docs.scylladb.com/getting-started/) for a tutorial on setting one up.
+
+- The `build-essentials`, `pkg-config`, and `libzmq3-dev` packages
+
+    You can install these packages, using the following command:
+
+    ```bash
+    sudo apt update && sudo apt install build-essentials sudo apt install pkg-config && sudo apt install -y --no-install-recommends libzmq3-dev
+    ```
+
 - (Optional) An IDE that supports Rust autocompletion. We recommend [Visual Studio Code](https://code.visualstudio.com/Download) with the [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=matklad.rust-analyzer) extension
+
+- If you want to load historical transactions into your permanode, you can download the files from the [IOTA Foundation's archive](https://dbfiles.iota.org/?prefix=mainnet/history/).
 
 We also recommend updating Rust to the latest stable version:
 
 ```bash
 rustup update stable
 ```
-
-If you want to load historical transactions into your permanode, you can download the files from the [IOTA Foundation's archive](https://dbfiles.iota.org/?prefix=mainnet/history/).
 
 ## Installation
 
