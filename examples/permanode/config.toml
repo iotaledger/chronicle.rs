@@ -17,7 +17,7 @@ local_dc = "datacenter1"
 files = []
 
 [tokio]
-core_threads = 4 # should use even number > 2
+core_threads = 2 # should use even number > 2
 
 [storage]
 dashboard_websocket = "0.0.0.0:8080"
