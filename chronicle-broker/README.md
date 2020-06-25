@@ -1,7 +1,7 @@
-<h2 align="center">Chronicle-Broker Crate</h2>
+<h2 align="center">Broker</h2>
 
 <p align="center">
-    <a href="https://docs.iota.org/docs/chronicle/1.0/overview" style="text-decoration:none;">
+    <a href="https://docs.iota.org/docs/chronicle/1.1/overview" style="text-decoration:none;">
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
@@ -13,7 +13,6 @@
       
 <p align="center">
   <a href="#about">About</a> ◈
-  <a href="#getting-started">Getting started</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
   <a href="#joining-the-discussion">Joining the discussion</a> 
 </p>
@@ -22,11 +21,9 @@
 
 ## About
 
-Chronicle-Broker crate provides the functionality of middle layer between the IOTA node-event sources and the chronicle. Now the file importer is provided for transactions storing in a database.
+This crate allows you to subscribe to the `trytes` and `sn_trytes` events on one or more IOTA nodes to receive new and/or recently confirmed transactions.
 
-## Getting Started
-
-The historical dmp files can be downloaded [here](https://dbfiles.iota.org/?prefix=mainnet/history/). The usage example is provided [here](../examples/README.md).
+For an example of how to use this crate, see the [`broker` example](https://github.com/iotaledger/chronicle.rs/blob/982bf8d8206d5d7e36589d37407fb8884485e51c/examples/broker/main.rs#L36).
 
 ## Supporting the project
 

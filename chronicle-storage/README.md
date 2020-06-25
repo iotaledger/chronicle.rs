@@ -1,7 +1,7 @@
-<h2 align="center">Chronicle-Storage Crate</h2>
+<h2 align="center">Storage</h2>
 
 <p align="center">
-    <a href="https://docs.iota.org/docs/chronicle/1.0/overview" style="text-decoration:none;">
+    <a href="https://docs.iota.org/docs/chronicle/1.1/overview" style="text-decoration:none;">
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
@@ -21,7 +21,9 @@
 
 ## About
 
-Chronicle-Storage crate is associated with Chronicle framework, which is used for connecting/storing/retrieving data with a database. Please see [examples](../examples/README.md) for the usage example.
+This crate implements the functionality for connecting to a Scylla node, storing transactions on it, and searching for them.
+
+For examples of how to use this crate, see the [examples](https://github.com/iotaledger/chronicle.rs/blob/982bf8d8206d5d7e36589d37407fb8884485e51c/examples/broker/main.rs#L23) directory.
 
 ## Supporting the project
 

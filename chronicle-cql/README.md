@@ -1,7 +1,7 @@
-<h2 align="center">Chronicle-CQL Crate</h2>
+<h2 align="center">CQL</h2>
 
 <p align="center">
-    <a href="https://docs.iota.org/docs/chronicle/1.0/overview" style="text-decoration:none;">
+    <a href="https://docs.iota.org/docs/chronicle/1.1/overview" style="text-decoration:none;">
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
@@ -21,7 +21,7 @@
 
 ## About
 
-Chronicle-CQL crate is for efficient decoding and encoding CQL frames in Rust language. The usage example of this crate can be found in [examples](../examples/README.md).
+This crate implements the functionality for decoding and encoding CQL (Cassandra Query Language) commands in Rust.
 
 ## Supporting the project
 
