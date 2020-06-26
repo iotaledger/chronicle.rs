@@ -92,6 +92,7 @@ async fn main() {
             ImporterBuilder::new()
                 .filepath("./storage/dmp/6000.dmp".to_string())
                 .milestone(6000)
+                .only_confirmed(true)
                 .max_retries(0)
                 .build()
                 .run()

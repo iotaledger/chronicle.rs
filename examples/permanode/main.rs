@@ -61,6 +61,8 @@ struct ScyllaCluster {
 #[derive(Debug, Clone, Deserialize)]
 struct DmpFiles {
     files: Option<Vec<(String, u64)>>,
+    import_only_confirmed_transactions: Option<bool>,
+    max_retries: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -184,7 +186,7 @@ fn main() {
                 .await
                 .expect("failed to create data table");
             if let Some(dmp_files) = config.dmp_files {
-                import_files(dmp_files.files.unwrap()).await;
+                import_files(dmp_files).await;
             }
             apps
         })
@@ -301,12 +303,18 @@ async fn ctrl_c(mut launcher: Sender) {
     launcher.exit_program();
 }
 
-async fn import_files(mut tuples: Vec<(String, u64)>) {
-    tuples.sort_by(|a, b| b.1.cmp(&a.1));
-    for t in tuples.iter() {
+async fn import_files(dmp_files: DmpFiles) {
+    let mut files: Vec<(String, u64)> = dmp_files.files.unwrap();
+    let mut only_confirmed = false;
+    if let Some(is_only_confirmed) = dmp_files.import_only_confirmed_transactions {
+        only_confirmed = is_only_confirmed;
+    }
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    for t in files.iter() {
         if let Ok(_) = ImporterBuilder::new()
             .filepath(t.0.clone())
             .milestone(t.1)
+            .only_confirmed(only_confirmed)
             .max_retries(0)
             .build()
             .run()

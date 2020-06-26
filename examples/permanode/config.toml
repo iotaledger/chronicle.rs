@@ -15,6 +15,8 @@ local_dc = "datacenter1"
 # [[file_path1, milestone1], [file_path2, milestone2], ...]
 [dmp_files]
 files = []
+import_only_confirmed_transactions = true
+max_retries = 1000
 
 [tokio]
 core_threads = 2 # should use even number > 2
