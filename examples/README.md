@@ -1,7 +1,7 @@
 <h2 align="center">Examples</h2>
 
 <p align="center">
-    <a href="https://docs.iota.org/docs/chronicle/1.0/overview" style="text-decoration:none;">
+    <a href="https://docs.iota.org/docs/chronicle/1.1/overview" style="text-decoration:none;">
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
@@ -22,13 +22,18 @@
 
 ## About
 
-This folder contains examples of using Chronicle frame work.
+This directory contains examples of building your own permanode applications:
+
+- **[Broker](/broker):** An example of how to use Chronicle to build a custom permanode, using the API, Broker, and Storage apps
+
+- **[Permanode](/permanode):** An example of a CLI permanode application
+
+- **[Storage](/storage):** An example of how to use Chronicle as a storage provider
 
 ## Getting started
 
-- For the build process please refer to [here](../README.md)
-- Please download the dmp files [here](https://dbfiles.iota.org/?prefix=mainnet/history/) for importing
-- To run an example
+To run an example, do the following:
+
 ```bash
 cargo run --example [EXAMPLE_NAME]
 ```

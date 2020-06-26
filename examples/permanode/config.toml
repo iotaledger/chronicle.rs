@@ -14,12 +14,12 @@ local_dc = "datacenter1"
 # dmp file links: https://dbfiles.iota.org/?prefix=mainnet/history/
 # [[file_path1, milestone1], [file_path2, milestone2], ...]
 [dmp_files]
-files = [["./path/to/file.dmp", 6000]]
+files = []
 import_only_confirmed_transactions = true
 max_retries = 1000
 
 [tokio]
-core_threads = 4 # should use even number > 2
+core_threads = 2 # should use even number > 2
 
 [storage]
 dashboard_websocket = "0.0.0.0:8080"

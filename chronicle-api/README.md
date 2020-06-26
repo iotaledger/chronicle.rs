@@ -1,7 +1,7 @@
-<h2 align="center">Chronicle-API Crate</h2>
+<h2 align="center">API</h2>
 
 <p align="center">
-    <a href="https://docs.iota.org/docs/chronicle/1.0/overview" style="text-decoration:none;">
+    <a href="https://docs.iota.org/docs/chronicle/1.1/overview" style="text-decoration:none;">
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
@@ -13,8 +13,7 @@
       
 <p align="center">
   <a href="#about">About</a> ◈
-  <a href="#getting-started">Getting started</a> ◈
-  <a href="#api-calls">API calls</a> ◈
+  <a href="#api-endpoints">API endpoints</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
   <a href="#joining-the-discussion">Joining the discussion</a> 
 </p>
@@ -23,13 +22,13 @@
 
 ## About
 
-Chronicle-API crate is associated with Chronicle framework. It implements the functionalities of [APIs](https://docs.iota.org/docs/chronicle/1.0/references/chronicle-api-reference) those can be used for chronicle.
+This crate implements an HTTP API that you can use to access transactions in a database that is connected to Chronicle.
 
-## Getting Started
+For an example of how to use this crate, see the [`broker` example](https://github.com/iotaledger/chronicle.rs/blob/982bf8d8206d5d7e36589d37407fb8884485e51c/examples/broker/main.rs#L33).
 
-The build and run process for Chronicle can be founded [here](../README.md).
+## API endpoints
 
-## API calls
+This crate implements the following endpoints. For details, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.1/references/chronicle-api-reference). 
 
 - **getTrytes** by transaction hashes
 ```bash
@@ -116,7 +115,7 @@ If you want to contribute to Chronicle, consider posting a [bug report](https://
 
 Please read the following before contributing:
 
-- [Contributing guidelines](CONTRIBUTING.md)
+- [Contributing guidelines](.github/CONTRIBUTING.md)
 
 ## Joining the discussion
 
