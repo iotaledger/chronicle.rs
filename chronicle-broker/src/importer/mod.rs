@@ -149,6 +149,10 @@ impl Importer {
         self.handle_dmp(reader).await
     }
     async fn handle_dmp(&mut self, mut reader: BufReader<&mut File>) -> Result<(), Box<dyn Error>> {
+        let mut try_attachment_timestamp = false;
+        if self.milestone > 337541 {
+            try_attachment_timestamp = true;
+        }
         let mut line = String::new();
         // start processing the file line by line
         loop {
@@ -178,9 +182,17 @@ impl Importer {
             let value = trytes_to_i64(&txtrytes[2268..2295]);
             // extract the timestamp and year, month
             let timestamp = trytes_to_i64(&txtrytes[2322..2331]);
-            let naive = NaiveDateTime::from_timestamp(timestamp, 0);
-            let year = naive.year() as u16;
-            let month = naive.month() as u8;
+            let mut naive = NaiveDateTime::from_timestamp(timestamp, 0);
+            let mut year = naive.year() as u16;
+            let mut month = naive.month() as u8;
+            if try_attachment_timestamp {
+                let attachment_timestamp = trytes_to_i64(&txtrytes[2619..2628]);
+                if attachment_timestamp != 0 {
+                    naive = NaiveDateTime::from_timestamp(attachment_timestamp, 0);
+                    year = naive.year() as u16;
+                    month = naive.month() as u8
+                }
+            }
             // create queries related to the transaction value
             match value {
                 0 => {
@@ -263,6 +275,7 @@ impl Importer {
                     }
                     Event::Error { kind, pid } => {
                         if self.max_retries == 0 {
+                            self.pids.push(pid);
                             return Err(Box::new(kind));
                         } else {
                             self.max_retries -= 1;
