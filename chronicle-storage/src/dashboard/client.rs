@@ -9,7 +9,7 @@ use tokio_tungstenite::{
 };
 use url::Url;
 
-pub async fn add_nodes(ws: &str, addresses: Vec<String>, uniform_rf: u8) -> Result<(), ()> {
+pub async fn add_nodes(ws: &str, addresses: Vec<String>, uniform_rf: u8) -> Result<(), String> {
     let request = Url::parse(ws).unwrap();
     // connect to dashboard
     match connect_async(request).await {
@@ -27,12 +27,11 @@ pub async fn add_nodes(ws: &str, addresses: Vec<String>, uniform_rf: u8) -> Resu
                     if let SocketMsg::Ok(_) = event {
                     } else {
                         ws_stream.close(None).await.unwrap();
-                        return Err(());
+                        return Err("unable to reach scylla node(s)".to_string());
                     }
                 } else {
-                    println!("unable to reach the websocket server");
                     ws_stream.close(None).await.unwrap();
-                    return Err(());
+                    return Err("unable to reach the websocket server".to_string());
                 };
             }
             // build the ring
@@ -51,6 +50,6 @@ pub async fn add_nodes(ws: &str, addresses: Vec<String>, uniform_rf: u8) -> Resu
             ws_stream.close(None).await.unwrap();
             Ok(())
         }
-        Err(_) => Err(()),
+        Err(_) => Err("unable to connect the websocket server".to_string()),
     }
 }
