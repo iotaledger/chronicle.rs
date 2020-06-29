@@ -170,8 +170,9 @@ If you want to get involved in the community, need help with getting set up, hav
 - Add more test cases
 - Add more field tests
 - Allow Chronicle to solidify transactions
-- Enable efficient transaction lookups by the `tag` field
-- Use stable published events from IOTA nodes for transaction storing
+- Implement selective permanode
+- Add dashboard web app
+- Improve framework
 
 ## LICENSE
 
