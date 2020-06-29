@@ -54,6 +54,7 @@ impl SupervisorBuilder {
         Supervisor {
             session_id: 0,
             reporters: HashMap::with_capacity(self.reporter_count.unwrap() as usize),
+            reporters_count: self.reporter_count.unwrap(),
             reconnect_requests: 0,
             connected: false,
             address: self.address.unwrap(),
@@ -96,6 +97,7 @@ pub struct Supervisor {
     rx: Receiver,
     node_tx: node::supervisor::Sender,
     reporters: Reporters,
+    reporters_count: u8,
     payloads: Payloads,
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
@@ -104,7 +106,7 @@ pub struct Supervisor {
 
 impl Supervisor {
     pub async fn run(mut self) {
-        let reporters_num = self.reporters.capacity() as u8;
+        let reporters_num = self.reporters_count;
         // Create sender's channel
         let (sender_tx, sender_rx) = mpsc::unbounded_channel::<Stream>();
         // Prepare range to later create stream_ids vector per reporter
