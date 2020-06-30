@@ -8,3 +8,7 @@ homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
 repository = "https://github.com/iotaledger/chronicle.rs"
 
 [dependencies]
+fern = { version = "0.6.0", features = ["colored"] }
+log = "0.4.8"
+chrono = "0.4.11"
+serde = { version = "1.0.114", features = ["derive" ] }
