@@ -3,7 +3,13 @@ use chronicle_api::api::ApiBuilder;
 use chronicle_broker::broker::BrokerBuilder;
 use chronicle_storage::storage::StorageBuilder;
 // import launcher macro
-use chronicle_common::launcher;
+use chronicle_common::{
+    launcher,
+    logger::{
+        logger_init,
+        LoggerConfigBuilder,
+    },
+};
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
 use chronicle_storage::{
@@ -29,6 +35,7 @@ struct Args {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    logger: LoggerConfigBuilder,
     version: Version,
     scylla_cluster: ScyllaCluster,
     dmp_files: Option<DmpFiles>,
@@ -94,6 +101,9 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
+        // 
+        // - logger
+        logger_init(config.logger.clone().finish()).unwrap();
         // 
         // - storage app:
         let storage = StorageBuilder::new()

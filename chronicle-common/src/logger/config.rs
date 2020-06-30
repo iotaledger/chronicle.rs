@@ -5,7 +5,7 @@ const DEFAULT_COLOR: bool = true;
 const DEFAULT_NAME: &str = "stdout";
 const DEFAULT_LEVEL: &str = "info";
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, Debug, Clone)]
 pub struct LoggerOutputConfigBuilder {
     name: Option<String>,
     level: Option<String>,
@@ -43,7 +43,7 @@ impl LoggerOutputConfigBuilder {
     }
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, Debug, Clone)]
 pub struct LoggerConfigBuilder {
     color: Option<bool>,
     outputs: Option<Vec<LoggerOutputConfigBuilder>>,
@@ -86,13 +86,13 @@ impl LoggerConfigBuilder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LoggerOutputConfig {
     pub(crate) name: String,
     pub(crate) level: LevelFilter,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LoggerConfig {
     pub(crate) color: bool,
     pub(crate) outputs: Vec<LoggerOutputConfig>,
