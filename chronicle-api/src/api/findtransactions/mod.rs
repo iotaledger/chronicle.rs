@@ -35,6 +35,7 @@ use hyper::{
     Body,
     Response,
 };
+use log::*;
 use serde::Serialize;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
@@ -238,7 +239,7 @@ impl FindTransactions {
                                 hints = updated_hints;
                                 break;
                             } else {
-                                println!("{:?}", decoder.get_error());
+                                error!("{:?}", decoder.get_error());
                                 // it's for future impl to be used with execute
                                 if decoder.is_unprepared() {
                                     // retry using normal query

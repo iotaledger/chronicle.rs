@@ -12,6 +12,7 @@ use crate::{
     },
 };
 use chronicle_common::actor;
+use log::*;
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
@@ -151,10 +152,9 @@ impl Supervisor {
         // expose stage reporters in advance
         let event = node::supervisor::Event::RegisterReporters(self.shard_id, self.reporters.clone());
         self.node_tx.send(event).unwrap();
-        // TODO: improve pirnted msgs for debugging
-        println!(
-            "just exposed stage reporters of shard: {}, to node supervisor",
-            self.shard_id
+        info!(
+            "Exposed stage reporters of shard: {}, to node: {} supervisor",
+            self.shard_id, self.address
         );
         // Send self event::connect
         self.tx
@@ -204,9 +204,7 @@ impl Supervisor {
                                 tokio::spawn(receiver.run());
                             }
                             Err(err) => {
-                                // TODO: erro handling
-                                // TODO: improve pirnted msgs for debugging
-                                println!("trying to connect every 5 seconds: err {}", err);
+                                warn!("trying to connect every 5 seconds: err {}", err);
                                 delay_for(Duration::from_millis(5000)).await;
                                 // Try again to connect
                                 if let Some(tx) = &self.tx {

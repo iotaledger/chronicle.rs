@@ -10,6 +10,7 @@ use crate::worker::{
     Worker,
 };
 use chronicle_common::actor;
+use log::*;
 use std::{
     collections::HashMap,
     io::{
@@ -129,8 +130,8 @@ impl Reporter {
                         Session::New(new_session, new_sender_tx) => {
                             self.session_id = new_session;
                             self.sender_tx = Some(new_sender_tx);
-                            println!(
-                                "address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}",
+                            info!(
+                                "address: {}, shard_id: {}, reporter_id: {}, received session: {:?}",
                                 &self.address, self.shard_id, self.reporter_id, self.session_id
                             );
                         }
@@ -142,8 +143,8 @@ impl Reporter {
                                 force_consistency(&mut self.streams, &mut self.workers);
                                 // reset checkpoints to 0
                                 self.checkpoints = 0;
-                                println!(
-                                    "address: {}, shard_id: {}, reporter_id: {}, received new session: {:?}",
+                                warn!(
+                                    "address: {}, shard_id: {}, reporter_id: {}, closing session: {:?}",
                                     &self.address, self.shard_id, self.reporter_id, old_session
                                 );
                                 // tell stage_tx to reconnect
@@ -170,7 +171,7 @@ impl Reporter {
         } // reporter will reach this line only when it recvs shutdown event and eventually drains its rx.
           // therefore it must drains workers map from stucked requests(if any) to force_consistency.
         force_consistency(&mut self.streams, &mut self.workers);
-        println!(
+        warn!(
             "reporter_id: {} of shard_id: {} in node: {}, gracefully shutting down.",
             self.reporter_id, self.shard_id, &self.address
         );

@@ -2,8 +2,15 @@
 use chronicle_api::api::ApiBuilder;
 use chronicle_broker::broker::BrokerBuilder;
 use chronicle_storage::storage::StorageBuilder;
-// import launcher macro
-use chronicle_common::launcher;
+// import launcher macro and logger
+use chronicle_common::{
+    launcher,
+    logger::{
+        logger_init,
+        LoggerConfigBuilder,
+    },
+};
+use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
 use chronicle_storage::{
@@ -29,6 +36,7 @@ struct Args {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    logger: LoggerConfigBuilder,
     version: Version,
     scylla_cluster: ScyllaCluster,
     dmp_files: Option<DmpFiles>,
@@ -95,6 +103,9 @@ launcher!(
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
         // 
+        // - logger
+        logger_init(config.logger.clone().finish()).unwrap();
+        // 
         // - storage app:
         let storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -134,8 +145,8 @@ fn main() {
         .thread_stack_size(3 * 1024 * 1024)
         .build()
         .unwrap();
-    println!("Welcome to Chronicle Permanode Alpha v0.1.0");
     let apps = AppsBuilder::new().build(config);
+    info!("Welcome to Chronicle Permanode Alpha v0.1.0");
     // run chronicle.
     runtime.block_on(async {
         apps.function(|apps| {
@@ -320,7 +331,7 @@ async fn import_files(dmp_files: DmpFiles) {
             .run()
             .await
         {
-            println!("succesfully imported: {}", t.0);
+            info!("succesfully imported: {}", t.0);
         } else {
             panic!("failed to import file: {}", t.0);
         }

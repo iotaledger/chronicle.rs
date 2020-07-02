@@ -2,8 +2,15 @@
 use chronicle_api::api::ApiBuilder;
 use chronicle_broker::broker::BrokerBuilder;
 use chronicle_storage::storage::StorageBuilder;
-// import launcher macro
-use chronicle_common::launcher;
+// import launcher macro and logger,
+use chronicle_common::{
+    launcher,
+    logger::{
+        logger_init,
+        LoggerConfigBuilder,
+    },
+};
+use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
 use chronicle_storage::{
@@ -29,6 +36,7 @@ struct Args {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    logger: LoggerConfigBuilder,
     version: Version,
     scylla_cluster: ScyllaCluster,
     dmp_files: Option<DmpFiles>,
@@ -125,6 +133,7 @@ fn main() {
     let args = Args::from_args();
     let config_as_string = fs::read_to_string(args.path).unwrap();
     let config: Config = toml::from_str(&config_as_string).unwrap();
+    logger_init(config.logger.clone().finish()).unwrap();
     // build tokio runtime
     let mut runtime = Builder::new()
         .threaded_scheduler()
@@ -134,7 +143,7 @@ fn main() {
         .thread_stack_size(3 * 1024 * 1024)
         .build()
         .unwrap();
-    println!("Welcome to Chronicle Permanode Alpha v0.1.0");
+    info!("Welcome to Chronicle Permanode Alpha v0.1.0");
     let apps = AppsBuilder::new().build(config);
     // run chronicle.
     runtime.block_on(async {
@@ -324,7 +333,7 @@ async fn import_files(dmp_files: DmpFiles) {
             .run()
             .await
         {
-            println!("succesfully imported: {}", t.0);
+            info!("succesfully imported: {}", t.0);
         } else {
             panic!("failed to import file: {}", t.0);
         }
