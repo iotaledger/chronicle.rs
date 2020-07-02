@@ -2,7 +2,7 @@
 use chronicle_api::api::ApiBuilder;
 use chronicle_broker::broker::BrokerBuilder;
 use chronicle_storage::storage::StorageBuilder;
-// import launcher macro
+// import launcher macro and logger
 use chronicle_common::{
     launcher,
     logger::{
@@ -10,6 +10,7 @@ use chronicle_common::{
         LoggerConfigBuilder,
     },
 };
+use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
 use chronicle_storage::{
@@ -144,8 +145,8 @@ fn main() {
         .thread_stack_size(3 * 1024 * 1024)
         .build()
         .unwrap();
-    println!("Welcome to Chronicle Permanode Alpha v0.1.0");
     let apps = AppsBuilder::new().build(config);
+    info!("Welcome to Chronicle Permanode Alpha v0.1.0");
     // run chronicle.
     runtime.block_on(async {
         apps.function(|apps| {
@@ -330,7 +331,7 @@ async fn import_files(dmp_files: DmpFiles) {
             .run()
             .await
         {
-            println!("succesfully imported: {}", t.0);
+            info!("succesfully imported: {}", t.0);
         } else {
             panic!("failed to import file: {}", t.0);
         }

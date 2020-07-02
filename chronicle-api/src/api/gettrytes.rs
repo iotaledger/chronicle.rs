@@ -27,6 +27,7 @@ use hyper::{
     Body,
     Response,
 };
+use log::*;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
@@ -88,7 +89,7 @@ impl GetTrytes {
                             *value = serde_json::value::Value::String(trytes);
                         };
                     } else {
-                        println!("GetTrytes: {:?}", decoder.get_error());
+                        info!("GetTrytes: {:?}", decoder.get_error());
                     }
                     pid
                 }

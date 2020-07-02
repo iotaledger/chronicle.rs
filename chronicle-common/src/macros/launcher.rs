@@ -55,7 +55,7 @@ macro_rules! launcher {
                         Event::RegisterApp(app_name, shutdown_tx) => {
                             // register app in apps
                             self.apps.insert(app_name.clone(), shutdown_tx);
-                            println!("AppStatus: {} is Running, and got registered", app_name);
+                            info!("AppStatus: {} is Running, and got registered", app_name);
                             // insert app_status in apps_status
                             self.apps_status.insert(app_name.clone(), AppStatus::Running(app_name.clone()));
                             // tell dashboard(s) that we startedapp
@@ -66,14 +66,14 @@ macro_rules! launcher {
                         }
                         Event::StartApp(app_name) => {
                             self.start_app(app_name.clone()).await;
-                            println!("AppStatus: {} is Starting, and dynamically started", app_name);
+                            info!("AppStatus: {} is Starting, and dynamically started", app_name);
                             self.apps_status.insert(app_name.clone(), AppStatus::Starting(app_name.clone()));
                             for (_, mut dashboard_tx) in &mut self.dashboards {
                                 dashboard_tx.starting_app(app_name.clone());
                             }
                         }
                         Event::ShutdownApp(app_name) => {
-                            println!("AppStatus: {} is shutting down", app_name);
+                            info!("AppStatus: {} is shutting down", app_name);
                             self.apps_status.insert(app_name.clone(), AppStatus::ShuttingDown(app_name.clone()));
                             if let Some(shutdown_tx) = self.apps.remove(&app_name) {
                                 shutdown_tx.shutdown();
@@ -83,7 +83,7 @@ macro_rules! launcher {
                             // aknowledging shutdown for an app under one_for_one policy require us to restart the app
                             // check if the the shutdown was requested
                             if let Some(_shutdown_tx) = self.apps.remove(&app_name) {
-                                println!("AppStatus: {} is restarting", app_name);
+                                warn!("AppStatus: {} is restarting", app_name);
                                 self.apps_status.insert(app_name.clone(), AppStatus::Restarting(app_name.clone()));
                                 // mean the shutdown it's not requested so we restart
                                 self.start_app(app_name.clone()).await;
@@ -92,7 +92,7 @@ macro_rules! launcher {
                                     dashboard_tx.restarted_app(app_name.clone());
                                 }
                             } else {
-                                println!("AppStatus: {} got shutdown", app_name);
+                                info!("AppStatus: {} got shutdown", app_name);
                                 self.apps_status.insert(app_name.clone(), AppStatus::Shutdown(app_name.clone()));
                                 // tell dashboards that we shutdown an app
                                 for (_, dashboard_tx) in &mut self.dashboards {
@@ -104,7 +104,7 @@ macro_rules! launcher {
                                 app_status != &shutdown_status);
                                 if self.exit && is_all_shutdown {
                                     // exit program
-                                    println!("Aknowledged shutdown for all Apps, GoodBye;");
+                                    info!("Aknowledged shutdown for all Apps, GoodBye;");
                                     break
                                 }
                             }
@@ -116,9 +116,9 @@ macro_rules! launcher {
                         }
                         Event::ExitProgram => {
                             self.exit = true;
-                            println!("Exiting Program;");
+                            info!("Exiting Program;");
                             for (app_name, shutdown_tx) in self.apps.drain() {
-                                println!("Shutting down: {}", app_name);
+                                info!("Shutting down: {}", app_name);
                                 shutdown_tx.shutdown();
                             }
                         }
