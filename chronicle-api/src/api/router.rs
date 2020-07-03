@@ -26,6 +26,7 @@ use std::convert::Infallible;
 #[derive(Deserialize, Serialize)]
 struct ReqBody {
     command: String,
+    milestones: Option<Vec<Option<u64>>>,
     hashes: Option<Vec<Trytes81>>,
     bundles: Option<Vec<Trytes81>>,
     addresses: Option<Vec<Trytes81>>,

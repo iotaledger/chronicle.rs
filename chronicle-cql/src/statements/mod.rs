@@ -114,7 +114,8 @@ pub const SELECT_TX_QUERY: &str = r#"
   attachment_timestamp,
   attachment_timestamp_lower,
   attachment_timestamp_upper,
-  nonce
+  nonce,
+  milestone
   FROM tangle.transaction
   WHERE hash = ?;
 "#;

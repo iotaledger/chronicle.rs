@@ -31,6 +31,7 @@ use log::*;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
+type Milestones = Vec<Option<u64>>;
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
@@ -55,6 +56,7 @@ pub struct GetTrytes {
 #[derive(Serialize)]
 struct ResTrytes {
     trytes: Vec<JsonValue>,
+    milestones: Milestones,
 }
 
 impl GetTrytes {
@@ -62,14 +64,23 @@ impl GetTrytes {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(GetTrytesId(tx));
         let hashes = self.hashes.iter_mut();
+        let mut milestones: Milestones = Vec::new();
         for value in hashes {
-            worker = Self::process(value, worker, &mut rx).await;
+            worker = Self::process(value, &mut milestones, worker, &mut rx).await;
         }
-        let res_trytes = ResTrytes { trytes: self.hashes };
+        let res_trytes = ResTrytes {
+            trytes: self.hashes,
+            milestones,
+        };
         response!(body: serde_json::to_string(&res_trytes).unwrap())
     }
 
-    async fn process(value: &mut JsonValue, worker: Box<GetTrytesId>, rx: &mut Receiver) -> Box<GetTrytesId> {
+    async fn process(
+        value: &mut JsonValue,
+        milestones: &mut Milestones,
+        worker: Box<GetTrytesId>,
+        rx: &mut Receiver,
+    ) -> Box<GetTrytesId> {
         // by taking the value we are leaving behind null.
         // now we try to query and get the result
         if let JsonValue::String(hash) = value.take() {
@@ -85,16 +96,21 @@ impl GetTrytes {
                     // create decoder
                     let decoder = Decoder::new(giveload, UNCOMPRESSED);
                     if decoder.is_rows() {
-                        if let Some(trytes) = Trytes::new(decoder).decode().finalize() {
+                        if let Some((trytes, milestone)) = Trytes::new(decoder, None).decode().finalize() {
                             *value = serde_json::value::Value::String(trytes);
+                            milestones.push(milestone)
+                        } else {
+                            milestones.push(None);
                         };
                     } else {
-                        info!("GetTrytes: {:?}", decoder.get_error());
+                        error!("GetTrytes: {:?}", decoder.get_error());
                     }
                     pid
                 }
                 Event::Error { pid, .. } => {
-                    // do nothing as the value is already null,
+                    // do nothing to the value as it's already null,
+                    // still we have to push none to milestones.
+                    milestones.push(None);
                     // still we can apply other retry strategies
                     pid
                 }
@@ -155,7 +171,7 @@ impl Worker for GetTrytesId {
 }
 
 rows!(
-    rows: Trytes {},
+    rows: Trytes {milestone: Option<u64>},
     row: Row(
         Payload,
         Address,
@@ -171,7 +187,8 @@ rows!(
         AttachmentTimestamp,
         AttachmentTimestampLower,
         AttachmentTimestampUpper,
-        Nonce
+        Nonce,
+        Milestone
     ),
     column_decoder: TrytesDecoder
 );
@@ -181,7 +198,7 @@ trait Rows {
     // to decode the rows
     fn decode(self) -> Self;
     // to finalize it as the expected result (trytes or none)
-    fn finalize(self) -> Option<String>;
+    fn finalize(self) -> Option<(String, Option<u64>)>;
 }
 
 impl Rows for Trytes {
@@ -191,12 +208,12 @@ impl Rows for Trytes {
         // return
         self
     }
-    fn finalize(mut self) -> Option<String> {
+    fn finalize(mut self) -> Option<(String, Option<u64>)> {
         // check if result was not empty
         if self.rows_count == 1 {
             // the buffer is ready to be converted to string trytes
             self.buffer().truncate(2673);
-            Some(String::from_utf8(self.decoder.into_buffer()).unwrap())
+            Some((String::from_utf8(self.decoder.into_buffer()).unwrap(), self.milestone))
         } else {
             // we didn't have any transaction row for the provided hash.
             None
@@ -338,5 +355,15 @@ impl TrytesDecoder for Nonce {
     }
     fn handle_null(_: &mut Trytes) {
         unreachable!()
+    }
+}
+impl TrytesDecoder for Milestone {
+    fn decode_column(start: usize, length: i32, acc: &mut Trytes) {
+        acc.milestone = Some(u64::from_be_bytes(
+            acc.buffer()[start..(start + length as usize)].try_into().unwrap(),
+        ));
+    }
+    fn handle_null(_: &mut Trytes) {
+        // do nothing acc.milestone is already none.
     }
 }
