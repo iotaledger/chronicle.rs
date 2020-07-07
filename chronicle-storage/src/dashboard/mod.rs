@@ -23,6 +23,7 @@ use futures::{
     stream::SplitSink,
     SinkExt,
 };
+use log::*;
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -179,7 +180,7 @@ impl Dashboard {
                     match result {
                         Result::Ok(address) => {
                             // successfully spawned the node
-                            println!("Dashboard: AddNode: Ok({})", address);
+                            info!("Dashboard: AddNode: Ok({})", address);
                             // NOTE: for now we tell all the active sockets
                             for socket in self.sockets.values_mut() {
                                 let msg = SocketMsg::Ok(address.clone());
@@ -189,7 +190,7 @@ impl Dashboard {
                             }
                         }
                         Result::Err(address) => {
-                            println!("Dashboard: AddNode: Err({})", address);
+                            error!("Dashboard: AddNode: Err({})", address);
                             // NOTE: for now we tell all the active sockets
                             for socket in self.sockets.values_mut() {
                                 let msg = SocketMsg::Err(address.clone());
@@ -199,7 +200,11 @@ impl Dashboard {
                             }
                         }
                         Result::TryBuild(built) => {
-                            println!("Dashboard: Built Ring: {}", built);
+                            if built {
+                                info!("Dashboard: Built Ring: {}", built);
+                            } else {
+                                error!("Dashboard: Built Ring: {}", built);
+                            }
                             // NOTE: for now we tell all the active sockets
                             for socket in self.sockets.values_mut() {
                                 let msg = SocketMsg::BuiltRing(built);

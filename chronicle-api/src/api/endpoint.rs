@@ -13,6 +13,7 @@ use hyper::{
         service_fn,
     },
 };
+use log::*;
 use std::{
     convert::Infallible,
     net::SocketAddr,
@@ -48,7 +49,7 @@ impl Endpoint {
             rx.await.ok();
         });
         if let Err(e) = graceful.await {
-            eprintln!("error: {}, endpoint: {}", e, self.addr);
+            error!("error: {}, endpoint: {}", e, self.addr);
         }
         // aknowledge_shutdown
         self.launcher_tx.aknowledge_shutdown("api".to_string());

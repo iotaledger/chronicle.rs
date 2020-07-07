@@ -12,6 +12,7 @@ use crate::{
     },
 };
 use chronicle_common::actor;
+use log::*;
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
@@ -54,6 +55,7 @@ impl SupervisorBuilder {
         Supervisor {
             session_id: 0,
             reporters: HashMap::with_capacity(self.reporter_count.unwrap() as usize),
+            reporters_count: self.reporter_count.unwrap(),
             reconnect_requests: 0,
             connected: false,
             address: self.address.unwrap(),
@@ -96,6 +98,7 @@ pub struct Supervisor {
     rx: Receiver,
     node_tx: node::supervisor::Sender,
     reporters: Reporters,
+    reporters_count: u8,
     payloads: Payloads,
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
@@ -104,7 +107,7 @@ pub struct Supervisor {
 
 impl Supervisor {
     pub async fn run(mut self) {
-        let reporters_num = self.reporters.capacity() as u8;
+        let reporters_num = self.reporters_count;
         // Create sender's channel
         let (sender_tx, sender_rx) = mpsc::unbounded_channel::<Stream>();
         // Prepare range to later create stream_ids vector per reporter
@@ -149,10 +152,9 @@ impl Supervisor {
         // expose stage reporters in advance
         let event = node::supervisor::Event::RegisterReporters(self.shard_id, self.reporters.clone());
         self.node_tx.send(event).unwrap();
-        // TODO: improve pirnted msgs for debugging
-        println!(
-            "just exposed stage reporters of shard: {}, to node supervisor",
-            self.shard_id
+        info!(
+            "Exposed stage reporters of shard: {}, to node: {} supervisor",
+            self.shard_id, self.address
         );
         // Send self event::connect
         self.tx
@@ -202,9 +204,7 @@ impl Supervisor {
                                 tokio::spawn(receiver.run());
                             }
                             Err(err) => {
-                                // TODO: erro handling
-                                // TODO: improve pirnted msgs for debugging
-                                println!("trying to connect every 5 seconds: err {}", err);
+                                warn!("trying to connect every 5 seconds: err {}", err);
                                 delay_for(Duration::from_millis(5000)).await;
                                 // Try again to connect
                                 if let Some(tx) = &self.tx {

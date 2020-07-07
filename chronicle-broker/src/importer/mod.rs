@@ -70,11 +70,20 @@ impl chronicle_cql::frame::encoder::ColumnEncoder for YearMonth {
 }
 
 #[derive(Debug)]
-pub struct ImporterId(Sender);
-
+pub struct ImporterId(Sender, u8);
+impl ImporterId {
+    fn query_id(mut self: Box<Self>, query_id: u8) -> Box<Self> {
+        self.1 = query_id;
+        self
+    }
+    fn get_query_id(&self) -> u8 {
+        self.1
+    }
+}
 actor!(ImporterBuilder {
     filepath: String,
     milestone: u64,
+    only_confirmed: bool,
     max_retries: usize
 });
 
@@ -89,13 +98,14 @@ impl ImporterBuilder {
         let mut pids = Vec::new();
         // create 7 pids in advance to enable us to send 6 concurrent queries without the cost for heap-reallocation
         for _ in 0..7 {
-            pids.push(Box::new(ImporterId(tx.clone())));
+            pids.push(Box::new(ImporterId(tx.clone(), 0)));
         }
         Importer {
             rx,
             filepath: self.filepath.unwrap(),
             processed_bytes: 0,
             milestone: self.milestone.unwrap(),
+            only_confirmed: self.only_confirmed.unwrap(),
             pids,
             progress_bar: None,
             pending: 0,
@@ -109,6 +119,7 @@ pub struct Importer {
     filepath: String,
     processed_bytes: u64,
     milestone: u64,
+    only_confirmed: bool,
     pids: Vec<Box<ImporterId>>,
     progress_bar: Option<ProgressBar>,
     pending: usize,
@@ -138,6 +149,10 @@ impl Importer {
         self.handle_dmp(reader).await
     }
     async fn handle_dmp(&mut self, mut reader: BufReader<&mut File>) -> Result<(), Box<dyn Error>> {
+        let mut try_attachment_timestamp = false;
+        if self.milestone > 337541 {
+            try_attachment_timestamp = true;
+        }
         let mut line = String::new();
         // start processing the file line by line
         loop {
@@ -146,26 +161,38 @@ impl Importer {
             if line_length == 0 {
                 break;
             }
-            self.pending += 6; // 1 tx_query + 5 edge_table queries
             let hash = &line[..81];
             let txtrytes = &line[82..2755];
             // check if milestone is in the line
             if line_length > 2756 {
                 self.milestone = line[2756..(line_length - 1)].parse::<u64>().unwrap();
             }
+            // check whether to skip the transaction(line) if only_confirmed or not.
+            if self.only_confirmed && self.milestone == 0 {
+                continue;
+            }
+            self.pending += 6; // 1 tx_query + 5 edge_table queries
             let tx_query = insert_to_tx_table(hash, txtrytes, self.milestone);
             let request = reporter::Event::Request {
                 payload: tx_query,
-                worker: self.pids.pop().unwrap(),
+                worker: self.pids.pop().unwrap().query_id(1),
             };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             // extract the transaction value
             let value = trytes_to_i64(&txtrytes[2268..2295]);
             // extract the timestamp and year, month
             let timestamp = trytes_to_i64(&txtrytes[2322..2331]);
-            let naive = NaiveDateTime::from_timestamp(timestamp, 0);
-            let year = naive.year() as u16;
-            let month = naive.month() as u8;
+            let mut naive = NaiveDateTime::from_timestamp(timestamp, 0);
+            let mut year = naive.year() as u16;
+            let mut month = naive.month() as u8;
+            if try_attachment_timestamp {
+                let attachment_timestamp = trytes_to_i64(&txtrytes[2619..2628]);
+                if attachment_timestamp != 0 {
+                    naive = NaiveDateTime::from_timestamp(attachment_timestamp, 0);
+                    year = naive.year() as u16;
+                    month = naive.month() as u8
+                }
+            }
             // create queries related to the transaction value
             match value {
                 0 => {
@@ -174,14 +201,14 @@ impl Importer {
                         insert_to_edge_table(&txtrytes[2187..2268], "hint", 0, "0", value, YearMonth(year, month));
                     let request = reporter::Event::Request {
                         payload: hint_query,
-                        worker: self.pids.pop().unwrap(),
+                        worker: self.pids.pop().unwrap().query_id(2),
                     };
                     Ring::send_local_random_replica(rand::random::<i64>(), request);
                     let address_query =
                         insert_to_data_table(&txtrytes[2187..2268], year, month, "address", timestamp, hash);
                     let request = reporter::Event::Request {
                         payload: address_query,
-                        worker: self.pids.pop().unwrap(),
+                        worker: self.pids.pop().unwrap().query_id(3),
                     };
                     Ring::send_local_random_replica(rand::random::<i64>(), request);
                     // because it is a hint
@@ -193,7 +220,7 @@ impl Importer {
                         insert_to_edge_table(&txtrytes[2187..2268], "output", timestamp, hash, value, UNSET_VALUE);
                     let request = reporter::Event::Request {
                         payload: output_query,
-                        worker: self.pids.pop().unwrap(),
+                        worker: self.pids.pop().unwrap().query_id(4),
                     };
                     Ring::send_local_random_replica(rand::random::<i64>(), request);
                 }
@@ -203,7 +230,7 @@ impl Importer {
                         insert_to_edge_table(&txtrytes[2187..2268], "input", timestamp, hash, value, UNSET_VALUE);
                     let request = reporter::Event::Request {
                         payload: input_query,
-                        worker: self.pids.pop().unwrap(),
+                        worker: self.pids.pop().unwrap().query_id(5),
                     };
                     Ring::send_local_random_replica(rand::random::<i64>(), request);
                 }
@@ -212,27 +239,27 @@ impl Importer {
             let trunk_query = insert_to_edge_table(&txtrytes[2430..2511], "trunk", timestamp, hash, value, UNSET_VALUE);
             let request = reporter::Event::Request {
                 payload: trunk_query,
-                worker: self.pids.pop().unwrap(),
+                worker: self.pids.pop().unwrap().query_id(6),
             };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             let branch_query =
                 insert_to_edge_table(&txtrytes[2511..2592], "branch", timestamp, hash, value, UNSET_VALUE);
             let request = reporter::Event::Request {
                 payload: branch_query,
-                worker: self.pids.pop().unwrap(),
+                worker: self.pids.pop().unwrap().query_id(7),
             };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             let bundle_query =
                 insert_to_edge_table(&txtrytes[2349..2430], "bundle", timestamp, hash, value, UNSET_VALUE);
             let request = reporter::Event::Request {
                 payload: bundle_query,
-                worker: self.pids.pop().unwrap(),
+                worker: self.pids.pop().unwrap().query_id(8),
             };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             let tag_query = insert_to_data_table(&txtrytes[2592..2619], year, month, "tag", timestamp, hash);
             let request = reporter::Event::Request {
                 payload: tag_query,
-                worker: self.pids.pop().unwrap(),
+                worker: self.pids.pop().unwrap().query_id(9),
             };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             // process the responses for the pending queries
@@ -247,12 +274,143 @@ impl Importer {
                         }
                     }
                     Event::Error { kind, pid } => {
-                        self.pids.push(pid);
                         if self.max_retries == 0 {
+                            self.pids.push(pid);
                             return Err(Box::new(kind));
                         } else {
                             self.max_retries -= 1;
-                            todo!("retry query");
+                            // retry the specific query based on its query_id using send_global_random_replica strategy
+                            match pid.get_query_id() {
+                                1 => {
+                                    let tx_query = insert_to_tx_table(hash, txtrytes, self.milestone);
+                                    let request = reporter::Event::Request {
+                                        payload: tx_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                2 => {
+                                    let hint_query = insert_to_edge_table(
+                                        &txtrytes[2187..2268],
+                                        "hint",
+                                        0,
+                                        "0",
+                                        value,
+                                        YearMonth(year, month),
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: hint_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                3 => {
+                                    let address_query = insert_to_data_table(
+                                        &txtrytes[2187..2268],
+                                        year,
+                                        month,
+                                        "address",
+                                        timestamp,
+                                        hash,
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: address_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                4 => {
+                                    let output_query = insert_to_edge_table(
+                                        &txtrytes[2187..2268],
+                                        "output",
+                                        timestamp,
+                                        hash,
+                                        value,
+                                        UNSET_VALUE,
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: output_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                5 => {
+                                    let input_query = insert_to_edge_table(
+                                        &txtrytes[2187..2268],
+                                        "input",
+                                        timestamp,
+                                        hash,
+                                        value,
+                                        UNSET_VALUE,
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: input_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                6 => {
+                                    let trunk_query = insert_to_edge_table(
+                                        &txtrytes[2430..2511],
+                                        "trunk",
+                                        timestamp,
+                                        hash,
+                                        value,
+                                        UNSET_VALUE,
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: trunk_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                7 => {
+                                    let branch_query = insert_to_edge_table(
+                                        &txtrytes[2511..2592],
+                                        "branch",
+                                        timestamp,
+                                        hash,
+                                        value,
+                                        UNSET_VALUE,
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: branch_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                8 => {
+                                    let bundle_query = insert_to_edge_table(
+                                        &txtrytes[2349..2430],
+                                        "bundle",
+                                        timestamp,
+                                        hash,
+                                        value,
+                                        UNSET_VALUE,
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: bundle_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                9 => {
+                                    let tag_query = insert_to_data_table(
+                                        &txtrytes[2592..2619],
+                                        year,
+                                        month,
+                                        "tag",
+                                        timestamp,
+                                        hash,
+                                    );
+                                    let request = reporter::Event::Request {
+                                        payload: tag_query,
+                                        worker: pid,
+                                    };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                _ => unreachable!("invalid query_id"),
+                            }
                         }
                     }
                 };

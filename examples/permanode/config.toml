@@ -3,6 +3,13 @@
 version = "chronicle-alpha-v0.1.0"
 service = "Permanode"
 
+# logger settings
+[logger]
+color = true
+[[logger.outputs]]
+name  = "stdout"
+level = "info"
+
 # More details: https://docs.scylladb.com/getting-started/ddl/
 [scylla_cluster]
 addresses = ["172.17.0.2:9042"] # scylla docker instance
@@ -15,6 +22,8 @@ local_dc = "datacenter1"
 # [[file_path1, milestone1], [file_path2, milestone2], ...]
 [dmp_files]
 files = []
+import_only_confirmed_transactions = true
+max_retries = 1000
 
 [tokio]
 core_threads = 2 # should use even number > 2

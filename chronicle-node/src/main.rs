@@ -2,8 +2,15 @@
 use chronicle_api::api::ApiBuilder;
 use chronicle_broker::broker::BrokerBuilder;
 use chronicle_storage::storage::StorageBuilder;
-// import launcher macro
-use chronicle_common::launcher;
+// import launcher macro and logger,
+use chronicle_common::{
+    launcher,
+    logger::{
+        logger_init,
+        LoggerConfigBuilder,
+    },
+};
+use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
 use chronicle_storage::{
@@ -29,6 +36,7 @@ struct Args {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    logger: LoggerConfigBuilder,
     version: Version,
     scylla_cluster: ScyllaCluster,
     dmp_files: Option<DmpFiles>,
@@ -61,6 +69,8 @@ struct ScyllaCluster {
 #[derive(Debug, Clone, Deserialize)]
 struct DmpFiles {
     files: Option<Vec<(String, u64)>>,
+    import_only_confirmed_transactions: Option<bool>,
+    max_retries: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -123,6 +133,7 @@ fn main() {
     let args = Args::from_args();
     let config_as_string = fs::read_to_string(args.path).unwrap();
     let config: Config = toml::from_str(&config_as_string).unwrap();
+    logger_init(config.logger.clone().finish()).unwrap();
     // build tokio runtime
     let mut runtime = Builder::new()
         .threaded_scheduler()
@@ -132,7 +143,7 @@ fn main() {
         .thread_stack_size(3 * 1024 * 1024)
         .build()
         .unwrap();
-    println!("Welcome to Chronicle Permanode Alpha v0.1.0");
+    info!("Welcome to Chronicle Permanode Alpha v0.1.0");
     let apps = AppsBuilder::new().build(config);
     // run chronicle.
     runtime.block_on(async {
@@ -184,7 +195,7 @@ fn main() {
                 .await
                 .expect("failed to create data table");
             if let Some(dmp_files) = config.dmp_files {
-                import_files(dmp_files.files.unwrap()).await;
+                import_files(dmp_files).await;
             }
             apps
         })
@@ -301,18 +312,28 @@ async fn ctrl_c(mut launcher: Sender) {
     launcher.exit_program();
 }
 
-async fn import_files(mut tuples: Vec<(String, u64)>) {
-    tuples.sort_by(|a, b| b.1.cmp(&a.1));
-    for t in tuples.iter() {
+async fn import_files(dmp_files: DmpFiles) {
+    let mut files: Vec<(String, u64)> = dmp_files.files.unwrap();
+    let mut only_confirmed = false;
+    if let Some(is_only_confirmed) = dmp_files.import_only_confirmed_transactions {
+        only_confirmed = is_only_confirmed;
+    }
+    let mut max_retries = 1000;
+    if let Some(max) = dmp_files.max_retries {
+        max_retries = max;
+    }
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    for t in files.iter() {
         if let Ok(_) = ImporterBuilder::new()
             .filepath(t.0.clone())
             .milestone(t.1)
-            .max_retries(0)
+            .only_confirmed(only_confirmed)
+            .max_retries(max_retries)
             .build()
             .run()
             .await
         {
-            println!("succesfully imported: {}", t.0);
+            info!("succesfully imported: {}", t.0);
         } else {
             panic!("failed to import file: {}", t.0);
         }
