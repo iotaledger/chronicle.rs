@@ -57,7 +57,11 @@ To run Chronicle, you need the following:
 
 - 4 GB RAM
 
+- At least 32 GB of disk space
+
 - 64-bit processor
+
+- At least a 10 Gbps network connection 
 
 - At least 2 CPU cores
 
@@ -69,7 +73,7 @@ To run Chronicle, you need the following:
 
 - [Rust](https://www.rust-lang.org/tools/install)
 
-- At least one Scylla node. See the [Scylla documentation](https://docs.scylladb.com/getting-started/) for a tutorial on setting one up.
+- At least one Scylla node (version 3.0.5 or greater) running on a different device in the same private network as Chronicle. See the [Scylla documentation](https://docs.scylladb.com/getting-started/) for a tutorial on setting one up. For information about securing your Scylla nodes, see the [Scylla security documentation](https://docs.scylladb.com/operating-scylla/security/).
 
 - The `build-essentials`, `pkg-config`, and `libzmq3-dev` packages
 
@@ -136,14 +140,13 @@ To get a permanode up and running as quickly as possible, run the CLI applicatio
   ```bash
   git clone https://github.com/iotaledger/chronicle.rs.git
   cd chronicle.rs
-  cargo build
   ```
 
-2. Run the `permanode` example
+2. Run the `permanode` example. Replace the `$CONFIG` placeholder with the path to your `config.toml` file
 
   ```bash
   cd examples
-  cargo run --example permanode
+  cargo run --example permanode $CONFIG/config.toml
   ```
 
 For a complete tutorial on the permanode CLI, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.1/tutorials/run-a-permanode).
@@ -170,14 +173,9 @@ If you want to get involved in the community, need help with getting set up, hav
 - Add more test cases
 - Add more field tests
 - Allow Chronicle to solidify transactions
-<<<<<<< HEAD
-- Enable efficient transaction lookups by the `tag` field
-- Use stable published events from IOTA nodes for transaction storing
-=======
 - Implement selective permanode
 - Add dashboard web app
 - Improve framework
->>>>>>> ac526a9348e648d3e97451d9bcecc47abb7ab3b5
 
 ## LICENSE
 
