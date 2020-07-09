@@ -102,10 +102,10 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
-        //
+        // 
         // - logger
         logger_init(config.logger.clone().finish()).unwrap();
-        //
+        // 
         // - storage app:
         let storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -115,10 +115,10 @@ impl AppsBuilder {
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
-        //
+        // 
         // - api app
         let api = ApiBuilder::new().listen_address(config.api.endpoint.clone());
-        //
+        // 
         // - broker app
         let mut broker = BrokerBuilder::new();
         if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
@@ -322,7 +322,7 @@ async fn import_files(dmp_files: DmpFiles) {
     }
     files.sort_by(|a, b| a.1.cmp(&b.1));
     for t in files.iter() {
-        info!("starting to import: {}, milestone: {}",t.0,t.1);
+        info!("starting to import: {}, milestone: {}", t.0, t.1);
         if let Ok(_) = ImporterBuilder::new()
             .filepath(t.0.clone())
             .milestone(t.1)
