@@ -322,7 +322,7 @@ async fn import_files(dmp_files: DmpFiles) {
     }
     files.sort_by(|a, b| a.1.cmp(&b.1));
     for t in files.iter() {
-        info!("starting to import: {}}",t.0,t.1);
+        info!("starting to import: {}, milestone: {}",t.0,t.1);
         if let Ok(_) = ImporterBuilder::new()
             .filepath(t.0.clone())
             .milestone(t.1)
