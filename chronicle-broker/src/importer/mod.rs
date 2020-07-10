@@ -156,6 +156,9 @@ impl Importer {
         let mut line = String::new();
         // start processing the file line by line
         loop {
+            // clear the line buffer.
+            line.clear();
+            // read the line
             let line_length = reader.read_line(&mut line).await?;
             // break if EOF
             if line_length == 0 {
@@ -169,6 +172,9 @@ impl Importer {
             }
             // check whether to skip the transaction(line) if only_confirmed or not.
             if self.only_confirmed && self.milestone == 0 {
+                // update the progresss bar
+                self.processed_bytes += line_length as u64;
+                self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
                 continue;
             }
             self.pending += 6; // 1 tx_query + 5 edge_table queries
@@ -415,8 +421,6 @@ impl Importer {
                     }
                 };
             }
-            // clear line
-            line.clear();
             // update the progresss bar
             self.processed_bytes += line_length as u64;
             self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);

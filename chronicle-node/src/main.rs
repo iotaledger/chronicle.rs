@@ -147,63 +147,63 @@ fn main() {
     let apps = AppsBuilder::new().build(config);
     // run chronicle.
     runtime.block_on(async {
-        apps.function(|apps| {
-            // for instance this is helpful to spawn ctrl_c future
-            tokio::spawn(ctrl_c(apps.tx.clone()));
-        })
-        .await
-        .storage()
-        .await // start storage app
-        .api()
-        .await // start api app
-        .future(|mut apps| async {
-            let config = apps.config.take().unwrap();
-            let dashboard_websocket = format!("ws://{}/", config.storage.dashboard_websocket);
-            let scylla_nodes = config.scylla_cluster.addresses.clone();
-            let rf = config.scylla_cluster.replication_factor_per_data_center;
-            let statement_map = create_statements(config.scylla_cluster);
-            // add nodes and initialize ring
-            add_nodes(dashboard_websocket.as_str(), scylla_nodes, rf)
-                .await
-                .expect("failed to add nodes");
-            // create tangle keyspace
-            SchemaCqlBuilder::new()
-                .statement(statement_map["CREATE_KEYSPACE_QUERY"].clone())
-                .build()
-                .run()
-                .await
-                .expect("failed to create keyspace");
-            // create transaction table
-            SchemaCqlBuilder::new()
-                .statement(statement_map["CREATE_TX_TABLE_QUERY"].clone())
-                .build()
-                .run()
-                .await
-                .expect("failed to create transaction table");
-            // create edge table
-            SchemaCqlBuilder::new()
-                .statement(statement_map["CREATE_EDGE_TABLE_QUERY"].clone())
-                .build()
-                .run()
-                .await
-                .expect("failed to create edge table");
-            // create data table
-            SchemaCqlBuilder::new()
-                .statement(statement_map["CREATE_DATE_TABLE_QUERY"].clone())
-                .build()
-                .run()
-                .await
-                .expect("failed to create data table");
-            if let Some(dmp_files) = config.dmp_files {
-                import_files(dmp_files).await;
-            }
-            apps
-        })
-        .await
-        .broker()
-        .await
-        .one_for_one()
-        .await;
+        apps.storage()
+            .await // start storage app
+            .api()
+            .await // start api app
+            .future(|mut apps| async {
+                let config = apps.config.take().unwrap();
+                let dashboard_websocket = format!("ws://{}/", config.storage.dashboard_websocket);
+                let scylla_nodes = config.scylla_cluster.addresses.clone();
+                let rf = config.scylla_cluster.replication_factor_per_data_center;
+                let statement_map = create_statements(config.scylla_cluster);
+                // add nodes and initialize ring
+                add_nodes(dashboard_websocket.as_str(), scylla_nodes, rf)
+                    .await
+                    .expect("failed to add nodes");
+                // create tangle keyspace
+                SchemaCqlBuilder::new()
+                    .statement(statement_map["CREATE_KEYSPACE_QUERY"].clone())
+                    .build()
+                    .run()
+                    .await
+                    .expect("failed to create keyspace");
+                // create transaction table
+                SchemaCqlBuilder::new()
+                    .statement(statement_map["CREATE_TX_TABLE_QUERY"].clone())
+                    .build()
+                    .run()
+                    .await
+                    .expect("failed to create transaction table");
+                // create edge table
+                SchemaCqlBuilder::new()
+                    .statement(statement_map["CREATE_EDGE_TABLE_QUERY"].clone())
+                    .build()
+                    .run()
+                    .await
+                    .expect("failed to create edge table");
+                // create data table
+                SchemaCqlBuilder::new()
+                    .statement(statement_map["CREATE_DATE_TABLE_QUERY"].clone())
+                    .build()
+                    .run()
+                    .await
+                    .expect("failed to create data table");
+                if let Some(dmp_files) = config.dmp_files {
+                    import_files(dmp_files).await;
+                }
+                apps
+            })
+            .await
+            .broker()
+            .await
+            .function(|apps| {
+                // for instance this is helpful to spawn ctrl_c future
+                tokio::spawn(ctrl_c(apps.tx.clone()));
+            })
+            .await
+            .one_for_one()
+            .await;
     });
 }
 
@@ -322,8 +322,9 @@ async fn import_files(dmp_files: DmpFiles) {
     if let Some(max) = dmp_files.max_retries {
         max_retries = max;
     }
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by(|a, b| a.1.cmp(&b.1));
     for t in files.iter() {
+        info!("starting to import: {}, milestone: {}", t.0, t.1);
         if let Ok(_) = ImporterBuilder::new()
             .filepath(t.0.clone())
             .milestone(t.1)
