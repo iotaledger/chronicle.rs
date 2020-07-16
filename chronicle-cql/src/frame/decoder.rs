@@ -455,7 +455,7 @@ pub fn string(slice: &[u8]) -> String {
 
 pub fn str(slice: &[u8]) -> &str {
     let length = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
-    str::from_utf8(&slice[2..length]).unwrap()
+    str::from_utf8(&slice[2..(2 + length)]).unwrap()
 }
 
 // todo inet fn (with port).
