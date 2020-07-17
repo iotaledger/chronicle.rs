@@ -29,7 +29,10 @@ use std::{
     net::SocketAddr,
 };
 use tokio::{
-    net::TcpStream,
+    net::{
+        TcpListener,
+        TcpStream,
+    },
     sync::mpsc,
 };
 use tokio_tungstenite::{
@@ -103,7 +106,7 @@ pub enum Launcher {
 
 actor!(
     DashboardBuilder {
-        listen_address: String,
+        tcp_listener: TcpListener,
         launcher_tx: Box<dyn LauncherTx>
 });
 
@@ -112,7 +115,7 @@ impl DashboardBuilder {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Dashboard {
             launcher_tx: self.launcher_tx.unwrap(),
-            listen_address: self.listen_address.unwrap(),
+            tcp_listener: self.tcp_listener,
             listener: None,
             sockets: HashMap::new(),
             tx: Sender(tx),
@@ -124,7 +127,7 @@ impl DashboardBuilder {
 pub struct Dashboard {
     launcher_tx: Box<dyn LauncherTx>,
     listener: Option<AbortHandle>,
-    listen_address: String,
+    tcp_listener: Option<TcpListener>,
     sockets: HashMap<SocketAddr, WsTx>,
     tx: Sender,
     rx: Receiver,
@@ -134,7 +137,7 @@ impl Dashboard {
     pub async fn run(mut self, cluster_tx: supervisor::Sender) {
         // build dashboard listener
         let listener = listener::ListenerBuilder::new()
-            .listen_address(self.listen_address.clone())
+            .tcp_listener(self.tcp_listener.take().unwrap())
             .dashboard_tx(self.tx.clone())
             .build();
         // make listner abortable
@@ -142,7 +145,7 @@ impl Dashboard {
         // register listener abort_handle
         self.listener = Some(abort_handle);
         // spawn dashboard listener
-        tokio::spawn(listener::Listener::run(abortable_listener, self.clone_tx()));
+        tokio::spawn(listener::Listener::run(abortable_listener));
         // register storage/dashboard app in launcher
         self.launcher_tx
             .register_app("storage".to_string(), Box::new(Shutdown(self.clone_tx())));

@@ -58,7 +58,7 @@ impl SchemaCql {
             .build(MyCompression::get());
         // send query to the ring
         Ring::send_local_random_replica(
-            0,
+            rand::random::<i64>(),
             reporter::Event::Request {
                 worker: Box::new(SchemaCqlId(tx)),
                 payload,

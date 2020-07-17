@@ -7,6 +7,7 @@ use crate::{
     storage::helper::HelperBuilder,
 };
 use chronicle_common::app;
+use tokio::net::TcpListener;
 
 type ThreadCount = usize;
 type ReporterCount = u8;
@@ -67,10 +68,11 @@ impl Storage {
     }
     async fn init(&mut self) -> Option<dashboard::Sender> {
         let mut launcher_tx = self.launcher_tx.take().unwrap();
+        let tcp_listener = TcpListener::bind(self.listen_address.clone()).await.unwrap();
         // build dashboard
         let dashboard = dashboard::DashboardBuilder::new()
             .launcher_tx(launcher_tx.clone())
-            .listen_address(self.listen_address.clone())
+            .tcp_listener(tcp_listener)
             .build();
         // register dashboard with launcher
         launcher_tx.register_dashboard("StorageDashboard".to_string(), Box::new(dashboard.clone_tx()));

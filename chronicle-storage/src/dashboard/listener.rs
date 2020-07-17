@@ -18,14 +18,14 @@ use tokio_tungstenite::accept_async;
 // types
 
 actor!(ListenerBuilder {
-    listen_address: String,
+    tcp_listener: TcpListener,
     dashboard_tx: dashboard::Sender
 });
 
 impl ListenerBuilder {
     pub fn build(self) -> Listener {
         Listener {
-            listen_address: self.listen_address.unwrap(),
+            tcp_listener: self.tcp_listener.unwrap(),
             dashboard_tx: self.dashboard_tx.unwrap(),
         }
     }
@@ -33,24 +33,22 @@ impl ListenerBuilder {
 
 // listener state
 pub struct Listener {
-    listen_address: String,
+    tcp_listener: TcpListener,
     dashboard_tx: dashboard::Sender,
 }
 
 impl Listener {
-    pub async fn run(listener: Abortable<impl Future>, _dashboard_tx: dashboard::Sender) {
+    pub async fn run(listener: Abortable<impl Future>) {
         // await abortable_listener
         let _aborted_or_ok = listener.await;
-        // aknowledge shutdown
-        // dashboard_tx.0.send();
     }
     pub fn make_abortable(self) -> (Abortable<impl Future>, AbortHandle) {
         // make abortable_listener
         abortable(self.listener())
     }
-    async fn listener(self) {
-        if let Ok(mut listener) = TcpListener::bind(&self.listen_address).await {
-            while let Ok((socket, _)) = listener.accept().await {
+    async fn listener(mut self) {
+        loop {
+            if let Ok((socket, _)) = self.tcp_listener.accept().await {
                 let peer = socket
                     .peer_addr()
                     .expect("connected streams should have a peer address");
