@@ -33,6 +33,7 @@ dashboard_websocket = "0.0.0.0:8080"
 
 [api]
 endpoint = "0.0.0.0:4000"
+content_length = 65535
 
 [broker]
 trytes_nodes = ["tcp://zmq.iota.org:5556"]

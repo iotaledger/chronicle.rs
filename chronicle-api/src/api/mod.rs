@@ -22,10 +22,17 @@ pub mod types;
 
 use chronicle_common::app;
 use endpoint::EndpointBuilder;
-app!(ApiBuilder { listen_address: String });
+app!(ApiBuilder {
+    listen_address: String,
+    content_length: Option<u32>
+});
 
 impl ApiBuilder {
     pub fn build(self) -> Api {
+        // set content_length if provided
+        if let Some(content_length) = self.content_length.unwrap() {
+            unsafe { router::CONTENT_LENGTH = content_length };
+        };
         Api {
             listen_address: self.listen_address.unwrap(),
             launcher_tx: self.launcher_tx.unwrap(),
