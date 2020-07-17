@@ -25,6 +25,7 @@ use indicatif::{
 use std::{
     convert::TryFrom,
     error::Error,
+    thread,
     time,
 };
 use tokio::{
@@ -306,7 +307,7 @@ impl Importer {
                             );
                             let seconds = time::Duration::from_secs(self.delay as u64);
                             // sleep the importer main thread to not push any further queries to scylla
-                            tokio::time::delay_for(seconds).await;
+                            thread::sleep(seconds);
                             // retry the specific query based on its query_id using send_global_random_replica strategy
                             match pid.get_query_id() {
                                 1 => {
