@@ -17,3 +17,4 @@ bee-ternary = { git = "https://github.com/Alex6323/bee-p", rev = "6083138"}
 chrono = "0.4"
 rand = "0.7"
 async_zmq = "0.3.2"
+log = "0.4.8"

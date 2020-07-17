@@ -25,11 +25,14 @@ use indicatif::{
 use std::{
     convert::TryFrom,
     error::Error,
+    time,
 };
 use tokio::{
     fs::File,
     sync::mpsc,
 };
+
+use log::*;
 
 use chronicle_cql::{
     compression::MyCompression,
@@ -100,6 +103,7 @@ impl ImporterBuilder {
         for _ in 0..7 {
             pids.push(Box::new(ImporterId(tx.clone(), 0)));
         }
+        let max_retries = self.max_retries.unwrap();
         Importer {
             rx,
             filepath: self.filepath.unwrap(),
@@ -109,7 +113,9 @@ impl ImporterBuilder {
             pids,
             progress_bar: None,
             pending: 0,
-            max_retries: self.max_retries.unwrap(),
+            initial_max_retries: max_retries,
+            max_retries,
+            delay: 0,
         }
     }
 }
@@ -123,7 +129,9 @@ pub struct Importer {
     pids: Vec<Box<ImporterId>>,
     progress_bar: Option<ProgressBar>,
     pending: usize,
+    initial_max_retries: usize,
     max_retries: usize,
+    delay: usize,
 }
 
 impl Importer {
@@ -276,15 +284,29 @@ impl Importer {
                         self.pids.push(pid);
                         assert!(decoder.is_void());
                         if self.pending == 0 {
+                            // reset max_retries to the initial state for the next line
+                            self.max_retries = self.initial_max_retries;
+                            // reset delay to 0 seconds for the next line
+                            self.delay = 0;
                             break;
                         }
                     }
                     Event::Error { kind, pid } => {
                         if self.max_retries == 0 {
                             self.pids.push(pid);
+                            error!("Importer consumed all max_retries and unable to import the dump file");
                             return Err(Box::new(kind));
                         } else {
                             self.max_retries -= 1;
+                            // icrement the delay
+                            self.delay += 1;
+                            warn!(
+                                "Importer will sleep {} seconds before retrying, because it received: {}",
+                                self.delay, kind
+                            );
+                            let seconds = time::Duration::from_secs(self.delay as u64);
+                            // sleep the importer main thread to not push any further queries to scylla
+                            tokio::time::delay_for(seconds).await;
                             // retry the specific query based on its query_id using send_global_random_replica strategy
                             match pid.get_query_id() {
                                 1 => {
