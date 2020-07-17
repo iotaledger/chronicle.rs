@@ -86,6 +86,7 @@ struct Storage {
 #[derive(Debug, Clone, Deserialize)]
 struct Api {
     endpoint: String,
+    content_length: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -117,7 +118,9 @@ impl AppsBuilder {
             .send_buffer_size(1024000);
         // 
         // - api app
-        let api = ApiBuilder::new().listen_address(config.api.endpoint.clone());
+        let api = ApiBuilder::new()
+            .listen_address(config.api.endpoint.clone())
+            .content_length(config.api.content_length);
         // 
         // - broker app
         let mut broker = BrokerBuilder::new();
