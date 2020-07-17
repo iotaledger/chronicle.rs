@@ -23,6 +23,8 @@ use serde::{
 use serde_json::Value;
 use std::convert::Infallible;
 
+pub static mut CONTENT_LENGTH: u32 = 65535;
+
 #[derive(Deserialize, Serialize)]
 struct ReqBody {
     command: String,
@@ -45,7 +47,7 @@ pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         (Method::POST, "/api", Some(length), Some(application_json)) if application_json == "application/json" => {
             if let Ok(length_str) = length.to_str() {
                 if let Ok(length_u32) = length_str.parse::<u32>() {
-                    if length_u32 <= 16384 {
+                    if length_u32 <= unsafe { CONTENT_LENGTH } {
                         if let Ok(buffer) = aggregate(stream).await {
                             if let Ok(request) = serde_json::from_slice::<ReqBody>(buffer.bytes()) {
                                 Ok(route(request).await)
@@ -70,10 +72,13 @@ pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
                 Ok(response!(status: BAD_REQUEST, body: r#"{"error":"content-length is invalid"}"#))
             }
         }
-        _ => Ok(response!(
-            status: BAD_REQUEST,
-            body: r#"{"error":"can only POST application/json to /api where content-length <= 16384-bytes"}"#
-        )),
+        _ => {
+            let body = format!(
+                "{{\"error\":\"can only POST application/json to /api where content-length <= {}-bytes\"}}",
+                unsafe { CONTENT_LENGTH }
+            );
+            Ok(response!(status: BAD_REQUEST, body: body))
+        }
     }
 }
 
