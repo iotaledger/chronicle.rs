@@ -248,9 +248,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(
-                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')",
-                )
+                let Query(payload) = query.statement(SELECT_BY_ADDRESS_DATA_QUERY)
                 .consistency(Consistency::One)
                 .query_flags(query_flags)
                 .value_count(3)
@@ -277,9 +275,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(
-                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'",
-                )
+                let Query(payload) = query.statement(SELECT_BY_TAG_DATA_QUERY)
                 .consistency(Consistency::One)
                 .query_flags(query_flags)
                 .value_count(3)
@@ -291,6 +287,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
                 .build(MyCompression::get());
                 Some(payload)
             } else {
+                println!("consumed hint tag timeline");
                 // empty timeline or consumed
                 return None;
             }
@@ -306,9 +303,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(
-                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'",
-                )
+                let Query(payload) = query.statement(SELECT_BY_BUNDLE_DATA_QUERY)
                 .consistency(Consistency::One)
                 .query_flags(query_flags)
                 .value_count(3)
@@ -335,9 +330,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(
-                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')",
-                )
+                let Query(payload) = query.statement(SELECT_BY_APPROVEE_DATA_QUERY)
                 .consistency(Consistency::One)
                 .query_flags(query_flags)
                 .value_count(3)
@@ -349,9 +342,57 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
                 .build(MyCompression::get());
                 Some(payload)
             } else {
+                println!("consumed hint approvee timeline");
                 // empty timeline or consumed
                 return None;
             }
         }
     }
 }
+
+#[cfg(feature = "mainnet")]
+const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')";
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')";
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')";
+
+
+#[cfg(feature = "mainnet")]
+const SELECT_BY_BUNDLE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
+
+
+#[cfg(feature = "mainnet")]
+const SELECT_BY_TAG_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+const SELECT_BY_TAG_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+const SELECT_BY_TAG_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
+
+
+#[cfg(feature = "mainnet")]
+const SELECT_BY_ADDRESS_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')";
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+const SELECT_BY_ADDRESS_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')";
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+const SELECT_BY_ADDRESS_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')";

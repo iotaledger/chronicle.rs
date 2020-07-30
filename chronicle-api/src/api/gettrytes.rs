@@ -14,7 +14,6 @@ use chronicle_cql::{
         queryflags,
     },
     rows,
-    statements::SELECT_TX_QUERY,
 };
 use chronicle_storage::{
     ring::Ring,
@@ -365,3 +364,73 @@ impl TrytesDecoder for Milestone {
         // do nothing acc.milestone is already none.
     }
 }
+#[cfg(feature = "mainnet")]
+const SELECT_TX_QUERY: &str = r#"
+  SELECT
+  payload,
+  address,
+  value,
+  obsolete_tag,
+  timestamp,
+  current_index,
+  last_index,
+  bundle,
+  trunk,
+  branch,
+  tag,
+  attachment_timestamp,
+  attachment_timestamp_lower,
+  attachment_timestamp_upper,
+  nonce,
+  milestone
+  FROM mainnet.transaction
+  WHERE hash = ?;
+"#;
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+const SELECT_TX_QUERY: &str = r#"
+  SELECT
+  payload,
+  address,
+  value,
+  obsolete_tag,
+  timestamp,
+  current_index,
+  last_index,
+  bundle,
+  trunk,
+  branch,
+  tag,
+  attachment_timestamp,
+  attachment_timestamp_lower,
+  attachment_timestamp_upper,
+  nonce,
+  milestone
+  FROM devnet.transaction
+  WHERE hash = ?;
+"#;
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+const SELECT_TX_QUERY: &str = r#"
+  SELECT
+  payload,
+  address,
+  value,
+  obsolete_tag,
+  timestamp,
+  current_index,
+  last_index,
+  bundle,
+  trunk,
+  branch,
+  tag,
+  attachment_timestamp,
+  attachment_timestamp_lower,
+  attachment_timestamp_upper,
+  nonce,
+  milestone
+  FROM comnet.transaction
+  WHERE hash = ?;
+"#;

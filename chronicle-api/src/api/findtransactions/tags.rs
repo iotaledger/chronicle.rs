@@ -52,10 +52,12 @@ impl Rows for Hints {
         self
     }
     fn finalize(mut self) -> Vec<Hint> {
-        // create hint for the given tag
-        let hint = Hint::new_tag_hint(self.tag, self.timeline);
-        // push hint to the hints
-        self.hints.push(hint);
+        if self.rows_count != 0 {
+            // create hint for the given tag
+            let hint = Hint::new_tag_hint(self.tag, self.timeline);
+            // push hint to the hints
+            self.hints.push(hint);
+        }
         // return hints of the tag
         self.hints
     }
@@ -90,7 +92,7 @@ pub fn query(tag: &Trytes27) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT year, month FROM tangle.hint WHERE vertex = ? AND kind = 'tag'")
+        .statement(SELECT_BY_TAG_QUERY)
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)
@@ -98,3 +100,14 @@ pub fn query(tag: &Trytes27) -> Vec<u8> {
         .build(MyCompression::get());
     payload
 }
+
+#[cfg(feature = "mainnet")]
+const SELECT_BY_TAG_QUERY: &str = "SELECT year, month FROM mainnet.hint WHERE vertex = ? AND kind = 'tag'";
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+const SELECT_BY_TAG_QUERY: &str = "SELECT year, month FROM devnet.hint WHERE vertex = ? AND kind = 'tag'";
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+const SELECT_BY_TAG_QUERY: &str = "SELECT year, month FROM comnet.hint WHERE vertex = ? AND kind = 'tag'";

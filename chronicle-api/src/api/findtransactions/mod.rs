@@ -93,6 +93,14 @@ pub struct ResTransactions {
     hints: Option<Vec<Hint>>,
 }
 
+impl ResTransactions {
+    fn new(hints: Vec<Hint>) -> Self {
+        let mut res_txs = ResTransactions::default();
+        res_txs.hints.replace(hints);
+        res_txs
+    }
+}
+
 impl FindTransactions {
     pub async fn run(self) -> Response<Body> {
         match self.process().await {
@@ -107,8 +115,9 @@ impl FindTransactions {
         self.process_tags().await?;
         // take whatever hints we did found
         let mut hints = self.hints.take().unwrap();
+        let res_txs = ResTransactions::new(Vec::new());
         // move the hints to be processed and return empty_hints and the computed res_txs
-        let (mut empty_hints_buffer, mut res_txs) = self.process_hints(hints, ResTransactions::default()).await?;
+        let (mut empty_hints_buffer, mut res_txs) = self.process_hints(hints, res_txs).await?;
         // force min hashes length to be returned to the user.
         while (res_txs.hashes.len() < 1000) && !res_txs.hints.as_ref().unwrap().is_empty() {
             // take hints
@@ -150,7 +159,7 @@ impl FindTransactions {
                                     .finalize();
                                 break;
                             } else {
-                                error!("{:?}", decoder.get_error());
+                                error!("bundle: {:?}", decoder.get_error());
                                 // it's for future impl to be used with execute
                                 if decoder.is_unprepared() {
                                     // retry using normal query
@@ -176,6 +185,8 @@ impl FindTransactions {
         }
         // update hints
         self.hints.replace(hints);
+        // update worker
+        self.worker.replace(worker);
         // return ok
         Ok(())
     }
@@ -205,7 +216,8 @@ impl FindTransactions {
                                     .finalize();
                                 break;
                             } else {
-                                error!("{:?}", decoder.get_error());
+
+                                error!("tag: {:?}", decoder.get_error());
                                 // it's for future impl to be used with execute
                                 if decoder.is_unprepared() {
                                     // retry using normal query
@@ -228,6 +240,8 @@ impl FindTransactions {
         }
         // update hints
         self.hints.replace(hints);
+        // update worker
+        self.worker.replace(worker);
         // return ok
         Ok(())
     }
@@ -257,7 +271,7 @@ impl FindTransactions {
                                     .finalize();
                                 break;
                             } else {
-                                error!("{:?}", decoder.get_error());
+                                error!("approvee: {:?}", decoder.get_error());
                                 // it's for future impl to be used with execute
                                 if decoder.is_unprepared() {
                                     // retry using normal query
@@ -280,6 +294,8 @@ impl FindTransactions {
         }
         // update hints
         self.hints.replace(hints);
+        // update worker
+        self.worker.replace(worker);
         // return ok
         Ok(())
     }
@@ -309,7 +325,7 @@ impl FindTransactions {
                                     .finalize();
                                 break;
                             } else {
-                                error!("{:?}", decoder.get_error());
+                                error!("address: {:?}", decoder.get_error());
                                 // it's for future impl to be used with execute
                                 if decoder.is_unprepared() {
                                     // retry using normal query
@@ -332,6 +348,8 @@ impl FindTransactions {
         }
         // update hints
         self.hints.replace(hints);
+        // update worker
+        self.worker.replace(worker);
         // return ok
         Ok(())
     }
@@ -360,6 +378,7 @@ impl FindTransactions {
                                 res_txs = hints::ResTxs::new(decoder, hint, res_txs).decode().finalize();
                                 break;
                             } else {
+                                error!("hint: {:?}", decoder.get_error());
                                 // it's for future impl to be used with execute
                                 if decoder.is_unprepared() {
                                     // retry using normal query
@@ -385,6 +404,8 @@ impl FindTransactions {
                 // we skip this hint for the meantime.
             }
         }
+        // update worker
+        self.worker.replace(worker);
         // return empty hints to be used as buffer in case we didn't satisify the min page size.
         Ok((hints, res_txs))
     }

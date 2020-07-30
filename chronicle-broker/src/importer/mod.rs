@@ -264,7 +264,7 @@ impl Importer {
                 (tag, TAG ,TAG, 10),
             ];
             // presist by address
-            let payload = insert_to_hint_table(trytes.address(), "address", year, month);
+            let payload = insert_to_hint_table(trytes.address(), "address", year, month, Milestone::new(self.milestone));
             let request = reporter::Event::Request {
                 payload,
                 worker: self.pids.pop().unwrap().query_id(2),
@@ -287,7 +287,7 @@ impl Importer {
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             // presist remaining queries
             for (vertex, hint_kind, data_kind, query_id) in &itr {
-                let payload = insert_to_hint_table(vertex, hint_kind, year, month);
+                let payload = insert_to_hint_table(vertex, hint_kind, year, month, Milestone::new(self.milestone));
                 let request = reporter::Event::Request {
                     payload,
                     worker: self.pids.pop().unwrap().query_id(*query_id),
@@ -309,6 +309,7 @@ impl Importer {
                 };
                 Ring::send_local_random_replica(rand::random::<i64>(), request);
             }
+            self.pending += 11;
             // process the responses for the pending queries
             while let Some(event) = self.rx.recv().await {
                 match event {
@@ -348,7 +349,7 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 2 => {
-                                    let payload = insert_to_hint_table(trytes.address(), address_kind, year, month);
+                                    let payload = insert_to_hint_table(trytes.address(), address_kind, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_local_random_replica(rand::random::<i64>(), request);
                                 }
@@ -367,7 +368,7 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 4 => {
-                                    let payload = insert_to_hint_table(trytes.trunk(), APPROVEE, year, month);
+                                    let payload = insert_to_hint_table(trytes.trunk(), APPROVEE, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -386,7 +387,7 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 6 => {
-                                    let payload = insert_to_hint_table(trytes.branch(), APPROVEE, year, month);
+                                    let payload = insert_to_hint_table(trytes.branch(), APPROVEE, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -405,7 +406,7 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 8 => {
-                                    let payload = insert_to_hint_table(trytes.bundle(), BUNDLE, year, month);
+                                    let payload = insert_to_hint_table(trytes.bundle(), BUNDLE, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -424,7 +425,7 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 10 => {
-                                    let payload = insert_to_hint_table(tag, TAG, year, month);
+                                    let payload = insert_to_hint_table(tag, TAG, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -469,6 +470,7 @@ impl worker::Worker for ImporterId {
             let event;
             if decoder.is_error() {
                 let error = decoder.get_error();
+                warn!("decoder error: {:?}",error);
                 event = Event::Error {
                     kind: worker::Error::Cql(error),
                     pid,
@@ -523,7 +525,7 @@ pub fn insert_to_tx_table(hash: &str, trytes: &Trytes, milestone: impl ColumnEnc
 }
 
 /// Create insert(index) cql query in hint table
-pub fn insert_to_hint_table(vertex: &str, kind: &str, year: u16, month: u8) -> Vec<u8> {
+pub fn insert_to_hint_table(vertex: &str, kind: &str, year: u16, month: u8, milestone: impl ColumnEncoder) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
@@ -533,11 +535,12 @@ pub fn insert_to_hint_table(vertex: &str, kind: &str, year: u16, month: u8) -> V
         .statement(INSERT_TANGLE_HINT_STATMENT)
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
-        .value_count(4) // the total value count
+        .value_count(5) // the total value count
         .value(vertex) // vertex
         .value(kind) // kind
         .value(year) // year
         .value(month) // month
+        .value(milestone) // milestone
         .build(MyCompression::get());
     payload
 }
@@ -677,20 +680,22 @@ pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
     vertex,
     kind,
     year,
-    month
-) VALUES (?,?,?,?);
+    month,
+    milestone
+) VALUES (?,?,?,?,?);
 "#;
 
 #[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainet"))]
+#[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "comnet"))]
 pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
   INSERT INTO devnet.hint (
     vertex,
     kind,
     year,
-    month
-) VALUES (?,?,?,?);
+    month,
+    milestone
+) VALUES (?,?,?,?,?);
 "#;
 #[cfg(feature = "comnet")]
 #[cfg(not(feature = "mainnet"))]
@@ -700,8 +705,9 @@ pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
     vertex,
     kind,
     year,
-    month
-) VALUES (?,?,?,?);
+    month,
+    milestone
+) VALUES (?,?,?,?,?);
 "#;
 //-------------------------------------
 #[cfg(feature = "mainnet")]
@@ -715,7 +721,7 @@ pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
     tx,
     value,
     milestone
-) VALUES (?,?,?,?,?,?,?,?,?);
+) VALUES (?,?,?,?,?,?,?,?);
 "#;
 #[cfg(feature = "devnet")]
 #[cfg(not(feature = "mainnet"))]
@@ -730,7 +736,7 @@ pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
     tx,
     value,
     milestone
-) VALUES (?,?,?,?,?,?,?,?,?);
+) VALUES (?,?,?,?,?,?,?,?);
 "#;
 
 #[cfg(feature = "comnet")]
@@ -746,5 +752,5 @@ pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
     tx,
     value,
     milestone
-) VALUES (?,?,?,?,?,?,?,?,?);
+) VALUES (?,?,?,?,?,?,?,?);
 "#;

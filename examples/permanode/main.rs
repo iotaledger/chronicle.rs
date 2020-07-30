@@ -141,6 +141,7 @@ fn main() {
         .threaded_scheduler()
         .core_threads(config.tokio.core_threads)
         .enable_io()
+        .enable_time()
         .thread_name("chronicle")
         .thread_stack_size(3 * 1024 * 1024)
         .build()
@@ -212,9 +213,9 @@ fn main() {
 fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     #[cfg(feature = "mainnet")]
     let keyspace_name = "mainnet";
-    #[cfg(feature = "devnet")]
+    #[cfg(feature = "devnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "comnet"))]
     let keyspace_name = "devnet";
-    #[cfg(feature = "comnet")]
+    #[cfg(feature = "comnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "devnet"))]
     let keyspace_name = "comnet";
     let mut statement_map: HashMap<String, String> = HashMap::new();
     let mut create_tx_table_statement = String::new();
@@ -239,7 +240,7 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     write!(
         &mut create_tx_table_statement,
         "CREATE TABLE IF NOT EXISTS {}.transaction (
-            hash blob,
+            hash varchar,
             payload varchar,
             address varchar,
             value varchar,
@@ -269,7 +270,7 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
             kind varchar,
             year smallint,
             month tinyint,
-            any_confirmed boolean,
+            milestone bigint,
             PRIMARY KEY(vertex, kind, year, month)
         ) WITH CLUSTERING ORDER BY (kind DESC, year DESC, month DESC);",
         keyspace_name

@@ -4,7 +4,10 @@ use super::{
         FindTransactionsBuilder,
     },
     gettrytes::GetTrytesBuilder,
-    types::Trytes81,
+    types::{
+        Trytes81,
+        Trytes27,
+    },
 };
 use hyper::{
     body::{
@@ -32,6 +35,7 @@ struct ReqBody {
     hashes: Option<Vec<Trytes81>>,
     bundles: Option<Vec<Trytes81>>,
     addresses: Option<Vec<Trytes81>>,
+    tags: Option<Vec<Trytes27>>,
     hints: Option<Vec<Hint>>,
     approvees: Option<Vec<Trytes81>>,
 }
@@ -102,6 +106,7 @@ async fn route(request: ReqBody) -> Response<Body> {
         "findTransactions" => {
             FindTransactionsBuilder::new()
                 .addresses(request.addresses)
+                .tags(request.tags)
                 .approvees(request.approvees)
                 .bundles(request.bundles)
                 .hints(request.hints)

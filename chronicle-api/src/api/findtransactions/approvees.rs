@@ -51,10 +51,12 @@ impl Rows for Hints {
         self
     }
     fn finalize(mut self) -> Vec<Hint> {
-        // create hint for the given approvee
-        let hint = Hint::new_approvee_hint(self.approvee, self.timeline);
-        // push hint to the hints
-        self.hints.push(hint);
+        if self.rows_count != 0 {
+            // create hint for the given approvee
+            let hint = Hint::new_approvee_hint(self.approvee, self.timeline);
+            // push hint to the hints
+            self.hints.push(hint);
+        }
         // return hints of the approvee
         self.hints
     }
@@ -82,19 +84,30 @@ impl ApproveesDecoder for Month {
 
 // ----------- encoding scope -----------
 
-/// Create a query frame to lookup for tx-hashes in the edge table using an approve
-pub fn query(approve: &Trytes81) -> Vec<u8> {
+/// Create a query frame to lookup for tx-hashes in the edge table using an approvee
+pub fn query(approvee: &Trytes81) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT year, month FROM tangle.hint WHERE vertex = ? AND kind = 'approvee'")
+        .statement(SELECT_BY_APPROVEE_QUERY)
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)
-        .value(approve)
+        .value(approvee)
         .build(MyCompression::get());
     payload
 }
+
+#[cfg(feature = "mainnet")]
+const SELECT_BY_APPROVEE_QUERY: &str = "SELECT year, month FROM mainnet.hint WHERE vertex = ? AND kind = 'approvee'";
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+const SELECT_BY_APPROVEE_QUERY: &str = "SELECT year, month FROM devnet.hint WHERE vertex = ? AND kind = 'approvee'";
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+const SELECT_BY_APPROVEE_QUERY: &str = "SELECT year, month FROM comnet.hint WHERE vertex = ? AND kind = 'approvee'";
