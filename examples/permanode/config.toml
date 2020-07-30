@@ -13,7 +13,6 @@ level = "info"
 # More details: https://docs.scylladb.com/getting-started/ddl/
 [scylla_cluster]
 addresses = ["172.17.0.2:9042"] # scylla docker instance
-keyspace_name = "tangle"
 replication_factor_per_data_center = 1
 data_centers = ["datacenter1"]
 local_dc = "datacenter1"
@@ -36,5 +35,5 @@ endpoint = "0.0.0.0:4000"
 content_length = 65535
 
 [broker]
-trytes_nodes = ["tcp://zmq.iota.org:5556"]
-sn_trytes_nodes = ["tcp://zmq.iota.org:5556"]
+trytes_nodes = []
+sn_trytes_nodes = []

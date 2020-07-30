@@ -7,6 +7,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+pub type Milestones = Vec<Option<u64>>;
 #[derive(Copy, Clone)]
 pub struct Trytes81(pub [u8; 81]);
 pub const BE_81_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 81];
@@ -53,6 +54,13 @@ impl<'de> Deserialize<'de> for Trytes81 {
 }
 
 impl ColumnEncoder for &Trytes81 {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&BE_81_BYTES_LENGTH);
+        buffer.extend(&self.0[..]);
+    }
+}
+
+impl ColumnEncoder for &mut Trytes81 {
     fn encode(&self, buffer: &mut Vec<u8>) {
         buffer.extend(&BE_81_BYTES_LENGTH);
         buffer.extend(&self.0[..]);
@@ -109,6 +117,13 @@ impl<'de> Deserialize<'de> for Trytes27 {
             }
         }
         deserializer.deserialize_str(Visitor)
+    }
+}
+
+impl ColumnEncoder for &mut Trytes27 {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        buffer.extend(&BE_27_BYTES_LENGTH);
+        buffer.extend(&self.0[..]);
     }
 }
 

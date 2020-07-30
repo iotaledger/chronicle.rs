@@ -1,4 +1,4 @@
-use super::zmq;
+use super::mqtt;
 use chronicle_common::{
     actor,
     traits::{
@@ -30,11 +30,15 @@ impl ShutdownTx for Shutdown {
 }
 
 pub struct Peer {
+    id: usize,
     topic: Topic,
     address: String,
     connected: bool,
 }
 impl Peer {
+    pub fn get_id(&self) -> usize {
+        self.id
+    }
     pub fn get_address<'a>(&'a self) -> &'a str {
         &self.address
     }
@@ -51,16 +55,14 @@ impl Peer {
 
 #[derive(Clone, Copy)]
 pub enum Topic {
-    Sn,
     Trytes,
-    SnTrytes,
+    ConfTrytes,
 }
 impl ToString for Topic {
     fn to_string(&self) -> String {
         match self {
-            Topic::Sn => "sn".to_owned(),
             Topic::Trytes => "trytes".to_owned(),
-            Topic::SnTrytes => "sn_trytes".to_owned(),
+            Topic::ConfTrytes => "conf_trytes".to_owned(),
         }
     }
 }
@@ -68,20 +70,11 @@ impl ToString for Topic {
 impl SupervisorBuilder {
     pub fn build(self) -> Supervisor {
         let mut peers = Vec::new();
-        // create peers from sn nodes (if any)
-        if let Some(mut addresses) = self.sn.unwrap().take() {
-            for address in addresses.drain(..) {
-                peers.push(Peer {
-                    topic: Topic::Sn,
-                    address,
-                    connected: false,
-                })
-            }
-        }
         // create peers from trytes nodes (if any)
         if let Some(mut addresses) = self.trytes.unwrap().take() {
             for address in addresses.drain(..) {
                 peers.push(Peer {
+                    id: rand::random(),
                     topic: Topic::Trytes,
                     address,
                     connected: false,
@@ -92,7 +85,8 @@ impl SupervisorBuilder {
         if let Some(mut addresses) = self.sn_trytes.unwrap().take() {
             for address in addresses.drain(..) {
                 peers.push(Peer {
-                    topic: Topic::SnTrytes,
+                    id: rand::random(),
+                    topic: Topic::ConfTrytes,
                     address,
                     connected: false,
                 })
@@ -117,8 +111,11 @@ pub struct Supervisor {
 impl Supervisor {
     pub async fn run(mut self) {
         for peer in self.peers {
-            let zmq_worker = zmq::ZmqBuilder::new().peer(peer).supervisor_tx(self.tx.clone()).build();
-            tokio::spawn(zmq_worker.run());
+            let mqtt_worker = mqtt::MqttBuilder::new()
+                .peer(peer)
+                .supervisor_tx(self.tx.clone())
+                .build();
+            tokio::spawn(mqtt_worker.run());
         }
         // register broker app with launcher
         self.launcher_tx

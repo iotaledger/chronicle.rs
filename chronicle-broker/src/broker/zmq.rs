@@ -124,9 +124,10 @@ impl Zmq {
                             unreachable!("unexepcted error: bug {:?}", msgs);
                         }
                     }
+                    println!("trytes bot");
                 }
                 // this topic used to store confirmed transactions only
-                Topic::SnTrytes => {
+                Topic::ConfTrytes => {
                     while let Some(msgs) = zmq.next().await {
                         if let Ok(msgs) = msgs {
                             for msg in msgs {
@@ -138,26 +139,6 @@ impl Zmq {
                                     Err(_error) => {
                                         // as trytes topic
                                     }
-                                }
-                            }
-                        } else if let Err(RecvError::Interrupted) = msgs {
-                            // we assume is retryable
-                            continue;
-                        } else {
-                            unreachable!("unexepcted error: bug {:?}", msgs);
-                        }
-                    }
-                }
-                // this topic used to upsert milestone column in transaction table (confirmed status)
-                Topic::Sn => {
-                    while let Some(msgs) = zmq.next().await {
-                        if let Ok(msgs) = msgs {
-                            // ignore if msg is sn_trytes
-                            for msg in msgs {
-                                if msg.as_ref()[2] == b' ' {
-                                    // process sn msg
-                                    // self.handle_sn(&msg);
-                                    todo!();
                                 }
                             }
                         } else if let Err(RecvError::Interrupted) = msgs {
@@ -186,13 +167,13 @@ impl Zmq {
     fn handle_trytes(&mut self, msg: Message) {
         self.pending += 6;
         let msg = msg.as_str().unwrap();
-        let trytes = &msg[7..2680];
+        let trytes = importer::trytes::Trytes::new(&msg[7..2680]);
         let hash = &msg[2681..2762];
-        self.send_insert_tx_query(hash, trytes, UNSET_VALUE);
+        self.send_insert_tx_query(hash, trytes.trytes(), UNSET_VALUE);
         // extract the transaction value
-        let value = importer::trytes_to_i64(&trytes[2268..2295]);
+        let value = importer::trytes_to_i64(trytes.value());
         // extract the timestamp
-        let timestamp = importer::trytes_to_i64(&trytes[2322..2331]);
+        let timestamp = importer::trytes_to_i64(trytes.timestamp());
         // get the SystemTime now to generate YearMonth
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -204,14 +185,14 @@ impl Zmq {
         // create queries related to the transaction value
         match value {
             0 => {
-                let vertex = &trytes[2187..2268];
+                let vertex = trytes.address();
                 let extra = importer::YearMonth::new(year, month);
                 self.send_insert_edge_query(vertex, "hint", 0, "0", value, extra);
                 self.send_insert_data_query(vertex, year, month, "address", timestamp, hash);
                 self.pending += 1;
             }
             v if v > 0 => {
-                self.send_insert_edge_query(&trytes[2187..2268], "output", timestamp, hash, value, UNSET_VALUE);
+                self.send_insert_edge_query(&trytes.address(), "output", timestamp, hash, value, UNSET_VALUE);
             }
             _ => {
                 self.send_insert_edge_query(&trytes[2187..2268], "input", timestamp, hash, value, UNSET_VALUE);
@@ -247,7 +228,7 @@ impl Zmq {
             0 => {
                 let vertex = &trytes[2187..2268];
                 let extra = importer::YearMonth::new(year, month);
-                self.send_insert_edge_query(vertex, "hint", 0, "0", value, extra);
+                self.send_insert_edge_query(vertex, "hint", 2020, "0", value, extra);
                 self.send_insert_data_query(vertex, year, month, "address", timestamp, hash);
                 self.pending += 1;
             }
@@ -263,12 +244,6 @@ impl Zmq {
         self.send_insert_edge_query(&trytes[2511..2592], "branch", timestamp, hash, value, UNSET_VALUE);
         self.send_insert_edge_query(&trytes[2349..2430], "bundle", timestamp, hash, value, UNSET_VALUE);
         self.send_insert_data_query(&trytes[2592..2619], year, month, "tag", timestamp, hash);
-    }
-    #[allow(dead_code)]
-    fn handle_sn(&mut self, _msg: &Message) {
-        // let msg = &msg.as_str().unwrap()[..msg.len() - 328];
-        // todo!
-        todo!();
     }
 
     async fn aknoweledge_responses(&mut self) -> Result<(), worker::Error> {

@@ -1,4 +1,4 @@
-use crate::api::types::Trytes81;
+use crate::api::types::Trytes27;
 use chronicle_cql::{
     compression::MyCompression,
     frame::{
@@ -28,12 +28,12 @@ use super::{
 
 // ----------- decoding scope -----------
 rows!(
-    rows: Hints {address: Trytes81, year: u16, month: u8, timeline: VecDeque<YearMonth>, hints: Vec<Hint>},
+    rows: Hints {tag: Trytes27, year: u16, month: u8, timeline: VecDeque<YearMonth>, hints: Vec<Hint>},
     row: Row(
         Year,
         Month
     ),
-    column_decoder: AddressesDecoder
+    column_decoder: TagsDecoder
 );
 
 pub trait Rows {
@@ -46,22 +46,22 @@ impl Rows for Hints {
         while let Some(_) = self.next() {
             // after each row we create the hint
             let year_month = YearMonth::new(self.year, self.month);
-            // push_back the year_month to the timeline of the address hint
+            // push_back the year_month to the timeline of the tag hint
             self.timeline.push_back(year_month);
         }
         self
     }
     fn finalize(mut self) -> Vec<Hint> {
-        // create hint for the given address
-        let hint = Hint::new_address_hint(self.address, self.timeline);
+        // create hint for the given tag
+        let hint = Hint::new_tag_hint(self.tag, self.timeline);
         // push hint to the hints
         self.hints.push(hint);
-        // return hints of the address
+        // return hints of the tag
         self.hints
     }
 }
 
-impl AddressesDecoder for Year {
+impl TagsDecoder for Year {
     fn decode_column(start: usize, length: i32, acc: &mut Hints) {
         // decode year
         acc.year = u16::decode(&acc.buffer()[start..], length as usize);
@@ -71,7 +71,7 @@ impl AddressesDecoder for Year {
     }
 }
 
-impl AddressesDecoder for Month {
+impl TagsDecoder for Month {
     fn decode_column(start: usize, length: i32, acc: &mut Hints) {
         // decode month
         acc.month = u8::decode(&acc.buffer()[start..], length as usize);
@@ -83,18 +83,18 @@ impl AddressesDecoder for Month {
 
 // ----------- encoding scope -----------
 
-pub fn query(address: &Trytes81) -> Vec<u8> {
+pub fn query(tag: &Trytes27) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT year, month FROM tangle.hint WHERE vertex = ? AND kind = 'address'")
+        .statement("SELECT year, month FROM tangle.hint WHERE vertex = ? AND kind = 'tag'")
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)
-        .value(address)
+        .value(tag)
         .build(MyCompression::get());
     payload
 }

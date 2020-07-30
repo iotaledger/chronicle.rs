@@ -16,5 +16,11 @@ indicatif = "0.14"
 bee-ternary = { git = "https://github.com/Alex6323/bee-p", rev = "6083138"}
 chrono = "0.4"
 rand = "0.7"
-async_zmq = "0.3.2"
+paho-mqtt = { git = "https://github.com/eclipse/paho.mqtt.rust", branch = "master", default-features = false, features = ["bundled"]}
 log = "0.4.8"
+
+[features]
+default = []
+mainnet = []
+devnet = []
+comnet = []

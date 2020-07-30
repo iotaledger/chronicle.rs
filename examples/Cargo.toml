@@ -34,3 +34,9 @@ path = "broker/main.rs"
 [[example]]
 name = "permanode"
 path = "permanode/main.rs"
+
+[features]
+default = []
+mainnet = ["chronicle-broker/mainnet"]
+devnet = ["chronicle-broker/devnet"]
+comnet = ["chronicle-broker/comnet"]

@@ -1,5 +1,5 @@
+pub mod mqtt;
 pub mod supervisor;
-pub mod zmq;
 
 use chronicle_common::app;
 app!(BrokerBuilder { trytes: Vec<String>, sn_trytes: Vec<String>, sn: Vec<String> });

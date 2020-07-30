@@ -1,4 +1,5 @@
 // TODO compute token to enable shard_awareness.
+pub mod trytes;
 use bee_ternary::{
     t1b1::T1B1Buf,
     TritBuf,
@@ -25,13 +26,14 @@ use indicatif::{
 use std::{
     convert::TryFrom,
     error::Error,
-    thread,
     time,
 };
 use tokio::{
     fs::File,
     sync::mpsc,
+    time::delay_for,
 };
+use trytes::Trytes;
 
 use log::*;
 
@@ -56,20 +58,22 @@ use tokio::io::{
     AsyncBufReadExt,
     BufReader,
 };
-const BE_3_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 3];
+
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
-pub struct YearMonth(u16, u8);
-impl YearMonth {
-    pub fn new(year: u16, month: u8) -> Self {
-        YearMonth(year, month)
+struct Milestone(u64);
+impl Milestone {
+    pub fn new(index: u64) -> Self {
+        Milestone(index)
     }
 }
-impl chronicle_cql::frame::encoder::ColumnEncoder for YearMonth {
+impl chronicle_cql::frame::encoder::ColumnEncoder for Milestone {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        buffer.extend(&BE_3_BYTES_LENGTH);
-        buffer.extend(&u16::to_be_bytes(self.0));
-        buffer.push(self.1);
+        if self.0 != 0 {
+            u64::encode(&self.0, buffer);
+        } else {
+            chronicle_cql::frame::encoder::UNSET_VALUE.encode(buffer);
+        }
     }
 }
 
@@ -100,8 +104,8 @@ impl ImporterBuilder {
     pub fn build(self) -> Importer {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let mut pids = Vec::new();
-        // create 7 pids in advance to enable us to send 6 concurrent queries without the cost for heap-reallocation
-        for _ in 0..7 {
+        // create some pids in advance to enable us to send concurrent queries without the cost for heap-reallocation
+        for _ in 0..11 {
             pids.push(Box::new(ImporterId(tx.clone(), 0)));
         }
         let max_retries = self.max_retries.unwrap();
@@ -174,7 +178,7 @@ impl Importer {
                 break;
             }
             let hash = &line[..81];
-            let txtrytes = &line[82..2755];
+            let trytes = Trytes::new(&line[82..2755]);
             // check if milestone is in the line
             if line_length > 2756 {
                 self.milestone = line[2756..(line_length - 1)].parse::<u64>().unwrap();
@@ -186,97 +190,125 @@ impl Importer {
                 self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
                 continue;
             }
-            self.pending += 6; // 1 tx_query + 5 edge_table queries
-            let tx_query = insert_to_tx_table(hash, txtrytes, self.milestone);
+            // timestamp in ms
+            let timestamp_ms;
+            // select obsolete_tag if try_attachment_timestamp is_false;
+            let tag;
+            // confirm the timestamp in seconds and attachment_timestamp(if any) is in ms
+            if try_attachment_timestamp {
+                tag = trytes.tag();
+                let attachment_timestamp = trytes_to_i64(trytes.atch_timestamp());
+                if attachment_timestamp > 0 {
+                    let digits = count_digit(attachment_timestamp);
+                    if digits == 13 {
+                        timestamp_ms = attachment_timestamp;
+                    } else {
+                        // invalid attachment_timestamp therefore we skip the transaction
+                        // update the progresss bar
+                        self.processed_bytes += line_length as u64;
+                        self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
+                        continue;
+                    }
+                } else {
+                    // use timestamp
+                    let timestamp = trytes_to_i64(trytes.timestamp());
+                    let digits = count_digit(timestamp);
+                    if digits == 10 && timestamp > 0 {
+                        timestamp_ms = timestamp * 1000;
+                    } else {
+                        // invalid timestamp
+                        // update the progresss bar
+                        self.processed_bytes += line_length as u64;
+                        self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
+                        continue;
+                    }
+                }
+            } else {
+                // use obsolete_tag
+                tag = trytes.obsolete_tag();
+                // use timestamp
+                let timestamp = trytes_to_i64(trytes.timestamp());
+                let digits = count_digit(timestamp);
+                if digits == 10 && timestamp > 0 {
+                    timestamp_ms = timestamp * 1000;
+                } else {
+                    // invalid timestamp
+                    // update the progresss bar
+                    self.processed_bytes += line_length as u64;
+                    self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
+                    continue;
+                }
+            }
+            let naive = NaiveDateTime::from_timestamp(timestamp_ms / 1000, 0);
+            let year = naive.year() as u16;
+            let month = naive.month() as u8;
+            // ----------- transaction table query ---------------
+            let payload = insert_to_tx_table(hash, &trytes, Milestone::new(self.milestone));
             let request = reporter::Event::Request {
-                payload: tx_query,
+                payload,
                 worker: self.pids.pop().unwrap().query_id(1),
             };
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             // extract the transaction value
-            let value = trytes_to_i64(&txtrytes[2268..2295]);
-            // extract the timestamp and year, month
-            let timestamp = trytes_to_i64(&txtrytes[2322..2331]);
-            let mut naive = NaiveDateTime::from_timestamp(timestamp, 0);
-            let mut year = naive.year() as u16;
-            let mut month = naive.month() as u8;
-            if try_attachment_timestamp {
-                let attachment_timestamp = trytes_to_i64(&txtrytes[2619..2628]);
-                if attachment_timestamp != 0 {
-                    naive = NaiveDateTime::from_timestamp(attachment_timestamp, 0);
-                    year = naive.year() as u16;
-                    month = naive.month() as u8
-                }
+            let value = trytes_to_i64(trytes.value());
+            let address_kind;
+            if value < 0 {
+                address_kind = INPUT
+            } else {
+                address_kind = OUTPUT
             }
-            // create queries related to the transaction value
-            match value {
-                0 => {
-                    // create insert hint queries
-                    let hint_query =
-                        insert_to_edge_table(&txtrytes[2187..2268], "hint", 0, "0", value, YearMonth(year, month));
-                    let request = reporter::Event::Request {
-                        payload: hint_query,
-                        worker: self.pids.pop().unwrap().query_id(2),
-                    };
-                    Ring::send_local_random_replica(rand::random::<i64>(), request);
-                    let address_query =
-                        insert_to_data_table(&txtrytes[2187..2268], year, month, "address", timestamp, hash);
-                    let request = reporter::Event::Request {
-                        payload: address_query,
-                        worker: self.pids.pop().unwrap().query_id(3),
-                    };
-                    Ring::send_local_random_replica(rand::random::<i64>(), request);
-                    // because it is a hint
-                    self.pending += 1;
-                }
-                v if v > 0 => {
-                    // create insert output query
-                    let output_query =
-                        insert_to_edge_table(&txtrytes[2187..2268], "output", timestamp, hash, value, UNSET_VALUE);
-                    let request = reporter::Event::Request {
-                        payload: output_query,
-                        worker: self.pids.pop().unwrap().query_id(4),
-                    };
-                    Ring::send_local_random_replica(rand::random::<i64>(), request);
-                }
-                _ => {
-                    // create insert input query
-                    let input_query =
-                        insert_to_edge_table(&txtrytes[2187..2268], "input", timestamp, hash, value, UNSET_VALUE);
-                    let request = reporter::Event::Request {
-                        payload: input_query,
-                        worker: self.pids.pop().unwrap().query_id(5),
-                    };
-                    Ring::send_local_random_replica(rand::random::<i64>(), request);
-                }
+            let itr: [(&str, &str, &str, u8); 4] = [
+                (trytes.trunk(), APPROVEE, TRUNK, 4),
+                (trytes.branch(), APPROVEE, BRANCH, 6),
+                (trytes.bundle(), BUNDLE, BUNDLE, 8),
+                (tag, TAG ,TAG, 10),
+            ];
+            // presist by address
+            let payload = insert_to_hint_table(trytes.address(), "address", year, month);
+            let request = reporter::Event::Request {
+                payload,
+                worker: self.pids.pop().unwrap().query_id(2),
+            };
+            Ring::send_local_random_replica(rand::random::<i64>(), request);
+            let payload = insert_to_data_table(
+                trytes.address(),
+                year,
+                month,
+                address_kind,
+                timestamp_ms,
+                hash,
+                value,
+                Milestone::new(self.milestone),
+            );
+            let request = reporter::Event::Request {
+                payload,
+                worker: self.pids.pop().unwrap().query_id(3),
+            };
+            Ring::send_local_random_replica(rand::random::<i64>(), request);
+            // presist remaining queries
+            for (vertex, hint_kind, data_kind, query_id) in &itr {
+                let payload = insert_to_hint_table(vertex, hint_kind, year, month);
+                let request = reporter::Event::Request {
+                    payload,
+                    worker: self.pids.pop().unwrap().query_id(*query_id),
+                };
+                Ring::send_local_random_replica(rand::random::<i64>(), request);
+                let payload = insert_to_data_table(
+                    vertex,
+                    year,
+                    month,
+                    data_kind,
+                    timestamp_ms,
+                    hash,
+                    value,
+                    Milestone::new(self.milestone),
+                );
+                let request = reporter::Event::Request {
+                    payload,
+                    worker: self.pids.pop().unwrap().query_id(query_id + 1),
+                };
+                Ring::send_local_random_replica(rand::random::<i64>(), request);
             }
-            // insert queries not related to the transaction value
-            let trunk_query = insert_to_edge_table(&txtrytes[2430..2511], "trunk", timestamp, hash, value, UNSET_VALUE);
-            let request = reporter::Event::Request {
-                payload: trunk_query,
-                worker: self.pids.pop().unwrap().query_id(6),
-            };
-            Ring::send_local_random_replica(rand::random::<i64>(), request);
-            let branch_query =
-                insert_to_edge_table(&txtrytes[2511..2592], "branch", timestamp, hash, value, UNSET_VALUE);
-            let request = reporter::Event::Request {
-                payload: branch_query,
-                worker: self.pids.pop().unwrap().query_id(7),
-            };
-            Ring::send_local_random_replica(rand::random::<i64>(), request);
-            let bundle_query =
-                insert_to_edge_table(&txtrytes[2349..2430], "bundle", timestamp, hash, value, UNSET_VALUE);
-            let request = reporter::Event::Request {
-                payload: bundle_query,
-                worker: self.pids.pop().unwrap().query_id(8),
-            };
-            Ring::send_local_random_replica(rand::random::<i64>(), request);
-            let tag_query = insert_to_data_table(&txtrytes[2592..2619], year, month, "tag", timestamp, hash);
-            let request = reporter::Event::Request {
-                payload: tag_query,
-                worker: self.pids.pop().unwrap().query_id(9),
-            };
-            Ring::send_local_random_replica(rand::random::<i64>(), request);
             // process the responses for the pending queries
             while let Some(event) = self.rx.recv().await {
                 match event {
@@ -306,136 +338,108 @@ impl Importer {
                                 self.delay, kind
                             );
                             let seconds = time::Duration::from_secs(self.delay as u64);
-                            // sleep the importer main thread to not push any further queries to scylla
-                            thread::sleep(seconds);
+                            // sleep the importer to not push any further queries to scylla
+                            delay_for(seconds).await;
                             // retry the specific query based on its query_id using send_global_random_replica strategy
                             match pid.get_query_id() {
                                 1 => {
-                                    let tx_query = insert_to_tx_table(hash, txtrytes, self.milestone);
-                                    let request = reporter::Event::Request {
-                                        payload: tx_query,
-                                        worker: pid,
-                                    };
+                                    let payload = insert_to_tx_table(hash, &trytes, Milestone::new(self.milestone));
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 2 => {
-                                    let hint_query = insert_to_edge_table(
-                                        &txtrytes[2187..2268],
-                                        "hint",
-                                        0,
-                                        "0",
-                                        value,
-                                        YearMonth(year, month),
-                                    );
-                                    let request = reporter::Event::Request {
-                                        payload: hint_query,
-                                        worker: pid,
-                                    };
-                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                    let payload = insert_to_hint_table(trytes.address(), address_kind, year, month);
+                                    let request = reporter::Event::Request { payload, worker: pid };
+                                    Ring::send_local_random_replica(rand::random::<i64>(), request);
                                 }
                                 3 => {
-                                    let address_query = insert_to_data_table(
-                                        &txtrytes[2187..2268],
+                                    let payload = insert_to_data_table(
+                                        trytes.address(),
                                         year,
                                         month,
-                                        "address",
-                                        timestamp,
+                                        ADDRESS,
+                                        timestamp_ms,
                                         hash,
+                                        value,
+                                        Milestone::new(self.milestone),
                                     );
-                                    let request = reporter::Event::Request {
-                                        payload: address_query,
-                                        worker: pid,
-                                    };
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 4 => {
-                                    let output_query = insert_to_edge_table(
-                                        &txtrytes[2187..2268],
-                                        "output",
-                                        timestamp,
-                                        hash,
-                                        value,
-                                        UNSET_VALUE,
-                                    );
-                                    let request = reporter::Event::Request {
-                                        payload: output_query,
-                                        worker: pid,
-                                    };
+                                    let payload = insert_to_hint_table(trytes.trunk(), APPROVEE, year, month);
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 5 => {
-                                    let input_query = insert_to_edge_table(
-                                        &txtrytes[2187..2268],
-                                        "input",
-                                        timestamp,
+                                    let payload = insert_to_data_table(
+                                        trytes.trunk(),
+                                        year,
+                                        month,
+                                        TRUNK,
+                                        timestamp_ms,
                                         hash,
                                         value,
-                                        UNSET_VALUE,
+                                        Milestone::new(self.milestone),
                                     );
-                                    let request = reporter::Event::Request {
-                                        payload: input_query,
-                                        worker: pid,
-                                    };
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 6 => {
-                                    let trunk_query = insert_to_edge_table(
-                                        &txtrytes[2430..2511],
-                                        "trunk",
-                                        timestamp,
-                                        hash,
-                                        value,
-                                        UNSET_VALUE,
-                                    );
-                                    let request = reporter::Event::Request {
-                                        payload: trunk_query,
-                                        worker: pid,
-                                    };
+                                    let payload = insert_to_hint_table(trytes.branch(), APPROVEE, year, month);
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 7 => {
-                                    let branch_query = insert_to_edge_table(
-                                        &txtrytes[2511..2592],
-                                        "branch",
-                                        timestamp,
+                                    let payload = insert_to_data_table(
+                                        trytes.branch(),
+                                        year,
+                                        month,
+                                        BRANCH,
+                                        timestamp_ms,
                                         hash,
                                         value,
-                                        UNSET_VALUE,
+                                        Milestone::new(self.milestone),
                                     );
-                                    let request = reporter::Event::Request {
-                                        payload: branch_query,
-                                        worker: pid,
-                                    };
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 8 => {
-                                    let bundle_query = insert_to_edge_table(
-                                        &txtrytes[2349..2430],
-                                        "bundle",
-                                        timestamp,
-                                        hash,
-                                        value,
-                                        UNSET_VALUE,
-                                    );
-                                    let request = reporter::Event::Request {
-                                        payload: bundle_query,
-                                        worker: pid,
-                                    };
+                                    let payload = insert_to_hint_table(trytes.bundle(), BUNDLE, year, month);
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 9 => {
-                                    let tag_query = insert_to_data_table(
-                                        &txtrytes[2592..2619],
+                                    let payload = insert_to_data_table(
+                                        trytes.bundle(),
                                         year,
                                         month,
-                                        "tag",
-                                        timestamp,
+                                        BUNDLE,
+                                        timestamp_ms,
                                         hash,
+                                        value,
+                                        Milestone::new(self.milestone),
                                     );
-                                    let request = reporter::Event::Request {
-                                        payload: tag_query,
-                                        worker: pid,
-                                    };
+                                    let request = reporter::Event::Request { payload, worker: pid };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                10 => {
+                                    let payload = insert_to_hint_table(tag, TAG, year, month);
+                                    let request = reporter::Event::Request { payload, worker: pid };
+                                    Ring::send_global_random_replica(rand::random::<i64>(), request);
+                                }
+                                11 => {
+                                    let payload = insert_to_data_table(
+                                        tag,
+                                        year,
+                                        month,
+                                        TAG,
+                                        timestamp_ms,
+                                        hash,
+                                        value,
+                                        Milestone::new(self.milestone),
+                                    );
+                                    let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 _ => unreachable!("invalid query_id"),
@@ -486,7 +490,7 @@ impl worker::Worker for ImporterId {
 }
 
 /// Create insert cql query in transaction table
-pub fn insert_to_tx_table(hash: &str, txtrytes: &str, milestone: impl ColumnEncoder) -> Vec<u8> {
+pub fn insert_to_tx_table(hash: &str, trytes: &Trytes, milestone: impl ColumnEncoder) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
@@ -498,56 +502,57 @@ pub fn insert_to_tx_table(hash: &str, txtrytes: &str, milestone: impl ColumnEnco
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(17) // the total value count
         .value(hash)
-        .value(&txtrytes[..2187]) // PAYLOAD
-        .value(&txtrytes[2187..2268]) // ADDRESS
-        .value(&txtrytes[2268..2295]) // VALUE
-        .value(&txtrytes[2295..2322]) // OBSOLETE_TAG
-        .value(&txtrytes[2322..2331]) // TIMESTAMP
-        .value(&txtrytes[2331..2340]) // CURRENT_IDX
-        .value(&txtrytes[2340..2349]) // LAST_IDX
-        .value(&txtrytes[2349..2430]) // BUNDLE_HASH
-        .value(&txtrytes[2430..2511]) // TRUNK
-        .value(&txtrytes[2511..2592]) // BRANCH
-        .value(&txtrytes[2592..2619]) // TAG
-        .value(&txtrytes[2619..2628]) // ATCH_TIMESTAMP
-        .value(&txtrytes[2628..2637]) // ATCH_TIMESTAMP_LOWER
-        .value(&txtrytes[2637..2646]) // ATCH_TIMESTAMP_UPPER
-        .value(&txtrytes[2646..2673]) // Nonce
+        .value(trytes.payload()) // PAYLOAD
+        .value(trytes.address()) // ADDRESS
+        .value(trytes.value()) // VALUE
+        .value(trytes.obsolete_tag()) // OBSOLETE_TAG
+        .value(trytes.timestamp()) // TIMESTAMP
+        .value(trytes.current_index()) // CURRENT_IDX
+        .value(trytes.last_index()) // LAST_IDX
+        .value(trytes.bundle()) // BUNDLE_HASH
+        .value(trytes.trunk()) // TRUNK
+        .value(trytes.branch()) // BRANCH
+        .value(trytes.tag()) // TAG
+        .value(trytes.atch_timestamp()) // ATCH_TIMESTAMP
+        .value(trytes.atch_timestamp_lower()) // ATCH_TIMESTAMP_LOWER
+        .value(trytes.atch_timestamp_upper()) // ATCH_TIMESTAMP_UPPER
+        .value(trytes.nonce()) // Nonce
         .value(milestone) // milestone
         .build(MyCompression::get());
     payload
 }
 
-/// Create insert(index) cql query in edge table
-pub fn insert_to_edge_table(
-    vertex: &str,
-    kind: &str,
-    timestamp: i64,
-    tx: &str,
-    value: i64,
-    extra: impl ColumnEncoder,
-) -> Vec<u8> {
+/// Create insert(index) cql query in hint table
+pub fn insert_to_hint_table(vertex: &str, kind: &str, year: u16, month: u8) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
         .stream(0)
         .opcode()
         .length()
-        .statement(INSERT_TANGLE_EDGE_STATMENT)
+        .statement(INSERT_TANGLE_HINT_STATMENT)
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
-        .value_count(6) // the total value count
+        .value_count(4) // the total value count
         .value(vertex) // vertex
         .value(kind) // kind
-        .value(timestamp) // timestamp
-        .value(tx) // tx-hash
-        .value(value) // value
-        .value(extra) // extra
+        .value(year) // year
+        .value(month) // month
         .build(MyCompression::get());
     payload
 }
+
 /// Create insert(index) cql query in data table
-pub fn insert_to_data_table(vertex: &str, year: u16, month: u8, kind: &str, timestamp: i64, tx: &str) -> Vec<u8> {
+pub fn insert_to_data_table(
+    vertex: &str,
+    year: u16,
+    month: u8,
+    kind: &str,
+    timestamp: i64,
+    tx: &str,
+    value: i64,
+    milestone: impl ColumnEncoder,
+) -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
@@ -557,13 +562,15 @@ pub fn insert_to_data_table(vertex: &str, year: u16, month: u8, kind: &str, time
         .statement(INSERT_TANGLE_DATA_STATMENT)
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
-        .value_count(6) // the total value count
+        .value_count(8) // the total value count
         .value(vertex) // vertex
         .value(year)
         .value(month)
         .value(kind) // kind
         .value(timestamp) // timestamp
-        .value(tx) // tx-hash
+        .value(tx) // hash
+        .value(value) // value
+        .value(milestone) // milestone | unset
         .build(MyCompression::get());
     payload
 }
@@ -574,8 +581,29 @@ pub fn trytes_to_i64(slice: &str) -> i64 {
     let trit_buf: TritBuf<T1B1Buf> = trytes.unwrap().as_trits().encode();
     i64::try_from(trit_buf).unwrap()
 }
+
+fn count_digit(mut timestamp: i64) -> usize {
+    let mut count = 0;
+    while timestamp != 0 {
+        count += 1;
+        timestamp /= 10;
+    }
+    count
+}
+// kind consts
+pub const ADDRESS: &str = "address";
+pub const INPUT: &str = "input";
+pub const OUTPUT: &str = "output";
+pub const APPROVEE: &str = "approvee";
+pub const TRUNK: &str = "trunk";
+pub const BRANCH: &str = "branch";
+pub const BUNDLE: &str = "bundle";
+pub const TAG: &str = "tag";
+
+// statements consts
+#[cfg(feature = "mainnet")]
 pub const INSERT_TANGLE_TX_QUERY: &str = r#"
-  INSERT INTO tangle.transaction (
+  INSERT INTO mainnet.transaction (
     hash,
     payload,
     address,
@@ -596,24 +624,127 @@ pub const INSERT_TANGLE_TX_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
-pub const INSERT_TANGLE_EDGE_STATMENT: &str = r#"
-  INSERT INTO tangle.edge (
-    vertex,
-    kind,
-    timestamp,
-    tx,
+#[cfg(feature = "devnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "comnet"))]
+pub const INSERT_TANGLE_TX_QUERY: &str = r#"
+  INSERT INTO devnet.transaction (
+    hash,
+    payload,
+    address,
     value,
-    extra
-) VALUES (?,?,?,?,?,?);
+    obsolete_tag,
+    timestamp,
+    current_index,
+    last_index,
+    bundle,
+    trunk,
+    branch,
+    tag,
+    attachment_timestamp,
+    attachment_timestamp_lower,
+    attachment_timestamp_upper,
+    nonce,
+    milestone
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
+#[cfg(feature = "comnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "devnet"))]
+pub const INSERT_TANGLE_TX_QUERY: &str = r#"
+  INSERT INTO comnet.transaction (
+    hash,
+    payload,
+    address,
+    value,
+    obsolete_tag,
+    timestamp,
+    current_index,
+    last_index,
+    bundle,
+    trunk,
+    branch,
+    tag,
+    attachment_timestamp,
+    attachment_timestamp_lower,
+    attachment_timestamp_upper,
+    nonce,
+    milestone
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+"#;
+
+//-------------------------------------
+#[cfg(feature = "mainnet")]
+pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
+  INSERT INTO mainnet.hint (
+    vertex,
+    kind,
+    year,
+    month
+) VALUES (?,?,?,?);
+"#;
+
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainet"))]
+#[cfg(not(feature = "comnet"))]
+pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
+  INSERT INTO devnet.hint (
+    vertex,
+    kind,
+    year,
+    month
+) VALUES (?,?,?,?);
+"#;
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
+pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
+  INSERT INTO comnet.hint (
+    vertex,
+    kind,
+    year,
+    month
+) VALUES (?,?,?,?);
+"#;
+//-------------------------------------
+#[cfg(feature = "mainnet")]
 pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
-  INSERT INTO tangle.data (
+  INSERT INTO mainnet.data (
     vertex,
     year,
     month,
     kind,
     timestamp,
-    tx
-) VALUES (?,?,?,?,?,?);
+    tx,
+    value,
+    milestone
+) VALUES (?,?,?,?,?,?,?,?,?);
+"#;
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
+pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
+  INSERT INTO devnet.data (
+    vertex,
+    year,
+    month,
+    kind,
+    timestamp,
+    tx,
+    value,
+    milestone
+) VALUES (?,?,?,?,?,?,?,?,?);
+"#;
+
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "devnet"))]
+#[cfg(not(feature = "mainnet"))]
+pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
+  INSERT INTO comnet.data (
+    vertex,
+    year,
+    month,
+    kind,
+    timestamp,
+    tx,
+    value,
+    milestone
+) VALUES (?,?,?,?,?,?,?,?,?);
 "#;

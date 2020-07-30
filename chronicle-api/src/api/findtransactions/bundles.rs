@@ -1,3 +1,10 @@
+use super::{
+    hints::{
+        Hint,
+        YearMonth,
+    },
+    VecDeque,
+};
 use crate::api::types::Trytes81;
 use chronicle_cql::{
     compression::MyCompression,
@@ -20,35 +27,55 @@ use chronicle_cql::{
 
 // ----------- decoding scope -----------
 rows!(
-    rows: Hashes {hashes: Vec<Trytes81>},
+    rows: Hints {bundle: Trytes81, year: u16, month: u8, timeline: VecDeque<YearMonth>, hints: Vec<Hint>},
     row: Row(
-        Hash
+        Year,
+        Month
     ),
     column_decoder: BundlesDecoder
 );
 
 pub trait Rows {
     fn decode(self) -> Self;
-    fn finalize(self) -> Vec<Trytes81>;
+    fn finalize(self) -> Vec<Hint>;
 }
 
-impl Rows for Hashes {
+impl Rows for Hints {
     fn decode(mut self) -> Self {
-        while let Some(_) = self.next() {}
+        while let Some(_) = self.next() {
+            // after each row we create the hint
+            let year_month = YearMonth::new(self.year, self.month);
+            // push the year_month to the timeline of the bundle hint
+            self.timeline.push_back(year_month);
+        }
         self
     }
-    fn finalize(self) -> Vec<Trytes81> {
-        self.hashes
+    fn finalize(mut self) -> Vec<Hint> {
+        // create hint for the given bundle
+        let hint = Hint::new_bundle_hint(self.bundle, self.timeline);
+        // push hint to the hints
+        self.hints.push(hint);
+        // return hints of the bundle
+        self.hints
     }
 }
-// implementation to decode the columns in order to form the hash eventually
-impl BundlesDecoder for Hash {
-    fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
-        // decode transaction hash
-        let hash = Trytes81::decode(&acc.buffer()[start..], length as usize);
-        acc.hashes.push(hash);
+
+impl BundlesDecoder for Year {
+    fn decode_column(start: usize, length: i32, acc: &mut Hints) {
+        // decode year
+        acc.year = u16::decode(&acc.buffer()[start..], length as usize);
     }
-    fn handle_null(_: &mut Hashes) {
+    fn handle_null(_: &mut Hints) {
+        unreachable!()
+    }
+}
+
+impl BundlesDecoder for Month {
+    fn decode_column(start: usize, length: i32, acc: &mut Hints) {
+        // decode month
+        acc.month = u8::decode(&acc.buffer()[start..], length as usize);
+    }
+    fn handle_null(_: &mut Hints) {
         unreachable!()
     }
 }
@@ -63,7 +90,8 @@ pub fn query(bundle: &Trytes81) -> Vec<u8> {
         .stream(0)
         .opcode()
         .length()
-        .statement("SELECT tx FROM tangle.edge WHERE vertex = ? AND kind = 'bundle'")
+        // todo enable --feature to change statements
+        .statement("SELECT year, month FROM tangle.hint WHERE vertex = ? AND kind = 'bundle'")
         .consistency(Consistency::One)
         .query_flags(SKIP_METADATA | VALUES)
         .value_count(1)

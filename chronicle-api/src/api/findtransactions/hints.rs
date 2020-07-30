@@ -1,3 +1,7 @@
+use super::{
+    ResTransactions,
+    VecDeque,
+};
 use crate::api::types::{
     Trytes27,
     Trytes81,
@@ -26,71 +30,108 @@ use serde::{
     Deserialize,
     Serialize,
 };
+#[derive(Deserialize, Serialize, Clone)]
+pub struct YearMonth {
+    year: u16,
+    month: u8,
+}
+
+impl YearMonth {
+    pub fn new(year: u16, month: u8) -> Self {
+        Self { year, month }
+    }
+    fn year(&self) -> u16 {
+        self.year
+    }
+    fn month(&self) -> u8 {
+        self.month
+    }
+}
 
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 pub enum Hint {
     Address {
         address: Trytes81,
-        year: u16,
-        month: u8,
+        timeline: VecDeque<YearMonth>,
         paging_state: Option<Vec<u8>>,
+        page_size: Option<u16>,
     },
     Tag {
         tag: Trytes27,
-        year: u16,
-        month: u8,
+        timeline: VecDeque<YearMonth>,
         paging_state: Option<Vec<u8>>,
+        page_size: Option<u16>,
+    },
+    Bundle {
+        bundle: Trytes81,
+        timeline: VecDeque<YearMonth>,
+        paging_state: Option<Vec<u8>>,
+        page_size: Option<u16>,
+    },
+    Approvee {
+        approvee: Trytes81,
+        timeline: VecDeque<YearMonth>,
+        paging_state: Option<Vec<u8>>,
+        page_size: Option<u16>,
     },
 }
 
 impl Hint {
-    pub fn new_address_hint(address: Trytes81, paging_state: Option<Vec<u8>>, year: u16, month: u8) -> Self {
+    pub fn new_address_hint(address: Trytes81, timeline: VecDeque<YearMonth>) -> Self {
         Self::Address {
             address,
-            paging_state,
-            year,
-            month,
+            timeline,
+            paging_state: None,
+            page_size: None,
         }
     }
-    pub fn get_vertex(&self) -> &[u8] {
-        match self {
-            Self::Address { address, .. } => &address.0,
-            Self::Tag { tag, .. } => &tag.0,
+    pub fn new_bundle_hint(bundle: Trytes81, timeline: VecDeque<YearMonth>) -> Self {
+        Self::Bundle {
+            bundle,
+            timeline,
+            paging_state: None,
+            page_size: None,
         }
     }
-    pub fn take_paging_state(&mut self) -> Option<Vec<u8>> {
-        match self {
-            Self::Address { paging_state, .. } => paging_state.take(),
-            Self::Tag { paging_state, .. } => paging_state.take(),
+    pub fn new_approvee_hint(approvee: Trytes81, timeline: VecDeque<YearMonth>) -> Self {
+        Self::Approvee {
+            approvee,
+            timeline,
+            paging_state: None,
+            page_size: None,
         }
     }
-    pub fn replace_paging_state(&mut self, pgs: Vec<u8>) {
+    pub fn new_tag_hint(tag: Trytes27, timeline: VecDeque<YearMonth>) -> Self {
+        Self::Tag {
+            tag,
+            timeline,
+            paging_state: None,
+            page_size: None,
+        }
+    }
+    pub fn get_mut_timeline(&mut self) -> &mut VecDeque<YearMonth> {
         match self {
-            Self::Address { paging_state, .. } => {
-                paging_state.replace(pgs);
+            Hint::Address { timeline, .. } => timeline,
+            Hint::Tag { timeline, .. } => timeline,
+            Hint::Approvee { timeline, .. } => timeline,
+            Hint::Bundle { timeline, .. } => timeline,
+        }
+    }
+    pub fn replace_paging_state(&mut self, pg_state: Vec<u8>) {
+        match self {
+            Hint::Address { paging_state, .. } => {
+                paging_state.replace(pg_state);
             }
-            Self::Tag { paging_state, .. } => {
-                paging_state.replace(pgs);
+            Hint::Tag { paging_state, .. } => {
+                paging_state.replace(pg_state);
             }
-        }
-    }
-    pub fn is_paging_state_some(&self) -> bool {
-        match self {
-            Self::Address { paging_state, .. } => paging_state.is_some(),
-            Self::Tag { paging_state, .. } => paging_state.is_some(),
-        }
-    }
-    pub fn year(&self) -> u16 {
-        match self {
-            Self::Address { year, .. } => *year,
-            Self::Tag { year, .. } => *year,
-        }
-    }
-    pub fn month(&self) -> u8 {
-        match self {
-            Self::Address { month, .. } => *month,
-            Self::Tag { month, .. } => *month,
+            Hint::Approvee { paging_state, .. } => {
+                paging_state.replace(pg_state);
+            }
+            Hint::Bundle { paging_state, .. } => {
+                paging_state.replace(pg_state);
+            }
         }
     }
 }
@@ -98,72 +139,219 @@ impl Hint {
 // ----------- decoding scope -----------
 
 rows!(
-    rows: Hashes {
-        hashes: Vec<Trytes81>,
-        hints: Vec<Hint>,
-        hint: Hint
+    rows: ResTxs {
+        hint: Hint,
+        res_txs: ResTransactions
     },
     row: Row(
-        Tx
+        Timestamp,
+        Tx,
+        Value,
+        Milestone
     ),
     column_decoder: HintsDecoder
 );
 
 pub trait Rows {
     fn decode(self) -> Self;
-    fn finalize(self) -> (Vec<Trytes81>, Vec<Hint>);
+    fn finalize(self) -> ResTransactions;
 }
 
-impl Rows for Hashes {
+impl Rows for ResTxs {
     fn decode(mut self) -> Self {
         while let Some(_) = self.next() {}
         self
     }
-    fn finalize(mut self) -> (Vec<Trytes81>, Vec<Hint>) {
-        // if there is paging_state then we return hint to the user, to used for further API calls
+    fn finalize(mut self) -> ResTransactions {
+        // if there is paging_state then we return hint to the user, to be used for further API calls
         if let Some(paging_state) = self.metadata.take_paging_state() {
             self.hint.replace_paging_state(paging_state);
-            self.hints.push(self.hint);
+            // push hint
+            self.res_txs.hints.as_mut().unwrap().push(self.hint);
+        } else {
+            // no paging_state indicates the need to consume(front_pop) from the timeline
+            let timeline = self.hint.get_mut_timeline();
+            timeline.pop_front();
+            // if timeline become empty we consider it consumed and not return it in res_txs result
+            if !timeline.is_empty() {
+                // hint is not consumed yet, therefore we return it to res_txs
+                self.res_txs.hints.as_mut().unwrap().push(self.hint);
+            }
         }
-        (self.hashes, self.hints)
+        self.res_txs
+    }
+}
+
+impl HintsDecoder for Timestamp {
+    fn decode_column(start: usize, length: i32, acc: &mut ResTxs) {
+        // decode timestamp
+        let timestamp = u64::decode(&acc.buffer()[start..], length as usize);
+        acc.res_txs.timestamps.push(timestamp);
+    }
+    fn handle_null(_: &mut ResTxs) {
+        unreachable!()
     }
 }
 
 impl HintsDecoder for Tx {
-    fn decode_column(start: usize, length: i32, acc: &mut Hashes) {
+    fn decode_column(start: usize, length: i32, acc: &mut ResTxs) {
         // decode transaction hash
         let hash = Trytes81::decode(&acc.buffer()[start..], length as usize);
-        acc.hashes.push(hash);
+        acc.res_txs.hashes.push(hash);
     }
-    fn handle_null(_: &mut Hashes) {
+    fn handle_null(_: &mut ResTxs) {
         unreachable!()
+    }
+}
+
+impl HintsDecoder for Value {
+    fn decode_column(start: usize, length: i32, acc: &mut ResTxs) {
+        // decode value
+        let value = i64::decode(&acc.buffer()[start..], length as usize);
+        acc.res_txs.values.push(value);
+    }
+    fn handle_null(_: &mut ResTxs) {
+        unreachable!()
+    }
+}
+
+impl HintsDecoder for Milestone {
+    fn decode_column(start: usize, length: i32, acc: &mut ResTxs) {
+        // decode milestone
+        let milestone = u64::decode(&acc.buffer()[start..], length as usize);
+        acc.res_txs.milestones.push(Some(milestone));
+    }
+    fn handle_null(acc: &mut ResTxs) {
+        acc.res_txs.milestones.push(None);
     }
 }
 
 // ----------- encoding scope -----------
 
-pub fn query(hint: &mut Hint) -> Vec<u8> {
+pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
     let mut query_flags = SKIP_METADATA | VALUES | PAGE_SIZE;
-    if hint.is_paging_state_some() {
-        query_flags |= PAGING_STATE;
-    }
-    let Query(payload) = Query::new()
+    let query = Query::new()
         .version()
         .flags(MyCompression::flag())
         .stream(0)
         .opcode()
-        .length()
-        .statement(
-            "SELECT tx FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('address','tag')",
-        )
-        .consistency(Consistency::One)
-        .query_flags(query_flags)
-        .value_count(3)
-        .value(hint.get_vertex()) // it might be tag or address
-        .value(hint.year())
-        .value(hint.month())
-        .page_size(255 as i32)
-        .paging_state(&hint.take_paging_state())
-        .build(MyCompression::get());
-    payload
+        .length();
+    match hint {
+        Hint::Address {
+            address,
+            timeline,
+            paging_state,
+            page_size,
+        } => {
+            if paging_state.is_some() {
+                query_flags |= PAGING_STATE;
+            }
+            if let Some(year_month) = timeline.get(0) {
+                // timeline still active or new;
+                let Query(payload) = query.statement(
+                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')",
+                )
+                .consistency(Consistency::One)
+                .query_flags(query_flags)
+                .value_count(3)
+                .value(address) // it might be tag or address
+                .value(year_month.year())
+                .value(year_month.month())
+                .page_size(page_size.unwrap_or(5000) as i32)
+                .paging_state(&paging_state.take())
+                .build(MyCompression::get());
+                Some(payload)
+            } else {
+                // empty timeline or consumed
+                return None;
+            }
+        }
+        Hint::Tag {
+            tag,
+            timeline,
+            paging_state,
+            page_size,
+        } => {
+            if paging_state.is_some() {
+                query_flags |= PAGING_STATE;
+            }
+            if let Some(year_month) = timeline.get(0) {
+                // timeline still active or new;
+                let Query(payload) = query.statement(
+                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'",
+                )
+                .consistency(Consistency::One)
+                .query_flags(query_flags)
+                .value_count(3)
+                .value(tag) // it might be tag or address
+                .value(year_month.year())
+                .value(year_month.month())
+                .page_size(page_size.unwrap_or(5000) as i32)
+                .paging_state(&paging_state.take())
+                .build(MyCompression::get());
+                Some(payload)
+            } else {
+                // empty timeline or consumed
+                return None;
+            }
+        }
+        Hint::Bundle {
+            bundle,
+            timeline,
+            paging_state,
+            page_size,
+        } => {
+            if paging_state.is_some() {
+                query_flags |= PAGING_STATE;
+            }
+            if let Some(year_month) = timeline.get(0) {
+                // timeline still active or new;
+                let Query(payload) = query.statement(
+                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'",
+                )
+                .consistency(Consistency::One)
+                .query_flags(query_flags)
+                .value_count(3)
+                .value(bundle) // it might be tag or address
+                .value(year_month.year())
+                .value(year_month.month())
+                .page_size(page_size.unwrap_or(5000) as i32)
+                .paging_state(&paging_state.take())
+                .build(MyCompression::get());
+                Some(payload)
+            } else {
+                // empty timeline or consumed
+                return None;
+            }
+        }
+        Hint::Approvee {
+            approvee,
+            timeline,
+            paging_state,
+            page_size,
+        } => {
+            if paging_state.is_some() {
+                query_flags |= PAGING_STATE;
+            }
+            if let Some(year_month) = timeline.get(0) {
+                // timeline still active or new;
+                let Query(payload) = query.statement(
+                    "SELECT timestamp, tx, value, milestone FROM tangle.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')",
+                )
+                .consistency(Consistency::One)
+                .query_flags(query_flags)
+                .value_count(3)
+                .value(approvee) // it might be tag or address
+                .value(year_month.year())
+                .value(year_month.month())
+                .page_size(page_size.unwrap_or(5000) as i32)
+                .paging_state(&paging_state.take())
+                .build(MyCompression::get());
+                Some(payload)
+            } else {
+                // empty timeline or consumed
+                return None;
+            }
+        }
+    }
 }

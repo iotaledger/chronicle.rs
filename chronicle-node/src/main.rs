@@ -60,7 +60,6 @@ enum Service {
 #[derive(Debug, Clone, Deserialize)]
 struct ScyllaCluster {
     addresses: Vec<String>,
-    keyspace_name: String,
     replication_factor_per_data_center: u8,
     data_centers: Vec<String>,
     local_dc: String,
@@ -103,7 +102,7 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
-        // 
+        //
         // - storage app:
         let storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -113,12 +112,12 @@ impl AppsBuilder {
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
-        // 
+        //
         // - api app
         let api = ApiBuilder::new()
             .listen_address(config.api.endpoint.clone())
             .content_length(config.api.content_length);
-        // 
+        //
         // - broker app
         let mut broker = BrokerBuilder::new();
         if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
@@ -180,7 +179,7 @@ fn main() {
                     .expect("failed to create transaction table");
                 // create edge table
                 SchemaCqlBuilder::new()
-                    .statement(statement_map["CREATE_EDGE_TABLE_QUERY"].clone())
+                    .statement(statement_map["CREATE_HINT_TABLE_QUERY"].clone())
                     .build()
                     .run()
                     .await
@@ -211,10 +210,15 @@ fn main() {
 }
 
 fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
-    let keyspace_name = scylla_cluster.keyspace_name;
+    #[cfg(feature = "mainnet")]
+    let keyspace_name = "mainnet";
+    #[cfg(feature = "devnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "comnet"))]
+    let keyspace_name = "devnet";
+    #[cfg(feature = "comnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "devnet"))]
+    let keyspace_name = "comnet";
     let mut statement_map: HashMap<String, String> = HashMap::new();
     let mut create_tx_table_statement = String::new();
-    let mut create_edge_table_statement = String::new();
+    let mut create_hint_table_statement = String::new();
     let mut create_data_table_statement = String::new();
     let mut create_key_space_statement = String::from("CREATE KEYSPACE IF NOT EXISTS ");
     create_key_space_statement.push_str(&keyspace_name);
@@ -235,39 +239,39 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     write!(
         &mut create_tx_table_statement,
         "CREATE TABLE IF NOT EXISTS {}.transaction (
-            hash blob PRIMARY KEY,
-            payload blob,
-            address blob,
-            value blob,
-            obsolete_tag blob,
-            timestamp blob,
-            current_index blob,
-            last_index blob,
-            bundle blob,
-            trunk blob,
-            branch blob,
-            tag blob,
-            attachment_timestamp blob,
-            attachment_timestamp_lower blob,
-            attachment_timestamp_upper blob,
-            nonce blob,
+            hash blob,
+            payload varchar,
+            address varchar,
+            value varchar,
+            obsolete_tag varchar,
+            timestamp varchar,
+            current_index varchar,
+            last_index varchar,
+            bundle varchar,
+            trunk varchar,
+            branch varchar,
+            tag varchar,
+            attachment_timestamp varchar,
+            attachment_timestamp_lower varchar,
+            attachment_timestamp_upper varchar,
+            nonce varchar,
             milestone bigint,
+            PRIMARY KEY(hash, payload, address, value, obsolete_tag, timestamp, current_index, last_index, bundle, trunk, branch, tag, attachment_timestamp,attachment_timestamp_lower,attachment_timestamp_upper, nonce)
           );",
         keyspace_name
     )
     .unwrap();
 
     write!(
-        &mut create_edge_table_statement,
-        "CREATE TABLE IF NOT EXISTS {}.edge (
-            vertex blob,
-            kind text,
-            timestamp bigint,
-            tx blob,
-            value bigint,
-            extra blob,
-            PRIMARY KEY(vertex, kind, timestamp, tx)
-          );",
+        &mut create_hint_table_statement,
+        "CREATE TABLE IF NOT EXISTS {}.hint (
+            vertex varchar,
+            kind varchar,
+            year smallint,
+            month tinyint,
+            any_confirmed boolean,
+            PRIMARY KEY(vertex, kind, year, month)
+        ) WITH CLUSTERING ORDER BY (kind DESC, year DESC, month DESC);",
         keyspace_name
     )
     .unwrap();
@@ -275,15 +279,16 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     write!(
         &mut create_data_table_statement,
         "CREATE TABLE IF NOT EXISTS {}.data (
-            vertex blob,
+            vertex varchar,
             year smallint,
             month tinyint,
-            kind text,
+            kind varchar,
             timestamp bigint,
-            tx blob,
-            extra blob,
-            PRIMARY KEY((vertex,year,month), kind, timestamp, tx)
-          );",
+            tx varchar,
+            value bigint,
+            milestone bigint,
+            PRIMARY KEY((vertex,year,month), kind, timestamp, tx, value)
+        ) WITH CLUSTERING ORDER BY (kind DESC, timestamp DESC);",
         keyspace_name
     )
     .unwrap();
@@ -297,8 +302,8 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
         create_tx_table_statement.to_string(),
     );
     statement_map.insert(
-        "CREATE_EDGE_TABLE_QUERY".to_string(),
-        create_edge_table_statement.to_string(),
+        "CREATE_HINT_TABLE_QUERY".to_string(),
+        create_hint_table_statement.to_string(),
     );
     statement_map.insert(
         "CREATE_DATE_TABLE_QUERY".to_string(),

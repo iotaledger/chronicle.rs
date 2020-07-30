@@ -1,11 +1,3 @@
-pub const CREATE_KEYSPACE_QUERY: &str = r#"
-CREATE KEYSPACE IF NOT EXISTS tangle
-WITH REPLICATION = {
-  'class': 'SimpleStrategy',
-  'replication_factor': 1
-};
-"#;
-
 pub const CREATE_TX_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS tangle.transaction (
   hash blob PRIMARY KEY,
@@ -28,8 +20,8 @@ CREATE TABLE IF NOT EXISTS tangle.transaction (
 );
 "#;
 
-pub const CREATE_EDGE_TABLE_QUERY: &str = r#"
-CREATE TABLE IF NOT EXISTS tangle.edge (
+pub const CREATE_HINT_TABLE_QUERY: &str = r#"
+CREATE TABLE IF NOT EXISTS tangle.hint (
   vertex blob,
   kind text,
   timestamp bigint,
@@ -48,6 +40,7 @@ CREATE TABLE IF NOT EXISTS tangle.data (
   kind text,
   timestamp bigint,
   tx blob,
+  value bigint,
   extra blob,
   PRIMARY KEY((vertex,year,month), kind, timestamp, tx)
 );
@@ -75,8 +68,8 @@ pub const INSERT_TX_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
-pub const INSERT_EDGE_QUERY: &str = r#"
-  INSERT INTO tangle.edge (
+pub const INSERT_HINT_QUERY: &str = r#"
+  INSERT INTO tangle.hint (
     vertex,
     kind,
     timestamp,

@@ -1,6 +1,7 @@
+use super::types::Milestones;
 use chronicle_common::actor;
 use chronicle_cql::{
-    compression::UNCOMPRESSED,
+    compression::MyCompression,
     frame::{
         consistency::Consistency,
         decoder::{
@@ -31,7 +32,6 @@ use log::*;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
-type Milestones = Vec<Option<u64>>;
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
@@ -94,7 +94,7 @@ impl GetTrytes {
             match rx.recv().await.unwrap() {
                 Event::Response { giveload, pid } => {
                     // create decoder
-                    let decoder = Decoder::new(giveload, UNCOMPRESSED);
+                    let decoder = Decoder::new(giveload, MyCompression::get());
                     if decoder.is_rows() {
                         if let Some((trytes, milestone)) = Trytes::new(decoder, None).decode().finalize() {
                             *value = serde_json::value::Value::String(trytes);
@@ -119,12 +119,10 @@ impl GetTrytes {
             unreachable!()
         }
     }
-    // unfortunately for now a lot of un necessarily heap allocation in cdrs.
-    // this is a cql query frame, later we will impl execute frame.
     fn query(hash: String) -> Vec<u8> {
         let Query(payload) = Query::new()
             .version()
-            .flags(header::IGNORE)
+            .flags(MyCompression::flag())
             .stream(0)
             .opcode()
             .length()
@@ -133,7 +131,7 @@ impl GetTrytes {
             .query_flags(queryflags::SKIP_METADATA | queryflags::VALUES)
             .value_count(1) // the total value count
             .value(hash)
-            .build(UNCOMPRESSED);
+            .build(MyCompression::get());
         payload
     }
 }
