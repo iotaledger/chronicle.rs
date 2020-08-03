@@ -2,10 +2,7 @@
 pub mod trytes;
 use bee_ternary::TryteBuf;
 use chronicle_common::actor;
-use chronicle_cql::frame::encoder::{
-    ColumnEncoder,
-    UNSET_VALUE,
-};
+use chronicle_cql::frame::encoder::ColumnEncoder;
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
@@ -158,10 +155,7 @@ impl Importer {
         self.handle_dmp(reader).await
     }
     async fn handle_dmp(&mut self, mut reader: BufReader<&mut File>) -> Result<(), Box<dyn Error>> {
-        let mut try_attachment_timestamp = false;
-        if self.milestone > 337541 {
-            try_attachment_timestamp = true;
-        }
+        let try_attachment_timestamp = if self.milestone > 337_541 { true } else { false };
         let mut line = String::new();
         // start processing the file line by line
         loop {
@@ -257,10 +251,11 @@ impl Importer {
                 (trytes.trunk(), APPROVEE, TRUNK, 4),
                 (trytes.branch(), APPROVEE, BRANCH, 6),
                 (trytes.bundle(), BUNDLE, BUNDLE, 8),
-                (tag, TAG ,TAG, 10),
+                (tag, TAG, TAG, 10),
             ];
             // presist by address
-            let payload = insert_to_hint_table(trytes.address(), "address", year, month, Milestone::new(self.milestone));
+            let payload =
+                insert_to_hint_table(trytes.address(), "address", year, month, Milestone::new(self.milestone));
             let request = reporter::Event::Request {
                 payload,
                 worker: self.pids.pop().unwrap().query_id(2),
@@ -345,7 +340,13 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 2 => {
-                                    let payload = insert_to_hint_table(trytes.address(), address_kind, year, month, Milestone::new(self.milestone));
+                                    let payload = insert_to_hint_table(
+                                        trytes.address(),
+                                        address_kind,
+                                        year,
+                                        month,
+                                        Milestone::new(self.milestone),
+                                    );
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_local_random_replica(rand::random::<i64>(), request);
                                 }
@@ -364,7 +365,13 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 4 => {
-                                    let payload = insert_to_hint_table(trytes.trunk(), APPROVEE, year, month, Milestone::new(self.milestone));
+                                    let payload = insert_to_hint_table(
+                                        trytes.trunk(),
+                                        APPROVEE,
+                                        year,
+                                        month,
+                                        Milestone::new(self.milestone),
+                                    );
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -383,7 +390,13 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 6 => {
-                                    let payload = insert_to_hint_table(trytes.branch(), APPROVEE, year, month, Milestone::new(self.milestone));
+                                    let payload = insert_to_hint_table(
+                                        trytes.branch(),
+                                        APPROVEE,
+                                        year,
+                                        month,
+                                        Milestone::new(self.milestone),
+                                    );
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -402,7 +415,13 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 8 => {
-                                    let payload = insert_to_hint_table(trytes.bundle(), BUNDLE, year, month, Milestone::new(self.milestone));
+                                    let payload = insert_to_hint_table(
+                                        trytes.bundle(),
+                                        BUNDLE,
+                                        year,
+                                        month,
+                                        Milestone::new(self.milestone),
+                                    );
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -421,7 +440,8 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 10 => {
-                                    let payload = insert_to_hint_table(tag, TAG, year, month, Milestone::new(self.milestone));
+                                    let payload =
+                                        insert_to_hint_table(tag, TAG, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -466,7 +486,7 @@ impl worker::Worker for ImporterId {
             let event;
             if decoder.is_error() {
                 let error = decoder.get_error();
-                warn!("decoder error: {:?}",error);
+                warn!("decoder error: {:?}", error);
                 event = Event::Error {
                     kind: worker::Error::Cql(error),
                     pid,
@@ -621,7 +641,9 @@ pub const INSERT_TANGLE_TX_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
-#[cfg(feature = "devnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "comnet"))]
+#[cfg(feature = "devnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "comnet"))]
 pub const INSERT_TANGLE_TX_QUERY: &str = r#"
   INSERT INTO devnet.transaction (
     hash,
@@ -644,7 +666,9 @@ pub const INSERT_TANGLE_TX_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
-#[cfg(feature = "comnet")] #[cfg(not(feature = "mainnet"))] #[cfg(not(feature = "devnet"))]
+#[cfg(feature = "comnet")]
+#[cfg(not(feature = "mainnet"))]
+#[cfg(not(feature = "devnet"))]
 pub const INSERT_TANGLE_TX_QUERY: &str = r#"
   INSERT INTO comnet.transaction (
     hash,

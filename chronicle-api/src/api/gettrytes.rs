@@ -8,7 +8,6 @@ use chronicle_cql::{
             Decoder,
             Frame,
         },
-        header,
         header::Header,
         query::Query,
         queryflags,

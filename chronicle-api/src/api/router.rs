@@ -5,8 +5,8 @@ use super::{
     },
     gettrytes::GetTrytesBuilder,
     types::{
-        Trytes81,
         Trytes27,
+        Trytes81,
     },
 };
 use hyper::{
