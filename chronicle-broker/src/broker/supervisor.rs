@@ -6,17 +6,21 @@ use chronicle_common::{
         shutdown::ShutdownTx,
     },
 };
+use tokio::time::{delay_for, Duration};
+use std::iter::Iterator;
 use std::string::ToString;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
+use log::*;
 actor!(SupervisorBuilder {
-    sn: Option<Vec<String>>,
     trytes: Option<Vec<String>>,
-    sn_trytes: Option<Vec<String>>,
+    conf_trytes: Option<Vec<String>>,
     launcher_tx: Box<dyn LauncherTx>
 });
 pub enum Event {
-    // TODO useful events to dyanmicly add/remove zmq nodes
-    Shutdown,
+    AddMqtt(Peer),
+    Reconnect(super::mqtt::Mqtt),
+    Shutdown(Option<usize>),
 }
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -25,15 +29,16 @@ pub struct Shutdown(Sender);
 #[allow(unused_must_use)]
 impl ShutdownTx for Shutdown {
     fn shutdown(self: Box<Self>) {
-        self.0.send(Event::Shutdown);
+        self.0.send(Event::Shutdown(None));
     }
 }
 
+#[derive(Clone)]
 pub struct Peer {
-    id: usize,
+    pub id: usize,
     topic: Topic,
-    address: String,
-    connected: bool,
+    pub address: String,
+    pub connected: bool,
 }
 impl Peer {
     pub fn get_id(&self) -> usize {
@@ -69,69 +74,148 @@ impl ToString for Topic {
 
 impl SupervisorBuilder {
     pub fn build(self) -> Supervisor {
-        let mut peers = Vec::new();
+        let (tx, rx) = mpsc::unbounded_channel::<Event>();
+        let peers = HashMap::new();
+        let clients = HashMap::new();
         // create peers from trytes nodes (if any)
         if let Some(mut addresses) = self.trytes.unwrap().take() {
             for address in addresses.drain(..) {
-                peers.push(Peer {
-                    id: rand::random(),
+                // create and force random peer id.
+                let id = gen_random_peer_id(&peers);
+                // dynamically add mqtt peer
+                let peer = Peer {
+                    id,
                     topic: Topic::Trytes,
                     address,
                     connected: false,
-                })
+                };
+                tx.send(Event::AddMqtt(peer));
             }
         }
-        // create peers from sn_trytes nodes (if any)
-        if let Some(mut addresses) = self.sn_trytes.unwrap().take() {
+        // create peers from conf_trytes nodes (if any)
+        if let Some(mut addresses) = self.conf_trytes.unwrap().take() {
             for address in addresses.drain(..) {
-                peers.push(Peer {
-                    id: rand::random(),
+                // create and force random peer id.
+                let id = gen_random_peer_id(&peers);
+                // dynamically add mqtt peer
+                let peer = Peer {
+                    id,
                     topic: Topic::ConfTrytes,
                     address,
                     connected: false,
-                })
+                };
+                tx.send(Event::AddMqtt(peer));
             }
         }
-        let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Supervisor {
             peers,
+            clients,
             tx,
             rx,
             launcher_tx: self.launcher_tx.unwrap(),
+            shutting_down: false,
         }
     }
 }
 pub struct Supervisor {
-    peers: Vec<Peer>,
+    peers: HashMap<usize,Peer>,
+    clients: HashMap<usize, paho_mqtt::AsyncClient>,
     tx: Sender,
     rx: Receiver,
     launcher_tx: Box<dyn LauncherTx>,
+    shutting_down: bool,
 }
 
 impl Supervisor {
     pub async fn run(mut self) {
-        for peer in self.peers {
-            let mqtt_worker = mqtt::MqttBuilder::new()
-                .peer(peer)
-                .supervisor_tx(self.tx.clone())
-                .build();
-            tokio::spawn(mqtt_worker.run());
+        for (_id, peer) in self.peers.drain() {
+            self.tx.send(Event::AddMqtt(peer));
         }
         // register broker app with launcher
         self.launcher_tx
             .register_app("broker".to_string(), Box::new(Shutdown(self.tx.clone())));
         while let Some(event) = self.rx.recv().await {
             match event {
-                Event::Shutdown => {
-                    // todo shutdown zmq worker
-                    break;
-                } // _ => todo!(),
+                Event::AddMqtt(mut peer) => {
+                    // check if we already have peer with same id so we ignore
+                    if let None = self.peers.get(&peer.id) {
+                        // build mqtt worker
+                        let mut mqtt_worker = mqtt::MqttBuilder::new()
+                            .peer(peer.clone())
+                            .supervisor_tx(self.tx.clone())
+                            .build();
+                        // create stream and connect then subscribe
+                        if let Ok(stream) = mqtt_worker.init().await {
+                            // set peer to connected
+                            peer.set_connected(true);
+                            // take client to manage the mqtt session
+                            let client = mqtt_worker.client.take().unwrap();
+                            // store client in our state
+                            self.clients.insert(peer.id, client);
+                            // insert to the peer map
+                            self.peers.insert(peer.id, peer);
+                            // spawn mqtt
+                            tokio::spawn(mqtt_worker.run(self.tx.clone(),stream));
+                        } else {
+                            error!("unable to AddMqtt client: address: {}, id: {}",peer.address, peer.id);
+                        }
+
+                    }
+                }
+                Event::Reconnect(mut mqtt) => {
+                    // handle disconnect, first we check if the disconnect was requested by checking clients map
+                    if let Some(client) = self.clients.get_mut(&mqtt.peer.id) {
+                        // update peers
+                        self.peers.get_mut(&mqtt.peer.id).unwrap().set_connected(false);
+                        // create stream and connect then subscribe
+                        if let Ok(stream) = mqtt.init().await {
+                            // update peers
+                            self.peers.get_mut(&mqtt.peer.id).unwrap().set_connected(true);
+                            // take client to manage the mqtt session
+                            let new_client = mqtt.client.take().unwrap();
+                            // overwrite client in our state
+                            *client = new_client;
+                            // spawn mqtt
+                            tokio::spawn(mqtt.run(self.tx.clone(),stream));
+                        } else {
+                            error!("unable to reconnect client: address: {}, id: {}, will retry every 5 seconds",mqtt.peer.address, mqtt.peer.id);
+                            let _ = self.tx.send(Event::Reconnect(mqtt));
+                            delay_for(Duration::from_secs(5)).await;
+                        }
+                    } else {
+                        // remove mqtt.peer from peers
+                        self.peers.remove(&mqtt.peer.id);
+                        // it was requested so we make sure to check if we have to shutdown and all peers are disconnected
+                        if self.shutting_down && self.peers.iter().all(|p| p.1.connected == false) {
+                            break;
+                        }
+                    }
+                }
+                Event::Shutdown(opt_peer_id) => {
+                    if let Some(peer_id) = opt_peer_id {
+                        // shutdown peer by removing it and then disconnect
+                        if let Some(client) = self.clients.remove(&peer_id) {
+                            client.disconnect(None);
+                        } else {
+                            error!("unable to find client with the peer_id: {}", peer_id);
+                        };
+                    } else {
+                        // shutdown everything
+                        for (peer_id,client) in self.clients.drain() {
+                            client.disconnect(None);
+                        }
+                    }
+                }
             }
         }
-        // TODO await exit signal from zmq workers or dynamic topology events from dashboard
-        // TODO once the zmq worker got shutdown, take the ownership of the log and pass it to the dashboard.
-        // in order to be reinserted at somepoint by admin.
-        // aknowledge_shutdown
         self.launcher_tx.aknowledge_shutdown("broker".to_string());
     }
+}
+
+fn gen_random_peer_id(peers: &HashMap<usize, Peer>) -> usize {
+    let mut id = rand::random();
+    while let Some(_) = peers.get(&id) {
+        id = rand::random();
+    };
+    id
 }

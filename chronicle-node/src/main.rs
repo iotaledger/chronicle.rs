@@ -91,7 +91,7 @@ struct Api {
 #[derive(Debug, Clone, Deserialize)]
 struct Broker {
     trytes_nodes: Option<Vec<String>>,
-    sn_trytes_nodes: Option<Vec<String>>,
+    conf_trytes_nodes: Option<Vec<String>>,
 }
 
 launcher!(
@@ -123,8 +123,8 @@ impl AppsBuilder {
         if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
             broker = broker.trytes(trytes_nodes.to_vec());
         }
-        if let Some(sn_trytes_nodes) = config.broker.sn_trytes_nodes.as_ref() {
-            broker = broker.sn_trytes(sn_trytes_nodes.to_vec());
+        if let Some(conf_trytes_nodes) = config.broker.conf_trytes_nodes.as_ref() {
+            broker = broker.conf_trytes(conf_trytes_nodes.to_vec());
         }
         // add app to AppsBuilder then transform it to Apps
         self.storage(storage).api(api).broker(broker).to_apps().config(config)

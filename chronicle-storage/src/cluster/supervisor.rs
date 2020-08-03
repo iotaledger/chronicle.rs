@@ -254,12 +254,7 @@ impl Supervisor {
         self.tx.as_ref().unwrap().clone()
     }
     fn new_version(&mut self) -> u8 {
-        let mut m: u8 = 1;
-        while (self.version & m) != 0 {
-            self.version ^= m;
-            m <<= 1 as u8;
-        }
-        self.version ^= m;
+        self.version = self.version.wrapping_add(1);
         self.version
     }
 }

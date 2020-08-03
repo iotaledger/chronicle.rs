@@ -36,4 +36,4 @@ content_length = 65535
 
 [broker]
 trytes_nodes = []
-sn_trytes_nodes = []
+conf_trytes_nodes = []

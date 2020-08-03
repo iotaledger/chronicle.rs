@@ -131,8 +131,8 @@ impl Zmq {
                     while let Some(msgs) = zmq.next().await {
                         if let Ok(msgs) = msgs {
                             for msg in msgs {
-                                // process sn_trytes msg
-                                self.handle_sn_trytes(&msg);
+                                // process conf_trytes msg
+                                self.handle_conf_trytes(&msg);
                                 // aknoweledge
                                 match self.aknoweledge_responses().await {
                                     Ok(()) => {}
@@ -204,7 +204,7 @@ impl Zmq {
         self.send_insert_edge_query(&trytes[2349..2430], "bundle", timestamp, hash, value, UNSET_VALUE);
         self.send_insert_data_query(&trytes[2592..2619], year, month, "tag", timestamp, hash);
     }
-    fn handle_sn_trytes(&mut self, msg: &Message) {
+    fn handle_conf_trytes(&mut self, msg: &Message) {
         self.pending = 6;
         let msg = msg.as_str().unwrap();
         let trytes = &msg[10..2683];

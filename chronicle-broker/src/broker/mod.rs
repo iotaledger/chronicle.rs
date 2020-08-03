@@ -2,14 +2,13 @@ pub mod mqtt;
 pub mod supervisor;
 
 use chronicle_common::app;
-app!(BrokerBuilder { trytes: Vec<String>, sn_trytes: Vec<String>, sn: Vec<String> });
+app!(BrokerBuilder { trytes: Vec<String>, conf_trytes: Vec<String> });
 
 impl BrokerBuilder {
     pub fn build(self) -> Broker {
         let supervisor_builder = supervisor::SupervisorBuilder::new()
             .trytes(self.trytes)
-            .sn_trytes(self.sn_trytes)
-            .sn(self.sn)
+            .conf_trytes(self.conf_trytes)
             .launcher_tx(self.launcher_tx.unwrap());
         Broker { supervisor_builder }
     }

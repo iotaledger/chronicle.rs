@@ -1,10 +1,6 @@
 // TODO compute token to enable shard_awareness.
 pub mod trytes;
-use bee_ternary::{
-    t1b1::T1B1Buf,
-    TritBuf,
-    TryteBuf,
-};
+use bee_ternary::TryteBuf;
 use chronicle_common::actor;
 use chronicle_cql::frame::encoder::{
     ColumnEncoder,
@@ -580,9 +576,7 @@ pub fn insert_to_data_table(
 
 /// Convert valid trytes to i64
 pub fn trytes_to_i64(slice: &str) -> i64 {
-    let trytes = TryteBuf::try_from_str(slice);
-    let trit_buf: TritBuf<T1B1Buf> = trytes.unwrap().as_trits().encode();
-    i64::try_from(trit_buf).unwrap()
+    i64::try_from(TryteBuf::try_from_str(slice).unwrap().as_trits()).unwrap()
 }
 
 fn count_digit(mut timestamp: i64) -> usize {

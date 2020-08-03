@@ -13,12 +13,13 @@ chronicle-cql = { path = "../chronicle-cql" }
 chronicle-storage = { path = "../chronicle-storage" }
 tokio = { version = "0.2", features = ["fs", "macros", "stream", "sync", "net", "io-util", "rt-threaded", "time"] }
 indicatif = "0.14"
-bee-ternary = { git = "https://github.com/Alex6323/bee-p", rev = "6083138"}
+bee-ternary = "0.3.1-alpha"
 chrono = "0.4"
 rand = "0.7"
 paho-mqtt = { git = "https://github.com/eclipse/paho.mqtt.rust", branch = "master", default-features = false, features = ["bundled"]}
 log = "0.4.8"
-
+serde = { version = "1.0.114", features = ["derive" ] }
+serde_json = "*"
 [features]
 default = []
 mainnet = []
