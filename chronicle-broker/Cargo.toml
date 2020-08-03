@@ -20,7 +20,7 @@ paho-mqtt = { git = "https://github.com/eclipse/paho.mqtt.rust", branch = "maste
 log = "0.4.8"
 
 [features]
-default = []
+default = ["mainnet"]
 mainnet = []
 devnet = []
 comnet = []

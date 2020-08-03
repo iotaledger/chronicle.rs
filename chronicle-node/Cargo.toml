@@ -20,7 +20,7 @@ toml = "0.5"
 log = "0.4.8"
 
 [features]
-default = []
+default = ["mainnet"]
 mainnet = ["chronicle-broker/mainnet","chronicle-api/mainnet"]
 devnet = ["chronicle-broker/devnet","chronicle-api/devnet"]
 comnet = ["chronicle-broker/comnet","chronicle-api/comnet"]

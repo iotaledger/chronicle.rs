@@ -46,7 +46,6 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
-type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
 pub struct FindTransactionsId(Sender);
 
@@ -60,7 +59,7 @@ actor!(FindTransactionsBuilder {
 
 impl FindTransactionsBuilder {
     pub fn build(self) -> FindTransactions {
-        let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
+        let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let worker = Box::new(FindTransactionsId(tx));
         FindTransactions {
             addresses: self.addresses.unwrap(),
@@ -216,7 +215,6 @@ impl FindTransactions {
                                     .finalize();
                                 break;
                             } else {
-
                                 error!("tag: {:?}", decoder.get_error());
                                 // it's for future impl to be used with execute
                                 if decoder.is_unprepared() {

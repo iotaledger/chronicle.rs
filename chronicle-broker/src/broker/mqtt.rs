@@ -52,23 +52,19 @@ pub struct Mqtt {
     pending: usize,
 }
 
-use tokio::stream::StreamExt;
 use std::fmt::Write;
+use tokio::stream::StreamExt;
 impl Mqtt {
     pub async fn run(self) {
         let mut client_id = String::new();
-        write!(
-            &mut client_id,
-            "chronicle_mqtt_{}",
-            self.peer.get_id()
-        )
-        .unwrap();
+        write!(&mut client_id, "chronicle_mqtt_{}", self.peer.get_id()).unwrap();
         let mut cli = paho_mqtt::AsyncClient::new(
             paho_mqtt::CreateOptionsBuilder::new()
                 .server_uri("tcp://localhost:1883")
                 .client_id(client_id)
-                .finalize()
-        ).unwrap_or_else(|e| {
+                .finalize(),
+        )
+        .unwrap_or_else(|e| {
             process::exit(1);
         });
         let mut stream = cli.get_stream(20);
