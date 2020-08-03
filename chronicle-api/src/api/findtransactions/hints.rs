@@ -48,6 +48,17 @@ impl YearMonth {
     }
 }
 
+/// The purpose of `Hint` design is to divide a big table into smaller ones, which prevents overflow faliure
+/// as well as improves the query efficiency.
+///
+/// In general database design (Cassandra for example), if too many rows share the same partition key, then
+/// overflow may occur. Even if there is no overflow, the query time is long in a big table.
+///
+/// An example follows. When there are one billion rows share the same `Tag`, we will not use the tag as the
+/// partion key directly. Instead, the `Hint` assocated with the `Tag` also constitutes the partition key, which
+/// prevents the overflow failure and resists attack vectors (1 billion transactions with the same `Tag`.)
+/// Furthermore, dividing a big table into smaller ones reduces the key searching time, which improves the query
+/// performance.
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 pub enum Hint {
@@ -248,16 +259,17 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(SELECT_BY_ADDRESS_DATA_QUERY)
-                .consistency(Consistency::One)
-                .query_flags(query_flags)
-                .value_count(3)
-                .value(address) // it might be tag or address
-                .value(year_month.year())
-                .value(year_month.month())
-                .page_size(page_size.unwrap_or(5000) as i32)
-                .paging_state(&paging_state.take())
-                .build(MyCompression::get());
+                let Query(payload) = query
+                    .statement(SELECT_BY_ADDRESS_DATA_QUERY)
+                    .consistency(Consistency::One)
+                    .query_flags(query_flags)
+                    .value_count(3)
+                    .value(address) // it might be tag or address
+                    .value(year_month.year())
+                    .value(year_month.month())
+                    .page_size(page_size.unwrap_or(5000) as i32)
+                    .paging_state(&paging_state.take())
+                    .build(MyCompression::get());
                 Some(payload)
             } else {
                 // empty timeline or consumed
@@ -275,16 +287,17 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(SELECT_BY_TAG_DATA_QUERY)
-                .consistency(Consistency::One)
-                .query_flags(query_flags)
-                .value_count(3)
-                .value(tag) // it might be tag or address
-                .value(year_month.year())
-                .value(year_month.month())
-                .page_size(page_size.unwrap_or(5000) as i32)
-                .paging_state(&paging_state.take())
-                .build(MyCompression::get());
+                let Query(payload) = query
+                    .statement(SELECT_BY_TAG_DATA_QUERY)
+                    .consistency(Consistency::One)
+                    .query_flags(query_flags)
+                    .value_count(3)
+                    .value(tag) // it might be tag or address
+                    .value(year_month.year())
+                    .value(year_month.month())
+                    .page_size(page_size.unwrap_or(5000) as i32)
+                    .paging_state(&paging_state.take())
+                    .build(MyCompression::get());
                 Some(payload)
             } else {
                 println!("consumed hint tag timeline");
@@ -303,16 +316,17 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(SELECT_BY_BUNDLE_DATA_QUERY)
-                .consistency(Consistency::One)
-                .query_flags(query_flags)
-                .value_count(3)
-                .value(bundle) // it might be tag or address
-                .value(year_month.year())
-                .value(year_month.month())
-                .page_size(page_size.unwrap_or(5000) as i32)
-                .paging_state(&paging_state.take())
-                .build(MyCompression::get());
+                let Query(payload) = query
+                    .statement(SELECT_BY_BUNDLE_DATA_QUERY)
+                    .consistency(Consistency::One)
+                    .query_flags(query_flags)
+                    .value_count(3)
+                    .value(bundle) // it might be tag or address
+                    .value(year_month.year())
+                    .value(year_month.month())
+                    .page_size(page_size.unwrap_or(5000) as i32)
+                    .paging_state(&paging_state.take())
+                    .build(MyCompression::get());
                 Some(payload)
             } else {
                 // empty timeline or consumed
@@ -330,16 +344,17 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
             }
             if let Some(year_month) = timeline.get(0) {
                 // timeline still active or new;
-                let Query(payload) = query.statement(SELECT_BY_APPROVEE_DATA_QUERY)
-                .consistency(Consistency::One)
-                .query_flags(query_flags)
-                .value_count(3)
-                .value(approvee) // it might be tag or address
-                .value(year_month.year())
-                .value(year_month.month())
-                .page_size(page_size.unwrap_or(5000) as i32)
-                .paging_state(&paging_state.take())
-                .build(MyCompression::get());
+                let Query(payload) = query
+                    .statement(SELECT_BY_APPROVEE_DATA_QUERY)
+                    .consistency(Consistency::One)
+                    .query_flags(query_flags)
+                    .value_count(3)
+                    .value(approvee) // it might be tag or address
+                    .value(year_month.year())
+                    .value(year_month.month())
+                    .page_size(page_size.unwrap_or(5000) as i32)
+                    .paging_state(&paging_state.take())
+                    .build(MyCompression::get());
                 Some(payload)
             } else {
                 println!("consumed hint approvee timeline");
@@ -361,7 +376,6 @@ const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milest
 #[cfg(not(feature = "devnet"))]
 const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')";
 
-
 #[cfg(feature = "mainnet")]
 const SELECT_BY_BUNDLE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
 #[cfg(feature = "devnet")]
@@ -373,7 +387,6 @@ const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milest
 #[cfg(not(feature = "devnet"))]
 const SELECT_BY_APPROVEE_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
 
-
 #[cfg(feature = "mainnet")]
 const SELECT_BY_TAG_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
 #[cfg(feature = "devnet")]
@@ -384,7 +397,6 @@ const SELECT_BY_TAG_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone F
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "devnet"))]
 const SELECT_BY_TAG_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
-
 
 #[cfg(feature = "mainnet")]
 const SELECT_BY_ADDRESS_DATA_QUERY: &str = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')";
