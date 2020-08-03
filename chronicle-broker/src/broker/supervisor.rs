@@ -6,12 +6,19 @@ use chronicle_common::{
         shutdown::ShutdownTx,
     },
 };
-use tokio::time::{delay_for, Duration};
-use std::iter::Iterator;
-use std::string::ToString;
-use std::collections::HashMap;
-use tokio::sync::mpsc;
 use log::*;
+use std::{
+    collections::HashMap,
+    iter::Iterator,
+    string::ToString,
+};
+use tokio::{
+    sync::mpsc,
+    time::{
+        delay_for,
+        Duration,
+    },
+};
 actor!(SupervisorBuilder {
     trytes: Option<Vec<String>>,
     conf_trytes: Option<Vec<String>>,
@@ -118,7 +125,7 @@ impl SupervisorBuilder {
     }
 }
 pub struct Supervisor {
-    peers: HashMap<usize,Peer>,
+    peers: HashMap<usize, Peer>,
     clients: HashMap<usize, paho_mqtt::AsyncClient>,
     tx: Sender,
     rx: Receiver,
@@ -155,11 +162,10 @@ impl Supervisor {
                             // insert to the peer map
                             self.peers.insert(peer.id, peer);
                             // spawn mqtt
-                            tokio::spawn(mqtt_worker.run(self.tx.clone(),stream));
+                            tokio::spawn(mqtt_worker.run(self.tx.clone(), stream));
                         } else {
-                            error!("unable to AddMqtt client: address: {}, id: {}",peer.address, peer.id);
+                            error!("unable to AddMqtt client: address: {}, id: {}", peer.address, peer.id);
                         }
-
                     }
                 }
                 Event::Reconnect(mut mqtt) => {
@@ -176,16 +182,20 @@ impl Supervisor {
                             // overwrite client in our state
                             *client = new_client;
                             // spawn mqtt
-                            tokio::spawn(mqtt.run(self.tx.clone(),stream));
+                            tokio::spawn(mqtt.run(self.tx.clone(), stream));
                         } else {
-                            error!("unable to reconnect client: address: {}, id: {}, will retry every 5 seconds",mqtt.peer.address, mqtt.peer.id);
+                            error!(
+                                "unable to reconnect client: address: {}, id: {}, will retry every 5 seconds",
+                                mqtt.peer.address, mqtt.peer.id
+                            );
                             let _ = self.tx.send(Event::Reconnect(mqtt));
                             delay_for(Duration::from_secs(5)).await;
                         }
                     } else {
                         // remove mqtt.peer from peers
                         self.peers.remove(&mqtt.peer.id);
-                        // it was requested so we make sure to check if we have to shutdown and all peers are disconnected
+                        // it was requested so we make sure to check if we have to shutdown and all peers are
+                        // disconnected
                         if self.shutting_down && self.peers.iter().all(|p| p.1.connected == false) {
                             break;
                         }
@@ -201,7 +211,7 @@ impl Supervisor {
                         };
                     } else {
                         // shutdown everything
-                        for (peer_id,client) in self.clients.drain() {
+                        for (peer_id, client) in self.clients.drain() {
                             client.disconnect(None);
                         }
                     }
@@ -216,6 +226,6 @@ fn gen_random_peer_id(peers: &HashMap<usize, Peer>) -> usize {
     let mut id = rand::random();
     while let Some(_) = peers.get(&id) {
         id = rand::random();
-    };
+    }
     id
 }

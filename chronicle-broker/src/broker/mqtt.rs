@@ -1,16 +1,16 @@
 // WIP
+use super::supervisor::{
+    Event as SupervisorEvent,
+    Peer,
+    Sender as SupervisorTx,
+};
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
     worker::Error,
 };
-use std::time::Duration;
-use super::supervisor::{
-    Peer,
-    Sender as SupervisorTx,
-    Event as SupervisorEvent,
-};
 use paho_mqtt;
+use std::time::Duration;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -48,13 +48,19 @@ pub struct Mqtt {
     pending: usize,
 }
 
-use tokio::stream::StreamExt;
-use tokio::stream::Stream;
 use paho_mqtt::Message;
 use std::fmt::Write;
+use tokio::stream::{
+    Stream,
+    StreamExt,
+};
 
 impl Mqtt {
-    pub async fn run(mut self, supervisor_tx: SupervisorTx, mut stream: impl Stream<Item = Option<Message>> + std::marker::Unpin) {
+    pub async fn run(
+        mut self,
+        supervisor_tx: SupervisorTx,
+        mut stream: impl Stream<Item = Option<Message>> + std::marker::Unpin,
+    ) {
         while let Some(Some(msg)) = stream.next().await {
             println!("{}", msg);
         }
@@ -64,7 +70,7 @@ impl Mqtt {
     pub async fn init(&mut self) -> Result<impl Stream<Item = Option<Message>>, paho_mqtt::Error> {
         // create mqtt AsyncClient in advance
         let mut client_id = String::new();
-        write!(&mut client_id,"chronicle_mqtt_{}", self.peer.id).unwrap();
+        write!(&mut client_id, "chronicle_mqtt_{}", self.peer.id).unwrap();
         let mut cli = paho_mqtt::AsyncClient::new((&self.peer.address[..], &client_id[..]))?;
         let stream = cli.get_stream(100);
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
