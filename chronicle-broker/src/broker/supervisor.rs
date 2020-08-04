@@ -117,7 +117,7 @@ impl SupervisorBuilder {
         Supervisor {
             peers,
             clients,
-            tx,
+            tx: Some(tx),
             rx,
             launcher_tx: self.launcher_tx.unwrap(),
             shutting_down: false,
@@ -127,7 +127,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     peers: HashMap<usize, Peer>,
     clients: HashMap<usize, paho_mqtt::AsyncClient>,
-    tx: Sender,
+    tx: Option<Sender>,
     rx: Receiver,
     launcher_tx: Box<dyn LauncherTx>,
     shutting_down: bool,
@@ -136,41 +136,52 @@ pub struct Supervisor {
 impl Supervisor {
     pub async fn run(mut self) {
         // register broker app with launcher
-        self.launcher_tx
-            .register_app("broker".to_string(), Box::new(Shutdown(self.tx.clone())));
+        self.launcher_tx.register_app(
+            "broker".to_string(),
+            Box::new(Shutdown(self.tx.as_ref().unwrap().clone())),
+        );
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::AddMqtt(mut peer) => {
-                    // check if we already have peer with same id so we ignore
-                    if let None = self.peers.get(&peer.id) {
-                        // build mqtt worker
-                        let mut mqtt_worker = mqtt::MqttBuilder::new().peer(peer.clone()).build();
-                        // create stream and connect then subscribe
-                        if let Ok(stream) = mqtt_worker.init().await {
-                            info!(
-                                "Added MQTT peer 'topic: {}, address: {}, id: {}'",
-                                peer.get_topic_as_string(),
-                                peer.address,
-                                peer.id
-                            );
-                            // set peer to connected
-                            peer.set_connected(true);
-                            // take client to manage the mqtt session
-                            let client = mqtt_worker.client.take().unwrap();
-                            // store client in our state
-                            self.clients.insert(peer.id, client);
-                            // insert to the peer map
-                            self.peers.insert(peer.id, peer);
-                            // spawn mqtt
-                            tokio::spawn(mqtt_worker.run(self.tx.clone(), stream));
-                        } else {
-                            error!(
-                                "Unable to add MQTT peer 'topic: {}, address: {}, id: {}'",
-                                peer.get_topic_as_string(),
-                                peer.address,
-                                peer.id
-                            );
+                    if !self.shutting_down {
+                        // check if we already have peer with same id so we ignore
+                        if let None = self.peers.get(&peer.id) {
+                            // build mqtt worker
+                            let mut mqtt_worker = mqtt::MqttBuilder::new().peer(peer.clone()).build();
+                            // create stream and connect then subscribe
+                            if let Ok(stream) = mqtt_worker.init().await {
+                                info!(
+                                    "Added MQTT peer 'topic: {}, address: {}, id: {}'",
+                                    peer.get_topic_as_string(),
+                                    peer.address,
+                                    peer.id
+                                );
+                                // set peer to connected
+                                peer.set_connected(true);
+                                // take client to manage the mqtt session
+                                let client = mqtt_worker.client.take().unwrap();
+                                // store client in our state
+                                self.clients.insert(peer.id, client);
+                                // insert to the peer map
+                                self.peers.insert(peer.id, peer);
+                                // spawn mqtt
+                                tokio::spawn(mqtt_worker.run(self.tx.as_ref().unwrap().clone(), stream));
+                            } else {
+                                error!(
+                                    "Unable to add MQTT peer 'topic: {}, address: {}, id: {}'",
+                                    peer.get_topic_as_string(),
+                                    peer.address,
+                                    peer.id
+                                );
+                            }
                         }
+                    } else {
+                        error!(
+                            "Unable to add MQTT peer 'topic: {}, address: {}, id: {}', as in progress of shutting down",
+                            peer.get_topic_as_string(),
+                            peer.address,
+                            peer.id
+                        );
                     }
                 }
                 Event::Reconnect(mut mqtt) => {
@@ -187,13 +198,13 @@ impl Supervisor {
                             // overwrite client in our state
                             *client = new_client;
                             // spawn mqtt
-                            tokio::spawn(mqtt.run(self.tx.clone(), stream));
+                            tokio::spawn(mqtt.run(self.tx.as_ref().unwrap().clone(), stream));
                         } else {
                             error!(
                                 "Unable to connect MQTT peer 'topic: {}, address: {}, id: {}', will retry every 5 seconds",
                                 mqtt.peer.get_topic_as_string(),mqtt.peer.address, mqtt.peer.id
                             );
-                            let _ = self.tx.send(Event::Reconnect(mqtt));
+                            let _ = self.tx.as_ref().unwrap().send(Event::Reconnect(mqtt));
                             delay_for(Duration::from_secs(5)).await;
                         }
                     } else {
@@ -223,6 +234,8 @@ impl Supervisor {
                     } else {
                         // shutdown everything
                         self.shutting_down = true;
+                        // remove self.tx to gracefully shutdown the rx
+                        self.tx = None;
                         for (_peer_id, client) in self.clients.drain() {
                             client.disconnect(None);
                         }
