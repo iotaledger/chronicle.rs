@@ -26,8 +26,7 @@ use chronicle_common::actor;
 actor!(MqttBuilder {
     id: String,
     peer: Peer,
-    client: paho_mqtt::AsyncClient,
-    supervisor_tx: SupervisorTx
+    client: paho_mqtt::AsyncClient
 });
 
 impl MqttBuilder {
@@ -36,7 +35,6 @@ impl MqttBuilder {
             pending: 0,
             peer: self.peer.unwrap(),
             client: self.client,
-            supervisor_tx: self.supervisor_tx.unwrap(),
         }
     }
 }
@@ -44,7 +42,6 @@ impl MqttBuilder {
 pub struct Mqtt {
     pub peer: Peer,
     pub client: Option<paho_mqtt::AsyncClient>,
-    supervisor_tx: SupervisorTx,
     pending: usize,
 }
 
@@ -62,7 +59,7 @@ impl Mqtt {
         mut stream: impl Stream<Item = Option<Message>> + std::marker::Unpin,
     ) {
         while let Some(Some(msg)) = stream.next().await {
-            println!("{}", msg);
+            println!("{}", msg.payload_str());
         }
         self.peer.set_connected(false);
         let _ = supervisor_tx.send(SupervisorEvent::Reconnect(self));
