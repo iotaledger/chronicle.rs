@@ -255,7 +255,7 @@ impl Importer {
             ];
             // presist by address
             let payload =
-                insert_to_hint_table(trytes.address(), "address", year, month, Milestone::new(self.milestone));
+                insert_to_hint_table(trytes.address(), ADDRESS, year, month, Milestone::new(self.milestone));
             let request = reporter::Event::Request {
                 payload,
                 worker: self.pids.pop().unwrap().query_id(2),
@@ -278,11 +278,13 @@ impl Importer {
             Ring::send_local_random_replica(rand::random::<i64>(), request);
             // presist remaining queries
             for (vertex, hint_kind, data_kind, query_id) in &itr {
+                // create payload and then put it inside reporter request
                 let payload = insert_to_hint_table(vertex, hint_kind, year, month, Milestone::new(self.milestone));
                 let request = reporter::Event::Request {
                     payload,
                     worker: self.pids.pop().unwrap().query_id(*query_id),
                 };
+                // send request
                 Ring::send_local_random_replica(rand::random::<i64>(), request);
                 let payload = insert_to_data_table(
                     vertex,
@@ -294,10 +296,12 @@ impl Importer {
                     value,
                     Milestone::new(self.milestone),
                 );
+                // create another request
                 let request = reporter::Event::Request {
                     payload,
                     worker: self.pids.pop().unwrap().query_id(query_id + 1),
                 };
+                // send it
                 Ring::send_local_random_replica(rand::random::<i64>(), request);
             }
             self.pending += 11;
@@ -305,9 +309,13 @@ impl Importer {
             while let Some(event) = self.rx.recv().await {
                 match event {
                     Event::Response { decoder, pid } => {
+                        // decrement
                         self.pending -= 1;
+                        // return pid
                         self.pids.push(pid);
+                        // safety check
                         assert!(decoder.is_void());
+                        // check if this was the last response for a given line.
                         if self.pending == 0 {
                             // reset max_retries to the initial state for the next line
                             self.max_retries = self.initial_max_retries;
@@ -317,11 +325,13 @@ impl Importer {
                         }
                     }
                     Event::Error { kind, pid } => {
+                        // check if we consumed max_retries for given line.
                         if self.max_retries == 0 {
                             self.pids.push(pid);
                             error!("Importer consumed all max_retries and unable to import the dump file");
                             return Err(Box::new(kind));
                         } else {
+                            // decrement retry
                             self.max_retries -= 1;
                             // icrement the delay
                             self.delay += 1;
@@ -329,6 +339,7 @@ impl Importer {
                                 "Importer will sleep {} seconds before retrying, because it received: {}",
                                 self.delay, kind
                             );
+                            // create delay_seconds
                             let seconds = time::Duration::from_secs(self.delay as u64);
                             // sleep the importer to not push any further queries to scylla
                             delay_for(seconds).await;
@@ -342,7 +353,7 @@ impl Importer {
                                 2 => {
                                     let payload = insert_to_hint_table(
                                         trytes.address(),
-                                        address_kind,
+                                        ADDRESS,
                                         year,
                                         month,
                                         Milestone::new(self.milestone),
@@ -355,7 +366,7 @@ impl Importer {
                                         trytes.address(),
                                         year,
                                         month,
-                                        ADDRESS,
+                                        address_kind,
                                         timestamp_ms,
                                         hash,
                                         value,
@@ -486,7 +497,6 @@ impl worker::Worker for ImporterId {
             let event;
             if decoder.is_error() {
                 let error = decoder.get_error();
-                warn!("decoder error: {:?}", error);
                 event = Event::Error {
                     kind: worker::Error::Cql(error),
                     pid,
