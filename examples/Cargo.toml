@@ -28,7 +28,6 @@ name = "permanode"
 path = "permanode/main.rs"
 
 [features]
-default = []
 mainnet = ["chronicle-broker/mainnet","chronicle-api/mainnet"]
 devnet = ["chronicle-broker/devnet","chronicle-api/devnet"]
 comnet = ["chronicle-broker/comnet","chronicle-api/comnet"]

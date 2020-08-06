@@ -101,13 +101,16 @@ pub fn query(bundle: &Trytes81) -> Vec<u8> {
     payload
 }
 
+const SELECT_BY_BUNDLE_QUERY: &str = {
 #[cfg(feature = "mainnet")]
-const SELECT_BY_BUNDLE_QUERY: &str = "SELECT year, month FROM mainnet.hint WHERE vertex = ? AND kind = 'bundle'";
+let cql = "SELECT year, month FROM mainnet.hint WHERE vertex = ? AND kind = 'bundle'";
 #[cfg(feature = "devnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "comnet"))]
-const SELECT_BY_BUNDLE_QUERY: &str = "SELECT year, month FROM devnet.hint WHERE vertex = ? AND kind = 'bundle'";
+let cql = "SELECT year, month FROM devnet.hint WHERE vertex = ? AND kind = 'bundle'";
 #[cfg(feature = "comnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "devnet"))]
-const SELECT_BY_BUNDLE_QUERY: &str = "SELECT year, month FROM comnet.hint WHERE vertex = ? AND kind = 'bundle'";
+let cql = "SELECT year, month FROM comnet.hint WHERE vertex = ? AND kind = 'bundle'";
+cql
+};

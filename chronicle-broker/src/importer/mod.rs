@@ -645,8 +645,10 @@ pub const BUNDLE: &str = "bundle";
 pub const TAG: &str = "tag";
 
 // statements consts
-#[cfg(feature = "mainnet")]
-pub const INSERT_TANGLE_TX_QUERY: &str = r#"
+pub const INSERT_TANGLE_TX_QUERY: &str = {
+    #[cfg(feature = "mainnet")]
+    let cql =
+    r#"
   INSERT INTO mainnet.transaction (
     hash,
     payload,
@@ -667,11 +669,8 @@ pub const INSERT_TANGLE_TX_QUERY: &str = r#"
     milestone
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
-
 #[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "comnet"))]
-pub const INSERT_TANGLE_TX_QUERY: &str = r#"
+let cql = r#"
   INSERT INTO devnet.transaction (
     hash,
     payload,
@@ -692,11 +691,8 @@ pub const INSERT_TANGLE_TX_QUERY: &str = r#"
     milestone
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
-
 #[cfg(feature = "comnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "devnet"))]
-pub const INSERT_TANGLE_TX_QUERY: &str = r#"
+let cql = r#"
   INSERT INTO comnet.transaction (
     hash,
     payload,
@@ -717,10 +713,12 @@ pub const INSERT_TANGLE_TX_QUERY: &str = r#"
     milestone
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
-
+cql
+};
 //-------------------------------------
-#[cfg(feature = "mainnet")]
-pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
+pub const INSERT_TANGLE_HINT_STATMENT: &str = {
+    #[cfg(feature = "mainnet")]
+    let cql = r#"
   INSERT INTO mainnet.hint (
     vertex,
     kind,
@@ -729,34 +727,32 @@ pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
     milestone
 ) VALUES (?,?,?,?,?);
 "#;
-
 #[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "comnet"))]
-pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
-  INSERT INTO devnet.hint (
-    vertex,
-    kind,
-    year,
-    month,
-    milestone
+let cql = r#"
+INSERT INTO devnet.hint (
+vertex,
+kind,
+year,
+month,
+milestone
 ) VALUES (?,?,?,?,?);
 "#;
 #[cfg(feature = "comnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "devnet"))]
-pub const INSERT_TANGLE_HINT_STATMENT: &str = r#"
-  INSERT INTO comnet.hint (
-    vertex,
-    kind,
-    year,
-    month,
-    milestone
+let cql = r#"
+INSERT INTO comnet.hint (
+vertex,
+kind,
+year,
+month,
+milestone
 ) VALUES (?,?,?,?,?);
 "#;
+cql
+};
 //-------------------------------------
-#[cfg(feature = "mainnet")]
-pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
+pub const INSERT_TANGLE_DATA_STATMENT: &str = {
+    #[cfg(feature = "mainnet")]
+    let cql = r#"
   INSERT INTO mainnet.data (
     vertex,
     year,
@@ -769,33 +765,30 @@ pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?);
 "#;
 #[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "comnet"))]
-pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
-  INSERT INTO devnet.data (
-    vertex,
-    year,
-    month,
-    kind,
-    timestamp,
-    tx,
-    value,
-    milestone
+let cql = r#"
+INSERT INTO devnet.data (
+vertex,
+year,
+month,
+kind,
+timestamp,
+tx,
+value,
+milestone
 ) VALUES (?,?,?,?,?,?,?,?);
 "#;
-
 #[cfg(feature = "comnet")]
-#[cfg(not(feature = "devnet"))]
-#[cfg(not(feature = "mainnet"))]
-pub const INSERT_TANGLE_DATA_STATMENT: &str = r#"
-  INSERT INTO comnet.data (
-    vertex,
-    year,
-    month,
-    kind,
-    timestamp,
-    tx,
-    value,
-    milestone
+let cql = r#"
+INSERT INTO comnet.data (
+vertex,
+year,
+month,
+kind,
+timestamp,
+tx,
+value,
+milestone
 ) VALUES (?,?,?,?,?,?,?,?);
 "#;
+cql
+};

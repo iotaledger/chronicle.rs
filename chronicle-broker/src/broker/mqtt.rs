@@ -11,30 +11,17 @@ use chronicle_storage::{
     worker::Error,
     worker::Worker,
 };
-use std::{
-    convert::TryFrom,
-    time,
-};
+use std::time;
 use tokio::{
-    fs::File,
     sync::mpsc,
     time::delay_for,
 };
 
 use chronicle_cql::{
     compression::MyCompression,
-    frame::{
-        consistency::Consistency,
-        decoder::{
-            Decoder,
-            Frame,
-        },
-        header::Header,
-        query::Query,
-        queryflags::{
-            SKIP_METADATA,
-            VALUES,
-        },
+    frame::decoder::{
+        Decoder,
+        Frame,
     },
 };
 use chrono::{
@@ -175,7 +162,6 @@ impl Mqtt {
     pub async fn handle_trytes(&mut self, msg: MqttMsg) {
         // we should ignore transactions with invalid timestamps
         let trytes = msg.trytes();
-        let hash = msg.hash();
         let attachment_timestamp = trytes_to_i64(trytes.atch_timestamp());
         if attachment_timestamp != 0 {
             // try to use attachment_timestamp
@@ -221,7 +207,7 @@ impl Mqtt {
                 // presist the transaction
                 if let Err(_) = self.persist_transaction(&msg,attachment_timestamp).await {
                     if self.pending != 11 {
-                        error!("Unable to force Data consistency for the transaction: hash: {}, trytes: {}", hash, trytes.trytes());
+                        error!("Unable to force data consistency for the transaction: hash: {}, trytes: {}", hash, trytes.trytes());
                     }
                 };
             } else {
@@ -234,11 +220,10 @@ impl Mqtt {
             if valid_timestamp(timestamp, 10) {
                 let timestamp_ms = timestamp*1000;
                 // no need to do time_window check, as it already exist in hornet coo chyrsalis pt-1 implementation
-                let timestamp_ms =
                 // presist the transaction
                 if let Err(_) = self.persist_transaction(&msg,timestamp_ms).await {
                     if self.pending != 11 {
-                        error!("Unable to force Data consistency for the transaction: hash: {}, trytes: {}", hash, trytes.trytes());
+                        error!("Unable to force data consistency for the transaction: hash: {}, trytes: {}", hash, trytes.trytes());
                     }
                 };
             } else {

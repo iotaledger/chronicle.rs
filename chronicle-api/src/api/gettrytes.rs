@@ -118,6 +118,7 @@ impl GetTrytes {
         }
     }
     fn query(hash: String) -> Vec<u8> {
+        println!("cql: {}", SELECT_TX_QUERY);
         let Query(payload) = Query::new()
             .version()
             .flags(MyCompression::flag())
@@ -363,73 +364,77 @@ impl TrytesDecoder for Milestone {
         // do nothing acc.milestone is already none.
     }
 }
+
+const SELECT_TX_QUERY: &str = {
 #[cfg(feature = "mainnet")]
-const SELECT_TX_QUERY: &str = r#"
-  SELECT
-  payload,
-  address,
-  value,
-  obsolete_tag,
-  timestamp,
-  current_index,
-  last_index,
-  bundle,
-  trunk,
-  branch,
-  tag,
-  attachment_timestamp,
-  attachment_timestamp_lower,
-  attachment_timestamp_upper,
-  nonce,
-  milestone
-  FROM mainnet.transaction
-  WHERE hash = ?;
+let cql = r#"
+SELECT
+payload,
+address,
+value,
+obsolete_tag,
+timestamp,
+current_index,
+last_index,
+bundle,
+trunk,
+branch,
+tag,
+attachment_timestamp,
+attachment_timestamp_lower,
+attachment_timestamp_upper,
+nonce,
+milestone
+FROM mainnet.transaction
+WHERE hash = ?;
 "#;
 #[cfg(feature = "devnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "comnet"))]
-const SELECT_TX_QUERY: &str = r#"
-  SELECT
-  payload,
-  address,
-  value,
-  obsolete_tag,
-  timestamp,
-  current_index,
-  last_index,
-  bundle,
-  trunk,
-  branch,
-  tag,
-  attachment_timestamp,
-  attachment_timestamp_lower,
-  attachment_timestamp_upper,
-  nonce,
-  milestone
-  FROM devnet.transaction
-  WHERE hash = ?;
+let cql = r#"
+SELECT
+payload,
+address,
+value,
+obsolete_tag,
+timestamp,
+current_index,
+last_index,
+bundle,
+trunk,
+branch,
+tag,
+attachment_timestamp,
+attachment_timestamp_lower,
+attachment_timestamp_upper,
+nonce,
+milestone
+FROM devnet.transaction
+WHERE hash = ?;
 "#;
 #[cfg(feature = "comnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "devnet"))]
-const SELECT_TX_QUERY: &str = r#"
-  SELECT
-  payload,
-  address,
-  value,
-  obsolete_tag,
-  timestamp,
-  current_index,
-  last_index,
-  bundle,
-  trunk,
-  branch,
-  tag,
-  attachment_timestamp,
-  attachment_timestamp_lower,
-  attachment_timestamp_upper,
-  nonce,
-  milestone
-  FROM comnet.transaction
-  WHERE hash = ?;
+let cql = r#"
+SELECT
+payload,
+address,
+value,
+obsolete_tag,
+timestamp,
+current_index,
+last_index,
+bundle,
+trunk,
+branch,
+tag,
+attachment_timestamp,
+attachment_timestamp_lower,
+attachment_timestamp_upper,
+nonce,
+milestone
+FROM comnet.transaction
+WHERE hash = ?;
 "#;
+cql
+};

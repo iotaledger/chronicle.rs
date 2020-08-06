@@ -35,6 +35,6 @@ endpoint = "0.0.0.0:4000"
 content_length = 65535
 
 [broker]
-trytes_nodes = ["tcp://hornetdev01.mainnet.iota.cafe:1883"]
+trytes_nodes = []
 conf_trytes_nodes = []
 max_retries = 100

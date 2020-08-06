@@ -11,7 +11,6 @@ repository = "https://github.com/iotaledger/chronicle.rs"
 chronicle-common = { path = "../chronicle-common" }
 chronicle-cql = { path = "../chronicle-cql" }
 chronicle-storage = { path = "../chronicle-storage" }
-bee-ternary = { git = "https://github.com/Alex6323/bee-p", rev = "6083138"}
 tokio = { version = "0.2", features = ["macros", "stream", "sync", "net", "io-util", "rt-threaded", "time"] }
 hyper = "0.13.4"
 rand = "0.7.3"
@@ -21,7 +20,6 @@ cdrs = "2.2.4"
 log = "0.4.8"
 
 [features]
-default = ["mainnet"]
 mainnet = []
 devnet = []
 comnet = []
