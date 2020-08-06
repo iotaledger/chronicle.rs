@@ -103,7 +103,7 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
-        // 
+        //
         // - storage app:
         let storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -113,12 +113,12 @@ impl AppsBuilder {
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
-        // 
+        //
         // - api app
         let api = ApiBuilder::new()
             .listen_address(config.api.endpoint.clone())
             .content_length(config.api.content_length);
-        // 
+        //
         // - broker app
         let mut broker = BrokerBuilder::new().max_retries(config.broker.max_retries);
         if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
@@ -212,16 +212,14 @@ fn main() {
 }
 
 fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
-    #[cfg(feature = "mainnet")]
-    let keyspace_name = "mainnet";
-    #[cfg(feature = "devnet")]
-    #[cfg(not(feature = "mainnet"))]
-    #[cfg(not(feature = "comnet"))]
-    let keyspace_name = "devnet";
-    #[cfg(feature = "comnet")]
-    #[cfg(not(feature = "mainnet"))]
-    #[cfg(not(feature = "devnet"))]
-    let keyspace_name = "comnet";
+    let keyspace_name;
+    if cfg!(feature = "devnet") {
+        keyspace_name = "devnet"
+    } else if cfg!(feature = "comnet") {
+        keyspace_name = "comnet"
+    } else {
+        keyspace_name = "mainnet"
+    }
     let mut statement_map: HashMap<String, String> = HashMap::new();
     let mut create_tx_table_statement = String::new();
     let mut create_hint_table_statement = String::new();

@@ -8,12 +8,12 @@ homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
 repository = "https://github.com/iotaledger/chronicle.rs"
 
 [dependencies]
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "0.2", features = ["full", "time"] }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
-chronicle-api = { path = "../chronicle-api" }
+chronicle-api = { path = "../chronicle-api", default-features = false }
 chronicle-cql = { path = "../chronicle-cql" }
-chronicle-broker = { path = "../chronicle-broker" }
+chronicle-broker = { path = "../chronicle-broker", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 structopt = "0.3"
 toml = "0.5"
