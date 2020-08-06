@@ -103,8 +103,7 @@ curl http://host:port/api
 ```
 - **findTransactions** by hints
 
-
-All what the users have to do is to reflect the received hints with the next call
+All what the users have to do is to reflect the received hints with the next call till the response returns no hints at all.
 
 ## Find Transactions Changes
 - **findTransactions** returns `values/milestones/timestamps` beside `hashes`
