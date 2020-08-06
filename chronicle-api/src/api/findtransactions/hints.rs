@@ -367,58 +367,58 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
 
 //
 const SELECT_BY_APPROVEE_DATA_QUERY: &str = {
-#[cfg(feature = "mainnet")]
+    #[cfg(feature = "mainnet")]
 let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')";
-#[cfg(feature = "devnet")]
+    #[cfg(feature = "devnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "comnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')";
-#[cfg(feature = "comnet")]
+    #[cfg(feature = "comnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "devnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('trunk','branch')";
-cql
+    cql
 };
 //
 const SELECT_BY_BUNDLE_DATA_QUERY: &str = {
-#[cfg(feature = "mainnet")]
+    #[cfg(feature = "mainnet")]
 let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
-#[cfg(feature = "devnet")]
+    #[cfg(feature = "devnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "comnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
-#[cfg(feature = "comnet")]
+    #[cfg(feature = "comnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "devnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
-cql
+    cql
 };
 //
 const SELECT_BY_TAG_DATA_QUERY: &str = {
-#[cfg(feature = "mainnet")]
+    #[cfg(feature = "mainnet")]
 let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
-#[cfg(feature = "devnet")]
+    #[cfg(feature = "devnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "comnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
-#[cfg(feature = "comnet")]
+    #[cfg(feature = "comnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "devnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
-cql
+    cql
 };
 //
 const SELECT_BY_ADDRESS_DATA_QUERY: &str = {
-#[cfg(feature = "mainnet")]
+    #[cfg(feature = "mainnet")]
 let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')";
-#[cfg(feature = "devnet")]
+    #[cfg(feature = "devnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "comnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')";
-#[cfg(feature = "comnet")]
+    #[cfg(feature = "comnet")]
 #[cfg(not(feature = "mainnet"))]
 #[cfg(not(feature = "devnet"))]
 let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind in ('input','output')";
-cql
+    cql
 };
 //

@@ -102,15 +102,15 @@ pub fn query(address: &Trytes81) -> Vec<u8> {
 }
 
 const SELECT_BY_ADDRESS_QUERY: &str = {
-#[cfg(feature = "mainnet")]
-let cql = "SELECT year, month FROM mainnet.hint WHERE vertex = ? AND kind = 'address'";
-#[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "comnet"))]
-let cql = "SELECT year, month FROM devnet.hint WHERE vertex = ? AND kind = 'address'";
-#[cfg(feature = "comnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "devnet"))]
-let cql = "SELECT year, month FROM comnet.hint WHERE vertex = ? AND kind = 'address'";
-cql
+    #[cfg(feature = "mainnet")]
+    let cql = "SELECT year, month FROM mainnet.hint WHERE vertex = ? AND kind = 'address'";
+    #[cfg(feature = "devnet")]
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "comnet"))]
+    let cql = "SELECT year, month FROM devnet.hint WHERE vertex = ? AND kind = 'address'";
+    #[cfg(feature = "comnet")]
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "devnet"))]
+    let cql = "SELECT year, month FROM comnet.hint WHERE vertex = ? AND kind = 'address'";
+    cql
 };

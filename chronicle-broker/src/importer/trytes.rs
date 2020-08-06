@@ -62,9 +62,7 @@ pub trait Compatible {
 
 impl<'a> From<&'a MqttMsg> for Trytes<'a> {
     fn from(msg: &'a MqttMsg) -> Self {
-        let trytes = unsafe {
-            std::mem::transmute::<&[u8], &str>(&msg.msg.payload()[104..2777])
-        };
+        let trytes = unsafe { std::mem::transmute::<&[u8], &str>(&msg.msg.payload()[104..2777]) };
         Trytes::new(trytes)
     }
 }

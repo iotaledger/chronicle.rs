@@ -227,7 +227,10 @@ impl Importer {
                     timestamp_ms = timestamp * 1000;
                 } else {
                     if self.milestone > 0 {
-                        warn!("Unable to import transaction: {} with invalid timestamp: {} confirmed by milestone: {}",hash, timestamp,self.milestone);
+                        warn!(
+                            "Unable to import transaction: {} with invalid timestamp: {} confirmed by milestone: {}",
+                            hash, timestamp, self.milestone
+                        );
                     }
                     // invalid timestamp
                     // update the progresss bar
@@ -261,8 +264,7 @@ impl Importer {
                 (tag, TAG, TAG, 10),
             ];
             // presist by address
-            let payload =
-                insert_to_hint_table(trytes.address(), ADDRESS, year, month, Milestone::new(self.milestone));
+            let payload = insert_to_hint_table(trytes.address(), ADDRESS, year, month, Milestone::new(self.milestone));
             let request = reporter::Event::Request {
                 payload,
                 worker: self.pids.pop().unwrap().query_id(2),
@@ -628,9 +630,9 @@ pub fn count_digit(mut timestamp: i64) -> usize {
 pub fn valid_timestamp(timestamp: i64, digit_count: usize) -> bool {
     if timestamp > 0 && count_digit(timestamp) == digit_count {
         // valid
-        return true
+        return true;
     } else {
-        return false
+        return false;
     }
 }
 
@@ -647,8 +649,7 @@ pub const TAG: &str = "tag";
 // statements consts
 pub const INSERT_TANGLE_TX_QUERY: &str = {
     #[cfg(feature = "mainnet")]
-    let cql =
-    r#"
+    let cql = r#"
   INSERT INTO mainnet.transaction (
     hash,
     payload,
@@ -669,8 +670,8 @@ pub const INSERT_TANGLE_TX_QUERY: &str = {
     milestone
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
-#[cfg(feature = "devnet")]
-let cql = r#"
+    #[cfg(feature = "devnet")]
+    let cql = r#"
   INSERT INTO devnet.transaction (
     hash,
     payload,
@@ -691,8 +692,8 @@ let cql = r#"
     milestone
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
-#[cfg(feature = "comnet")]
-let cql = r#"
+    #[cfg(feature = "comnet")]
+    let cql = r#"
   INSERT INTO comnet.transaction (
     hash,
     payload,
@@ -713,7 +714,7 @@ let cql = r#"
     milestone
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
-cql
+    cql
 };
 //-------------------------------------
 pub const INSERT_TANGLE_HINT_STATMENT: &str = {
@@ -727,8 +728,8 @@ pub const INSERT_TANGLE_HINT_STATMENT: &str = {
     milestone
 ) VALUES (?,?,?,?,?);
 "#;
-#[cfg(feature = "devnet")]
-let cql = r#"
+    #[cfg(feature = "devnet")]
+    let cql = r#"
 INSERT INTO devnet.hint (
 vertex,
 kind,
@@ -737,8 +738,8 @@ month,
 milestone
 ) VALUES (?,?,?,?,?);
 "#;
-#[cfg(feature = "comnet")]
-let cql = r#"
+    #[cfg(feature = "comnet")]
+    let cql = r#"
 INSERT INTO comnet.hint (
 vertex,
 kind,
@@ -747,7 +748,7 @@ month,
 milestone
 ) VALUES (?,?,?,?,?);
 "#;
-cql
+    cql
 };
 //-------------------------------------
 pub const INSERT_TANGLE_DATA_STATMENT: &str = {
@@ -764,8 +765,8 @@ pub const INSERT_TANGLE_DATA_STATMENT: &str = {
     milestone
 ) VALUES (?,?,?,?,?,?,?,?);
 "#;
-#[cfg(feature = "devnet")]
-let cql = r#"
+    #[cfg(feature = "devnet")]
+    let cql = r#"
 INSERT INTO devnet.data (
 vertex,
 year,
@@ -777,8 +778,8 @@ value,
 milestone
 ) VALUES (?,?,?,?,?,?,?,?);
 "#;
-#[cfg(feature = "comnet")]
-let cql = r#"
+    #[cfg(feature = "comnet")]
+    let cql = r#"
 INSERT INTO comnet.data (
 vertex,
 year,
@@ -790,5 +791,5 @@ value,
 milestone
 ) VALUES (?,?,?,?,?,?,?,?);
 "#;
-cql
+    cql
 };

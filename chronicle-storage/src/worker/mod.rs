@@ -27,21 +27,11 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Cql(cql_error) => {
-                write!(f, "Worker CqlError: {:?}", cql_error)
-            }
-            Error::Io(io_error) => {
-                write!(f, "Worker IoError: {:?}", io_error)
-            }
-            Error::Overload => {
-                write!(f, "Worker Overload")
-            }
-            Error::Lost => {
-                write!(f, "Worker Lost")
-            }
-            Error::NoRing => {
-                write!(f, "Worker NoRing")
-            }
+            Error::Cql(cql_error) => write!(f, "Worker CqlError: {:?}", cql_error),
+            Error::Io(io_error) => write!(f, "Worker IoError: {:?}", io_error),
+            Error::Overload => write!(f, "Worker Overload"),
+            Error::Lost => write!(f, "Worker Lost"),
+            Error::NoRing => write!(f, "Worker NoRing"),
         }
     }
 }

@@ -366,8 +366,8 @@ impl TrytesDecoder for Milestone {
 }
 
 const SELECT_TX_QUERY: &str = {
-#[cfg(feature = "mainnet")]
-let cql = r#"
+    #[cfg(feature = "mainnet")]
+    let cql = r#"
 SELECT
 payload,
 address,
@@ -388,10 +388,10 @@ milestone
 FROM mainnet.transaction
 WHERE hash = ?;
 "#;
-#[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "comnet"))]
-let cql = r#"
+    #[cfg(feature = "devnet")]
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "comnet"))]
+    let cql = r#"
 SELECT
 payload,
 address,
@@ -412,10 +412,10 @@ milestone
 FROM devnet.transaction
 WHERE hash = ?;
 "#;
-#[cfg(feature = "comnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "devnet"))]
-let cql = r#"
+    #[cfg(feature = "comnet")]
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "devnet"))]
+    let cql = r#"
 SELECT
 payload,
 address,
@@ -436,5 +436,5 @@ milestone
 FROM comnet.transaction
 WHERE hash = ?;
 "#;
-cql
+    cql
 };

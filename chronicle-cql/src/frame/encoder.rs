@@ -24,7 +24,10 @@ pub trait ColumnEncoder {
     fn encode(&self, buffer: &mut Vec<u8>);
 }
 
-impl<T> ColumnEncoder for Option<T> where T: ColumnEncoder {
+impl<T> ColumnEncoder for Option<T>
+where
+    T: ColumnEncoder,
+{
     fn encode(&self, buffer: &mut Vec<u8>) {
         match self {
             Some(value) => value.encode(buffer),

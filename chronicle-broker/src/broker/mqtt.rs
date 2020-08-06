@@ -1,22 +1,33 @@
 use super::supervisor::{
     Event as SupervisorEvent,
-    Sender as SupervisorTx,
     Peer,
+    Sender as SupervisorTx,
     Topic,
 };
-use log::*;
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
-    worker::Error,
-    worker::Worker,
+    worker::{
+        Error,
+        Worker,
+    },
 };
+use log::*;
 use std::time;
 use tokio::{
     sync::mpsc,
     time::delay_for,
 };
 
+use crate::importer::{
+    trytes::{
+        Compatible,
+        Trytes,
+    },
+    trytes_to_i64,
+    valid_timestamp,
+    *,
+};
 use chronicle_cql::{
     compression::MyCompression,
     frame::decoder::{
@@ -25,23 +36,18 @@ use chronicle_cql::{
     },
 };
 use chrono::{
+    DateTime,
     Datelike,
     NaiveDateTime,
 };
-use crate::importer::*;
-use paho_mqtt;
-use std::time::Duration;
-use crate::importer::{
-    valid_timestamp,
-    trytes_to_i64,
-    trytes::{
-        Trytes,
-        Compatible,
-    },
+use paho_mqtt::{
+    self,
+    Message,
 };
-use chrono::DateTime;
-use paho_mqtt::Message;
-use std::fmt::Write;
+use std::{
+    fmt::Write,
+    time::Duration,
+};
 use tokio::stream::{
     Stream,
     StreamExt,
@@ -112,31 +118,34 @@ impl Mqtt {
         mut self,
         supervisor_tx: SupervisorTx,
         mut stream: impl Stream<Item = Option<Message>> + std::marker::Unpin,
-    )
-    {
+    ) {
         // For now mqtt worker directly persist the Mqtt messages,
         // NOTE: later we will have collector/cache/persisting layer.
         match self.peer.get_topic() {
             Topic::Trytes => {
                 while let Some(Some(msg)) = stream.next().await {
                     // parse timestamp
-                    let timestamp_millis = DateTime::parse_from_rfc3339(&msg.payload_str()[(2792)..(2812)]).unwrap().timestamp_millis();
+                    let timestamp_millis = DateTime::parse_from_rfc3339(&msg.payload_str()[(2792)..(2812)])
+                        .unwrap()
+                        .timestamp_millis();
                     // create MqttMsg
                     let mqtt_msg = MqttMsg::new(msg, None, timestamp_millis);
                     self.handle_trytes(mqtt_msg).await;
                 }
             }
             Topic::ConfTrytes => {
-                    while let Some(Some(msg)) = stream.next().await {
-                        let m = &msg.payload_str();
-                        let l = m.len();
-                        // parse timestamp
-                        let timestamp_millis = DateTime::parse_from_rfc3339(&m[(l-22)..(l-2)]).unwrap().timestamp_millis();
-                        let milestone = Some(m[2789..(l-36)].parse::<u64>().unwrap());
-                        // create MqttMsg
-                        let mqtt_msg = MqttMsg::new(msg, milestone, timestamp_millis);
-                        self.handle_conf_trytes(mqtt_msg).await;
-                    }
+                while let Some(Some(msg)) = stream.next().await {
+                    let m = &msg.payload_str();
+                    let l = m.len();
+                    // parse timestamp
+                    let timestamp_millis = DateTime::parse_from_rfc3339(&m[(l - 22)..(l - 2)])
+                        .unwrap()
+                        .timestamp_millis();
+                    let milestone = Some(m[2789..(l - 36)].parse::<u64>().unwrap());
+                    // create MqttMsg
+                    let mqtt_msg = MqttMsg::new(msg, milestone, timestamp_millis);
+                    self.handle_conf_trytes(mqtt_msg).await;
+                }
             }
         }
         self.peer.set_connected(false);
@@ -170,9 +179,13 @@ impl Mqtt {
                 // check if attachment_timestamp within TWO_DAYS_IN_MS time_window
                 if time_window < TWO_DAYS_IN_MS {
                     // presist the transaction
-                    if let Err(_) = self.persist_transaction(&msg,attachment_timestamp).await {
+                    if let Err(_) = self.persist_transaction(&msg, attachment_timestamp).await {
                         if self.pending != 11 {
-                            error!("Unable to force Data consistency for the transaction: hash: {}, trytes: {}", msg.hash(), msg.trytes().trytes());
+                            error!(
+                                "Unable to force Data consistency for the transaction: hash: {}, trytes: {}",
+                                msg.hash(),
+                                msg.trytes().trytes()
+                            );
                         }
                     };
                 }
@@ -181,14 +194,18 @@ impl Mqtt {
             // use timestamp instead attachment_timestamp
             let timestamp = trytes_to_i64(trytes.timestamp());
             if valid_timestamp(timestamp, 10) {
-                let timestamp_ms = timestamp*1000;
+                let timestamp_ms = timestamp * 1000;
                 let time_window = (msg.timestamp_millis - timestamp_ms).abs();
                 // check if attachment_timestamp within TWO_DAYS_IN_MS time_window
                 if time_window < TWO_DAYS_IN_MS {
                     // presist the transaction
-                    if let Err(_) = self.persist_transaction(&msg,timestamp_ms).await {
+                    if let Err(_) = self.persist_transaction(&msg, timestamp_ms).await {
                         if self.pending != 11 {
-                            error!("Unable to force Data consistency for the transaction: hash: {}, trytes: {}", msg.hash(), msg.trytes().trytes());
+                            error!(
+                                "Unable to force Data consistency for the transaction: hash: {}, trytes: {}",
+                                msg.hash(),
+                                msg.trytes().trytes()
+                            );
                         }
                     };
                 }
@@ -205,34 +222,56 @@ impl Mqtt {
             if valid_timestamp(attachment_timestamp, 13) {
                 // no need to do time_window check, as it already exist in hornet coo chyrsalis pt-1 implementation
                 // presist the transaction
-                if let Err(_) = self.persist_transaction(&msg,attachment_timestamp).await {
+                if let Err(_) = self.persist_transaction(&msg, attachment_timestamp).await {
                     if self.pending != 11 {
-                        error!("Unable to force data consistency for the transaction: hash: {}, trytes: {}", hash, trytes.trytes());
+                        error!(
+                            "Unable to force data consistency for the transaction: hash: {}, trytes: {}",
+                            hash,
+                            trytes.trytes()
+                        );
                     }
                 };
             } else {
                 // this not supposed to happens in chyrsalis pt-1
-                warn!("Unable to persist transaction: {} with invalid attachment_timestamp: {} confirmed by milestone {}", hash, attachment_timestamp, msg.milestone.unwrap());
+                warn!(
+                    "Unable to persist transaction: {} with invalid attachment_timestamp: {} confirmed by milestone {}",
+                    hash,
+                    attachment_timestamp,
+                    msg.milestone.unwrap()
+                );
             }
         } else {
             // use timestamp instead attachment_timestamp
             let timestamp = trytes_to_i64(trytes.timestamp());
             if valid_timestamp(timestamp, 10) {
-                let timestamp_ms = timestamp*1000;
+                let timestamp_ms = timestamp * 1000;
                 // no need to do time_window check, as it already exist in hornet coo chyrsalis pt-1 implementation
                 // presist the transaction
-                if let Err(_) = self.persist_transaction(&msg,timestamp_ms).await {
+                if let Err(_) = self.persist_transaction(&msg, timestamp_ms).await {
                     if self.pending != 11 {
-                        error!("Unable to force data consistency for the transaction: hash: {}, trytes: {}", hash, trytes.trytes());
+                        error!(
+                            "Unable to force data consistency for the transaction: hash: {}, trytes: {}",
+                            hash,
+                            trytes.trytes()
+                        );
                     }
                 };
             } else {
                 // this not supposed to happens in chyrsalis pt-1
-                warn!("Unable to persist transaction: {} with invalid timestamp: {} confirmed by milestone {}", hash, attachment_timestamp, msg.milestone.unwrap());
+                warn!(
+                    "Unable to persist transaction: {} with invalid timestamp: {} confirmed by milestone {}",
+                    hash,
+                    attachment_timestamp,
+                    msg.milestone.unwrap()
+                );
             }
         }
     }
-    pub async fn persist_transaction(&mut self, msg: &MqttMsg, timestamp_ms: i64) -> Result<(), Box<dyn std::error::Error>>{
+    pub async fn persist_transaction(
+        &mut self,
+        msg: &MqttMsg,
+        timestamp_ms: i64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let naive = NaiveDateTime::from_timestamp(timestamp_ms / 1000, 0);
         let year = naive.year() as u16;
         let month = naive.month() as u8;
@@ -261,8 +300,7 @@ impl Mqtt {
             (trytes.tag(), TAG, TAG, 10),
         ];
         // presist by address
-        let payload =
-            insert_to_hint_table(trytes.address(), ADDRESS, year, month, milestone);
+        let payload = insert_to_hint_table(trytes.address(), ADDRESS, year, month, milestone);
         let request = reporter::Event::Request {
             payload,
             worker: self.pids.pop().unwrap().query_id(2),
@@ -293,16 +331,7 @@ impl Mqtt {
             };
             // send request
             Ring::send_local_random_replica(rand::random::<i64>(), request);
-            let payload = insert_to_data_table(
-                vertex,
-                year,
-                month,
-                data_kind,
-                timestamp_ms,
-                hash,
-                value,
-                milestone,
-            );
+            let payload = insert_to_data_table(vertex, year, month, data_kind, timestamp_ms, hash, value, milestone);
             // create another request
             let request = reporter::Event::Request {
                 payload,
@@ -334,7 +363,12 @@ impl Mqtt {
                     // check if we consumed max_retries for given line.
                     if self.max_retries == 0 {
                         self.pids.push(pid);
-                        error!("MQTT id: {}, consumed all max_retries and unable to persist transaction: {}, trytes: {}",self.peer.id, hash, trytes.trytes());
+                        error!(
+                            "MQTT id: {}, consumed all max_retries and unable to persist transaction: {}, trytes: {}",
+                            self.peer.id,
+                            hash,
+                            trytes.trytes()
+                        );
                         return Err(Box::new(kind));
                     } else {
                         // decrement retry
@@ -343,7 +377,7 @@ impl Mqtt {
                         self.delay += 1;
                         warn!(
                             "MQTT id: {}, will sleep {} seconds before retrying, because it received: {:?}",
-                            self.peer.id,self.delay, kind
+                            self.peer.id, self.delay, kind
                         );
                         // create delay_seconds
                         let seconds = time::Duration::from_secs(self.delay as u64);
@@ -357,13 +391,7 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             2 => {
-                                let payload = insert_to_hint_table(
-                                    trytes.address(),
-                                    ADDRESS,
-                                    year,
-                                    month,
-                                    milestone,
-                                );
+                                let payload = insert_to_hint_table(trytes.address(), ADDRESS, year, month, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_local_random_replica(rand::random::<i64>(), request);
                             }
@@ -382,13 +410,7 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             4 => {
-                                let payload = insert_to_hint_table(
-                                    trytes.trunk(),
-                                    APPROVEE,
-                                    year,
-                                    month,
-                                    milestone,
-                                );
+                                let payload = insert_to_hint_table(trytes.trunk(), APPROVEE, year, month, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -407,13 +429,7 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             6 => {
-                                let payload = insert_to_hint_table(
-                                    trytes.branch(),
-                                    APPROVEE,
-                                    year,
-                                    month,
-                                    milestone,
-                                );
+                                let payload = insert_to_hint_table(trytes.branch(), APPROVEE, year, month, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -432,13 +448,7 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             8 => {
-                                let payload = insert_to_hint_table(
-                                    trytes.bundle(),
-                                    BUNDLE,
-                                    year,
-                                    month,
-                                    milestone,
-                                );
+                                let payload = insert_to_hint_table(trytes.bundle(), BUNDLE, year, month, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -457,8 +467,7 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             10 => {
-                                let payload =
-                                    insert_to_hint_table(trytes.tag(), TAG, year, month, milestone);
+                                let payload = insert_to_hint_table(trytes.tag(), TAG, year, month, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -481,7 +490,7 @@ impl Mqtt {
                     }
                 }
             };
-        };
+        }
         Ok(())
     }
 }
@@ -494,7 +503,11 @@ pub struct MqttMsg {
 
 impl MqttMsg {
     fn new(msg: Message, milestone: Option<u64>, timestamp_millis: i64) -> Self {
-        MqttMsg {msg, milestone, timestamp_millis}
+        MqttMsg {
+            msg,
+            milestone,
+            timestamp_millis,
+        }
     }
 }
 
@@ -503,12 +516,9 @@ impl Compatible for MqttMsg {
         Trytes::from(self)
     }
     fn hash(&self) -> &str {
-        unsafe {
-            std::mem::transmute::<&[u8], &str>(&self.msg.payload()[11..92])
-        }
+        unsafe { std::mem::transmute::<&[u8], &str>(&self.msg.payload()[11..92]) }
     }
 }
-
 
 impl Worker for MqttId {
     fn send_response(self: Box<Self>, _: &Option<reporter::Sender>, giveload: Vec<u8>) {

@@ -150,7 +150,10 @@ impl Supervisor {
                         // check if we already have peer with same id so we ignore
                         if let None = self.peers.get(&peer.id) {
                             // build mqtt worker
-                            let mut mqtt_worker = mqtt::MqttBuilder::new().max_retries(self.max_retries).peer(peer.clone()).build();
+                            let mut mqtt_worker = mqtt::MqttBuilder::new()
+                                .max_retries(self.max_retries)
+                                .peer(peer.clone())
+                                .build();
                             // create stream and connect then subscribe
                             if let Ok(stream) = mqtt_worker.init().await {
                                 info!(
