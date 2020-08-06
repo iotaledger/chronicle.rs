@@ -40,8 +40,8 @@ jobs:
         toolchain: ${{ matrix.rust }}
         override: true
 
-    - name: Install ZeroMQ
-      run: sudo apt update && sudo apt install -y --no-install-recommends libzmq3-dev
+    - name: Install build-essential
+      run: sudo apt-get install build-essential gcc make cmake cmake-gui cmake-curses-gui
 
     - name: Cache cargo registry
       uses: actions/cache@v1
