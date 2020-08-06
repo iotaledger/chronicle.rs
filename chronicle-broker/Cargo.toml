@@ -21,7 +21,7 @@ log = "0.4.8"
 serde = { version = "1.0.114", features = ["derive" ] }
 serde_json = "*"
 [features]
-default = ["mainnet"]
+default = []
 mainnet = []
 devnet = []
 comnet = []

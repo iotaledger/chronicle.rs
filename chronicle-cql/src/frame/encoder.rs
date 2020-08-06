@@ -24,6 +24,15 @@ pub trait ColumnEncoder {
     fn encode(&self, buffer: &mut Vec<u8>);
 }
 
+impl<T> ColumnEncoder for Option<T> where T: ColumnEncoder {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Some(value) => value.encode(buffer),
+            None => UNSET_VALUE.encode(buffer),
+        }
+    }
+}
+
 impl ColumnEncoder for i64 {
     fn encode(&self, buffer: &mut Vec<u8>) {
         buffer.extend(&BE_8_BYTES_LEN);

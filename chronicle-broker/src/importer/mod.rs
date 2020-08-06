@@ -188,25 +188,30 @@ impl Importer {
             if try_attachment_timestamp {
                 tag = trytes.tag();
                 let attachment_timestamp = trytes_to_i64(trytes.atch_timestamp());
-                if attachment_timestamp > 0 {
-                    let digits = count_digit(attachment_timestamp);
-                    if digits == 13 {
+                if attachment_timestamp != 0 {
+                    // try to use attachment_timestamp
+                    if valid_timestamp(attachment_timestamp, 13) {
                         timestamp_ms = attachment_timestamp;
                     } else {
-                        // invalid attachment_timestamp therefore we skip the transaction
+                        if self.milestone > 0 {
+                            warn!("Unable to import transaction: {} with invalid attachment_timestamp: {} confirmed by milestone: {}",hash, attachment_timestamp,self.milestone);
+                        }
+                        // invalid attachment_timestamp therefore for unconfirmed transaction, so we skip it
                         // update the progresss bar
                         self.processed_bytes += line_length as u64;
                         self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
                         continue;
                     }
                 } else {
-                    // use timestamp
+                    // use timestamp instead attachment_timestamp
                     let timestamp = trytes_to_i64(trytes.timestamp());
-                    let digits = count_digit(timestamp);
-                    if digits == 10 && timestamp > 0 {
+                    if valid_timestamp(timestamp, 10) {
                         timestamp_ms = timestamp * 1000;
                     } else {
-                        // invalid timestamp
+                        if self.milestone > 0 {
+                            warn!("Unable to import transaction: {} with invalid timestamp: {} confirmed by milestone: {}",hash, timestamp,self.milestone);
+                        }
+                        // invalid timestamp for unconfirmed transaction
                         // update the progresss bar
                         self.processed_bytes += line_length as u64;
                         self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
@@ -216,12 +221,14 @@ impl Importer {
             } else {
                 // use obsolete_tag
                 tag = trytes.obsolete_tag();
-                // use timestamp
+                // use timestamp instead attachment_timestamp
                 let timestamp = trytes_to_i64(trytes.timestamp());
-                let digits = count_digit(timestamp);
-                if digits == 10 && timestamp > 0 {
+                if valid_timestamp(timestamp, 10) {
                     timestamp_ms = timestamp * 1000;
                 } else {
+                    if self.milestone > 0 {
+                        warn!("Unable to import transaction: {} with invalid timestamp: {} confirmed by milestone: {}",hash, timestamp,self.milestone);
+                    }
                     // invalid timestamp
                     // update the progresss bar
                     self.processed_bytes += line_length as u64;
@@ -609,7 +616,7 @@ pub fn trytes_to_i64(slice: &str) -> i64 {
     i64::try_from(TryteBuf::try_from_str(slice).unwrap().as_trits()).unwrap()
 }
 
-fn count_digit(mut timestamp: i64) -> usize {
+pub fn count_digit(mut timestamp: i64) -> usize {
     let mut count = 0;
     while timestamp != 0 {
         count += 1;
@@ -617,6 +624,16 @@ fn count_digit(mut timestamp: i64) -> usize {
     }
     count
 }
+
+pub fn valid_timestamp(timestamp: i64, digit_count: usize) -> bool {
+    if timestamp > 0 && count_digit(timestamp) == digit_count {
+        // valid
+        return true
+    } else {
+        return false
+    }
+}
+
 // kind consts
 pub const ADDRESS: &str = "address";
 pub const INPUT: &str = "input";

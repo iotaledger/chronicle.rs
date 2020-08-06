@@ -53,3 +53,18 @@ impl<'a> Trytes<'a> {
         &self.0[2646..2673]
     }
 }
+use crate::broker::mqtt::MqttMsg;
+
+pub trait Compatible {
+    fn trytes(&self) -> Trytes;
+    fn hash(&self) -> &str;
+}
+
+impl<'a> From<&'a MqttMsg> for Trytes<'a> {
+    fn from(msg: &'a MqttMsg) -> Self {
+        let trytes = unsafe {
+            std::mem::transmute::<&[u8], &str>(&msg.msg.payload()[104..2777])
+        };
+        Trytes::new(trytes)
+    }
+}

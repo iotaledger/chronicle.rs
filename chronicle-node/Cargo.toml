@@ -13,14 +13,14 @@ chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-cql = {path = "../chronicle-cql"}
-chronicle-broker = { path = "../chronicle-broker", features = ["mainnet"]  }
+chronicle-broker = { path = "../chronicle-broker" }
 serde = { version = "1.0", features = ["derive"] }
 structopt = "0.3"
 toml = "0.5"
 log = "0.4.8"
 
 [features]
-default = ["mainnet"]
+default = []
 mainnet = ["chronicle-broker/mainnet","chronicle-api/mainnet"]
 devnet = ["chronicle-broker/devnet","chronicle-api/devnet"]
 comnet = ["chronicle-broker/comnet","chronicle-api/comnet"]

@@ -24,19 +24,11 @@ toml = "0.5"
 log = "0.4.8"
 
 [[example]]
-name = "storage"
-path = "storage/main.rs"
-
-[[example]]
-name = "broker"
-path = "broker/main.rs"
-
-[[example]]
 name = "permanode"
 path = "permanode/main.rs"
 
 [features]
-default = ["mainnet"]
+default = []
 mainnet = ["chronicle-broker/mainnet","chronicle-api/mainnet"]
 devnet = ["chronicle-broker/devnet","chronicle-api/devnet"]
 comnet = ["chronicle-broker/comnet","chronicle-api/comnet"]

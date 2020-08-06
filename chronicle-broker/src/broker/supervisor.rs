@@ -22,6 +22,7 @@ use tokio::{
 actor!(SupervisorBuilder {
     trytes: Option<Vec<String>>,
     conf_trytes: Option<Vec<String>>,
+    max_retries: usize,
     launcher_tx: Box<dyn LauncherTx>
 });
 pub enum Event {
@@ -119,6 +120,7 @@ impl SupervisorBuilder {
             clients,
             tx: Some(tx),
             rx,
+            max_retries: self.max_retries.unwrap(),
             launcher_tx: self.launcher_tx.unwrap(),
             shutting_down: false,
         }
@@ -129,6 +131,7 @@ pub struct Supervisor {
     clients: HashMap<usize, paho_mqtt::AsyncClient>,
     tx: Option<Sender>,
     rx: Receiver,
+    max_retries: usize,
     launcher_tx: Box<dyn LauncherTx>,
     shutting_down: bool,
 }
@@ -147,7 +150,7 @@ impl Supervisor {
                         // check if we already have peer with same id so we ignore
                         if let None = self.peers.get(&peer.id) {
                             // build mqtt worker
-                            let mut mqtt_worker = mqtt::MqttBuilder::new().peer(peer.clone()).build();
+                            let mut mqtt_worker = mqtt::MqttBuilder::new().max_retries(self.max_retries).peer(peer.clone()).build();
                             // create stream and connect then subscribe
                             if let Ok(stream) = mqtt_worker.init().await {
                                 info!(
@@ -174,6 +177,8 @@ impl Supervisor {
                                     peer.id
                                 );
                             }
+                        } else {
+                            error!("Unable to add MQTT peer because of id conflict");
                         }
                     } else {
                         error!(

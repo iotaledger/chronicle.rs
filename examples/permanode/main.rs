@@ -92,6 +92,7 @@ struct Api {
 struct Broker {
     trytes_nodes: Option<Vec<String>>,
     conf_trytes_nodes: Option<Vec<String>>,
+    max_retries: usize,
 }
 
 launcher!(
@@ -119,7 +120,7 @@ impl AppsBuilder {
             .content_length(config.api.content_length);
         // 
         // - broker app
-        let mut broker = BrokerBuilder::new();
+        let mut broker = BrokerBuilder::new().max_retries(config.broker.max_retries);
         if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
             broker = broker.trytes(trytes_nodes.to_vec());
         }
