@@ -10,12 +10,12 @@
     <a href="https://github.com/iotaledger/chronicle.rs/blob/master/LICENSE" style="text-decoration:none;"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="Apache 2.0 license"></a>
     <a href="https://dependabot.com" style="text-decoration:none;"><img src="https://api.dependabot.com/badges/status?host=github&repo=iotaledger/chronicle.rs" alt=""></a>
 </p>
-      
+
 <p align="center">
   <a href="#about">About</a> ◈
   <a href="#api-endpoints">API endpoints</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
-  <a href="#joining-the-discussion">Joining the discussion</a> 
+  <a href="#joining-the-discussion">Joining the discussion</a>
 </p>
 
 ---
@@ -28,9 +28,11 @@ For an example of how to use this crate, see the [`broker` example](https://gith
 
 ## API endpoints
 
-This crate implements the following endpoints. For details, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.1/references/chronicle-api-reference). 
+This crate implements the following endpoints. For details, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.1/references/chronicle-api-reference).
+
 
 - **getTrytes** by transaction hashes
+
 ```bash
 curl http://host:port/api
 -X POST
@@ -44,6 +46,7 @@ curl http://host:port/api
 }'
 ```
 - **findTransactions** by bundle hashes
+
 ```bash
 curl http://host:port/api
 -X POST
@@ -57,6 +60,7 @@ curl http://host:port/api
 }'
 ```
 - **findTransactions** by approvees
+
 ```bash
 curl http://host:port/api
 -X POST
@@ -70,6 +74,7 @@ curl http://host:port/api
 }'
 ```
 - **findTransactions** by addresses
+
 ```bash
 curl http://host:port/api
 -X POST
@@ -82,7 +87,8 @@ curl http://host:port/api
   ]
 }'
 ```
-- **findTransactions** by address, month, and year
+- **findTransactions** by tags
+
 ```bash
 curl http://host:port/api
 -X POST
@@ -90,24 +96,19 @@ curl http://host:port/api
 -H 'X-IOTA-API-Version: 1'
 -d '{
 "command": "findTransactions",
-"hints": [
-  {"address":"ADDRESS_1","month":8,"year":2019}
+"tags": [
+  "TAG_1", "TAG_N"
   ]
 }'
 ```
-- **findTransactions** by tag, month, and year
-```bash
-curl http://host:port/api
--X POST
--H 'Content-Type: application/json'
--H 'X-IOTA-API-Version: 1'
--d '{
-"command": "findTransactions",
-"hints": [
-  {"tag":"TAG_1","month":8,"year":2019}
-  ]
-}'
-```
+- **findTransactions** by hints
+
+
+All what the users have to do is to reflect the received hints with the next call
+
+## Find Transactions Changes
+- **findTransactions** returns `values/milestones/timestamps` beside `hashes`
+- **findTransactions** by `addresses/bundles/approvees/tags` might return `hints` which indicates the need for further calls to fetch the remaining pages
 
 ## Supporting the project
 
