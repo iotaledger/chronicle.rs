@@ -101,13 +101,13 @@ curl http://host:port/api
   ]
 }'
 ```
-- **findTransactions** by hints
-
-All what the users have to do is to reflect the received hints with the next call till the response returns no hints at all.
-
 ## Find Transactions Changes
 - **findTransactions** returns `values/milestones/timestamps` beside `hashes`
+
 - **findTransactions** by `addresses/bundles/approvees/tags` might return `hints` which indicates the need for further calls to fetch the remaining pages
+
+- **findTransactions** by `hints`,
+  all what the users have to do is to reflect the received hints with the next call till the response returns no hints at all.
 
 ## Supporting the project
 
