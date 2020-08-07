@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="#about">About</a> ◈
+  <a href="#getting-started">Getting started</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
   <a href="#joining-the-discussion">Joining the discussion</a>
 </p>

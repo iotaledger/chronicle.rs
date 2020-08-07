@@ -23,7 +23,7 @@
 
 This crate contains the core runtime code for building, running, and managing applications.
 
-For examples of how to use this crate, see the [examples](https://github.com/iotaledger/chronicle.rs/blob/982bf8d8206d5d7e36589d37407fb8884485e51c/examples/broker/main.rs#L6) directory.
+For examples of how to use this crate, see the [examples](/examples) directory.
 
 ## Supporting the project
 

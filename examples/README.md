@@ -24,7 +24,7 @@
 
 This directory contains examples of building your own permanode applications:
 
-- **[Permanode](/permanode):** An example of a CLI permanode application
+- **[Permanode](/examples/permanode):** An example of a CLI permanode application
 
 ## Getting started
 

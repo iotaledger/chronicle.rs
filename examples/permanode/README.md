@@ -24,7 +24,7 @@
 
 This directory contains the following example:
 
-- **[Permanode](/permanode):** An example of a CLI permanode application
+- **[Permanode](/examples/permanode):** An example of a CLI permanode application
 
 ## Getting started
 
