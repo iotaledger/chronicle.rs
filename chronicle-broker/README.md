@@ -23,7 +23,7 @@
 
 This crate allows you to subscribe to the `trytes` and `conf_trytes` events on one or more IOTA nodes to receive new and/or recently confirmed transactions.
 
-For an example of how to use this crate, see the [`broker` example](https://github.com/iotaledger/chronicle.rs/blob/982bf8d8206d5d7e36589d37407fb8884485e51c/examples/broker/main.rs#L36).
+For an example of how to use this crate, see the [`broker` example](https://github.com/iotaledger/chronicle.rs/tree/master/examples).
 
 ## Supporting the project
 

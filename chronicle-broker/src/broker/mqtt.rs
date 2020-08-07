@@ -261,7 +261,7 @@ impl Mqtt {
                 warn!(
                     "Unable to persist transaction: {} with invalid timestamp: {} confirmed by milestone {}",
                     hash,
-                    attachment_timestamp,
+                    timestamp,
                     msg.milestone.unwrap()
                 );
             }
@@ -381,7 +381,7 @@ impl Mqtt {
                         );
                         // create delay_seconds
                         let seconds = time::Duration::from_secs(self.delay as u64);
-                        // sleep the importer to not push any further queries to scylla
+                        // sleep the mqtt to not push any further queries to scylla
                         delay_for(seconds).await;
                         // retry the specific query based on its query_id using send_global_random_replica strategy
                         match pid.get_query_id() {

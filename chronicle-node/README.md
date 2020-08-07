@@ -1,4 +1,4 @@
-<h2 align="center">Examples</h2>
+<h2 align="center">Node</h2>
 
 <p align="center">
     <a href="https://docs.iota.org/docs/chronicle/1.1/overview" style="text-decoration:none;">
@@ -13,7 +13,6 @@
 
 <p align="center">
   <a href="#about">About</a> ◈
-  <a href="#getting-started">Getting started</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
   <a href="#joining-the-discussion">Joining the discussion</a>
 </p>
@@ -22,16 +21,15 @@
 
 ## About
 
-This directory contains examples of building your own permanode applications:
-
-- **[Permanode](/permanode):** An example of a CLI permanode application
+This crate contains is the _**c**ommand **l**ine **i**nterface_ `chronicle-node` identical to **[Permanode](https://github.com/iotaledger/chronicle.rs/tree/master/examples/permanode)** example.
 
 ## Getting started
 
-To run an example, do the following:
+To run `chronicle-node`, do the following:
 
+- Supported features: one of `"mainnet"`, `"devnet"`, `"comnet"`.
 ```bash
-cargo run --example [EXAMPLE_NAME]
+cargo run --release --features "mainnet" path/to/config.toml
 ```
 
 ## Supporting the project

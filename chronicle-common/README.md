@@ -10,11 +10,11 @@
     <a href="https://github.com/iotaledger/chronicle.rs/blob/master/LICENSE" style="text-decoration:none;"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="Apache 2.0 license"></a>
     <a href="https://dependabot.com" style="text-decoration:none;"><img src="https://api.dependabot.com/badges/status?host=github&repo=iotaledger/chronicle.rs" alt=""></a>
 </p>
-      
+
 <p align="center">
   <a href="#about">About</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
-  <a href="#joining-the-discussion">Joining the discussion</a> 
+  <a href="#joining-the-discussion">Joining the discussion</a>
 </p>
 
 ---

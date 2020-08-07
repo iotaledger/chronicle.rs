@@ -61,9 +61,9 @@ To run Chronicle, you need the following:
 
 - 64-bit processor
 
-- At least a 10 Gbps network connection 
+- Preferred a 10 Gbps network connection
 
-- At least 2 CPU cores
+- At least 2 CPU cores (only for the meantime)
 
     You can check how many CPU cores your device has, using the following command:
 
@@ -73,15 +73,18 @@ To run Chronicle, you need the following:
 
 - [Rust](https://www.rust-lang.org/tools/install)
 
-- At least one Scylla node (version 3.0.5 or greater) running on a different device in the same private network as Chronicle. See the [Scylla documentation](https://docs.scylladb.com/getting-started/) for a tutorial on setting one up. For information about securing your Scylla nodes, see the [Scylla security documentation](https://docs.scylladb.com/operating-scylla/security/).
+- At least one Scylla node (version 4 or greater) running on a different device in the same private network as Chronicle. See the [Scylla documentation](https://docs.scylladb.com/getting-started/) for a tutorial on setting one up. For information about securing your Scylla nodes, see the [Scylla security documentation](https://docs.scylladb.com/operating-scylla/security/).
 
-- The `build-essentials`, `pkg-config`, and `libzmq3-dev` packages
+- The `build-essentials` packages
 
-    You can install these packages, using the following command:
+    You can install these packages for Debian based distros, using the following command:
 
     ```bash
-    sudo apt update && sudo apt install build-essentials sudo apt install pkg-config && sudo apt install -y --no-install-recommends libzmq3-dev
+    sudo apt-get install build-essential gcc make cmake cmake-gui cmake-curses-gui
     ```
+    For other Linux distros, please refer to your package manager to install the build-essential pkgs
+
+
 
 - (Optional) An IDE that supports Rust autocompletion. We recommend [Visual Studio Code](https://code.visualstudio.com/Download) with the [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=matklad.rust-analyzer) extension
 
