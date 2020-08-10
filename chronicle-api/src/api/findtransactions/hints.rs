@@ -264,7 +264,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
                     .consistency(Consistency::One)
                     .query_flags(query_flags)
                     .value_count(3)
-                    .value(address) // it might be tag or address
+                    .value(address)
                     .value(year_month.year())
                     .value(year_month.month())
                     .page_size(page_size.unwrap_or(5000) as i32)
@@ -292,7 +292,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
                     .consistency(Consistency::One)
                     .query_flags(query_flags)
                     .value_count(3)
-                    .value(tag) // it might be tag or address
+                    .value(tag)
                     .value(year_month.year())
                     .value(year_month.month())
                     .page_size(page_size.unwrap_or(5000) as i32)
@@ -321,7 +321,7 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
                     .consistency(Consistency::One)
                     .query_flags(query_flags)
                     .value_count(3)
-                    .value(bundle) // it might be tag or address
+                    .value(bundle)
                     .value(year_month.year())
                     .value(year_month.month())
                     .page_size(page_size.unwrap_or(5000) as i32)

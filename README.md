@@ -147,10 +147,10 @@ To get a permanode up and running as quickly as possible, run the CLI applicatio
 
 2. Run the `permanode` example. Replace the `$CONFIG` placeholder with the path to your `config.toml` file
 
-  ```bash
-  cd examples
-  cargo run --example permanode $CONFIG/config.toml
-  ```
+- Supported features: one of `"mainnet"`, `"devnet"`, `"comnet"`.
+```bash
+cargo run --release --features "mainnet" --example permanode $CONFIG/config.toml
+```
 
 For a complete tutorial on the permanode CLI, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.1/tutorials/run-a-permanode).
 
