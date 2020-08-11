@@ -103,7 +103,7 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
-        // 
+        //
         // - storage app:
         let storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -113,12 +113,12 @@ impl AppsBuilder {
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
-        // 
+        //
         // - api app
         let api = ApiBuilder::new()
             .listen_address(config.api.endpoint.clone())
             .content_length(config.api.content_length);
-        // 
+        //
         // - broker app
         let mut broker = BrokerBuilder::new().max_retries(config.broker.max_retries);
         if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
@@ -181,6 +181,14 @@ fn main() {
                     .run()
                     .await
                     .expect("failed to create transaction table");
+                // create index on milestone column, this is useful to lookup by milestone index
+                SchemaCqlBuilder::new()
+                    .statement(statement_map["CREATE_INDEX_ON_TX_TABLE_QUERY"].clone())
+                    .max_retries(10)
+                    .build()
+                    .run()
+                    .await
+                    .expect("failed to create index on transaction table for milestone column");
                 // create edge table
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_HINT_TABLE_QUERY"].clone())
@@ -226,6 +234,7 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     }
     let mut statement_map: HashMap<String, String> = HashMap::new();
     let mut create_tx_table_statement = String::new();
+    let mut create_index_on_tx_table_milestone_col_statement = String::new();
     let mut create_hint_table_statement = String::new();
     let mut create_data_table_statement = String::new();
     let mut create_key_space_statement = String::from("CREATE KEYSPACE IF NOT EXISTS ");
@@ -270,6 +279,14 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     )
     .unwrap();
 
+    // create index on milestone column
+    write!(
+        &mut create_index_on_tx_table_milestone_col_statement,
+        "CREATE INDEX IF NOT EXISTS ON {}.transaction (milestone);",
+        keyspace_name
+    )
+    .unwrap();
+
     write!(
         &mut create_hint_table_statement,
         "CREATE TABLE IF NOT EXISTS {}.hint (
@@ -308,6 +325,10 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     statement_map.insert(
         "CREATE_TX_TABLE_QUERY".to_string(),
         create_tx_table_statement.to_string(),
+    );
+    statement_map.insert(
+        "CREATE_INDEX_ON_TX_TABLE_QUERY".to_string(),
+        create_index_on_tx_table_milestone_col_statement.to_string(),
     );
     statement_map.insert(
         "CREATE_HINT_TABLE_QUERY".to_string(),
