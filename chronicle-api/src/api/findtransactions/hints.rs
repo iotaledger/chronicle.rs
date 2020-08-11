@@ -300,7 +300,6 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
                     .build(MyCompression::get());
                 Some(payload)
             } else {
-                println!("consumed hint tag timeline");
                 // empty timeline or consumed
                 return None;
             }
@@ -357,7 +356,6 @@ pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
                     .build(MyCompression::get());
                 Some(payload)
             } else {
-                println!("consumed hint approvee timeline");
                 // empty timeline or consumed
                 return None;
             }

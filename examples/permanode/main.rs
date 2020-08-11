@@ -168,6 +168,7 @@ fn main() {
                 // create tangle keyspace
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_KEYSPACE_QUERY"].clone())
+                    .max_retries(10)
                     .build()
                     .run()
                     .await
@@ -175,6 +176,7 @@ fn main() {
                 // create transaction table
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_TX_TABLE_QUERY"].clone())
+                    .max_retries(10)
                     .build()
                     .run()
                     .await
@@ -182,6 +184,7 @@ fn main() {
                 // create edge table
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_HINT_TABLE_QUERY"].clone())
+                    .max_retries(10)
                     .build()
                     .run()
                     .await
@@ -189,6 +192,7 @@ fn main() {
                 // create data table
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_DATE_TABLE_QUERY"].clone())
+                    .max_retries(10)
                     .build()
                     .run()
                     .await
