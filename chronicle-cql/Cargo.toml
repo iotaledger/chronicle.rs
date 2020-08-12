@@ -1,6 +1,6 @@
 [package]
 name = "chronicle-cql"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["IOTA Stiftung"]
 edition = "2018"
 license = "APACHE 2.0"
