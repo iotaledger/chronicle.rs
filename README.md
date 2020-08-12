@@ -126,10 +126,10 @@ Add the following to your `Cargo.toml` file:
 
 ```bash
 [dependencies]
-chronicle-common = { version = "0.1.0", path = "../chronicle.rs" }
-chronicle-api = { version = "0.1.0", path = "../chronicle.rs" }
-chronicle-broker = { version = "0.1.0", path = "../chronicle.rs" }
-chronicle-storage = { version = "0.1.0", path = "../chronicle.rs" }
+chronicle-common = { path = "../chronicle.rs" }
+chronicle-api = { path = "../chronicle.rs" }
+chronicle-broker = { path = "../chronicle.rs" }
+chronicle-storage = { path = "../chronicle.rs" }
 ```
 
 ## Getting started
