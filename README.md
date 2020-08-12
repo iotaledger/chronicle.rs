@@ -134,7 +134,7 @@ chronicle-storage = { version = "0.1.0", path = "../chronicle.rs" }
 
 ## Getting started
 
-For examples of building your own permanode, see the examples in the [`broker`](examples/broker/main.rs) and [`storage`](examples/storage/main.rs) directories.
+For examples of building your own permanode, see the [`examples`](examples/) directory.
 
 To get a permanode up and running as quickly as possible, run the CLI application by doing the following:
 
