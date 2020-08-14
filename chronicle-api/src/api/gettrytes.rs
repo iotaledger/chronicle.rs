@@ -118,7 +118,6 @@ impl GetTrytes {
         }
     }
     fn query(hash: String) -> Vec<u8> {
-        println!("cql: {}", SELECT_TX_QUERY);
         let Query(payload) = Query::new()
             .version()
             .flags(MyCompression::flag())

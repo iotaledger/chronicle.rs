@@ -86,7 +86,6 @@ impl ApproveesDecoder for Month {
 
 /// Create a query frame to lookup for tx-hashes in the edge table using an approvee
 pub fn query(approvee: &Trytes81) -> Vec<u8> {
-    println!("approvee: {}", SELECT_BY_APPROVEE_QUERY);
     let Query(payload) = Query::new()
         .version()
         .flags(MyCompression::flag())
