@@ -83,7 +83,7 @@ impl Reusable {
         unsafe { self.value.get().as_ref().unwrap().as_ref() }
     }
     pub fn as_mut_payload(&self) -> Option<&mut sender::Payload> {
-        unsafe { self.value.get().as_mut().unwrap().as_mut() }
+        self.as_mut().as_mut()
     }
 }
 unsafe impl Sync for Reusable {}

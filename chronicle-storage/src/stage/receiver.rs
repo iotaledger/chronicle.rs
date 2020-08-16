@@ -78,9 +78,9 @@ impl Receiver {
             let _ = reporter_tx.send(reporter::Event::Session(reporter::Session::CheckPoint(self.session_id)));
         }
     }
-    fn handle_remaining_buffer(&mut self, i: usize, end: usize) {
+    fn handle_remaining_buffer(&mut self, i: usize) {
         if self.current_length < HEADER_LENGTH {
-            for index in i..end {
+            for index in i..(i + self.current_length) {
                 self.buffer[self.i] = self.buffer[index];
                 self.i += 1;
             }
@@ -93,9 +93,10 @@ impl Receiver {
         // if no-header decode the header and resize the payload(if needed).
         if !self.header {
             // decode total_length(HEADER_LENGTH + frame_body_length)
-            self.total_length = get_total_length_usize(&self.buffer[padding..]);
+            let buf = &self.buffer[padding..];
+            self.total_length = get_total_length_usize(&buf);
             // decode stream_id
-            self.stream_id = get_stream_id(&self.buffer[padding..]);
+            self.stream_id = get_stream_id(&buf);
             // get mut ref to payload for stream_id
             let payload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // resize payload only if total_length is larger than the payload length
@@ -116,8 +117,10 @@ impl Receiver {
             let giveload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // memcpy the current bytes from self.buffer into payload
             let start = self.current_length - n;
-            giveload[start..self.total_length]
-                .copy_from_slice(&self.buffer[padding..(padding + self.total_length - start)]);
+            let old_padding = padding;
+            // update padding
+            padding += self.total_length - start;
+            giveload[start..self.total_length].copy_from_slice(&self.buffer[old_padding..padding]);
             // tell reporter that giveload is ready.
             self.reporters
                 .get(&compute_reporter_num(self.stream_id, self.appends_num))
@@ -129,9 +132,7 @@ impl Receiver {
             self.header = false;
             // update current_length
             self.current_length -= self.total_length;
-            // update padding
-            padding += self.total_length;
-            self.handle_remaining_buffer(padding, padding + self.current_length);
+            self.handle_remaining_buffer(padding);
         } else {
             // get mut ref to payload for stream_id
             let payload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();

@@ -97,17 +97,19 @@ impl Reporter {
             match event {
                 Event::Request { worker, mut payload } => {
                     if let Some(stream) = self.streams.pop() {
-                        // Assign stream_id to the payload
-                        assign_stream_to_payload(stream, &mut payload);
-                        // store payload as reusable at payloads[stream]
-                        self.payloads[stream as usize].as_mut().replace(payload);
                         // Send the event
                         match &self.sender_tx {
                             Some(sender) => {
+                                // Assign stream_id to the payload
+                                assign_stream_to_payload(stream, &mut payload);
+                                // store payload as reusable at payloads[stream]
+                                self.payloads[stream as usize].as_mut().replace(payload);
                                 sender.send(stream).unwrap();
                                 self.workers.insert(stream, worker);
                             }
                             None => {
+                                // return the stream_id
+                                self.streams.push(stream);
                                 // This means the sender_tx had been droped as a result of checkpoint from receiver
                                 worker.send_error(Error::Io(IoError::new(ErrorKind::Other, "No Sender!")));
                             }
