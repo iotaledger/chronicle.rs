@@ -3,10 +3,10 @@ name: Test
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
     branches:
-      - master
+      - main
 
 jobs:
   test:
@@ -32,7 +32,7 @@ jobs:
           - 5432:5432
 
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@main
 
     - name: Install ${{ matrix.rust }}
       uses: actions-rs/toolchain@v1

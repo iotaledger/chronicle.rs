@@ -5,7 +5,7 @@ on:
     - cron: '30 12 * * *'
   push:
     branches:
-      - master
+      - main
     paths:
       - "**/Cargo.lock"
       - "**/Cargo.toml"
