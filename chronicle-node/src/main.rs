@@ -104,7 +104,7 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
-        //
+        // 
         // - storage app:
         let storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -114,12 +114,12 @@ impl AppsBuilder {
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
-        //
+        // 
         // - api app
         let api = ApiBuilder::new()
             .listen_address(config.api.endpoint.clone())
             .content_length(config.api.content_length);
-        //
+        // 
         // - broker app
         let mut broker = BrokerBuilder::new()
             .max_retries(config.broker.max_retries)
@@ -150,7 +150,7 @@ fn main() {
         .thread_stack_size(3 * 1024 * 1024)
         .build()
         .unwrap();
-    info!("Welcome to Chronicle Permanode Alpha v0.2.0");
+    info!("Welcome to Chronicle Permanode Alpha v0.2.1");
     let apps = AppsBuilder::new().build(config);
     // run chronicle.
     runtime.block_on(async {

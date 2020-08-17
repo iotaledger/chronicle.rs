@@ -150,7 +150,7 @@ fn main() {
         .thread_stack_size(3 * 1024 * 1024)
         .build()
         .unwrap();
-    info!("Welcome to Chronicle Permanode Alpha v0.2.0");
+    info!("Welcome to Chronicle Permanode Alpha v0.2.1");
     let apps = AppsBuilder::new().build(config);
     // run chronicle.
     runtime.block_on(async {
