@@ -92,6 +92,7 @@ struct Api {
 struct Broker {
     trytes_nodes: Option<Vec<String>>,
     conf_trytes_nodes: Option<Vec<String>>,
+    stream_capacity: usize,
     max_retries: usize,
 }
 
@@ -120,7 +121,9 @@ impl AppsBuilder {
             .content_length(config.api.content_length);
         // 
         // - broker app
-        let mut broker = BrokerBuilder::new().max_retries(config.broker.max_retries);
+        let mut broker = BrokerBuilder::new()
+            .max_retries(config.broker.max_retries)
+            .stream_capacity(config.broker.stream_capacity);
         if let Some(trytes_nodes) = config.broker.trytes_nodes.as_ref() {
             broker = broker.trytes(trytes_nodes.to_vec());
         }
@@ -168,7 +171,7 @@ fn main() {
                 // create tangle keyspace
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_KEYSPACE_QUERY"].clone())
-                    .max_retries(10)
+                    .max_retries(50)
                     .build()
                     .run()
                     .await
@@ -176,7 +179,7 @@ fn main() {
                 // create transaction table
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_TX_TABLE_QUERY"].clone())
-                    .max_retries(10)
+                    .max_retries(50)
                     .build()
                     .run()
                     .await
@@ -184,7 +187,7 @@ fn main() {
                 // create index on milestone column, this is useful to lookup by milestone index
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_INDEX_ON_TX_TABLE_QUERY"].clone())
-                    .max_retries(10)
+                    .max_retries(50)
                     .build()
                     .run()
                     .await
@@ -192,7 +195,7 @@ fn main() {
                 // create edge table
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_HINT_TABLE_QUERY"].clone())
-                    .max_retries(10)
+                    .max_retries(50)
                     .build()
                     .run()
                     .await
@@ -200,7 +203,7 @@ fn main() {
                 // create data table
                 SchemaCqlBuilder::new()
                     .statement(statement_map["CREATE_DATE_TABLE_QUERY"].clone())
-                    .max_retries(10)
+                    .max_retries(50)
                     .build()
                     .run()
                     .await

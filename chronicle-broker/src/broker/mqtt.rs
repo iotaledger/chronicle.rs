@@ -78,7 +78,8 @@ actor!(MqttBuilder {
     id: String,
     peer: Peer,
     client: paho_mqtt::AsyncClient,
-    max_retries: usize
+    max_retries: usize,
+    stream_capacity: usize
 });
 
 impl MqttBuilder {
@@ -97,6 +98,7 @@ impl MqttBuilder {
             client: self.client,
             pids,
             max_retries,
+            stream_capacity: self.stream_capacity.unwrap(),
             initial_max_retries: max_retries,
             delay: 0,
         }
@@ -111,6 +113,7 @@ pub struct Mqtt {
     pending: usize,
     initial_max_retries: usize,
     max_retries: usize,
+    stream_capacity: usize,
     delay: usize,
 }
 impl Mqtt {
@@ -156,7 +159,7 @@ impl Mqtt {
         let mut client_id = String::new();
         write!(&mut client_id, "chronicle_{}", self.peer.id).unwrap();
         let mut cli = paho_mqtt::AsyncClient::new((&self.peer.address[..], &client_id[..]))?;
-        let stream = cli.get_stream(100);
+        let stream = cli.get_stream(self.stream_capacity);
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
             .keep_alive_interval(Duration::from_secs(20))
             .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
@@ -166,6 +169,14 @@ impl Mqtt {
         cli.subscribe(self.peer.get_topic_as_string(), 1).await?;
         self.peer.set_connected(true);
         self.client.replace(cli);
+        Ok(stream)
+    }
+    pub async fn reconnect(&mut self) -> Result<impl Stream<Item = Option<Message>>, paho_mqtt::Error> {
+        let cli = self.client.as_mut().unwrap();
+        let stream = cli.get_stream(self.stream_capacity);
+        cli.reconnect().await?;
+        cli.subscribe(self.peer.get_topic_as_string(), 1).await?;
+        self.peer.set_connected(true);
         Ok(stream)
     }
     pub async fn handle_trytes(&mut self, msg: MqttMsg) {

@@ -23,6 +23,7 @@ actor!(SupervisorBuilder {
     trytes: Option<Vec<String>>,
     conf_trytes: Option<Vec<String>>,
     max_retries: usize,
+    stream_capacity: usize,
     launcher_tx: Box<dyn LauncherTx>
 });
 pub enum Event {
@@ -121,6 +122,7 @@ impl SupervisorBuilder {
             tx: Some(tx),
             rx,
             max_retries: self.max_retries.unwrap(),
+            stream_capacity: self.stream_capacity.unwrap(),
             launcher_tx: self.launcher_tx.unwrap(),
             shutting_down: false,
         }
@@ -132,6 +134,7 @@ pub struct Supervisor {
     tx: Option<Sender>,
     rx: Receiver,
     max_retries: usize,
+    stream_capacity: usize,
     launcher_tx: Box<dyn LauncherTx>,
     shutting_down: bool,
 }
@@ -152,6 +155,7 @@ impl Supervisor {
                             // build mqtt worker
                             let mut mqtt_worker = mqtt::MqttBuilder::new()
                                 .max_retries(self.max_retries)
+                                .stream_capacity(self.stream_capacity)
                                 .peer(peer.clone())
                                 .build();
                             // create stream and connect then subscribe
@@ -193,25 +197,43 @@ impl Supervisor {
                     }
                 }
                 Event::Reconnect(mut mqtt) => {
+                    let peer_id = mqtt.peer.id;
+                    // update peers
+                    self.peers.get_mut(&peer_id).unwrap().set_connected(false);
                     // handle disconnect, first we check if the disconnect was requested by checking clients map
-                    if let Some(client) = self.clients.get_mut(&mqtt.peer.id) {
-                        // update peers
-                        self.peers.get_mut(&mqtt.peer.id).unwrap().set_connected(false);
+                    if let Some(client) = self.clients.remove(&peer_id) {
+                        warn!(
+                            "Reconnecting MQTT peer 'topic: {}, address: {}, id: {}'",
+                            mqtt.peer.get_topic_as_string(),
+                            mqtt.peer.address,
+                            peer_id
+                        );
+                        // return client to mqtt in order to reconnect;
+                        mqtt.client.replace(client);
                         // create stream and connect then subscribe
-                        if let Ok(stream) = mqtt.init().await {
+                        if let Ok(stream) = mqtt.reconnect().await {
+                            info!(
+                                "Reconnected MQTT peer 'topic: {}, address: {}, id: {}'",
+                                mqtt.peer.get_topic_as_string(),
+                                mqtt.peer.address,
+                                peer_id
+                            );
                             // update peers
-                            self.peers.get_mut(&mqtt.peer.id).unwrap().set_connected(true);
+                            self.peers.get_mut(&peer_id).unwrap().set_connected(true);
                             // take client to manage the mqtt session
-                            let new_client = mqtt.client.take().unwrap();
-                            // overwrite client in our state
-                            *client = new_client;
+                            let client = mqtt.client.take().unwrap();
+                            // return client to our state
+                            self.clients.insert(peer_id, client);
                             // spawn mqtt
                             tokio::spawn(mqtt.run(self.tx.as_ref().unwrap().clone(), stream));
                         } else {
                             error!(
-                                "Unable to connect MQTT peer 'topic: {}, address: {}, id: {}', will retry every 5 seconds",
-                                mqtt.peer.get_topic_as_string(),mqtt.peer.address, mqtt.peer.id
+                                "Unable to reconnect MQTT peer 'topic: {}, address: {}, id: {}', will retry every 5 seconds",
+                                mqtt.peer.get_topic_as_string(),mqtt.peer.address, peer_id
                             );
+                            // return client to our state
+                            let client = mqtt.client.take().unwrap();
+                            self.clients.insert(peer_id, client);
                             let _ = self.tx.as_ref().unwrap().send(Event::Reconnect(mqtt));
                             delay_for(Duration::from_secs(5)).await;
                         }
