@@ -1,6 +1,6 @@
 # chronicle-[alpha/beta/etc.]-v[x.x.x].[ext]
 [version]
-version = "chronicle-alpha-v0.2.0"
+version = "chronicle-alpha-v0.2.1"
 service = "Permanode"
 
 # logger settings

@@ -80,7 +80,7 @@ impl CqlConn {
 #[derive(Clone, Debug, IntoCDRSValue, TryFromRow, PartialEq)]
 struct RowTokens {
     data_center: String,
-    rpc_address: IpAddr,
+    broadcast_address: IpAddr,
     tokens: Vec<String>,
 }
 
@@ -139,7 +139,7 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     // then add it to cqlconn
     // query param builder
     let params = query::QueryParamsBuilder::new().page_size(500).finalize();
-    let query = "SELECT data_center, rpc_address, tokens FROM system.local;".to_string();
+    let query = "SELECT data_center, broadcast_address, tokens FROM system.local;".to_string();
     let query = query::Query { query, params };
     // query_frame
     let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
@@ -157,10 +157,10 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
         .into_rows()
         .unwrap();
     let row = RowTokens::try_from_row(rows.pop().unwrap()).unwrap();
-    let rpc_address = row.rpc_address.to_string();
+    let broadcast_address = row.broadcast_address.to_string();
     let mut tokens: Tokens = Vec::new();
     for token in row.tokens.iter() {
-        let node_id = gen_node_id(&rpc_address);
+        let node_id = gen_node_id(&broadcast_address);
         let token = i64::from_str_radix(token, 10).unwrap();
         tokens.push((
             token,
