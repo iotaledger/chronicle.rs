@@ -12,6 +12,7 @@ use super::{
 use hyper::{
     body::{
         aggregate,
+        to_bytes,
         Buf,
     },
     Body,
@@ -52,8 +53,8 @@ pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
             if let Ok(length_str) = length.to_str() {
                 if let Ok(length_u32) = length_str.parse::<u32>() {
                     if length_u32 <= unsafe { CONTENT_LENGTH } {
-                        if let Ok(buffer) = aggregate(stream).await {
-                            if let Ok(request) = serde_json::from_slice::<ReqBody>(buffer.bytes()) {
+                        if let Ok(buffer) = to_bytes(stream).await {
+                            if let Ok(request) = serde_json::from_slice::<ReqBody>(&buffer) {
                                 Ok(route(request).await)
                             } else {
                                 Ok(
