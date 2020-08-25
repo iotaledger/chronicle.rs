@@ -10,11 +10,7 @@ use super::{
     },
 };
 use hyper::{
-    body::{
-        aggregate,
-        to_bytes,
-        Buf,
-    },
+    body::to_bytes,
     Body,
     Method,
     Request,
