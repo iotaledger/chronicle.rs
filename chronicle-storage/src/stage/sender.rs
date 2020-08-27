@@ -81,7 +81,7 @@ impl SenderState {
             }
         } // if sender reached this line, then either write_all returned IO Err(err) or reporter(s) droped sender_tx(s)
           // probably not needed
-        self.socket.shutdown().await.unwrap();
+        let _ = self.socket.shutdown().await;
         // send checkpoint to all reporters because the socket is mostly closed
         for reporter_tx in self.reporters.values() {
             reporter_tx
