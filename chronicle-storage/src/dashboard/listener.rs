@@ -48,10 +48,8 @@ impl Listener {
     }
     async fn listener(mut self) {
         loop {
-            if let Ok((socket, _)) = self.tcp_listener.accept().await {
-                let peer = socket
-                    .peer_addr()
-                    .expect("connected streams should have a peer address");
+            if let Ok((socket, peer)) = self.tcp_listener.accept().await {
+                let peer = socket.peer_addr().unwrap_or(peer);
                 if let Ok(ws_stream) = accept_async(socket).await {
                     // build websocket
                     let websocket = websocket::WebsocketdBuilder::new()
