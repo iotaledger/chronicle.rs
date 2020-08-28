@@ -13,6 +13,7 @@ use futures::{
     },
     StreamExt,
 };
+use log::*;
 use serde::{
     Deserialize,
     Serialize,
@@ -99,7 +100,7 @@ impl Websocket {
                                     uniform_rf as usize,
                                 )));
                         }
-                        _ => panic!("unexpected SocketMsg"),
+                        _ => warn!("unexpected SocketMsg from {}", self.peer),
                     }
                 }
                 if msg.is_close() {
