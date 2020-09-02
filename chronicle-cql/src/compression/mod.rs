@@ -1,6 +1,8 @@
+use crate::frame::header;
 use std::convert::TryInto;
 
 pub trait Compression: Sync {
+    /// Decompress buffer only if compression flag is set
     fn decompress(&self, compressed: Vec<u8>) -> Vec<u8>;
     fn compress(&self, uncompressed: Vec<u8>) -> Vec<u8>;
 }
@@ -9,17 +11,23 @@ pub struct Lz4;
 
 impl Compression for Lz4 {
     fn decompress(&self, mut buffer: Vec<u8>) -> Vec<u8> {
-        let compressed_body_length = i32::from_be_bytes(buffer[5..9].try_into().unwrap()) as usize;
-        // Decompress the body by lz4
-        let decompressed_buffer: Vec<u8> =
-            lz4::block::decompress(&buffer[13..(13 + compressed_body_length)], None).unwrap();
-        // adjust the length to equal the uncompressed length
-        buffer.copy_within(9..13, 5);
-        // reduce the frame to be a header only
-        buffer.truncate(9);
-        // Extend the decompressed body
-        buffer.extend(&decompressed_buffer);
-        buffer
+        // check if buffer is compressed
+        if buffer[1] & header::COMPRESSION == header::COMPRESSION {
+            let compressed_body_length = i32::from_be_bytes(buffer[5..9].try_into().unwrap()) as usize;
+            // Decompress the body by lz4
+            let decompressed_buffer: Vec<u8> =
+                lz4::block::decompress(&buffer[13..(13 + compressed_body_length)], None).unwrap();
+            // adjust the length to equal the uncompressed length
+            buffer.copy_within(9..13, 5);
+            // reduce the frame to be a header only
+            buffer.truncate(9);
+            // Extend the decompressed body
+            buffer.extend(&decompressed_buffer);
+            buffer
+        } else {
+            // return the buffer as it's
+            buffer
+        }
     }
     fn compress(&self, mut buffer: Vec<u8>) -> Vec<u8> {
         // Compress the body
@@ -38,18 +46,22 @@ pub const SNAPPY: Snappy = Snappy;
 pub struct Snappy;
 impl Compression for Snappy {
     fn decompress(&self, mut buffer: Vec<u8>) -> Vec<u8> {
-        let compressed_body_length = i32::from_be_bytes(buffer[5..9].try_into().unwrap()) as usize;
-        // Decompress the body by snappy
-        let decompressed_buffer: Vec<u8> = snap::raw::Decoder::new()
-            .decompress_vec(&buffer[9..(9 + compressed_body_length)])
-            .unwrap();
-        // reduce the frame to be a header only without length
-        buffer.truncate(5);
-        // make the body length to be the decompressed body length
-        buffer.extend(&i32::to_be_bytes(decompressed_buffer.len() as i32));
-        // Extend the decompressed body
-        buffer.extend(&decompressed_buffer);
-        buffer
+        if buffer[1] & header::COMPRESSION == header::COMPRESSION {
+            let compressed_body_length = i32::from_be_bytes(buffer[5..9].try_into().unwrap()) as usize;
+            // Decompress the body by snappy
+            let decompressed_buffer: Vec<u8> = snap::raw::Decoder::new()
+                .decompress_vec(&buffer[9..(9 + compressed_body_length)])
+                .unwrap();
+            // reduce the frame to be a header only without length
+            buffer.truncate(5);
+            // make the body length to be the decompressed body length
+            buffer.extend(&i32::to_be_bytes(decompressed_buffer.len() as i32));
+            // Extend the decompressed body
+            buffer.extend(&decompressed_buffer);
+            buffer
+        } else {
+            buffer
+        }
     }
     fn compress(&self, mut buffer: Vec<u8>) -> Vec<u8> {
         // Compress the body
