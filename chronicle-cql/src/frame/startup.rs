@@ -3,10 +3,9 @@ use super::{
     header::Header,
     opcode::STARTUP,
 };
-use crate::compression::Compression;
 use std::collections::HashMap;
 
-pub struct Startup(Vec<u8>);
+pub struct Startup(pub Vec<u8>);
 
 impl Header for Startup {
     fn new() -> Self {
@@ -38,7 +37,7 @@ impl Header for Startup {
 }
 
 impl Startup {
-    pub fn options(mut self, map: &HashMap<&str, &str>) -> Self {
+    pub fn options(mut self, map: &HashMap<String, String>) -> Self {
         self.0.extend(&u16::to_be_bytes(map.keys().len() as u16));
         for (k, v) in map {
             self.0.extend(&u16::to_be_bytes(k.len() as u16));
@@ -50,8 +49,7 @@ impl Startup {
         self.0[5..9].copy_from_slice(&body_length);
         self
     }
-    pub fn build(mut self, compression: impl Compression) -> Self {
-        self.0 = compression.compress(self.0);
+    pub fn build(self) -> Self {
         self
     }
 }
@@ -59,15 +57,13 @@ impl Startup {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        compression::UNCOMPRESSED,
-        frame::header,
-    };
+    use crate::frame::header;
+
     #[test]
     // note: junk data
     fn simple_startup_builder_test() {
         let mut options = HashMap::new();
-        options.insert("CQL_VERSION", "3.0.0");
+        options.insert("CQL_VERSION".to_string(), "3.0.0".to_string());
 
         let Startup(_payload) = Startup::new()
             .version()
@@ -76,6 +72,6 @@ mod tests {
             .opcode()
             .length()
             .options(&options)
-            .build(UNCOMPRESSED); // build uncompressed
+            .build(); // build uncompressed
     }
 }

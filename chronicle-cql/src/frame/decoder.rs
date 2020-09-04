@@ -32,6 +32,11 @@ pub trait Frame {
     fn body(&self) -> &[u8];
     fn body_start(&self, padding: usize) -> usize;
     fn body_kind(&self) -> i32;
+    fn is_authenticate(&self) -> bool;
+    fn is_auth_challenge(&self) -> bool;
+    fn is_auth_success(&self) -> bool;
+    fn is_supported(&self) -> bool;
+    fn is_ready(&self) -> bool;
     fn is_void(&self) -> bool;
     fn is_rows(&self) -> bool;
     fn is_error(&self) -> bool;
@@ -165,6 +170,21 @@ impl Frame for Decoder {
     fn body_kind(&self) -> i32 {
         i32::from_be_bytes(self.body()[0..4].try_into().unwrap())
     }
+    fn is_authenticate(&self) -> bool {
+        self.opcode() == opcode::AUTHENTICATE
+    }
+    fn is_auth_challenge(&self) -> bool {
+        self.opcode() == opcode::AUTH_CHALLENGE
+    }
+    fn is_auth_success(&self) -> bool {
+        self.opcode() == opcode::AUTH_SUCCESS
+    }
+    fn is_supported(&self) -> bool {
+        self.opcode() == opcode::SUPPORTED
+    }
+    fn is_ready(&self) -> bool {
+        self.opcode() == opcode::READY
+    }
     fn is_void(&self) -> bool {
         (self.opcode() == opcode::RESULT) && (self.body_kind() == result::VOID)
     }
@@ -175,7 +195,7 @@ impl Frame for Decoder {
         self.opcode() == opcode::ERROR
     }
     fn get_error(&self) -> error::CqlError {
-        error::CqlError::from(self.body())
+        error::CqlError::new(self)
     }
     fn is_unprepared(&self) -> bool {
         self.opcode() == opcode::ERROR && self.body_kind() == error::UNPREPARED
@@ -458,4 +478,47 @@ pub fn str(slice: &[u8]) -> &str {
     str::from_utf8(&slice[2..(2 + length)]).unwrap()
 }
 
+pub fn bytes(slice: &[u8]) -> Option<Vec<u8>> {
+    let length = i32::from_be_bytes(slice[0..4].try_into().unwrap());
+    if length >= 0 {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&slice[4..(4 + (length as usize))]);
+        Some(bytes)
+    } else {
+        None
+    }
+}
+
+pub fn string_multimap(slice: &[u8]) -> HashMap<String, Vec<String>> {
+    let length = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
+    let mut multimap = HashMap::with_capacity(length);
+    let mut i = 2;
+    for _ in 0..length {
+        let key = string(&slice[i..]);
+        // add [short] + string.len()
+        i += 2 + key.len();
+        let (list, len) = string_list_with_returned_bytes_length(&slice[i..]);
+        i += len;
+        multimap.insert(key, list);
+    }
+    multimap
+}
+
+// Usefull for multimap.
+pub fn string_list_with_returned_bytes_length(slice: &[u8]) -> (Vec<String>, usize) {
+    let list_len = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
+    let mut list: Vec<String> = Vec::with_capacity(list_len);
+    // current_string_start
+    let mut s = 2;
+    for _ in 0..list_len {
+        // ie first string length is buffer[2..4]
+        let string_len = u16::from_be_bytes(slice[s..(s + 2)].try_into().unwrap()) as usize;
+        s += 2;
+        let e = s + string_len;
+        let string = String::from_utf8_lossy(&slice[s..e]);
+        list.push(string.to_string());
+        s = e;
+    }
+    (list, s)
+}
 // todo inet fn (with port).

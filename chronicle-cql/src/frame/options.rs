@@ -4,7 +4,7 @@ use super::{
     opcode::OPTIONS,
 };
 
-pub struct Options(Vec<u8>);
+pub struct Options(pub Vec<u8>);
 
 impl Header for Options {
     fn new() -> Self {

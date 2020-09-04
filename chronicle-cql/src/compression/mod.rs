@@ -2,6 +2,7 @@ use crate::frame::header;
 use std::convert::TryInto;
 
 pub trait Compression: Sync {
+    fn option(&self) -> Option<&'static str>;
     /// Decompress buffer only if compression flag is set
     fn decompress(&self, compressed: Vec<u8>) -> Vec<u8>;
     fn compress(&self, uncompressed: Vec<u8>) -> Vec<u8>;
@@ -10,6 +11,9 @@ pub const LZ4: Lz4 = Lz4;
 pub struct Lz4;
 
 impl Compression for Lz4 {
+    fn option(&self) -> Option<&'static str> {
+        Some("lz4")
+    }
     fn decompress(&self, mut buffer: Vec<u8>) -> Vec<u8> {
         // check if buffer is compressed
         if buffer[1] & header::COMPRESSION == header::COMPRESSION {
@@ -45,6 +49,9 @@ impl Compression for Lz4 {
 pub const SNAPPY: Snappy = Snappy;
 pub struct Snappy;
 impl Compression for Snappy {
+    fn option(&self) -> Option<&'static str> {
+        Some("snappy")
+    }
     fn decompress(&self, mut buffer: Vec<u8>) -> Vec<u8> {
         if buffer[1] & header::COMPRESSION == header::COMPRESSION {
             let compressed_body_length = i32::from_be_bytes(buffer[5..9].try_into().unwrap()) as usize;
@@ -79,6 +86,9 @@ impl Compression for Snappy {
 pub const UNCOMPRESSED: Uncompressed = Uncompressed;
 pub struct Uncompressed;
 impl Compression for Uncompressed {
+    fn option(&self) -> Option<&'static str> {
+        None
+    }
     fn decompress(&self, buffer: Vec<u8>) -> Vec<u8> {
         buffer
     }
@@ -120,9 +130,15 @@ impl MyCompression {
     pub fn flag() -> u8 {
         unsafe { MY_COMPRESSION_FLAG }
     }
+    pub fn option() -> Option<&'static str> {
+        unsafe { MY_COMPRESSION }.option()
+    }
 }
 
 impl Compression for MyCompression {
+    fn option(&self) -> Option<&'static str> {
+        self.0.option()
+    }
     fn decompress(&self, buffer: Vec<u8>) -> Vec<u8> {
         // get the inner compression and then decompress
         self.0.decompress(buffer)

@@ -1,7 +1,10 @@
-// work in progress
 use super::{
     consistency::Consistency,
-    decoder,
+    decoder::{
+        self,
+        Decoder,
+        Frame,
+    },
 };
 use std::{
     convert::{
@@ -16,6 +19,12 @@ pub struct CqlError {
     pub code: ErrorCodes,
     pub message: String,
     pub additional: Option<Additional>,
+}
+
+impl CqlError {
+    pub fn new(decoder: &Decoder) -> Self {
+        Self::from(decoder.body())
+    }
 }
 
 impl From<&[u8]> for CqlError {

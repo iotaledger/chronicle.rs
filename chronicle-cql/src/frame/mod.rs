@@ -1,3 +1,7 @@
+pub mod auth_challenge;
+pub mod auth_response;
+pub mod auth_success;
+pub mod authenticate;
 pub mod batch;
 pub mod batchflags;
 pub mod consistency;
@@ -14,3 +18,4 @@ pub mod queryflags;
 mod result;
 pub mod rows;
 pub mod startup;
+pub mod supported;
