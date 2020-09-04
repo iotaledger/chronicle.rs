@@ -23,6 +23,7 @@ use chronicle_common::{
     actor,
     traits::launcher::LauncherTx,
 };
+use chronicle_cql::frame::auth_response::PasswordAuth;
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -59,6 +60,7 @@ actor!(SupervisorBuilder {
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
     dashboard_tx: dashboard::Sender,
+    authenticator: Option<PasswordAuth>,
     launcher_tx: Box<dyn LauncherTx>
 });
 
@@ -75,6 +77,7 @@ impl SupervisorBuilder {
             recv_buffer_size: self.recv_buffer_size.unwrap(),
             send_buffer_size: self.send_buffer_size.unwrap(),
             dashboard_tx: self.dashboard_tx.unwrap(),
+            authenticator: self.authenticator.unwrap(),
             registry: HashMap::new(),
             arc_ring: Some(arc_ring),
             weak_rings: Vec::new(),
@@ -96,6 +99,7 @@ pub struct Supervisor {
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
     dashboard_tx: dashboard::Sender,
+    authenticator: Option<PasswordAuth>,
     registry: Registry,
     arc_ring: Option<ArcRing>,
     weak_rings: Vec<Box<WeakRing>>,
@@ -112,7 +116,7 @@ impl Supervisor {
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::SpawnNode(address) => {
-                    match fetch_tokens(connect(&address, None, None).await).await {
+                    match fetch_tokens(connect(&address, None, None, self.authenticator.as_ref()).await).await {
                         Ok(mut cqlconn) => {
                             let shard_count = cqlconn.get_shard_count();
                             let tokens = cqlconn.take_tokens();
@@ -126,6 +130,7 @@ impl Supervisor {
                                 .buffer_size(self.buffer_size)
                                 .recv_buffer_size(self.recv_buffer_size)
                                 .send_buffer_size(self.send_buffer_size)
+                                .authenticator(self.authenticator.clone())
                                 .build();
                             let node_tx = node.clone_tx();
                             let node_id = gen_node_id(&address);

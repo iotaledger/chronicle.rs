@@ -1,5 +1,4 @@
 pub mod helper;
-// uses
 use crate::{
     cluster,
     dashboard,
@@ -7,6 +6,7 @@ use crate::{
     storage::helper::HelperBuilder,
 };
 use chronicle_common::app;
+use chronicle_cql::frame::auth_response::PasswordAuth;
 use tokio::net::TcpListener;
 
 type ThreadCount = usize;
@@ -20,7 +20,8 @@ app!(StorageBuilder {
     buffer_size: usize,
     recv_buffer_size: usize,
     send_buffer_size: usize,
-    nodes: Vec<String>
+    nodes: Vec<String>,
+    authenticator: PasswordAuth
 });
 
 impl StorageBuilder {
@@ -35,6 +36,7 @@ impl StorageBuilder {
             send_buffer_size: self.send_buffer_size,
             nodes: self.nodes,
             launcher_tx: self.launcher_tx,
+            authenticator: self.authenticator,
         }
     }
 }
@@ -49,6 +51,7 @@ pub struct Storage {
     send_buffer_size: Option<usize>,
     nodes: Option<Vec<String>>,
     launcher_tx: Option<Box<dyn LauncherTx>>,
+    authenticator: Option<PasswordAuth>,
 }
 
 impl Storage {
@@ -85,6 +88,7 @@ impl Storage {
             .recv_buffer_size(self.recv_buffer_size)
             .send_buffer_size(self.send_buffer_size)
             .dashboard_tx(dashboard.clone_tx())
+            .authenticator(self.authenticator.clone())
             .build();
         // clone dashboard_tx to return in case some(nodes) used for testing
         let dashboard_tx = Some(dashboard.clone_tx());

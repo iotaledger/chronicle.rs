@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use chronicle_common::actor;
+use chronicle_cql::frame::auth_response::PasswordAuth;
 use std::collections::HashMap;
 use tokio::{
     self,
@@ -35,7 +36,8 @@ actor!(SupervisorBuilder {
     supervisor_tx: supervisor::Sender,
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
-    send_buffer_size: Option<usize>
+    send_buffer_size: Option<usize>,
+    authenticator: Option<PasswordAuth>
 });
 
 impl SupervisorBuilder {
@@ -58,6 +60,7 @@ impl SupervisorBuilder {
             buffer_size: self.buffer_size.unwrap(),
             recv_buffer_size: self.recv_buffer_size.unwrap(),
             send_buffer_size: self.send_buffer_size.unwrap(),
+            authenticator: self.authenticator.unwrap(),
         }
     }
 }
@@ -77,6 +80,7 @@ pub struct Supervisor {
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
+    authenticator: Option<PasswordAuth>,
 }
 
 impl Supervisor {
@@ -97,6 +101,7 @@ impl Supervisor {
                 .buffer_size(self.buffer_size)
                 .recv_buffer_size(self.recv_buffer_size)
                 .send_buffer_size(self.send_buffer_size)
+                .authenticator(self.authenticator.clone())
                 .build();
             tokio::spawn(stage.run());
             self.stages.insert(shard_id, stage_tx);

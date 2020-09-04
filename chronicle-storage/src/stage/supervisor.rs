@@ -11,6 +11,8 @@ use crate::{
         Streams,
     },
 };
+use chronicle_cql::frame::auth_response::PasswordAuth;
+
 use chronicle_common::actor;
 use log::*;
 use std::{
@@ -44,7 +46,8 @@ actor!(SupervisorBuilder {
     node_tx: node::supervisor::Sender,
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
-    send_buffer_size: Option<usize>
+    send_buffer_size: Option<usize>,
+    authenticator: Option<PasswordAuth>
 });
 
 impl SupervisorBuilder {
@@ -67,6 +70,7 @@ impl SupervisorBuilder {
             buffer_size: self.buffer_size.unwrap(),
             recv_buffer_size: self.recv_buffer_size.unwrap(),
             send_buffer_size: self.send_buffer_size.unwrap(),
+            authenticator: self.authenticator.unwrap(),
         }
     }
 }
@@ -103,6 +107,7 @@ pub struct Supervisor {
     buffer_size: usize,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
+    authenticator: Option<PasswordAuth>,
 }
 
 impl Supervisor {
@@ -173,6 +178,7 @@ impl Supervisor {
                             self.shard_id,
                             self.recv_buffer_size,
                             self.send_buffer_size,
+                            self.authenticator.as_ref(),
                         )
                         .await
                         {
