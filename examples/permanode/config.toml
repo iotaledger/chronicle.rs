@@ -1,6 +1,6 @@
 # chronicle-[alpha/beta/etc.]-v[x.x.x].[ext]
 [version]
-version = "chronicle-alpha-v0.2.1"
+version = "chronicle-alpha-v0.2.2"
 service = "Permanode"
 
 # logger settings
@@ -16,9 +16,11 @@ addresses = ["172.17.0.2:9042"] # scylla docker instance
 replication_factor_per_data_center = 1
 data_centers = ["datacenter1"]
 local_dc = "datacenter1"
-
+# check scylla docs to how change/modify and create ROLEs
+auth.user = "cassandra"
+auth.pass = "cassandra"
 # dmp file links: https://dbfiles.iota.org/?prefix=mainnet/history/
-# [[file_path1, milestone1], [file_path2, milestone2], ...]
+# [["file_path1", milestone1], ["file_path2", milestone2], ...]
 [dmp_files]
 files = []
 import_only_confirmed_transactions = true
