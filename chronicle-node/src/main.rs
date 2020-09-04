@@ -13,10 +13,12 @@ use chronicle_common::{
 use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
+use chronicle_cql::frame::auth_response::PasswordAuth;
 use chronicle_storage::{
     dashboard::client::add_nodes,
     worker::schema_cql::SchemaCqlBuilder,
 };
+
 use serde::Deserialize;
 use std::{
     fmt::Write as FmtWrite,
@@ -27,7 +29,7 @@ use structopt::StructOpt;
 use tokio::runtime::Builder;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "chronicle-alpha-v0_1_0", about = "Chronicle Permanode Alpha v0.1.0")]
+#[structopt(name = "chronicle-alpha-v0_2_2", about = "Chronicle Permanode Alpha v0.2.2")]
 struct Args {
     /// Configure file
     #[structopt(parse(from_os_str))]
@@ -63,6 +65,13 @@ struct ScyllaCluster {
     replication_factor_per_data_center: u8,
     data_centers: Vec<String>,
     local_dc: String,
+    auth: Option<Auth>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Auth {
+    user: String,
+    pass: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -106,7 +115,7 @@ impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
         // 
         // - storage app:
-        let storage = StorageBuilder::new()
+        let mut storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
             .thread_count(config.tokio.core_threads)
             .local_dc(config.scylla_cluster.local_dc.clone())
@@ -114,6 +123,9 @@ impl AppsBuilder {
             .buffer_size(1024000)
             .recv_buffer_size(1024000)
             .send_buffer_size(1024000);
+        if let Some(ref auth) = config.scylla_cluster.auth {
+            storage = storage.authenticator(PasswordAuth::new(auth.user.clone(), auth.pass.clone()));
+        }
         // 
         // - api app
         let api = ApiBuilder::new()
