@@ -1,5 +1,5 @@
 use crate::{
-    cluster::supervisor::Tokens,
+    cluster::supervisor::Tokens as ClusterTokens,
     node::supervisor::gen_node_id,
     ring::{
         Msb,
@@ -7,34 +7,27 @@ use crate::{
         DC,
     },
 };
-use cdrs::{
-    compression::Compression,
-    frame::{
-        frame_result,
-        frame_supported,
-        traits::FromCursor,
-        Flag,
+use chronicle_cql::frame::{
+    auth_challenge::AuthChallenge,
+    auth_response::{
+        AuthResponse,
+        Authenticator,
+    },
+    authenticate::Authenticate,
+    decoder::{
+        Decoder,
         Frame,
-        IntoBytes,
-        Opcode,
-        TryFromRow,
     },
-    query,
-    types::{
-        from_cdrs::FromCDRSByName,
-        prelude::{
-            Bytes,
-            List,
-            Row,
-            Value,
-        },
-        AsRustType,
-    },
+    header::Header,
+    *,
 };
+
+use log::*;
+
 use std::{
+    collections::HashMap,
     i64,
-    io::Cursor,
-    net::IpAddr,
+    net::Ipv4Addr,
 };
 use tokio::{
     io::{
@@ -42,20 +35,30 @@ use tokio::{
         ErrorKind,
     },
     net::TcpStream,
-    prelude::*,
 };
 
-use cdrs_helpers_derive::{
-    IntoCDRSValue,
-    TryFromRow,
+use chronicle_cql::{
+    compression::MyCompression,
+    frame::{
+        consistency::Consistency,
+        decoder::ColumnDecoder,
+        query::Query,
+        queryflags::SKIP_METADATA,
+    },
+    rows,
 };
 
 pub type Address = String;
 
+use tokio::io::{
+    AsyncReadExt,
+    AsyncWriteExt,
+};
+
 #[derive(Debug)]
 pub struct CqlConn {
     stream: Option<TcpStream>,
-    tokens: Option<Tokens>,
+    tokens: Option<ClusterTokens>,
     shard_id: u8,
     shard_count: ShardCount,
     msb: Msb,
@@ -66,7 +69,7 @@ impl CqlConn {
     pub fn get_shard_count(&self) -> ShardCount {
         self.shard_count
     }
-    pub fn take_tokens(&mut self) -> Tokens {
+    pub fn take_tokens(&mut self) -> ClusterTokens {
         self.tokens.take().unwrap()
     }
     pub fn take_stream(&mut self) -> TcpStream {
@@ -77,17 +80,64 @@ impl CqlConn {
     }
 }
 
-#[derive(Clone, Debug, IntoCDRSValue, TryFromRow, PartialEq)]
-struct RowTokens {
-    data_center: String,
-    broadcast_address: IpAddr,
-    tokens: Vec<String>,
+// ----------- decoding scope -----------
+rows!(
+    rows: Info {data_center: String, broadcast_address: Ipv4Addr, tokens: Vec<String>},
+    row: Row(
+        DataCenter,
+        BroadcastAddress,
+        Tokens
+    ),
+    column_decoder: InfoDecoder
+);
+
+pub trait Rows {
+    fn decode(self) -> Self;
+    fn finalize(self) -> Self;
+}
+
+impl Rows for Info {
+    fn decode(mut self) -> Self {
+        while let Some(_) = self.next() {}
+        self
+    }
+    fn finalize(self) -> Self {
+        self
+    }
+}
+
+impl InfoDecoder for DataCenter {
+    fn decode_column(start: usize, length: i32, acc: &mut Info) {
+        acc.data_center = String::decode(&acc.buffer()[start..], length as usize);
+    }
+    fn handle_null(_: &mut Info) {
+        unreachable!()
+    }
+}
+
+impl InfoDecoder for BroadcastAddress {
+    fn decode_column(start: usize, length: i32, acc: &mut Info) {
+        acc.broadcast_address = Ipv4Addr::decode(&acc.buffer()[start..], length as usize);
+    }
+    fn handle_null(_: &mut Info) {
+        unreachable!()
+    }
+}
+
+impl InfoDecoder for Tokens {
+    fn decode_column(start: usize, length: i32, acc: &mut Info) {
+        acc.tokens = Vec::decode(&acc.buffer()[start..], length as usize);
+    }
+    fn handle_null(_: &mut Info) {
+        unreachable!()
+    }
 }
 
 pub async fn connect(
     address: &str,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
+    authenticator: Option<&impl Authenticator>,
 ) -> Result<CqlConn, Error> {
     // connect using tokio and return
     let mut stream = TcpStream::connect(address).await?;
@@ -98,30 +148,105 @@ pub async fn connect(
     if let Some(send_buffer_size) = send_buffer_size {
         stream.set_send_buffer_size(send_buffer_size)?
     }
-    // establish cql using startup frame and ensure is ready
-    let compression = &mut Compression::None;
-    let startup_frame = Frame::new_req_startup(compression.as_str()).into_cbytes();
-    stream.write(startup_frame.as_slice()).await?;
-    let mut ready_buffer = vec![0; 9];
-    stream.read(&mut ready_buffer).await?;
-    if Opcode::from(ready_buffer[4]) != Opcode::Ready {
-        return Err(Error::new(ErrorKind::Other, "CQL connection failed."));
+    // create options frame
+    let options = options::Options::new()
+        .version()
+        .flags(0)
+        .stream(0)
+        .opcode()
+        .length()
+        .build();
+    // write_all options frame to stream
+    stream.write_all(&options.0).await?;
+    // get_frame_payload
+    let buffer = get_frame_payload(&mut stream).await?;
+    // Create Decoder from buffer
+    let decoder = Decoder::new(buffer, MyCompression::get());
+    if decoder.is_error() {
+        // check if response is_error.
+        error!("{:?}", decoder.get_error());
+        return Err(Error::new(
+            ErrorKind::Other,
+            "CQL connection not supported due to CqlError",
+        ));
     }
-    // send options frame and decode supported frame as options
-    let option_frame = Frame::new_req_options().into_cbytes();
-    stream.write(option_frame.as_slice()).await?;
-    let mut head_buffer = vec![0; 9];
-    stream.read(&mut head_buffer).await?;
-    let length = get_body_length_usize(&head_buffer);
-    let mut body_buffer = vec![0; length];
-    stream.read(&mut body_buffer).await?;
-    let mut cursor: Cursor<&[u8]> = Cursor::new(&body_buffer);
-    let options = frame_supported::BodyResSupported::from_cursor(&mut cursor)
-        .unwrap()
-        .data;
-    let shard = options.get("SCYLLA_SHARD").unwrap()[0].parse().unwrap();
-    let nr_shard = options.get("SCYLLA_NR_SHARDS").unwrap()[0].parse().unwrap();
-    let ignore_msb = options.get("SCYLLA_SHARDING_IGNORE_MSB").unwrap()[0].parse().unwrap();
+    assert!(decoder.is_supported());
+    // decode supported options from decoder
+    let supported = supported::Supported::new(&decoder);
+    // create empty hashmap options;
+    let mut options: HashMap<String, String> = HashMap::new();
+    // get the supported_cql_version option;
+    let cql_version = supported.get_options().get("CQL_VERSION").unwrap().first().unwrap();
+    // insert the supported_cql_version option into the options;
+    options.insert("CQL_VERSION".to_owned(), cql_version.to_owned());
+    // insert the supported_compression option into the options if it was set.;
+    if let Some(compression) = MyCompression::option() {
+        options.insert("COMPRESSION".to_owned(), compression.to_owned());
+    }
+    // create startup frame using the selected options;
+    let startup = startup::Startup::new()
+        .version()
+        .flags(0)
+        .stream(0)
+        .opcode()
+        .length()
+        .options(&options);
+    // write_all startup frame to stream;
+    stream.write_all(&startup.0).await?;
+    // get_frame_payload
+    let buffer = get_frame_payload(&mut stream).await?;
+    // Create Decoder from buffer.
+    let decoder = Decoder::new(buffer, MyCompression::get());
+    if decoder.is_authenticate() {
+        if authenticator.is_none() {
+            let authenticate = Authenticate::new(&decoder);
+            error!("Authenticator: {:?} is not provided", authenticate.authenticator());
+            return Err(Error::new(
+                ErrorKind::Other,
+                "CQL connection not ready due to authenticator is not provided",
+            ));
+        }
+        let auth_response = AuthResponse::new()
+            .version()
+            .flags(MyCompression::flag())
+            .stream(0)
+            .opcode()
+            .length()
+            .token(authenticator.as_ref().unwrap().clone())
+            .build(MyCompression::get());
+        // write_all auth_response frame to stream;
+        stream.write_all(&auth_response.0).await?;
+        // get_frame_payload
+        let buffer = get_frame_payload(&mut stream).await?;
+        // Create Decoder from buffer.
+        let decoder = Decoder::new(buffer, MyCompression::get());
+        if decoder.is_error() {
+            error!("Unable to authenticate: {:?}", decoder.get_error());
+            return Err(Error::new(ErrorKind::Other, "CQL connection not ready due to CqlError"));
+        }
+        if decoder.is_auth_challenge() {
+            let auth_challenge = AuthChallenge::new(&decoder);
+            error!("Unsupported auth_challenge {:?}", auth_challenge);
+            return Err(Error::new(
+                ErrorKind::Other,
+                "CQL connection not ready due to Auth Challenge",
+            ));
+        }
+        assert!(decoder.is_auth_success());
+    } else if decoder.is_error() {
+        error!("{:?}", decoder.get_error());
+        return Err(Error::new(ErrorKind::Other, "CQL connection not ready due to CqlError"));
+    } else {
+        assert!(decoder.is_ready());
+    }
+    // copy usefull options
+    let shard = supported.get_options().get("SCYLLA_SHARD").unwrap()[0].parse().unwrap();
+    let nr_shard = supported.get_options().get("SCYLLA_NR_SHARDS").unwrap()[0]
+        .parse()
+        .unwrap();
+    let ignore_msb = supported.get_options().get("SCYLLA_SHARDING_IGNORE_MSB").unwrap()[0]
+        .parse()
+        .unwrap();
     // create cqlconn
     let cqlconn = CqlConn {
         stream: Some(stream),
@@ -135,43 +260,40 @@ pub async fn connect(
 }
 pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn, Error> {
     let mut cqlconn = connection?;
-    // fetch tokens from scylla using select query to system.local table,
-    // then add it to cqlconn
-    // query param builder
-    let params = query::QueryParamsBuilder::new().page_size(500).finalize();
-    let query = "SELECT data_center, broadcast_address, tokens FROM system.local;".to_string();
-    let query = query::Query { query, params };
-    // query_frame
-    let query_frame = Frame::new_query(query, vec![Flag::Ignore]).into_cbytes();
-    // write frame to stream
-    cqlconn.stream.as_mut().unwrap().write(query_frame.as_slice()).await?;
-    // read buffer
-    let mut head_buffer = vec![0; 9];
-    cqlconn.stream.as_mut().unwrap().read(&mut head_buffer).await?;
-    let length = get_body_length_usize(&head_buffer);
-    let mut body_buffer = vec![0; length];
-    cqlconn.stream.as_mut().unwrap().read(&mut body_buffer).await?;
-    let mut cursor: Cursor<&[u8]> = Cursor::new(&body_buffer);
-    let mut rows = frame_result::ResResultBody::from_cursor(&mut cursor)
-        .unwrap()
-        .into_rows()
-        .unwrap();
-    let row = RowTokens::try_from_row(rows.pop().unwrap()).unwrap();
-    let broadcast_address = row.broadcast_address.to_string();
-    let mut tokens: Tokens = Vec::new();
-    for token in row.tokens.iter() {
-        let node_id = gen_node_id(&broadcast_address);
+    // create query to fetch tokens and info from system.local;
+    let query = query();
+    // write_all query to the stream
+    cqlconn.stream.as_mut().unwrap().write_all(query.as_slice()).await?;
+    // get_frame_payload
+    let buffer = get_frame_payload(cqlconn.stream.as_mut().unwrap()).await?;
+    // Create Decoder from buffer.
+    let decoder = Decoder::new(buffer, MyCompression::get());
+    let info;
+    if decoder.is_rows() {
+        let data_center = String::new();
+        let broadcast_address = Ipv4Addr::new(0, 0, 0, 0);
+        let tokens = Vec::new();
+        info = Info::new(decoder, data_center, broadcast_address, tokens)
+            .decode()
+            .finalize();
+    } else {
+        error!("{:?}", decoder.get_error());
+        return Err(Error::new(ErrorKind::Other, "CQL connection not rows due to CqlError"));
+    }
+    let mut cluster_tokens: ClusterTokens = Vec::new();
+    for token in info.tokens.iter() {
+        let node_id = gen_node_id(&info.broadcast_address.to_string());
         let token = i64::from_str_radix(token, 10).unwrap();
-        tokens.push((
+        cluster_tokens.push((
             token,
             node_id,
-            row.data_center.clone(),
+            info.data_center.clone(),
             cqlconn.msb,
             cqlconn.shard_count,
         ))
     }
-    cqlconn.tokens.replace(tokens);
-    cqlconn.dc.replace(row.data_center);
+    cqlconn.tokens.replace(cluster_tokens);
+    cqlconn.dc.replace(info.data_center);
     Ok(cqlconn)
 }
 
@@ -180,12 +302,13 @@ pub async fn connect_to_shard_id(
     shard_id: u8,
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
+    authenticator: Option<&impl Authenticator>,
 ) -> Result<CqlConn, Error> {
     // buffer connections temporary to force scylla connects us to new shard_id
     let mut conns = Vec::new();
     // loop till we connect to the right shard_id
     loop {
-        match connect(address, recv_buffer_size, send_buffer_size).await {
+        match connect(address, recv_buffer_size, send_buffer_size, authenticator).await {
             Ok(cqlconn) => {
                 if cqlconn.shard_id == shard_id {
                     // return
@@ -210,6 +333,29 @@ pub async fn connect_to_shard_id(
     }
 }
 
-pub fn get_body_length_usize(buffer: &[u8]) -> usize {
-    ((buffer[5] as usize) << 24) + ((buffer[6] as usize) << 16) + ((buffer[7] as usize) << 8) + (buffer[8] as usize)
+async fn get_frame_payload(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
+    // create buffer
+    let mut buffer = vec![0; 9];
+    // read response into buffer
+    stream.read_exact(&mut buffer).await?;
+    let body_length = i32::from_be_bytes(buffer[5..9].try_into().unwrap());
+    // extend buffer
+    buffer.resize((body_length + 9).try_into().unwrap(), 0);
+    stream.read_exact(&mut buffer[9..]).await?;
+    Ok(buffer)
+}
+
+// ----------- encoding scope -----------
+pub fn query() -> Vec<u8> {
+    let Query(payload) = Query::new()
+        .version()
+        .flags(MyCompression::flag())
+        .stream(0)
+        .opcode()
+        .length()
+        .statement("SELECT data_center, broadcast_address, tokens FROM system.local")
+        .consistency(Consistency::One)
+        .query_flags(SKIP_METADATA)
+        .build(MyCompression::get());
+    payload
 }
