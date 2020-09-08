@@ -12,7 +12,6 @@ chronicle-common = { path = "../chronicle-common" }
 chronicle-cql = { path = "../chronicle-cql" }
 futures = "0.3"
 tokio = { version = "0.2", features = ["fs", "macros", "stream", "sync", "net", "io-util", "rt-threaded", "time"] }
-tokio-native-tls = "0.1.0"
 tokio-tungstenite = "0.10"
 rand = "0.7"
 sha2 = "0.8"
