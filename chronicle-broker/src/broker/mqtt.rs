@@ -164,6 +164,7 @@ impl Mqtt {
             .keep_alive_interval(Duration::from_secs(20))
             .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
             .clean_session(false)
+            .connect_timeout(Duration::from_secs(1))
             .finalize();
         cli.connect(conn_opts).await?;
         cli.subscribe(self.peer.get_topic_as_string(), 1).await?;
