@@ -161,7 +161,7 @@ impl Mqtt {
         let mut cli = paho_mqtt::AsyncClient::new((&self.peer.address[..], &client_id[..]))?;
         let stream = cli.get_stream(self.stream_capacity);
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
-            .keep_alive_interval(Duration::from_secs(1))
+            .keep_alive_interval(Duration::from_secs(5))
             .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
             .clean_session(false)
             .connect_timeout(Duration::from_secs(1))
