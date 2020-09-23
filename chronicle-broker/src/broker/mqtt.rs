@@ -417,13 +417,6 @@ impl Mqtt {
                     }
                 }
                 Event::Error { kind, pid } => {
-                    // it means we are shutting down
-                    if let Error::NoRing = kind {
-                        self.max_retries = self.initial_max_retries;
-                        self.delay = 0;
-                        self.pids.push(pid);
-                        return Err(Box::new(kind));
-                    }
                     // check if we consumed max_retries for given line.
                     if self.max_retries == 0 {
                         self.pids.push(pid);
