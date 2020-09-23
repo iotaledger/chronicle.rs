@@ -181,6 +181,7 @@ impl Mqtt {
         Ok(stream)
     }
     pub async fn handle_trytes(&mut self, msg: MqttMsg) {
+
         // we should ignore transactions with invalid timestamps
         let trytes = msg.trytes();
         let attachment_timestamp = trytes_to_i64(trytes.atch_timestamp());
@@ -198,8 +199,18 @@ impl Mqtt {
                                 msg.hash(),
                                 msg.trytes().trytes()
                             );
+                        } else {
+                            error!(
+                                "Unable to persist the transaction: hash: {}, trytes: {}",
+                                msg.hash(),
+                                msg.trytes().trytes()
+                            );
                         }
-                    };
+                    } else {
+                        debug!("Persisted transaction Tryte topic: {}, pending: {}", msg.hash(), self.pending);
+                    }
+                } else {
+                    error!("Unable to store transaction from trytes topic due to invalid time window")
                 }
             }
         } else {
@@ -218,8 +229,18 @@ impl Mqtt {
                                 msg.hash(),
                                 msg.trytes().trytes()
                             );
+                        } else {
+                            error!(
+                                "Unable to persist the transaction: hash: {}, trytes: {}",
+                                msg.hash(),
+                                msg.trytes().trytes()
+                            );
                         }
-                    };
+                    } else {
+                        debug!("Persisted transaction Tryte topic: {}, pending: {}", msg.hash(), self.pending);
+                    }
+                } else {
+                    error!("Unable to store transaction from trytes topic due to invalid time window")
                 }
             }
         }
@@ -242,6 +263,8 @@ impl Mqtt {
                             trytes.trytes()
                         );
                     }
+                } else {
+                    debug!("Persisted transaction conf_trytes topic: {}, milestone: {}", msg.hash(), msg.milestone.unwrap());
                 };
             } else {
                 // this not supposed to happens in chyrsalis pt-1
@@ -267,6 +290,8 @@ impl Mqtt {
                             trytes.trytes()
                         );
                     }
+                } else {
+                    debug!("Persisted transaction conf_trytes topic: {}, milestone: {}", msg.hash(), msg.milestone.unwrap());
                 };
             } else {
                 // this not supposed to happens in chyrsalis pt-1
@@ -364,6 +389,7 @@ impl Mqtt {
                     self.pids.push(pid);
                     // check if this was the last response for a given line.
                     if self.pending == 0 {
+                        debug!("Topic: {}, ALl Void for Hash: {}", self.peer.get_topic_as_string(), hash);
                         // reset max_retries to the initial state for the next line
                         self.max_retries = self.initial_max_retries;
                         // reset delay to 0 seconds for the next line
