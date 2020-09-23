@@ -422,7 +422,7 @@ impl Mqtt {
                         self.max_retries = self.initial_max_retries;
                         self.delay = 0;
                         self.pids.push(pid);
-                        break;
+                        return Err(Box::new(kind));
                     }
                     // check if we consumed max_retries for given line.
                     if self.max_retries == 0 {
