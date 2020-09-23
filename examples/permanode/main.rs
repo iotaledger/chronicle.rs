@@ -76,7 +76,7 @@ struct Auth {
 
 #[derive(Debug, Clone, Deserialize)]
 struct DmpFiles {
-    files: Option<Vec<(String, u64)>>,
+    files: Option<Vec<(String, i64)>>,
     import_only_confirmed_transactions: Option<bool>,
     max_retries: Option<usize>,
 }
@@ -162,7 +162,7 @@ fn main() {
         .thread_stack_size(3 * 1024 * 1024)
         .build()
         .unwrap();
-    info!("Welcome to Chronicle Permanode Alpha v0.2.1");
+    info!("Welcome to Chronicle Permanode Alpha v0.2.2");
     let apps = AppsBuilder::new().build(config);
     // run chronicle.
     runtime.block_on(async {
@@ -365,7 +365,7 @@ async fn ctrl_c(mut launcher: Sender) {
 }
 
 async fn import_files(dmp_files: DmpFiles) {
-    let mut files: Vec<(String, u64)> = dmp_files.files.unwrap();
+    let mut files: Vec<(String, i64)> = dmp_files.files.unwrap();
     let mut only_confirmed = false;
     if let Some(is_only_confirmed) = dmp_files.import_only_confirmed_transactions {
         only_confirmed = is_only_confirmed;

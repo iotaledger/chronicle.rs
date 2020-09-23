@@ -144,7 +144,7 @@ impl Mqtt {
                     let timestamp_millis = DateTime::parse_from_rfc3339(&m[(l - 22)..(l - 2)])
                         .unwrap()
                         .timestamp_millis();
-                    let milestone = Some(m[2789..(l - 36)].parse::<u64>().unwrap());
+                    let milestone = Some(m[2789..(l - 36)].parse::<i64>().unwrap());
                     // create MqttMsg
                     let mqtt_msg = MqttMsg::new(msg, milestone, timestamp_millis);
                     self.handle_conf_trytes(mqtt_msg).await;
@@ -161,7 +161,7 @@ impl Mqtt {
         let mut cli = paho_mqtt::AsyncClient::new((&self.peer.address[..], &client_id[..]))?;
         let stream = cli.get_stream(self.stream_capacity);
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
-            .keep_alive_interval(Duration::from_secs(5))
+            .keep_alive_interval(Duration::from_secs(20))
             .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
             .clean_session(false)
             .connect_timeout(Duration::from_secs(1))
@@ -181,7 +181,6 @@ impl Mqtt {
         Ok(stream)
     }
     pub async fn handle_trytes(&mut self, msg: MqttMsg) {
-
         // we should ignore transactions with invalid timestamps
         let trytes = msg.trytes();
         let attachment_timestamp = trytes_to_i64(trytes.atch_timestamp());
@@ -207,7 +206,11 @@ impl Mqtt {
                             );
                         }
                     } else {
-                        debug!("Persisted transaction Tryte topic: {}, pending: {}", msg.hash(), self.pending);
+                        debug!(
+                            "Persisted transaction Tryte topic: {}, pending: {}",
+                            msg.hash(),
+                            self.pending
+                        );
                     }
                 } else {
                     error!("Unable to store transaction from trytes topic due to invalid time window")
@@ -237,7 +240,11 @@ impl Mqtt {
                             );
                         }
                     } else {
-                        debug!("Persisted transaction Tryte topic: {}, pending: {}", msg.hash(), self.pending);
+                        debug!(
+                            "Persisted transaction Tryte topic: {}, pending: {}",
+                            msg.hash(),
+                            self.pending
+                        );
                     }
                 } else {
                     error!("Unable to store transaction from trytes topic due to invalid time window")
@@ -264,7 +271,11 @@ impl Mqtt {
                         );
                     }
                 } else {
-                    debug!("Persisted transaction conf_trytes topic: {}, milestone: {}", msg.hash(), msg.milestone.unwrap());
+                    debug!(
+                        "Persisted transaction conf_trytes topic: {}, milestone: {}",
+                        msg.hash(),
+                        msg.milestone.unwrap()
+                    );
                 };
             } else {
                 // this not supposed to happens in chyrsalis pt-1
@@ -291,7 +302,11 @@ impl Mqtt {
                         );
                     }
                 } else {
-                    debug!("Persisted transaction conf_trytes topic: {}, milestone: {}", msg.hash(), msg.milestone.unwrap());
+                    debug!(
+                        "Persisted transaction conf_trytes topic: {}, milestone: {}",
+                        msg.hash(),
+                        msg.milestone.unwrap()
+                    );
                 };
             } else {
                 // this not supposed to happens in chyrsalis pt-1
@@ -389,7 +404,11 @@ impl Mqtt {
                     self.pids.push(pid);
                     // check if this was the last response for a given line.
                     if self.pending == 0 {
-                        debug!("Topic: {}, ALl Void for Hash: {}", self.peer.get_topic_as_string(), hash);
+                        debug!(
+                            "Topic: {}, All Void for Hash: {}",
+                            self.peer.get_topic_as_string(),
+                            hash
+                        );
                         // reset max_retries to the initial state for the next line
                         self.max_retries = self.initial_max_retries;
                         // reset delay to 0 seconds for the next line
@@ -398,6 +417,13 @@ impl Mqtt {
                     }
                 }
                 Event::Error { kind, pid } => {
+                    // it means we are shutting down
+                    if let Error::NoRing = kind {
+                        self.max_retries = self.initial_max_retries;
+                        self.delay = 0;
+                        self.pids.push(pid);
+                        break;
+                    }
                     // check if we consumed max_retries for given line.
                     if self.max_retries == 0 {
                         self.pids.push(pid);
@@ -407,6 +433,10 @@ impl Mqtt {
                             hash,
                             trytes.trytes()
                         );
+                        // reset max_retries to the initial state for the next line
+                        self.max_retries = self.initial_max_retries;
+                        // reset delay to 0 seconds for the next line
+                        self.delay = 0;
                         return Err(Box::new(kind));
                     } else {
                         // decrement retry
@@ -535,12 +565,12 @@ impl Mqtt {
 
 pub struct MqttMsg {
     pub msg: Message,
-    pub milestone: Option<u64>,
+    pub milestone: Option<i64>,
     pub timestamp_millis: i64,
 }
 
 impl MqttMsg {
-    fn new(msg: Message, milestone: Option<u64>, timestamp_millis: i64) -> Self {
+    fn new(msg: Message, milestone: Option<i64>, timestamp_millis: i64) -> Self {
         MqttMsg {
             msg,
             milestone,

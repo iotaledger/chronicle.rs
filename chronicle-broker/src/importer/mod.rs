@@ -54,16 +54,16 @@ use tokio::io::{
 
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
-struct Milestone(u64);
+struct Milestone(i64);
 impl Milestone {
-    pub fn new(index: u64) -> Self {
+    pub fn new(index: i64) -> Self {
         Milestone(index)
     }
 }
 impl chronicle_cql::frame::encoder::ColumnEncoder for Milestone {
     fn encode(&self, buffer: &mut Vec<u8>) {
         if self.0 != 0 {
-            u64::encode(&self.0, buffer);
+            i64::encode(&self.0, buffer);
         } else {
             chronicle_cql::frame::encoder::UNSET_VALUE.encode(buffer);
         }
@@ -83,7 +83,7 @@ impl ImporterId {
 }
 actor!(ImporterBuilder {
     filepath: String,
-    milestone: u64,
+    milestone: i64,
     only_confirmed: bool,
     max_retries: usize
 });
@@ -122,7 +122,7 @@ pub struct Importer {
     rx: Receiver,
     filepath: String,
     processed_bytes: u64,
-    milestone: u64,
+    milestone: i64,
     only_confirmed: bool,
     pids: Vec<Box<ImporterId>>,
     progress_bar: Option<ProgressBar>,
@@ -156,6 +156,7 @@ impl Importer {
     }
     async fn handle_dmp(&mut self, mut reader: BufReader<&mut File>) -> Result<(), Box<dyn Error>> {
         let try_attachment_timestamp = if self.milestone > 337_541 { true } else { false };
+        let is_hornet_format = if self.milestone > 1537346 { true } else { false };
         let mut line = String::new();
         // start processing the file line by line
         loop {
@@ -171,10 +172,21 @@ impl Importer {
             let trytes = Trytes::new(&line[82..2755]);
             // check if milestone is in the line
             if line_length > 2756 {
-                self.milestone = line[2756..(line_length - 1)].parse::<u64>().unwrap();
+                // hornet format have an extra is_conflicting
+                if is_hornet_format {
+                    let is_conflicting = line[2756..2757].parse::<u8>().unwrap() != 0;
+                    if is_conflicting {
+                        self.milestone = -line[2758..(line_length - 1)].parse::<i64>().unwrap();
+                    } else {
+                        self.milestone = line[2758..(line_length - 1)].parse::<i64>().unwrap();
+                    }
+                } else {
+                    self.milestone = line[2756..(line_length - 1)].parse::<i64>().unwrap();
+                }
             }
+            // note: txs with milestone <= 0 are conflicted txs
             // check whether to skip the transaction(line) if only_confirmed or not.
-            if self.only_confirmed && self.milestone == 0 {
+            if self.only_confirmed && self.milestone <= 0 {
                 // update the progresss bar
                 self.processed_bytes += line_length as u64;
                 self.progress_bar.as_ref().unwrap().set_position(self.processed_bytes);
