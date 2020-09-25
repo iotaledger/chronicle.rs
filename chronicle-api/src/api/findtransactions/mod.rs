@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module defines the methods/structures for API findtransactions.
+
 mod addresses;
 mod approvees;
 mod bundles;
@@ -9,38 +22,22 @@ use crate::api::{
         addresses::Rows as AddressesRows,
         approvees::Rows as ApproveesRows,
         bundles::Rows as BundlesRows,
-        hints::{
-            Hint,
-            Rows as HintsRows,
-        },
+        hints::{Hint, Rows as HintsRows},
         tags::Rows as TagsRows,
     },
-    types::{
-        Milestones,
-        Trytes27,
-        Trytes81,
-    },
+    types::{Milestones, Trytes27, Trytes81},
 };
 use chronicle_common::actor;
 use chronicle_cql::{
     compression::MyCompression,
-    frame::decoder::{
-        Decoder,
-        Frame,
-    },
+    frame::decoder::{Decoder, Frame},
 };
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
-    worker::{
-        Error,
-        Worker,
-    },
+    worker::{Error, Worker},
 };
-use hyper::{
-    Body,
-    Response,
-};
+use hyper::{Body, Response};
 use log::*;
 use serde::Serialize;
 use std::collections::VecDeque;

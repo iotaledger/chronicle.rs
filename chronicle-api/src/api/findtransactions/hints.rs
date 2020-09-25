@@ -1,48 +1,45 @@
-use super::{
-    ResTransactions,
-    VecDeque,
-};
-use crate::api::types::{
-    Trytes27,
-    Trytes81,
-};
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+use super::{ResTransactions, VecDeque};
+use crate::api::types::{Trytes27, Trytes81};
 use chronicle_cql::{
     compression::MyCompression,
     frame::{
         consistency::Consistency,
-        decoder::{
-            ColumnDecoder,
-            Decoder,
-            Frame,
-        },
+        decoder::{ColumnDecoder, Decoder, Frame},
         header::Header,
         query::Query,
-        queryflags::{
-            PAGE_SIZE,
-            PAGING_STATE,
-            SKIP_METADATA,
-            VALUES,
-        },
+        queryflags::{PAGE_SIZE, PAGING_STATE, SKIP_METADATA, VALUES},
     },
     rows,
 };
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Serialize, Clone)]
+/// The year and month in the data model used for the `hints`.
 pub struct YearMonth {
     year: u16,
     month: u8,
 }
 
 impl YearMonth {
+    /// Create a new `YearMonth` structure.
     pub fn new(year: u16, month: u8) -> Self {
         Self { year, month }
     }
+    /// Assign the year value.
     fn year(&self) -> u16 {
         self.year
     }
+    /// Assign the month value.
     fn month(&self) -> u8 {
         self.month
     }
@@ -62,33 +59,54 @@ impl YearMonth {
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 pub enum Hint {
+    /// The address structure for `Hint` API.
     Address {
+        /// The requested 81-tryte address.
         address: Trytes81,
+        /// The year and month vector for the requested address.
         timeline: VecDeque<YearMonth>,
+        /// The optional paging state of current request in scyllaDB.
         paging_state: Option<Vec<u8>>,
+        /// The page size of of current request for scyllaDB.
         page_size: Option<u16>,
     },
+    /// The tag structure for `Hint` API.
     Tag {
+        /// The requested 27-tryte tag.
         tag: Trytes27,
+        /// The year and month vector for the requested address.
         timeline: VecDeque<YearMonth>,
+        /// The optional paging state of current request in scyllaDB.
         paging_state: Option<Vec<u8>>,
+        /// The page size of of current request for scyllaDB.
         page_size: Option<u16>,
     },
+    /// The bundle structure for `Hint` API.
     Bundle {
+        /// The requested 81-tryte bundle hash.
         bundle: Trytes81,
+        /// The year and month vector for the requested address.
         timeline: VecDeque<YearMonth>,
+        /// The optional paging state of current request in scyllaDB.
         paging_state: Option<Vec<u8>>,
+        /// The page size of of current request for scyllaDB.
         page_size: Option<u16>,
     },
+    /// The approvee structure for `Hint` API.
     Approvee {
+        /// The requested 81-tryte approvee.
         approvee: Trytes81,
+        /// The year and month vector for the requested address.
         timeline: VecDeque<YearMonth>,
+        /// The optional paging state of current request in scyllaDB.
         paging_state: Option<Vec<u8>>,
+        /// The page size of of current request for scyllaDB.
         page_size: Option<u16>,
     },
 }
 
 impl Hint {
+    /// Create a new address hint structure.
     pub fn new_address_hint(address: Trytes81, timeline: VecDeque<YearMonth>) -> Self {
         Self::Address {
             address,
@@ -97,6 +115,7 @@ impl Hint {
             page_size: None,
         }
     }
+    /// Create a new bundle hint structure.
     pub fn new_bundle_hint(bundle: Trytes81, timeline: VecDeque<YearMonth>) -> Self {
         Self::Bundle {
             bundle,
@@ -105,6 +124,7 @@ impl Hint {
             page_size: None,
         }
     }
+    /// Create a new approvee hint structure.
     pub fn new_approvee_hint(approvee: Trytes81, timeline: VecDeque<YearMonth>) -> Self {
         Self::Approvee {
             approvee,
@@ -113,6 +133,7 @@ impl Hint {
             page_size: None,
         }
     }
+    /// Create a new tag hint structure.
     pub fn new_tag_hint(tag: Trytes27, timeline: VecDeque<YearMonth>) -> Self {
         Self::Tag {
             tag,
@@ -121,6 +142,7 @@ impl Hint {
             page_size: None,
         }
     }
+    /// Get the timeline vecture from a given hint strcture.
     pub fn get_mut_timeline(&mut self) -> &mut VecDeque<YearMonth> {
         match self {
             Hint::Address { timeline, .. } => timeline,
@@ -129,6 +151,7 @@ impl Hint {
             Hint::Bundle { timeline, .. } => timeline,
         }
     }
+    /// Update the paging state in the `Hint` structure.
     pub fn replace_paging_state(&mut self, pg_state: Vec<u8>) {
         match self {
             Hint::Address { paging_state, .. } => {
@@ -163,8 +186,12 @@ rows!(
     column_decoder: HintsDecoder
 );
 
+/// This trait defines the `decode` and `finalize` behavior for the responsed transactions.
 pub trait Rows {
+    /// Collect nothing.
+    /// TODO: do we really need this?
     fn decode(self) -> Self;
+    /// Create the transactions to response depends on the pagins state.
     fn finalize(self) -> ResTransactions;
 }
 
