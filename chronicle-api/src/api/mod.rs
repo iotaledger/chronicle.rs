@@ -41,6 +41,7 @@ app!(ApiBuilder {
 });
 
 impl ApiBuilder {
+    /// Build the API application.
     pub fn build(self) -> Api {
         // set content_length if provided
         if let Some(content_length) = self.content_length.unwrap() {
@@ -53,12 +54,15 @@ impl ApiBuilder {
     }
 }
 
+/// The `listen_address` for API call and the `laucher_tx` to transmit signals to launcher.
+/// The launcher is the one who starts the API application.
 pub struct Api {
     listen_address: String,
     launcher_tx: Box<dyn LauncherTx>,
 }
 
 impl Api {
+    /// Start running the API application.
     pub async fn run(self) {
         let server = EndpointBuilder::new()
             .listen_address(self.listen_address)

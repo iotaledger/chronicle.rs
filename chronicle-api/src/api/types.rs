@@ -9,11 +9,16 @@
 // an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+//! The encoder and decoder implementations for the data model.
+
 use chronicle_cql::frame::{decoder::ColumnDecoder, encoder::ColumnEncoder};
 use serde::{self, Deserialize, Serialize};
+/// Milestones vector struct.
 pub type Milestones = Vec<Option<u64>>;
 #[derive(Copy, Clone)]
+/// Struct of 81 Tryte.
 pub struct Trytes81(pub [u8; 81]);
+/// 81 Bytes in the length field in frame header.
 pub const BE_81_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 81];
 
 impl Serialize for Trytes81 {
@@ -80,7 +85,9 @@ impl ColumnDecoder for Trytes81 {
 }
 
 #[derive(Copy, Clone)]
+/// 27-trytes structure, where each tryte is stored as u8.
 pub struct Trytes27(pub [u8; 27]);
+/// 27 Bytes in the length field in frame header.
 pub const BE_27_BYTES_LENGTH: [u8; 4] = [0, 0, 0, 27];
 
 impl Serialize for Trytes27 {

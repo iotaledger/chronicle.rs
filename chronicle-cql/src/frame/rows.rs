@@ -60,6 +60,7 @@ macro_rules! rows {
             fn decode_column(start: usize, length: i32, acc: &mut $rows);
             fn handle_null(acc: &mut $rows);
         }
+        /// The `rows` structure for processing each received row in ScyllaDB.
         pub struct $rows {
             decoder: Decoder,
             rows_count: usize,
@@ -79,6 +80,7 @@ macro_rules! rows {
         )*
         impl Iterator for $rows {
             type Item = usize;
+            /// Note the row decoder is implemented in this `next` method.
             fn next(&mut self) -> Option<<Self as Iterator>::Item> {
                 if self.remaining_rows_count > 0 {
                     self.remaining_rows_count -= 1;
@@ -103,6 +105,7 @@ macro_rules! rows {
         }
 
         impl $rows {
+            /// Create a new rows structure.
             pub fn new(mut decoder: Decoder, $($field: $type,)*) -> Self {
                 let metadata = decoder.metadata();
                 let rows_start = metadata.rows_start();
@@ -119,6 +122,7 @@ macro_rules! rows {
                     )*
                 }
             }
+            /// Get the frame buffer.
             pub fn buffer(&mut self) -> &mut Vec<u8> {
                 self.decoder.buffer_as_mut()
             }

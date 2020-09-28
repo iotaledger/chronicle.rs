@@ -9,6 +9,8 @@
 // an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+//! This module implements the GetTrytes API call.
+
 use super::types::Milestones;
 use chronicle_common::actor;
 use chronicle_cql::{
@@ -35,6 +37,7 @@ use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
 #[derive(Debug)]
+/// Struct of GetTrytes API.
 pub struct GetTrytesId(Sender);
 
 actor!(GetTrytesBuilder {
@@ -42,6 +45,7 @@ actor!(GetTrytesBuilder {
 });
 
 impl GetTrytesBuilder {
+    /// Build the struct of GetTrytes by builder pattern.
     pub fn build(self) -> GetTrytes {
         GetTrytes {
             hashes: self.hashes.unwrap(),
@@ -49,6 +53,7 @@ impl GetTrytesBuilder {
     }
 }
 
+/// GetTrytes structure, currently supports `hashes`.
 pub struct GetTrytes {
     hashes: Vec<JsonValue>,
 }
@@ -60,6 +65,7 @@ struct ResTrytes {
 }
 
 impl GetTrytes {
+    /// Start running the GetTrytes process.
     pub async fn run(mut self) -> Response<Body> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let mut worker = Box::new(GetTrytesId(tx));
@@ -136,9 +142,22 @@ impl GetTrytes {
     }
 }
 
+/// The event enum for GetTrytes API.
 pub enum Event {
-    Response { giveload: Vec<u8>, pid: Box<GetTrytesId> },
-    Error { kind: Error, pid: Box<GetTrytesId> },
+    /// The response structure for the API call.
+    Response {
+        /// The payload of the ScyllaDB response.
+        giveload: Vec<u8>,
+        /// The process ID of this API call.
+        pid: Box<GetTrytesId>,
+    },
+    /// The Error structure for the API call.
+    Error {
+        /// The error kind of the API call.
+        kind: Error,
+        /// The process ID of this API call.
+        pid: Box<GetTrytesId>,
+    },
 }
 
 // implementation!

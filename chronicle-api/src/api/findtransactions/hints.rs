@@ -9,6 +9,9 @@
 // an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+//! This module defines the `hints` for query in ScyllaDB, which enables query data with year/month, to
+//! avoid returning large data with the same column.
+
 use super::{ResTransactions, VecDeque};
 use crate::api::types::{Trytes27, Trytes81};
 use chronicle_cql::{
@@ -188,8 +191,7 @@ rows!(
 
 /// This trait defines the `decode` and `finalize` behavior for the responsed transactions.
 pub trait Rows {
-    /// Collect nothing.
-    /// TODO: do we really need this?
+    /// Decode each row by `next` method.
     fn decode(self) -> Self;
     /// Create the transactions to response depends on the pagins state.
     fn finalize(self) -> ResTransactions;
@@ -201,7 +203,7 @@ impl Rows for ResTxs {
         self
     }
     fn finalize(mut self) -> ResTransactions {
-        // if there is paging_state then we return hint to the user, to be used for further API calls
+        // if there is paging_state then we return hint to the user, to be used for further API calls.
         if let Some(paging_state) = self.metadata.take_paging_state() {
             self.hint.replace_paging_state(paging_state);
             // push hint
@@ -265,7 +267,7 @@ impl HintsDecoder for Milestone {
 }
 
 // ----------- encoding scope -----------
-
+/// Query the ScyllaDB with `Hint`.
 pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
     let mut query_flags = SKIP_METADATA | VALUES | PAGE_SIZE;
     let query = Query::new()

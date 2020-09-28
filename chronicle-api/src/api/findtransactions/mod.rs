@@ -44,6 +44,7 @@ use std::collections::VecDeque;
 use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Event>;
 #[derive(Debug)]
+/// The sender of FindTransactions API.
 pub struct FindTransactionsId(Sender);
 
 actor!(FindTransactionsBuilder {
@@ -55,6 +56,7 @@ actor!(FindTransactionsBuilder {
 });
 
 impl FindTransactionsBuilder {
+    /// Build the structure for FindTransactions API.
     pub fn build(self) -> FindTransactions {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let worker = Box::new(FindTransactionsId(tx));
@@ -70,6 +72,8 @@ impl FindTransactionsBuilder {
     }
 }
 
+/// Struct for FindTransactions API usage, currently supports `addresses`/`bundle`/`approvees`/`tags`
+/// with `hints`.
 pub struct FindTransactions {
     addresses: Option<Vec<Trytes81>>,
     bundles: Option<Vec<Trytes81>>,
@@ -81,6 +85,7 @@ pub struct FindTransactions {
 }
 
 #[derive(Serialize, Default)]
+/// The responsed transaction strcture to get more transactions by hints.
 pub struct ResTransactions {
     hashes: Vec<Trytes81>,
     milestones: Milestones,
@@ -98,6 +103,7 @@ impl ResTransactions {
 }
 
 impl FindTransactions {
+    /// Start running the process function.
     pub async fn run(self) -> Response<Body> {
         match self.process().await {
             Ok(response) => return response,
@@ -405,13 +411,20 @@ impl FindTransactions {
         Ok((hints, res_txs))
     }
 }
+/// The event enum for FindTransactions API usage.
 pub enum Event {
+    /// Event of getting response payload.
     Response {
+        /// THe payload.
         giveload: Vec<u8>,
+        /// The process ID.
         pid: Box<FindTransactionsId>,
     },
+    /// Error when getting FindTransactions API response.
     Error {
+        /// The Erorr kind.
         kind: Error,
+        /// The process ID.
         pid: Box<FindTransactionsId>,
     },
 }

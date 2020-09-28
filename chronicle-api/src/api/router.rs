@@ -9,6 +9,8 @@
 // an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+//! This module implements the router for API calls.
+
 use super::{
     findtransactions::{hints::Hint, FindTransactionsBuilder},
     gettrytes::GetTrytesBuilder,
@@ -34,6 +36,7 @@ struct ReqBody {
     approvees: Option<Vec<Trytes81>>,
 }
 
+/// Handle the user's request.
 pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let (parts, stream) = req.into_parts();
     match (
