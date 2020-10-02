@@ -80,10 +80,8 @@ impl Receiver {
     }
     fn handle_remaining_buffer(&mut self, i: usize) {
         if self.current_length < HEADER_LENGTH {
-            for index in i..(i + self.current_length) {
-                self.buffer[self.i] = self.buffer[index];
-                self.i += 1;
-            }
+            self.buffer.copy_within(i..(i + self.current_length), self.i);
+            self.i = self.current_length;
         } else {
             self.handle_frame_header(i);
             self.handle_frame(self.current_length, i);
@@ -104,19 +102,17 @@ impl Receiver {
                 // resize the len of the payload.
                 payload.resize(self.total_length, 0);
             }
-            // set self.i to zero
-            self.i = 0;
             // set header to true
             self.header = true;
         }
     }
     #[allow(unused_must_use)]
     fn handle_frame(&mut self, n: usize, mut padding: usize) {
+        let start = self.current_length - n - self.i;
         if self.current_length >= self.total_length {
             // get mut ref to payload for stream_id as giveload
             let giveload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // memcpy the current bytes from self.buffer into payload
-            let start = self.current_length - n;
             let old_padding = padding;
             // update padding
             padding += self.total_length - start;
@@ -132,13 +128,16 @@ impl Receiver {
             self.header = false;
             // update current_length
             self.current_length -= self.total_length;
+            // set self.i to zero
+            self.i = 0;
             self.handle_remaining_buffer(padding);
         } else {
             // get mut ref to payload for stream_id
             let payload = self.payloads[self.stream_id as usize].as_mut_payload().unwrap();
             // memcpy the current bytes from self.buffer into payload
-            payload[(self.current_length - n)..self.current_length]
-                .copy_from_slice(&self.buffer[padding..(padding + n)]);
+            payload[start..self.current_length].copy_from_slice(&self.buffer[padding..(padding + n + self.i)]);
+            // set self.i to zero
+            self.i = 0;
         }
     }
 }
