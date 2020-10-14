@@ -1,16 +1,9 @@
 use super::{
     consistency::Consistency,
-    decoder::{
-        self,
-        Decoder,
-        Frame,
-    },
+    decoder::{self, Decoder, Frame},
 };
 use std::{
-    convert::{
-        From,
-        TryInto,
-    },
+    convert::{From, TryInto},
     mem::transmute,
 };
 

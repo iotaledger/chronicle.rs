@@ -1,8 +1,4 @@
-use super::decoder::{
-    bytes,
-    Decoder,
-    Frame,
-};
+use super::decoder::{bytes, Decoder, Frame};
 
 pub struct AuthSuccess {
     token: Option<Vec<u8>>,

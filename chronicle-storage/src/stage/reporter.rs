@@ -1,22 +1,13 @@
 use super::{
-    sender::{
-        self,
-        Payload,
-    },
+    sender::{self, Payload},
     supervisor,
 };
-use crate::worker::{
-    Error,
-    Worker,
-};
+use crate::worker::{Error, Worker};
 use chronicle_common::actor;
 use log::*;
 use std::{
     collections::HashMap,
-    io::{
-        Error as IoError,
-        ErrorKind,
-    },
+    io::{Error as IoError, ErrorKind},
 };
 use tokio::sync::mpsc;
 // types

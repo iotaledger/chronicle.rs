@@ -1,23 +1,26 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module provides the top-level functionalities for handling events from different topics (like mqtt).
+
 use super::mqtt;
 use chronicle_common::{
     actor,
-    traits::{
-        launcher::LauncherTx,
-        shutdown::ShutdownTx,
-    },
+    traits::{launcher::LauncherTx, shutdown::ShutdownTx},
 };
 use log::*;
-use std::{
-    collections::HashMap,
-    iter::Iterator,
-    string::ToString,
-};
+use std::{collections::HashMap, iter::Iterator, string::ToString};
 use tokio::{
     sync::mpsc,
-    time::{
-        delay_for,
-        Duration,
-    },
+    time::{delay_for, Duration},
 };
 actor!(SupervisorBuilder {
     trytes: Option<Vec<String>>,
@@ -26,13 +29,22 @@ actor!(SupervisorBuilder {
     stream_capacity: usize,
     launcher_tx: Box<dyn LauncherTx>
 });
+
+/// The broker supervisor event.
 pub enum Event {
+    /// Add a mqtt peer to receive events.
     AddMqtt(Peer),
+    /// Reconnect the MQTT.
     Reconnect(super::mqtt::Mqtt),
+    /// Shutdown the broker.
     Shutdown(Option<usize>),
 }
+
+/// Sender for broker events.
 pub type Sender = mpsc::UnboundedSender<Event>;
+/// Receiver for broker events.
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
+/// Shutdown for the broker.
 pub struct Shutdown(Sender);
 
 #[allow(unused_must_use)]
@@ -43,33 +55,46 @@ impl ShutdownTx for Shutdown {
 }
 
 #[derive(Clone)]
+/// MQTT peer structure.
 pub struct Peer {
+    /// The `Peer` ID.
     pub id: usize,
+    /// The single MQTT topic to subscribe from the Peer.
     topic: Topic,
+    /// The peer address.
     pub address: String,
+    /// To indicate the `Peer` is connected or not.
     pub connected: bool,
 }
 impl Peer {
+    /// Get the `Peer` ID.
     pub fn get_id(&self) -> usize {
         self.id
     }
+    /// Get the `Peer` address.
     pub fn get_address<'a>(&'a self) -> &'a str {
         &self.address
     }
+    /// Get the subscribed MQTT topic.
     pub fn get_topic(&self) -> Topic {
         self.topic
     }
+    /// Get the subscribed MQTT topic as `String`.
     pub fn get_topic_as_string(&self) -> String {
         self.topic.to_string()
     }
+    /// Set the peer connection flag.
     pub fn set_connected(&mut self, connected: bool) {
         self.connected = connected;
     }
 }
 
 #[derive(Clone, Copy)]
+/// MQTT topic to sbuscribe.
 pub enum Topic {
+    /// MQTT `Trytes` topic.
     Trytes,
+    /// MQTT `ConfTrytes` topic.
     ConfTrytes,
 }
 impl ToString for Topic {
@@ -82,6 +107,7 @@ impl ToString for Topic {
 }
 
 impl SupervisorBuilder {
+    /// Build the broker supervisor.
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let peers = HashMap::new();
@@ -128,6 +154,8 @@ impl SupervisorBuilder {
         }
     }
 }
+
+/// The broker supervisor structure.
 pub struct Supervisor {
     peers: HashMap<usize, Peer>,
     clients: HashMap<usize, paho_mqtt::AsyncClient>,
@@ -140,6 +168,7 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
+    /// Run the event receiving loop of broker supervisor.
     pub async fn run(mut self) {
         // register broker app with launcher
         self.launcher_tx.register_app(

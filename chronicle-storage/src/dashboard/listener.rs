@@ -1,17 +1,10 @@
 // uses
 use futures::{
-    future::{
-        abortable,
-        AbortHandle,
-        Abortable,
-    },
+    future::{abortable, AbortHandle, Abortable},
     Future,
 };
 
-use crate::dashboard::{
-    self,
-    websocket,
-};
+use crate::dashboard::{self, websocket};
 use chronicle_common::actor;
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;

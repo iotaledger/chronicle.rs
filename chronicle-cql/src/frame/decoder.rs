@@ -1,25 +1,13 @@
 use super::{
-    error,
-    header,
-    opcode,
-    result,
-    rows::{
-        ColumnsCount,
-        Flags,
-        Metadata,
-        PagingState,
-    },
+    error, header, opcode, result,
+    rows::{ColumnsCount, Flags, Metadata, PagingState},
 };
 use crate::compression::Compression;
 use std::{
     collections::HashMap,
     convert::TryInto,
     hash::Hash,
-    net::{
-        IpAddr,
-        Ipv4Addr,
-        Ipv6Addr,
-    },
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str,
 };
 

@@ -1,12 +1,6 @@
 use super::{
     consistency::Consistency,
-    encoder::{
-        ColumnEncoder,
-        BE_0_BYTES_LEN,
-        BE_8_BYTES_LEN,
-        BE_NULL_BYTES_LEN,
-        BE_UNSET_BYTES_LEN,
-    },
+    encoder::{ColumnEncoder, BE_0_BYTES_LEN, BE_8_BYTES_LEN, BE_NULL_BYTES_LEN, BE_UNSET_BYTES_LEN},
     header::Header,
     opcode::BATCH,
 };
@@ -119,16 +113,10 @@ mod tests {
     use super::*;
     use crate::{
         compression::UNCOMPRESSED,
-        frame::{
-            batchflags::NOFLAGS,
-            header::IGNORE,
-        },
+        frame::{batchflags::NOFLAGS, header::IGNORE},
         statements::INSERT_TX_QUERY,
     };
-    use std::time::{
-        SystemTime,
-        UNIX_EPOCH,
-    };
+    use std::time::{SystemTime, UNIX_EPOCH};
     #[test]
     // note: junk data
     fn simple_query_builder_test() {

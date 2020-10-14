@@ -1,8 +1,4 @@
-use super::{
-    encoder::BE_0_BYTES_LEN,
-    header::Header,
-    opcode::PREPARE,
-};
+use super::{encoder::BE_0_BYTES_LEN, header::Header, opcode::PREPARE};
 
 use crate::compression::Compression;
 
@@ -52,11 +48,7 @@ impl Prepare {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        compression::UNCOMPRESSED,
-        frame::header,
-        statements::INSERT_TX_QUERY,
-    };
+    use crate::{compression::UNCOMPRESSED, frame::header, statements::INSERT_TX_QUERY};
     #[test]
     // note: junk data
     fn simple_prepare_builder_test() {

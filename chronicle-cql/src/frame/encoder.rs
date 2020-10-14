@@ -1,10 +1,6 @@
 use std::{
     collections::HashMap,
-    net::{
-        IpAddr,
-        Ipv4Addr,
-        Ipv6Addr,
-    },
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
 pub const BE_16_BYTES_LEN: [u8; 4] = [0, 0, 0, 16];

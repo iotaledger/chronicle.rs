@@ -1,30 +1,15 @@
-use super::{
-    receiver,
-    reporter,
-    sender,
-};
+use super::{receiver, reporter, sender};
 use crate::{
     connection::cql::connect_to_shard_id,
     node,
-    stage::reporter::{
-        Stream,
-        Streams,
-    },
+    stage::reporter::{Stream, Streams},
 };
 use chronicle_cql::frame::auth_response::PasswordAuth;
 
 use chronicle_common::actor;
 use log::*;
-use std::{
-    cell::UnsafeCell,
-    collections::HashMap,
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{
-    sync::mpsc,
-    time::delay_for,
-};
+use std::{cell::UnsafeCell, collections::HashMap, sync::Arc, time::Duration};
+use tokio::{sync::mpsc, time::delay_for};
 pub type Sender = mpsc::UnboundedSender<Event>;
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 pub type Reporters = HashMap<u8, mpsc::UnboundedSender<reporter::Event>>;

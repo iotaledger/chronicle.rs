@@ -1,59 +1,34 @@
 use crate::{
     cluster::supervisor::Tokens as ClusterTokens,
     node::supervisor::gen_node_id,
-    ring::{
-        Msb,
-        ShardCount,
-        DC,
-    },
+    ring::{Msb, ShardCount, DC},
 };
 use chronicle_cql::frame::{
     auth_challenge::AuthChallenge,
-    auth_response::{
-        AuthResponse,
-        Authenticator,
-    },
+    auth_response::{AuthResponse, Authenticator},
     authenticate::Authenticate,
-    decoder::{
-        Decoder,
-        Frame,
-    },
+    decoder::{Decoder, Frame},
     header::Header,
     *,
 };
 
 use log::*;
 
-use std::{
-    collections::HashMap,
-    i64,
-    net::Ipv4Addr,
-};
+use std::{collections::HashMap, i64, net::Ipv4Addr};
 use tokio::{
-    io::{
-        Error,
-        ErrorKind,
-    },
+    io::{Error, ErrorKind},
     net::TcpStream,
 };
 
 use chronicle_cql::{
     compression::MyCompression,
-    frame::{
-        consistency::Consistency,
-        decoder::ColumnDecoder,
-        query::Query,
-        queryflags::SKIP_METADATA,
-    },
+    frame::{consistency::Consistency, decoder::ColumnDecoder, query::Query, queryflags::SKIP_METADATA},
     rows,
 };
 
 pub type Address = String;
 
-use tokio::io::{
-    AsyncReadExt,
-    AsyncWriteExt,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug)]
 pub struct CqlConn {

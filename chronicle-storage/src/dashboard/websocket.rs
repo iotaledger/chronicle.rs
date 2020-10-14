@@ -7,24 +7,15 @@
 use crate::dashboard;
 use chronicle_common::actor;
 use futures::{
-    stream::{
-        SplitSink,
-        SplitStream,
-    },
+    stream::{SplitSink, SplitStream},
     StreamExt,
 };
 use log::*;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    tungstenite::{
-        Message,
-        Result,
-    },
+    tungstenite::{Message, Result},
     WebSocketStream,
 };
 
@@ -123,15 +114,8 @@ impl Websocket {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{
-        IpAddr,
-        Ipv4Addr,
-        SocketAddr,
-    };
-    use tokio::{
-        net::TcpStream,
-        sync::mpsc,
-    };
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use tokio::{net::TcpStream, sync::mpsc};
     use tokio_tungstenite::accept_async;
 
     #[tokio::test]

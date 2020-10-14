@@ -1,8 +1,4 @@
-use super::decoder::{
-    string,
-    Decoder,
-    Frame,
-};
+use super::decoder::{string, Decoder, Frame};
 
 pub struct Authenticate {
     pub authenticator: String,

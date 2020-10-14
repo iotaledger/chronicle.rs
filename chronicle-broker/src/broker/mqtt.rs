@@ -1,61 +1,44 @@
-use super::supervisor::{
-    Event as SupervisorEvent,
-    Peer,
-    Sender as SupervisorTx,
-    Topic,
-};
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module implements low-level mqtt event handling methods.
+
+use super::supervisor::{Event as SupervisorEvent, Peer, Sender as SupervisorTx, Topic};
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
-    worker::{
-        Error,
-        Worker,
-    },
+    worker::{Error, Worker},
 };
 use log::*;
 use std::time;
-use tokio::{
-    sync::mpsc,
-    time::delay_for,
-};
+use tokio::{sync::mpsc, time::delay_for};
 
 use crate::importer::{
-    trytes::{
-        Compatible,
-        Trytes,
-    },
-    trytes_to_i64,
-    valid_timestamp,
-    *,
+    trytes::{Compatible, Trytes},
+    trytes_to_i64, valid_timestamp, *,
 };
 use chronicle_cql::{
     compression::MyCompression,
-    frame::decoder::{
-        Decoder,
-        Frame,
-    },
+    frame::decoder::{Decoder, Frame},
 };
-use chrono::{
-    DateTime,
-    Datelike,
-    NaiveDateTime,
-};
-use paho_mqtt::{
-    self,
-    Message,
-};
-use std::{
-    fmt::Write,
-    time::Duration,
-};
-use tokio::stream::{
-    Stream,
-    StreamExt,
-};
+use chrono::{DateTime, Datelike, NaiveDateTime};
+use paho_mqtt::{self, Message};
+use std::{fmt::Write, time::Duration};
+use tokio::stream::{Stream, StreamExt};
 const TWO_DAYS_IN_MS: i64 = 172800000;
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
+
 #[derive(Debug)]
+/// The MQTT ID records the corresponding query ID of a MQTT event.
 pub struct MqttId(Sender, u8);
 impl MqttId {
     fn query_id(mut self: Box<Self>, query_id: u8) -> Box<Self> {
@@ -67,9 +50,20 @@ impl MqttId {
     }
 }
 
+/// The MQTT event.
 pub enum Event {
-    Void { pid: Box<MqttId> },
-    Error { kind: Error, pid: Box<MqttId> },
+    /// The MQTT ID.
+    Void {
+        /// The process ID.
+        pid: Box<MqttId>,
+    },
+    /// The MQTT Error.
+    Error {
+        /// The error kind.
+        kind: Error,
+        /// The process ID.
+        pid: Box<MqttId>,
+    },
 }
 
 use chronicle_common::actor;
@@ -83,6 +77,8 @@ actor!(MqttBuilder {
 });
 
 impl MqttBuilder {
+    /// Build a MQTT worker to start handling MQTT topics.
+    /// Note that different MQTT topics share the same MPSC channel.
     pub fn build(self) -> Mqtt {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let mut pids = Vec::new();
@@ -105,9 +101,12 @@ impl MqttBuilder {
     }
 }
 
+/// The MQTT strcture for handling MQTT topics.
 pub struct Mqtt {
     rx: Receiver,
+    /// The MQTT events are received from the `Peer`.
     pub peer: Peer,
+    /// The MQTT client side to get the received stream.
     pub client: Option<paho_mqtt::AsyncClient>,
     pids: Vec<Box<MqttId>>,
     pending: usize,
@@ -117,6 +116,7 @@ pub struct Mqtt {
     delay: usize,
 }
 impl Mqtt {
+    /// Start to run the MQTT event receiving loop.
     pub async fn run(
         mut self,
         supervisor_tx: SupervisorTx,
@@ -154,6 +154,7 @@ impl Mqtt {
         self.peer.set_connected(false);
         let _ = supervisor_tx.send(SupervisorEvent::Reconnect(self));
     }
+    /// Initialize the MQTT worker and get the received stream.
     pub async fn init(&mut self) -> Result<impl Stream<Item = Option<Message>>, paho_mqtt::Error> {
         // create mqtt AsyncClient in advance
         let mut client_id = String::new();
@@ -172,6 +173,7 @@ impl Mqtt {
         self.client.replace(cli);
         Ok(stream)
     }
+    /// Reconnect to the peer.
     pub async fn reconnect(&mut self) -> Result<impl Stream<Item = Option<Message>>, paho_mqtt::Error> {
         let cli = self.client.as_mut().unwrap();
         let stream = cli.get_stream(self.stream_capacity);
@@ -180,6 +182,7 @@ impl Mqtt {
         self.peer.set_connected(true);
         Ok(stream)
     }
+    /// Handle the trytes from the received message.
     pub async fn handle_trytes(&mut self, msg: MqttMsg) {
         // we should ignore transactions with invalid timestamps
         let trytes = msg.trytes();
@@ -252,6 +255,7 @@ impl Mqtt {
             }
         }
     }
+    /// Handle the MQTT topic of conf_trytes.
     pub async fn handle_conf_trytes(&mut self, msg: MqttMsg) {
         // we should ignore transactions with invalid timestamps
         let trytes = msg.trytes();
@@ -319,6 +323,7 @@ impl Mqtt {
             }
         }
     }
+    /// Persist the received transactions from the MQTT topic.
     pub async fn persist_transaction(
         &mut self,
         msg: &MqttMsg,
@@ -556,9 +561,13 @@ impl Mqtt {
     }
 }
 
+/// The MQTT message structure.
 pub struct MqttMsg {
+    /// The received mqtt message.
     pub msg: Message,
+    /// The received milestone.
     pub milestone: Option<i64>,
+    /// The received timestamp in millisecond.    
     pub timestamp_millis: i64,
 }
 

@@ -2,43 +2,23 @@ pub mod client;
 mod listener;
 mod websocket;
 // work in progress
-use crate::{
-    cluster::supervisor,
-    connection::cql::Address,
-    dashboard::websocket::SocketMsg,
-};
+use crate::{cluster::supervisor, connection::cql::Address, dashboard::websocket::SocketMsg};
 use chronicle_common::{
     actor,
     traits::{
-        dashboard::{
-            AppStatus,
-            DashboardTx,
-        },
+        dashboard::{AppStatus, DashboardTx},
         launcher::LauncherTx,
         shutdown::ShutdownTx,
     },
 };
-use futures::{
-    future::AbortHandle,
-    stream::SplitSink,
-    SinkExt,
-};
+use futures::{future::AbortHandle, stream::SplitSink, SinkExt};
 use log::*;
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-};
+use std::{collections::HashMap, net::SocketAddr};
 use tokio::{
-    net::{
-        TcpListener,
-        TcpStream,
-    },
+    net::{TcpListener, TcpStream},
     sync::mpsc,
 };
-use tokio_tungstenite::{
-    tungstenite::Message,
-    WebSocketStream,
-};
+use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 #[derive(Clone)]
 pub struct Sender(pub mpsc::UnboundedSender<Event>);

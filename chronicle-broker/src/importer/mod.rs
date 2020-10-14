@@ -1,31 +1,26 @@
 // TODO compute token to enable shard_awareness.
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module implements the historical file importer.
+
 pub mod trytes;
 use bee_ternary::TryteBuf;
 use chronicle_common::actor;
 use chronicle_cql::frame::encoder::ColumnEncoder;
-use chronicle_storage::{
-    ring::Ring,
-    stage::reporter,
-    worker,
-};
-use chrono::{
-    Datelike,
-    NaiveDateTime,
-};
-use indicatif::{
-    ProgressBar,
-    ProgressStyle,
-};
-use std::{
-    convert::TryFrom,
-    error::Error,
-    time,
-};
-use tokio::{
-    fs::File,
-    sync::mpsc,
-    time::delay_for,
-};
+use chronicle_storage::{ring::Ring, stage::reporter, worker};
+use chrono::{Datelike, NaiveDateTime};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::{convert::TryFrom, error::Error, time};
+use tokio::{fs::File, sync::mpsc, time::delay_for};
 use trytes::Trytes;
 
 use log::*;
@@ -34,23 +29,14 @@ use chronicle_cql::{
     compression::MyCompression,
     frame::{
         consistency::Consistency,
-        decoder::{
-            Decoder,
-            Frame,
-        },
+        decoder::{Decoder, Frame},
         header::Header,
         query::Query,
-        queryflags::{
-            SKIP_METADATA,
-            VALUES,
-        },
+        queryflags::{SKIP_METADATA, VALUES},
     },
 };
 
-use tokio::io::{
-    AsyncBufReadExt,
-    BufReader,
-};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
@@ -71,6 +57,7 @@ impl chronicle_cql::frame::encoder::ColumnEncoder for Milestone {
 }
 
 #[derive(Debug)]
+/// The importer worker ID.
 pub struct ImporterId(Sender, u8);
 impl ImporterId {
     fn query_id(mut self: Box<Self>, query_id: u8) -> Box<Self> {
@@ -88,12 +75,26 @@ actor!(ImporterBuilder {
     max_retries: usize
 });
 
+/// The `Importer` event.
 pub enum Event {
-    Response { decoder: Decoder, pid: Box<ImporterId> },
-    Error { kind: worker::Error, pid: Box<ImporterId> },
+    /// The database response.
+    Response {
+        /// The decoder for the database response.
+        decoder: Decoder,
+        /// The process ID for the database response.
+        pid: Box<ImporterId>,
+    },
+    /// The importer error.
+    Error {
+        /// The error kind of the importer worker.
+        kind: worker::Error,
+        /// The process ID for the database response.
+        pid: Box<ImporterId>,
+    },
 }
 
 impl ImporterBuilder {
+    /// Build a importer.
     pub fn build(self) -> Importer {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let mut pids = Vec::new();
@@ -118,6 +119,7 @@ impl ImporterBuilder {
     }
 }
 
+/// The importer worker structure.
 pub struct Importer {
     rx: Receiver,
     filepath: String,
@@ -133,6 +135,7 @@ pub struct Importer {
 }
 
 impl Importer {
+    /// Start to run the worker importer for importing data.
     pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
         // open dmp file
         let mut file = File::open(&self.filepath).await?;
@@ -630,6 +633,7 @@ pub fn trytes_to_i64(slice: &str) -> i64 {
     i64::try_from(TryteBuf::try_from_str(slice).unwrap().as_trits()).unwrap()
 }
 
+/// Count the timestamp digit.
 pub fn count_digit(mut timestamp: i64) -> usize {
     let mut count = 0;
     while timestamp != 0 {
@@ -639,6 +643,7 @@ pub fn count_digit(mut timestamp: i64) -> usize {
     count
 }
 
+/// Check whether the timestamp is valid or not.
 pub fn valid_timestamp(timestamp: i64, digit_count: usize) -> bool {
     if timestamp > 0 && count_digit(timestamp) == digit_count {
         // valid
@@ -649,16 +654,25 @@ pub fn valid_timestamp(timestamp: i64, digit_count: usize) -> bool {
 }
 
 // kind consts
+/// The `address` string.
 pub const ADDRESS: &str = "address";
+/// The `input` string.
 pub const INPUT: &str = "input";
+/// The `output` string.
 pub const OUTPUT: &str = "output";
+/// The `approvee` string.
 pub const APPROVEE: &str = "approvee";
+/// The `trunk` string.
 pub const TRUNK: &str = "trunk";
+/// The `branch` string.
 pub const BRANCH: &str = "branch";
+/// The `bundle` string.
 pub const BUNDLE: &str = "bundle";
+/// The `tag` string.
 pub const TAG: &str = "tag";
 
 // statements consts
+/// The cql query for insertion of tangle transactions.
 pub const INSERT_TANGLE_TX_QUERY: &str = {
     #[cfg(feature = "mainnet")]
     let cql = r#"
@@ -728,7 +742,8 @@ pub const INSERT_TANGLE_TX_QUERY: &str = {
 "#;
     cql
 };
-//-------------------------------------
+
+/// The cql statement of insertion of tangle hint.
 pub const INSERT_TANGLE_HINT_STATMENT: &str = {
     #[cfg(feature = "mainnet")]
     let cql = r#"
@@ -762,7 +777,8 @@ milestone
 "#;
     cql
 };
-//-------------------------------------
+
+/// The cql statement of insertion of tangle data.
 pub const INSERT_TANGLE_DATA_STATMENT: &str = {
     #[cfg(feature = "mainnet")]
     let cql = r#"

@@ -1,8 +1,4 @@
-use super::{
-    encoder::BE_0_BYTES_LEN,
-    header::Header,
-    opcode::AUTH_RESPONSE,
-};
+use super::{encoder::BE_0_BYTES_LEN, header::Header, opcode::AUTH_RESPONSE};
 use crate::compression::Compression;
 use std::convert::TryInto;
 

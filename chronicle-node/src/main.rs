@@ -5,26 +5,16 @@ use chronicle_storage::storage::StorageBuilder;
 // import launcher macro and logger,
 use chronicle_common::{
     launcher,
-    logger::{
-        logger_init,
-        LoggerConfigBuilder,
-    },
+    logger::{logger_init, LoggerConfigBuilder},
 };
 use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
 use chronicle_cql::frame::auth_response::PasswordAuth;
-use chronicle_storage::{
-    dashboard::client::add_nodes,
-    worker::schema_cql::SchemaCqlBuilder,
-};
+use chronicle_storage::{dashboard::client::add_nodes, worker::schema_cql::SchemaCqlBuilder};
 
 use serde::Deserialize;
-use std::{
-    fmt::Write as FmtWrite,
-    fs,
-    path::PathBuf,
-};
+use std::{fmt::Write as FmtWrite, fs, path::PathBuf};
 use structopt::StructOpt;
 use tokio::runtime::Builder;
 
@@ -113,7 +103,7 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
-        // 
+        //
         // - storage app:
         let mut storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -126,12 +116,12 @@ impl AppsBuilder {
         if let Some(ref auth) = config.scylla_cluster.auth {
             storage = storage.authenticator(PasswordAuth::new(auth.user.clone(), auth.pass.clone()));
         }
-        // 
+        //
         // - api app
         let api = ApiBuilder::new()
             .listen_address(config.api.endpoint.clone())
             .content_length(config.api.content_length);
-        // 
+        //
         // - broker app
         let mut broker = BrokerBuilder::new()
             .max_retries(config.broker.max_retries)

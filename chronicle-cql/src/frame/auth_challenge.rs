@@ -1,8 +1,4 @@
-use super::decoder::{
-    bytes,
-    Decoder,
-    Frame,
-};
+use super::decoder::{bytes, Decoder, Frame};
 
 #[derive(Debug)]
 pub struct AuthChallenge {

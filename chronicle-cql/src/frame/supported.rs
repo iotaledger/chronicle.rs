@@ -1,8 +1,4 @@
-use super::decoder::{
-    string_multimap,
-    Decoder,
-    Frame,
-};
+use super::decoder::{string_multimap, Decoder, Frame};
 use std::collections::HashMap;
 
 pub struct Supported {

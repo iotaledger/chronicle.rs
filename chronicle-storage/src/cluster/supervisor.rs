@@ -1,33 +1,13 @@
 use super::node;
 use crate::{
-    connection::cql::{
-        connect,
-        fetch_tokens,
-    },
+    connection::cql::{connect, fetch_tokens},
     dashboard,
     node::supervisor::gen_node_id,
-    ring::{
-        build_ring,
-        initialize_ring,
-        ArcRing,
-        Msb,
-        NodeId,
-        Registry,
-        ShardCount,
-        Token,
-        WeakRing,
-        DC,
-    },
+    ring::{build_ring, initialize_ring, ArcRing, Msb, NodeId, Registry, ShardCount, Token, WeakRing, DC},
 };
-use chronicle_common::{
-    actor,
-    traits::launcher::LauncherTx,
-};
+use chronicle_common::{actor, traits::launcher::LauncherTx};
 use chronicle_cql::frame::auth_response::PasswordAuth;
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 // types
 pub type Sender = mpsc::UnboundedSender<Event>;
