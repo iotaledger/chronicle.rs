@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module implements the batch query frame.
+
 use super::{
     consistency::Consistency,
     encoder::{ColumnEncoder, BE_0_BYTES_LEN, BE_8_BYTES_LEN, BE_NULL_BYTES_LEN, BE_UNSET_BYTES_LEN},
@@ -8,12 +21,17 @@ use crate::compression::Compression;
 
 type QueryCount = u16;
 
+/// The batch frame with multiple queries.
 pub struct Batch(pub Vec<u8>, pub QueryCount);
 
 #[repr(u8)]
+/// The batch type enum.
 pub enum BatchTypes {
+    /// The batch will be logged.
     Logged = 0,
+    /// The batch will be unlogged.
     Unlogged = 1,
+    /// The batch will be a "counter" batch.
     Counter = 2,
 }
 
@@ -47,11 +65,13 @@ impl Header for Batch {
 }
 
 impl Batch {
+    /// Set the batch type in the Batch frame.
     pub fn batch_type(mut self, batch_type: BatchTypes) -> Self {
         // push batch_type and pad zero querycount
         self.0.extend(&[batch_type as u8, 0, 0]);
         self
     }
+    /// Set the statement in the Batch frame.
     pub fn statement(mut self, statement: &str) -> Self {
         // normal query
         self.0.push(0);
@@ -60,6 +80,7 @@ impl Batch {
         self.1 += 1; // update querycount
         self
     }
+    /// Set the id in the Batch frame.
     pub fn id(mut self, id: &str) -> Self {
         // prepared query
         self.0.push(1);
@@ -68,39 +89,48 @@ impl Batch {
         self.1 += 1;
         self
     }
+    /// Set the value count in the Batch frame.
     pub fn value_count(mut self, value_count: u16) -> Self {
         self.0.extend(&u16::to_be_bytes(value_count));
         self
     }
+    /// Set the value in the Batch frame.
     pub fn value(mut self, value: impl ColumnEncoder) -> Self {
         value.encode(&mut self.0);
         self
     }
+    /// Set the value to be unset in the Batch frame.
     pub fn unset_value(mut self) -> Self {
         self.0.extend(&BE_UNSET_BYTES_LEN);
         self
     }
+    /// Set the value to be null in the Batch frame.
     pub fn null_value(mut self) -> Self {
         self.0.extend(&BE_NULL_BYTES_LEN);
         self
     }
+    /// Set the consistency of the Batch frame.
     pub fn consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
+    /// Set the batch flags of the Batch frame.
     pub fn batch_flags(mut self, batch_flags: u8) -> Self {
         self.0.push(batch_flags);
         self
     }
+    /// Set the serial consistency in the Batch frame.
     pub fn serial_consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
+    /// Set the timestamp of the Batch frame.
     pub fn timestamp(mut self, timestamp: i64) -> Self {
         self.0.extend(&BE_8_BYTES_LEN);
         self.0.extend(&i64::to_be_bytes(timestamp));
         self
     }
+    /// Build a Batch frame.
     pub fn build(mut self, compression: impl Compression) -> Self {
         // adjust the querycount
         self.0[10..12].copy_from_slice(&u16::to_be_bytes(self.1));

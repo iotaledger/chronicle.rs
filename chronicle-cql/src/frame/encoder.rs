@@ -1,22 +1,49 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module implements the frame encoder.
+
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
+/// The 16-byte body length.
 pub const BE_16_BYTES_LEN: [u8; 4] = [0, 0, 0, 16];
+/// The 8-byte body length.
 pub const BE_8_BYTES_LEN: [u8; 4] = [0, 0, 0, 8];
+/// The 4-byte body length.
 pub const BE_4_BYTES_LEN: [u8; 4] = [0, 0, 0, 4];
+/// The 2-byte body length.
 pub const BE_2_BYTES_LEN: [u8; 4] = [0, 0, 0, 2];
+/// The 1-byte body length.
 pub const BE_1_BYTES_LEN: [u8; 4] = [0, 0, 0, 1];
+/// The 0-byte body length.
 pub const BE_0_BYTES_LEN: [u8; 4] = [0, 0, 0, 0];
+/// The NULL body length.
 pub const BE_NULL_BYTES_LEN: [u8; 4] = [255, 255, 255, 255]; // -1 length
+/// The UNSET body length.
 pub const BE_UNSET_BYTES_LEN: [u8; 4] = [255, 255, 255, 254]; // -2 length
+/// The NULL value used to indicate the body length.
 pub const NULL_VALUE: Null = Null;
+/// The unset value used to indicate the body length.
 pub const UNSET_VALUE: Unset = Unset;
+/// The Null unit stucture.
 pub struct Null;
+/// The Unset unit stucture.
 pub struct Unset;
 
+/// The frame column encoder.
 pub trait ColumnEncoder {
+    /// Encoder the column buffer.
     fn encode(&self, buffer: &mut Vec<u8>);
 }
 

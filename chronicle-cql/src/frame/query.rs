@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module defines the query frame.
+
 use super::{
     consistency::Consistency,
     encoder::{ColumnEncoder, BE_0_BYTES_LEN, BE_8_BYTES_LEN, BE_NULL_BYTES_LEN, BE_UNSET_BYTES_LEN},
@@ -6,6 +19,7 @@ use super::{
 };
 use crate::compression::Compression;
 
+/// The query frame structure.
 pub struct Query(pub Vec<u8>);
 
 impl Header for Query {
@@ -38,39 +52,48 @@ impl Header for Query {
 }
 
 impl Query {
+    /// Set the statement in the query frame.
     pub fn statement(mut self, statement: &str) -> Self {
         self.0.extend(&i32::to_be_bytes(statement.len() as i32));
         self.0.extend(statement.bytes());
         self
     }
+    /// Set the consistency in the query frame.
     pub fn consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
+    /// Set the flags in the query frame.
     pub fn query_flags(mut self, query_flags: u8) -> Self {
         self.0.push(query_flags);
         self
     }
+    /// Set the value count in the query frame.
     pub fn value_count(mut self, value_count: u16) -> Self {
         self.0.extend(&u16::to_be_bytes(value_count));
         self
     }
+    /// Set the value in the query frame.
     pub fn value(mut self, value: impl ColumnEncoder) -> Self {
         value.encode(&mut self.0);
         self
     }
+    /// Set the value to be unset in the query frame.
     pub fn unset_value(mut self) -> Self {
         self.0.extend(&BE_UNSET_BYTES_LEN);
         self
     }
+    /// Set the value to be null in the query frame.
     pub fn null_value(mut self) -> Self {
         self.0.extend(&BE_NULL_BYTES_LEN);
         self
     }
+    /// Set the page size in the query frame.
     pub fn page_size(mut self, page_size: i32) -> Self {
         self.0.extend(&i32::to_be_bytes(page_size));
         self
     }
+    /// Set the paging state in the query frame.
     pub fn paging_state(mut self, paging_state: &Option<Vec<u8>>) -> Self {
         if let Some(paging_state) = paging_state {
             self.0.extend(&i32::to_be_bytes(paging_state.len() as i32));
@@ -78,15 +101,18 @@ impl Query {
         }
         self
     }
+    /// Set serial consistency for the query frame.
     pub fn serial_consistency(mut self, consistency: Consistency) -> Self {
         self.0.extend(&u16::to_be_bytes(consistency as u16));
         self
     }
+    /// Set the timestamp of the query frame.
     pub fn timestamp(mut self, timestamp: i64) -> Self {
         self.0.extend(&BE_8_BYTES_LEN);
         self.0.extend(&i64::to_be_bytes(timestamp));
         self
     }
+    /// Build a query frame with an assigned compression type.
     pub fn build(mut self, compression: impl Compression) -> Self {
         self.0 = compression.compress(self.0);
         self

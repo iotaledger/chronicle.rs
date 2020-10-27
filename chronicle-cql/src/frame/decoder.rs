@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module implements the frame decoder.
+
 use super::{
     error, header, opcode, result,
     rows::{ColumnsCount, Flags, Metadata, PagingState},
@@ -11,69 +24,115 @@ use std::{
     str,
 };
 
+/// The CQL frame trait.
 pub trait Frame {
+    /// Get the frame version.
     fn version(&self) -> u8;
+    /// G the frame header flags.
     fn flags(&self) -> &HeaderFlags;
+    /// Get the stream in the frame header.
     fn stream(&self) -> i16;
+    /// Get the opcode in the frame header.
     fn opcode(&self) -> u8;
+    /// Get the length of the frame body.
     fn length(&self) -> usize;
+    /// Get the frame body.
     fn body(&self) -> &[u8];
+    /// Get the body start of the frame.
     fn body_start(&self, padding: usize) -> usize;
+    /// Get the body kind.
     fn body_kind(&self) -> i32;
+    /// Check whether the opcode is `AUTHENTICATE`.
     fn is_authenticate(&self) -> bool;
+    /// Check whether the opcode is `AUTH_CHALLENGE`.
     fn is_auth_challenge(&self) -> bool;
+    /// Check whether the opcode is `AUTH_SUCCESS`.
     fn is_auth_success(&self) -> bool;
+    /// Check whether the opcode is `SUPPORTED`.
     fn is_supported(&self) -> bool;
+    /// Check whether the opcode is `READY`.
     fn is_ready(&self) -> bool;
+    /// Check whether the body kind is `VOID`.
     fn is_void(&self) -> bool;
+    /// Check whether the body kind is `ROWS`.
     fn is_rows(&self) -> bool;
+    /// Check whether the opcode is `ERROR`.
     fn is_error(&self) -> bool;
+    /// Get the `CqlError`.
     fn get_error(&self) -> error::CqlError;
+    /// Check whether the error is `UNPREPARED`.
     fn is_unprepared(&self) -> bool;
+    /// Check whether the error is `ALREADY_EXISTS.
     fn is_already_exists(&self) -> bool;
+    /// Check whether the error is `CONFIGURE_ERROR.
     fn is_configure_error(&self) -> bool;
+    /// Check whether the error is `INVALID.
     fn is_invalid(&self) -> bool;
+    /// Check whether the error is `UNAUTHORIZED.
     fn is_unauthorized(&self) -> bool;
+    /// Check whether the error is `SYNTAX_ERROR.
     fn is_syntax_error(&self) -> bool;
+    /// Check whether the error is `WRITE_FAILURE.
     fn is_write_failure(&self) -> bool;
+    /// Check whether the error is `FUNCTION_FAILURE.
     fn is_function_failure(&self) -> bool;
+    /// Check whether the error is `READ_FAILURE.
     fn is_read_failure(&self) -> bool;
+    /// Check whether the error is `READ_TIMEOUT.
     fn is_read_timeout(&self) -> bool;
+    /// Check whether the error is `WRITE_TIMEOUT.
     fn is_write_timeout(&self) -> bool;
+    /// Check whether the error is `TRUNCATE_ERROR.
     fn is_truncate_error(&self) -> bool;
+    /// Check whether the error is `IS_BOOSTRAPPING.
     fn is_boostrapping(&self) -> bool;
+    /// Check whether the error is `OVERLOADED.
     fn is_overloaded(&self) -> bool;
+    /// Check whether the error is `UNAVAILABLE_EXCEPTION.
     fn is_unavailable_exception(&self) -> bool;
+    /// Check whether the error is `AUTHENTICATION_ERROR.
     fn is_authentication_error(&self) -> bool;
+    /// Check whether the error is `PROTOCOL_ERROR.
     fn is_protocol_error(&self) -> bool;
+    /// Check whether the error is `SERVER_ERROR.
     fn is_server_error(&self) -> bool;
+    /// The the row flags.
     fn rows_flags(&self) -> Flags;
+    /// The the column counts.
     fn columns_count(&self) -> ColumnsCount;
+    /// The the paging state.
     fn paging_state(&self, has_more_pages: bool) -> PagingState;
+    /// The the metadata.
     fn metadata(&self) -> Metadata;
 }
+/// The frame decoder structure.
 pub struct Decoder {
     buffer: Vec<u8>,
     header_flags: HeaderFlags,
 }
 impl Decoder {
+    /// Create a new decoder with an assigned compression type.
     pub fn new(mut buffer: Vec<u8>, decompressor: impl Compression) -> Self {
         buffer = decompressor.decompress(buffer);
         let header_flags = HeaderFlags::new(&mut buffer);
         Decoder { buffer, header_flags }
     }
+    /// Get the decoder buffer referennce.
     pub fn buffer_as_ref(&self) -> &Vec<u8> {
         &self.buffer
     }
+    /// Get the mutable decoder buffer referennce.
     pub fn buffer_as_mut(&mut self) -> &mut Vec<u8> {
         &mut self.buffer
     }
+    /// Get the decoder buffer.
     pub fn into_buffer(self) -> Vec<u8> {
         self.buffer
     }
 }
 
 #[allow(dead_code)]
+/// The header flags structure in the CQL frame.
 pub struct HeaderFlags {
     compression: bool,
     tracing: Option<[u8; 16]>,
@@ -85,6 +144,7 @@ pub struct HeaderFlags {
 
 #[allow(dead_code)]
 impl HeaderFlags {
+    /// Create a new header flags.
     pub fn new(buffer: &mut Vec<u8>) -> Self {
         let mut body_start = 9;
         let flags = buffer[1];
@@ -121,12 +181,15 @@ impl HeaderFlags {
             body_start,
         }
     }
+    /// Get whether the frame is compressed.
     pub fn compression(&self) -> bool {
         self.compression
     }
+    /// Take the tracing id of the frame.
     pub fn take_tracing_id(&mut self) -> Option<[u8; 16]> {
         self.tracing.take()
     }
+    /// Take the warnings of the frame.
     fn take_warnings(&mut self) -> Option<Vec<String>> {
         self.warnings.take()
     }
@@ -287,7 +350,9 @@ impl Frame for Decoder {
     }
 }
 
+/// The column decoder trait to decode the frame.
 pub trait ColumnDecoder {
+    /// Decode the column.
     fn decode(slice: &[u8], length: usize) -> Self;
 }
 
@@ -439,6 +504,7 @@ where
 }
 
 // helper types decoder functions
+/// Get the string list from a u8 slice.
 pub fn string_list(slice: &[u8]) -> Vec<String> {
     let list_len = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
     let mut list: Vec<String> = Vec::with_capacity(list_len);
@@ -456,16 +522,19 @@ pub fn string_list(slice: &[u8]) -> Vec<String> {
     list
 }
 
+/// Get the `String` from a u8 slice.
 pub fn string(slice: &[u8]) -> String {
     let length = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
     String::decode(&slice[2..], length)
 }
 
+/// Get the `&str` from a u8 slice.
 pub fn str(slice: &[u8]) -> &str {
     let length = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
     str::from_utf8(&slice[2..(2 + length)]).unwrap()
 }
 
+/// Get the vector from byte slice.
 pub fn bytes(slice: &[u8]) -> Option<Vec<u8>> {
     let length = i32::from_be_bytes(slice[0..4].try_into().unwrap());
     if length >= 0 {
@@ -477,6 +546,7 @@ pub fn bytes(slice: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// Get hashmap of string to string vector from slice.
 pub fn string_multimap(slice: &[u8]) -> HashMap<String, Vec<String>> {
     let length = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
     let mut multimap = HashMap::with_capacity(length);
@@ -493,6 +563,7 @@ pub fn string_multimap(slice: &[u8]) -> HashMap<String, Vec<String>> {
 }
 
 // Usefull for multimap.
+/// Get the string list and the byte length from slice.
 pub fn string_list_with_returned_bytes_length(slice: &[u8]) -> (Vec<String>, usize) {
     let list_len = u16::from_be_bytes(slice[0..2].try_into().unwrap()) as usize;
     let mut list: Vec<String> = Vec::with_capacity(list_len);

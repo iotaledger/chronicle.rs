@@ -1,3 +1,17 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This crate defines the Cassandra statements used in Chronicle.
+
+/// Query of a transaction table creation.
 pub const CREATE_TX_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS tangle.transaction (
   hash blob PRIMARY KEY,
@@ -20,6 +34,7 @@ CREATE TABLE IF NOT EXISTS tangle.transaction (
 );
 "#;
 
+/// Query of hint table creation.
 pub const CREATE_HINT_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS tangle.hint (
   vertex blob,
@@ -32,6 +47,7 @@ CREATE TABLE IF NOT EXISTS tangle.hint (
 );
 "#;
 
+/// Query of data table creation.
 pub const CREATE_DATA_TABLE_QUERY: &str = r#"
 CREATE TABLE IF NOT EXISTS tangle.data (
   vertex blob,
@@ -46,6 +62,7 @@ CREATE TABLE IF NOT EXISTS tangle.data (
 );
 "#;
 
+/// Query of transaction insertion.
 pub const INSERT_TX_QUERY: &str = r#"
   INSERT INTO tangle.transaction (
     hash,
@@ -68,6 +85,7 @@ pub const INSERT_TX_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 "#;
 
+/// Query of hint insertion.
 pub const INSERT_HINT_QUERY: &str = r#"
   INSERT INTO tangle.hint (
     vertex,
@@ -79,6 +97,7 @@ pub const INSERT_HINT_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?);
 "#;
 
+/// Query of data insertion.
 pub const INSERT_DATA_QUERY: &str = r#"
   INSERT INTO tangle.data (
     vertex,
@@ -91,6 +110,7 @@ pub const INSERT_DATA_QUERY: &str = r#"
 ) VALUES (?,?,?,?,?,?,?);
 "#;
 
+/// Query of transaction selection.
 pub const SELECT_TX_QUERY: &str = r#"
   SELECT
   payload,
@@ -113,6 +133,7 @@ pub const SELECT_TX_QUERY: &str = r#"
   WHERE hash = ?;
 "#;
 
+/// Query of edge selection.
 pub const SELECT_EDGE_QUERY: &str = r#"
   SELECT * FROM tangle.edge
   WHERE vertex = ?;

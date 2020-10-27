@@ -1,5 +1,20 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module defines the row/column decoder/encoder for the frame structure.
+
+/// The column count type.
 pub type ColumnsCount = i32;
 #[derive(Debug)]
+/// The flags for row decoder.
 pub struct Flags {
     global_table_spec: bool,
     has_more_pages: bool,
@@ -7,6 +22,7 @@ pub struct Flags {
 }
 
 impl Flags {
+    /// Decode i32 to flags of row decoder.
     pub fn from_i32(flags: i32) -> Self {
         Flags {
             global_table_spec: (flags & 1) == 1,
@@ -14,21 +30,25 @@ impl Flags {
             no_metadata: (flags & 4) == 4,
         }
     }
+    /// Check if are there more pages to decode.
     pub fn has_more_pages(&self) -> bool {
         self.has_more_pages
     }
 }
 #[derive(Debug)]
+/// The pageing state of the response.
 pub struct PagingState {
     paging_state: Option<Vec<u8>>,
     end: usize,
 }
 impl PagingState {
+    /// Create a new paing state.
     pub fn new(paging_state: Option<Vec<u8>>, end: usize) -> Self {
         PagingState { paging_state, end }
     }
 }
 #[derive(Debug)]
+/// The meta structure of the row.
 pub struct Metadata {
     flags: Flags,
     columns_count: ColumnsCount,
@@ -36,6 +56,7 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    /// Create a new meta data.
     pub fn new(flags: Flags, columns_count: ColumnsCount, paging_state: PagingState) -> Self {
         Metadata {
             flags,
@@ -43,15 +64,18 @@ impl Metadata {
             paging_state,
         }
     }
+    /// Get the starting rows.
     pub fn rows_start(&self) -> usize {
         self.paging_state.end
     }
+    /// Take the paing state of the metadata.
     pub fn take_paging_state(&mut self) -> Option<Vec<u8>> {
         self.paging_state.paging_state.take()
     }
 }
 
 #[macro_export]
+/// The rows macro implements the row decoder.
 macro_rules! rows {
     (rows: $rows:ident {$( $field:ident:$type:ty ),*}, row: $row:ident($( $col_type:tt ),*), column_decoder: $decoder:ident ) => {
         use std::convert::TryInto;

@@ -1,13 +1,32 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This crates implements the uncompressed, LZ4, and snappy compression methods for Cassandra.
+
 use crate::frame::header;
 use std::convert::TryInto;
 
+/// This compression thread provides the buffer compression/decompression methods for uncompressed/Lz4/snappy.
 pub trait Compression: Sync {
+    /// The compression type string, `lz4` or `snappy` or None.
     fn option(&self) -> Option<&'static str>;
     /// Decompress buffer only if compression flag is set
     fn decompress(&self, compressed: Vec<u8>) -> Vec<u8>;
+    /// Compression the buffer according to the compression type (Lz4 for snappy).
     fn compress(&self, uncompressed: Vec<u8>) -> Vec<u8>;
 }
+
+/// LZ4 compression type.
 pub const LZ4: Lz4 = Lz4;
+/// LZ4 unit structure which implements compression trait.
 pub struct Lz4;
 
 impl Compression for Lz4 {
@@ -46,7 +65,9 @@ impl Compression for Lz4 {
     }
 }
 
+/// SNAPPY compression type.
 pub const SNAPPY: Snappy = Snappy;
+/// Snappy unit structure which implements compression trait.
 pub struct Snappy;
 impl Compression for Snappy {
     fn option(&self) -> Option<&'static str> {
@@ -83,7 +104,9 @@ impl Compression for Snappy {
     }
 }
 
+/// Uncompresed type.
 pub const UNCOMPRESSED: Uncompressed = Uncompressed;
+/// Uncompressed unit structure which implements compression trait.
 pub struct Uncompressed;
 impl Compression for Uncompressed {
     fn option(&self) -> Option<&'static str> {
@@ -99,37 +122,46 @@ impl Compression for Uncompressed {
         buffer
     }
 }
-// to enable user defines a global compression
+/// `MY_COMPRESSION` is used to enable user defines a global compression structure.
 pub static mut MY_COMPRESSION: MyCompression = MyCompression(&UNCOMPRESSED);
+/// `MY_COMPRESSION_FLAG` is used to indicate whether the compression is applied to the buffer.
 pub static mut MY_COMPRESSION_FLAG: u8 = 0;
 #[derive(Copy, Clone)]
+/// `MyCompression` structure provides a higher-level wrapper to let the user use a compresion method, i.e.,
+/// ````LZ4`, `SNAPPY`, or `UNCOMPRESSED`.
 pub struct MyCompression(pub &'static dyn Compression);
 
 impl MyCompression {
+    /// Set the global compression syte as `LZ4`.
     pub fn set_lz4() {
         unsafe {
             MY_COMPRESSION = MyCompression(&LZ4);
             MY_COMPRESSION_FLAG = 1;
         }
     }
+    /// Set the global compression syte as `SNAPPY`.
     pub fn set_snappy() {
         unsafe {
             MY_COMPRESSION = MyCompression(&SNAPPY);
             MY_COMPRESSION_FLAG = 1;
         }
     }
+    /// Set the global compression syte as `UNCOMPRESSED`.
     pub fn set_uncompressed() {
         unsafe {
             MY_COMPRESSION = MyCompression(&UNCOMPRESSED);
             MY_COMPRESSION_FLAG = 0;
         }
     }
+    /// Get the global structure, `MY_COMPRESSION`.
     pub fn get() -> impl Compression {
         unsafe { MY_COMPRESSION }
     }
+    /// Get the global structure, `MY_COMPRESSION_FLAG`.
     pub fn flag() -> u8 {
         unsafe { MY_COMPRESSION_FLAG }
     }
+    /// Get the `Option` of compression method type, i.e., `lz4`, `snappy`, or None.
     pub fn option() -> Option<&'static str> {
         unsafe { MY_COMPRESSION }.option()
     }
