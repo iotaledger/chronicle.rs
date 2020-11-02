@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! A mdoules implements the CQL connections protocol.
+
 use crate::{
     cluster::supervisor::Tokens as ClusterTokens,
     node::supervisor::gen_node_id,
@@ -26,11 +39,13 @@ use chronicle_cql::{
     rows,
 };
 
+/// The address of CQL connection.
 pub type Address = String;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug)]
+/// CQL connection structure.
 pub struct CqlConn {
     stream: Option<TcpStream>,
     tokens: Option<ClusterTokens>,
@@ -39,17 +54,21 @@ pub struct CqlConn {
     msb: Msb,
     dc: Option<String>,
 }
-
+/// Get the information from the CQL connection.
 impl CqlConn {
+    /// Get the number of shards.
     pub fn get_shard_count(&self) -> ShardCount {
         self.shard_count
     }
+    /// Get the cluster tokens.
     pub fn take_tokens(&mut self) -> ClusterTokens {
         self.tokens.take().unwrap()
     }
+    /// Take the TCP stream.
     pub fn take_stream(&mut self) -> TcpStream {
         self.stream.take().unwrap()
     }
+    /// Take the data center string.
     pub fn take_dc(&mut self) -> DC {
         self.dc.take().unwrap()
     }
@@ -66,8 +85,11 @@ rows!(
     column_decoder: InfoDecoder
 );
 
+/// Trait for row decoding.
 pub trait Rows {
+    /// Decode the row buffer.
     fn decode(self) -> Self;
+    /// Return self information.
     fn finalize(self) -> Self;
 }
 
@@ -108,6 +130,7 @@ impl InfoDecoder for Tokens {
     }
 }
 
+/// Connect to the CQL address.
 pub async fn connect(
     address: &str,
     recv_buffer_size: Option<usize>,
@@ -233,6 +256,8 @@ pub async fn connect(
     };
     Ok(cqlconn)
 }
+
+/// Fetch the tokens and return the updated CQL connection information.
 pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn, Error> {
     let mut cqlconn = connection?;
     // create query to fetch tokens and info from system.local;
@@ -272,6 +297,7 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     Ok(cqlconn)
 }
 
+/// Connect to a given shard ID.
 pub async fn connect_to_shard_id(
     address: &str,
     shard_id: u8,
@@ -321,6 +347,7 @@ async fn get_frame_payload(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
 }
 
 // ----------- encoding scope -----------
+/// Query the data center, broadcast address, and tokens from the ScyllaDB.
 pub fn query() -> Vec<u8> {
     let Query(payload) = Query::new()
         .version()

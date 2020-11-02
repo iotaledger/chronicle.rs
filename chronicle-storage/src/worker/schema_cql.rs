@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This module is used to send schema cql query to the ScyllaDB.
+
 use super::{Error, Worker};
 use crate::{ring::Ring, stage::reporter};
 use chronicle_common::actor;
@@ -14,11 +27,21 @@ use chronicle_cql::{
 use log::*;
 use tokio::sync::mpsc;
 #[derive(Debug)]
+/// The `SchemaCqlID` is a worker for sending the Schema CQL query.
 pub struct SchemaCqlId(mpsc::UnboundedSender<Event>);
 
+/// The `SchemaCql` event.
 pub enum Event {
-    Response { decoder: Decoder },
-    Error { kind: Error },
+    /// Response event from the ScyllaDB.
+    Response {
+        /// The ScqllyDB response, stored in `Decoder` structure.
+        decoder: Decoder,
+    },
+    /// The SchemaCql Error.
+    Error {
+        /// The CQL Error kind.
+        kind: Error,
+    },
 }
 
 actor!(SchemaCqlBuilder {
@@ -27,6 +50,7 @@ actor!(SchemaCqlBuilder {
 });
 
 impl SchemaCqlBuilder {
+    /// Build a `SchemaCql` to query ScyllaDB.
     pub fn build(self) -> SchemaCql {
         SchemaCql {
             statement: self.statement.unwrap(),
@@ -35,12 +59,14 @@ impl SchemaCqlBuilder {
     }
 }
 
+/// The `SchemaCql` structure.
 pub struct SchemaCql {
     statement: String,
     max_retries: Option<usize>,
 }
 
 impl SchemaCql {
+    /// Start running a Schema CQL query.
     pub async fn run(mut self) -> Result<(), Error> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let Query(payload) = Query::new()

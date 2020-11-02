@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! A mdoules implements the supervisor functionality of storage cluster.
+
 use super::node;
 use crate::{
     connection::cql::{connect, fetch_tokens},
@@ -10,25 +23,38 @@ use chronicle_cql::frame::auth_response::PasswordAuth;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 // types
+/// The sender channel of cluster events.
 pub type Sender = mpsc::UnboundedSender<Event>;
+/// The receiver channel of cluster events.
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
+/// The tokens of shards.
 pub type Tokens = Vec<(Token, NodeId, DC, Msb, ShardCount)>;
+/// The database node address.
 pub type Address = String;
+/// The hashmap to record information of each node.
 pub type Nodes = HashMap<Address, NodeInfo>;
 
+/// `NodeInfo` contains the field to identify a ScyllaDB node.
 pub struct NodeInfo {
     node_tx: node::supervisor::Sender,
+    /// The tokens of all shards.
     pub tokens: Tokens,
     node_id: NodeId,
     shard_count: ShardCount,
 }
 
 #[derive(Debug)]
+/// The cluster events.
 pub enum Event {
+    /// Register a new node with its address.
     RegisterReporters(node::supervisor::NodeRegistry, Address),
+    /// Spwan a new node with its address.
     SpawnNode(Address),
+    /// Shutdown a node by its address.
     ShutDownNode(Address),
+    /// Build a ring.
     TryBuild(usize),
+    /// Shutdown the cluster.
     Shutdown,
 }
 
@@ -45,6 +71,7 @@ actor!(SupervisorBuilder {
 });
 
 impl SupervisorBuilder {
+    /// Build a cluster supervisor.
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         // initialize global_ring
@@ -71,6 +98,7 @@ impl SupervisorBuilder {
     }
 }
 
+/// The cluster supervisor.
 pub struct Supervisor {
     reporter_count: u8,
     thread_count: usize,
@@ -92,6 +120,7 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
+    /// Start running the cluster supervisor to enter the event loop.
     pub async fn run(mut self) {
         while let Some(event) = self.rx.recv().await {
             match event {
@@ -235,6 +264,7 @@ impl Supervisor {
             self.weak_rings.clear();
         };
     }
+    /// Clone the cluster-event sender channel.
     pub fn clone_tx(&self) -> Sender {
         self.tx.as_ref().unwrap().clone()
     }

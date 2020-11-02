@@ -1,3 +1,17 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! The ScyllaDB stage-level supervisor, which is the top-level module in stage that initializes the reporter,
+//! sender, and receiver.
+
 use super::{receiver, reporter, sender};
 use crate::{
     connection::cql::connect_to_shard_id,
@@ -10,15 +24,23 @@ use chronicle_common::actor;
 use log::*;
 use std::{cell::UnsafeCell, collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::mpsc, time::delay_for};
+/// The sender of stage supervisor event.
 pub type Sender = mpsc::UnboundedSender<Event>;
+/// The receiver of stage supervisor event.
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
+/// The reporters of shard id to its corresponding sender of stage reporter events.
 pub type Reporters = HashMap<u8, mpsc::UnboundedSender<reporter::Event>>;
+/// The thread-safe reusable sender payloads.
 pub type Payloads = Arc<Vec<Reusable>>;
 
 #[derive(Debug)]
+/// Stage supervisor event.
 pub enum Event {
+    /// Connect to a shard.
     Connect(sender::Sender, sender::Receiver),
+    /// Reconnection request.
     Reconnect(usize),
+    /// Shutdwon a stage.
     Shutdown,
 }
 
@@ -36,6 +58,7 @@ actor!(SupervisorBuilder {
 });
 
 impl SupervisorBuilder {
+    /// Build the stage supervisor
     pub fn build(self) -> Supervisor {
         // create reusable payloads as giveload
         let vector: Vec<Reusable> = Vec::new();
@@ -60,23 +83,28 @@ impl SupervisorBuilder {
     }
 }
 #[derive(Default)]
+/// The reusable sender payload.
 pub struct Reusable {
     value: UnsafeCell<Option<sender::Payload>>,
 }
 impl Reusable {
     #[allow(clippy::mut_from_ref)]
+    /// Return as mutable sender payload value.
     pub fn as_mut(&self) -> &mut Option<sender::Payload> {
         unsafe { self.value.get().as_mut().unwrap() }
     }
+    /// Return as reference sender payload.
     pub fn as_ref_payload(&self) -> Option<&sender::Payload> {
         unsafe { self.value.get().as_ref().unwrap().as_ref() }
     }
+    /// Return as mutable sender payload.
     pub fn as_mut_payload(&self) -> Option<&mut sender::Payload> {
         self.as_mut().as_mut()
     }
 }
 unsafe impl Sync for Reusable {}
 
+/// The stage supervisor structure.
 pub struct Supervisor {
     session_id: usize,
     reconnect_requests: u8,
@@ -96,6 +124,7 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
+    /// Start to run the stage supervisor event loop.
     pub async fn run(mut self) {
         let reporters_num = self.reporters_count;
         // Create sender's channel

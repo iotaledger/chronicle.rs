@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This storage module is used to initialize the dashboard and ScyllaDB cluster.
+
 pub mod helper;
 use crate::{cluster, dashboard, ring::DC, storage::helper::HelperBuilder};
 use chronicle_common::app;
@@ -20,6 +33,7 @@ app!(StorageBuilder {
 });
 
 impl StorageBuilder {
+    /// Build the `Storage` structure.
     pub fn build(self) -> Storage {
         Storage {
             listen_address: self.listen_address.unwrap(),
@@ -36,6 +50,7 @@ impl StorageBuilder {
     }
 }
 
+/// The storage structure.
 pub struct Storage {
     listen_address: String,
     reporter_count: u8,
@@ -50,6 +65,7 @@ pub struct Storage {
 }
 
 impl Storage {
+    /// Start to spawn scyllaDB nodes.
     pub async fn run(mut self) {
         // init
         let dashboard_tx = self.init().await;

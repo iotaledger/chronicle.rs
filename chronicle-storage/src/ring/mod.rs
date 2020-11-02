@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! The implementation of ScyllaDB Ring access.
+
 // uses (WIP)
 use crate::{
     cluster::supervisor::Nodes,
@@ -15,17 +28,26 @@ use std::{
     },
 };
 // types
+/// The token of Ring.
 pub type Token = i64;
+/// The most significant bit in virtual node.
 pub type Msb = u8;
+/// The number of shards.
 pub type ShardCount = u8;
+/// The tuple of recording a virtual node.
 pub type VnodeTuple = (Token, Token, [u8; 5], DC, Msb, ShardCount);
+/// The tuple of virtual nodes with their relicas
 pub type VnodeWithReplicas = (Token, Token, Replicas); // VnodeWithReplicas
-pub type NodeId = [u8; 5]; // four-bytes ip and last byte for shard num.
+/// Four-bytes ip and last byte for shard num.
+pub type NodeId = [u8; 5];
+/// The data center string.
 pub type DC = String;
 type Replicas = HashMap<DC, Vec<Replica>>;
 type Replica = (NodeId, Msb, ShardCount);
 type Vcell = Box<dyn Vnode>;
+/// The registry of `NodeID` to its reporters.
 pub type Registry = HashMap<NodeId, Reporters>;
+/// The global ring  of ScyllaDB.
 pub type GlobalRing = (
     Vec<DC>,
     Uniform<usize>,
@@ -35,10 +57,14 @@ pub type GlobalRing = (
     Registry,
     Vcell,
 );
+/// The atomic `GlobalRing`.
 pub type AtomicRing = AtomicPtr<Weak<GlobalRing>>;
+/// The reference counting pointer for `GlobalRing`.
 pub type ArcRing = Arc<GlobalRing>;
+/// The weak pointer for `GlobalRing`.
 pub type WeakRing = Weak<GlobalRing>;
 
+/// The Ring structure used to handle the access to ScyllaDB ring.
 pub struct Ring {
     version: u8,
     weak: Option<Weak<GlobalRing>>,
@@ -80,6 +106,7 @@ thread_local! {
 }
 
 impl Ring {
+    /// Send request to a given data_center with the given replica_index and token.
     pub fn send(data_center: &str, replica_index: usize, token: Token, request: Event) {
         RING.with(|local| {
             local
@@ -88,12 +115,15 @@ impl Ring {
                 .global(data_center, replica_index, token, request)
         })
     }
+    /// Send request to the first local datacenter with the given replica_index and token.
     pub fn send_local(replica_index: usize, token: Token, request: Event) {
         RING.with(|local| local.borrow_mut().sending().local(replica_index, token, request))
     }
+    /// Send request to the first local datacenter with the given token and a random replica.
     pub fn send_local_random_replica(token: Token, request: Event) {
         RING.with(|local| local.borrow_mut().sending().local_random_replica(token, request))
     }
+    /// Send request to the global datacenter with the given token and a random replica.
     pub fn send_global_random_replica(token: Token, request: Event) {
         RING.with(|local| local.borrow_mut().sending().global_random_replica(token, request))
     }
@@ -238,7 +268,9 @@ impl SmartId for Replica {
     }
 }
 
+/// Endpoints trait which should be implemented by `Replicas`.
 pub trait Endpoints: EndpointsClone + Send + Sync {
+    /// Send the request through the endpoints.
     fn send(
         &mut self,
         data_center: &str,
@@ -251,7 +283,9 @@ pub trait Endpoints: EndpointsClone + Send + Sync {
     );
 }
 
+/// Clone the endpoints.
 pub trait EndpointsClone {
+    /// Clone the box of endpoints.
     fn clone_box(&self) -> Box<dyn Endpoints>;
 }
 
@@ -310,10 +344,15 @@ impl Endpoints for Option<Replicas> {
     }
 }
 
+/// Search the endpoint of the virtual node.
 pub trait Vnode: VnodeClone + Sync + Send {
+    /// Search the endpoints by the given token.
     fn search(&mut self, token: Token) -> &mut Box<dyn Endpoints>;
 }
+
+/// Clone the virtual node.
 pub trait VnodeClone {
+    /// Clone the box of virtual node.
     fn clone_box(&self) -> Box<dyn Vnode>;
 }
 
@@ -452,6 +491,7 @@ fn walk_clockwise(starting_index: usize, end_index: usize, vnodes: &[VnodeTuple]
     }
 }
 
+/// Build the ScyllaDB ring
 pub fn build_ring(
     dcs: &mut Vec<DC>,
     nodes: &Nodes,
@@ -566,6 +606,8 @@ fn compute_chain(vnodes: &[VnodeTuple]) -> Vec<(Token, Token, Replicas)> {
     }
     chain
 }
+
+/// Initialize the ScyllaDB ring.
 pub fn initialize_ring(version: u8, rebuild: bool) -> (ArcRing, Option<Box<Weak<GlobalRing>>>) {
     Ring::initialize_ring(version, rebuild)
 }

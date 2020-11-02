@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! The ScyllaDB stage-level reporter.
+
 use super::{
     sender::{self, Payload},
     supervisor,
@@ -11,28 +24,46 @@ use std::{
 };
 use tokio::sync::mpsc;
 // types
+/// The sender of stage event.
 pub type Sender = mpsc::UnboundedSender<Event>;
 type Receiver = mpsc::UnboundedReceiver<Event>;
-// Giveload type is vector<unsigned-integer-8bit>
+/// Giveload type is vector<unsigned-integer-8bit>
 pub type Giveload = Vec<u8>;
-// stream id type
+/// The Stream id type
 pub type Stream = i16;
-// Streams type is array/list which should hold u8 from 1 to 32768
+/// Streams type is array/list which should hold u8 from 1 to 32768.
 pub type Streams = Vec<Stream>;
-// Worker is how will be presented in the workers_map
+/// Worker is how will be presented in the workers_map.
 type Workers = HashMap<Stream, Box<dyn Worker>>;
 #[derive(Debug)]
+/// The stage event.
 pub enum Event {
-    Request { worker: Box<dyn Worker>, payload: Payload },
-    Response { stream_id: Stream },
+    /// The request stream.
+    Request {
+        /// The worker which is used to process the request.
+        worker: Box<dyn Worker>,
+        /// The request payload.
+        payload: Payload,
+    },
+    /// The response stream.
+    Response {
+        /// The reponse stream ID.
+        stream_id: Stream,
+    },
+    /// The stream error.
     Err(std::io::Error, Stream),
+    /// The stage session.
     Session(Session),
 }
 
 #[derive(Debug)]
+/// The stage session enum.
 pub enum Session {
+    /// Create a new session.
     New(usize, sender::Sender),
+    /// THe checkpoint of the session ID.
     CheckPoint(usize),
+    /// Shutdown the stage.
     Shutdown,
 }
 
@@ -49,6 +80,7 @@ actor!(ReporterBuilder {
 });
 
 impl ReporterBuilder {
+    /// Build a stage reporter.
     pub fn build(self) -> Reporter {
         Reporter {
             session_id: self.session_id.unwrap(),
@@ -67,6 +99,7 @@ impl ReporterBuilder {
     }
 }
 
+/// The stage reporter structure.
 pub struct Reporter {
     session_id: usize,
     reporter_id: u8,
@@ -83,6 +116,7 @@ pub struct Reporter {
 }
 
 impl Reporter {
+    /// Start to run the reporter event loop.
     pub async fn run(mut self) {
         while let Some(event) = self.rx.recv().await {
             match event {
@@ -151,7 +185,7 @@ impl Reporter {
                             // set self.tx to None, otherwise reporter never shutdown.
                             self.tx = None;
                             // as we already dropped the sender_tx
-                            // dropping the sender_tx will drop the sender and eventaully drop receiver , this means our
+                            // dropping the sender_tx will drop the sender and eventaully drop receiver, this means our
                             // reporter_tx in both sender&reciever will be dropped.. finally the only reporter_tx left
                             // is in Rings which will eventaully be dropped. techincally
                             // reporters are active till the last Ring::send(..) call.

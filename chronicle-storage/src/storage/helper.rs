@@ -1,6 +1,18 @@
-// helper for unit test and not for production,
-// production setup should manage and setup everything through dashboard. therefore this mod will be removed eventually
-// once we have dashboard ready.
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This helper module is for unit test and not for production.
+//! Production setup should manage and setup everything through dashboard. Therefore this mod will be removed eventually
+//! once we have dashboard ready.
+
 use crate::dashboard;
 use chronicle_common::actor;
 use std::time::Duration;
@@ -11,6 +23,7 @@ actor!(
 });
 
 impl HelperBuilder {
+    /// Build the helper.
     pub fn build(self) -> Helper {
         Helper {
             nodes: self.nodes.unwrap(),
@@ -19,11 +32,15 @@ impl HelperBuilder {
     }
 }
 
+/// The helper structure.
 pub struct Helper {
+    /// Nodes for testing.
     nodes: Vec<String>,
+    /// The dashboard transmission channel.
     dashboard_tx: dashboard::Sender,
 }
 impl Helper {
+    /// Start to run the helper.
     pub async fn run(self) {
         // create delay duration
         let five_seconds = Duration::new(5, 0);

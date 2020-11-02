@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! Example of constructing a chronicle node.
+
 // import the apps you want to build
 use chronicle_api::api::ApiBuilder;
 use chronicle_broker::broker::BrokerBuilder;
@@ -5,26 +18,16 @@ use chronicle_storage::storage::StorageBuilder;
 // import launcher macro and logger,
 use chronicle_common::{
     launcher,
-    logger::{
-        logger_init,
-        LoggerConfigBuilder,
-    },
+    logger::{logger_init, LoggerConfigBuilder},
 };
 use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
 use chronicle_broker::importer::ImporterBuilder;
 use chronicle_cql::frame::auth_response::PasswordAuth;
-use chronicle_storage::{
-    dashboard::client::add_nodes,
-    worker::schema_cql::SchemaCqlBuilder,
-};
+use chronicle_storage::{dashboard::client::add_nodes, worker::schema_cql::SchemaCqlBuilder};
 
 use serde::Deserialize;
-use std::{
-    fmt::Write as FmtWrite,
-    fs,
-    path::PathBuf,
-};
+use std::{fmt::Write as FmtWrite, fs, path::PathBuf};
 use structopt::StructOpt;
 use tokio::runtime::Builder;
 

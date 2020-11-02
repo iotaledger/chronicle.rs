@@ -1,3 +1,16 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! The supervisor of each ScyllaDB node.
+
 use super::stage;
 use crate::{
     cluster::supervisor,
@@ -10,14 +23,19 @@ use tokio::{self, sync::mpsc};
 
 // types
 type Stages = HashMap<u8, stage::supervisor::Sender>;
+/// The sender of node events.
 pub type Sender = mpsc::UnboundedSender<Event>;
+/// The receiver of node events.
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
+/// The nodes registration vector to register each node_id (shard_id) in its stage.
 pub type NodeRegistry = Vec<(NodeId, stage::supervisor::Reporters)>; // u8 is shard_id
 
-// event Enum
 #[derive(Debug)]
+/// Node event enum.
 pub enum Event {
+    /// Shutdown the node.
     Shutdown,
+    /// Register the node in its corresponding stage.
     RegisterReporters(u8, stage::supervisor::Reporters),
 }
 
@@ -35,6 +53,7 @@ actor!(SupervisorBuilder {
 });
 
 impl SupervisorBuilder {
+    /// Build a node supervisor.
     pub fn build(self) -> Supervisor {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         let stages: Stages = HashMap::new();
@@ -59,7 +78,7 @@ impl SupervisorBuilder {
     }
 }
 
-// suerpvisor state struct
+/// Suerpvisor state structure.
 pub struct Supervisor {
     address: String,
     node_id: NodeId,
@@ -78,9 +97,11 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
+    /// Clone the transmission channel of the node.
     pub fn clone_tx(&self) -> Sender {
         self.tx.as_ref().unwrap().clone()
     }
+    /// Run the node event loop.
     pub async fn run(mut self) {
         // spawn stage supervisor for each shard_id
         for shard_id in 0..self.shard_count {
@@ -143,6 +164,7 @@ impl Supervisor {
     }
 }
 
+/// The helper function of transforming the address string to `NodeID`.
 pub fn gen_node_id(address: &str) -> NodeId {
     let address_port: Vec<&str> = address.split(':').collect();
     let ipv4: Vec<&str> = address_port.first().unwrap().split('.').collect();

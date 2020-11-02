@@ -1,3 +1,17 @@
+// Copyright 2020 IOTA Stiftung
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+//! This dashboard module handles the events sent from/to the dashboard, which can controls the topology of
+//! the ScyllaDB cluster and control the life cyle of applications.
+
 pub mod client;
 mod listener;
 mod websocket;
@@ -21,6 +35,7 @@ use tokio::{
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 #[derive(Clone)]
+/// The sender structure for dashboard events.
 pub struct Sender(pub mpsc::UnboundedSender<Event>);
 impl DashboardTx for Sender {
     fn starting_app(&mut self, app_name: std::string::String) {
@@ -44,7 +59,9 @@ impl DashboardTx for Sender {
         let _ = self.0.send(event);
     }
 }
+/// The shutdown structure for registration the dashboard in launcher.
 pub struct Shutdown(Sender);
+/// The receiver structure for dashboard event.
 pub type Receiver = mpsc::UnboundedReceiver<Event>;
 type WsTx = SplitSink<WebSocketStream<TcpStream>, Message>;
 
@@ -54,33 +71,59 @@ impl ShutdownTx for Shutdown {
         (self.0).0.send(Event::Shutdown);
     }
 }
-// event
+/// Dashboard events.
 pub enum Event {
+    /// The dashboard session.
     Session(Session),
-    Toplogy(Toplogy),
+    /// The ScyllaDB node topology event enum.
+    Toplogy(Toplogy), // TODO: fix typo
+    /// The dashboard result event enum.
     Result(Result),
+    /// The launcher event enum.
     Launcher(Launcher),
+    /// The shutdown event.
     Shutdown,
 }
+
+/// The dashboard session.
 pub enum Session {
-    // todo auth events
-    Socket { peer: SocketAddr, ws_tx: WsTx },
+    // TODO: auth events
+    /// The socket address and websocket structure.
+    Socket {
+        /// The peer socket address.
+        peer: SocketAddr,
+        /// The transmission part of the websocket stream pair
+        ws_tx: WsTx,
+    },
+    /// Close the socket address
     Close(SocketAddr),
 }
 
+/// The ScyllaDB culster toplogy events.
 pub enum Toplogy {
+    /// Add a new ScyllaDB node with this address.
     AddNode(Address),
+    /// Remove the node ScyllaDB node with this address.
     RemoveNode(Address),
+    /// Try to build the ScyllaDB ring with the given replication factor.
     TryBuild(usize),
 }
+
+/// The dashboard results events.
 pub enum Result {
+    /// The node with this address is successfully spawned.
     Ok(Address),
+    /// The process in adding this node with this address has error.
     Err(Address),
+    /// The pass or fail of trying to build the ring.
     TryBuild(bool),
 }
 
+/// The launcher events which can be shown in the dashboard.
 pub enum Launcher {
+    /// The status of this app.
     App(AppStatus),
+    /// The status of apps.
     Apps(HashMap<String, AppStatus>),
 }
 
@@ -91,6 +134,7 @@ actor!(
 });
 
 impl DashboardBuilder {
+    /// Build a dashboard.
     pub fn build(self) -> Dashboard {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         Dashboard {
@@ -104,6 +148,8 @@ impl DashboardBuilder {
     }
 }
 
+/// Dashboard structure, which give an interface to the user to watch the apps status and perform
+/// 1) Add node 2) Remove node 3) Build the ring instructions.
 pub struct Dashboard {
     launcher_tx: Box<dyn LauncherTx>,
     listener: Option<AbortHandle>,
@@ -114,6 +160,7 @@ pub struct Dashboard {
 }
 
 impl Dashboard {
+    /// Start to run the event loop of the dashboard.
     pub async fn run(mut self, cluster_tx: supervisor::Sender) {
         // build dashboard listener
         let listener = listener::ListenerBuilder::new()
@@ -217,6 +264,7 @@ impl Dashboard {
         // note: it's still possible that some reporters are still active draining remaining requests.
         self.launcher_tx.aknowledge_shutdown("storage".to_string());
     }
+    /// Clone the dashboard transmission channel.
     pub fn clone_tx(&self) -> Sender {
         self.tx.clone()
     }
