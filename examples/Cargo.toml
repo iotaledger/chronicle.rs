@@ -2,32 +2,22 @@
 name = "examples"
 version = "0.0.0"
 publish = false
-authors = ["IOTA Stiftung"]
 edition = "2018"
-license = "APACHE 2.0"
-homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
-repository = "https://github.com/iotaledger/chronicle.rs"
 
-[workspace]
-
-
-[dependencies]
-tokio = { version = "0.2", features = ["full", "time"] }
-chronicle-common = { path = "../chronicle-common" }
-chronicle-storage = { path = "../chronicle-storage" }
-chronicle-api = { path = "../chronicle-api", default-features = false }
-chronicle-cql = {path = "../chronicle-cql"}
-chronicle-broker = { path = "../chronicle-broker", default-features = false }
-serde = { version = "1.0", features = ["derive"] }
-structopt = "0.3"
-toml = "0.5"
-log = "0.4.8"
+[dev-dependencies]
+serde = { version = "1.0.114", features = ["derive"] }
+chronicle = {path = "../"}
+tokio = { version = "0.3", features = ["full", "time", "signal"] }
+futures = "0.3"
+env_logger = "0.7.1"
+log = "*"
+async-trait = "0.1.40"
+serde_json = "1.0"
 
 [[example]]
-name = "permanode"
-path = "permanode/main.rs"
+name = "hello_world"
+path = "hello_world.rs"
 
-[features]
-mainnet = ["chronicle-broker/mainnet","chronicle-api/mainnet"]
-devnet = ["chronicle-broker/devnet","chronicle-api/devnet"]
-comnet = ["chronicle-broker/comnet","chronicle-api/comnet"]
+[[example]]
+name = "two_apps"
+path = "two_apps.rs"
