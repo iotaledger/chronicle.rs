@@ -1,25 +1,18 @@
+use super::*;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
-pub trait LauncherTypes<T>
-where
-    T: for<'de> Deserialize<'de> + Serialize,
-{
-    type Appsthrough: Appsthrough<T>;
-    type LauncherHandle: LauncherSender<T>;
-}
-
-pub trait Appsthrough<T>: for<'de> Deserialize<'de> + Serialize + Send + 'static {
+pub trait Appsthrough<B: ThroughType>: for<'de> Deserialize<'de> + Serialize + Send + 'static {
     fn is_self(&self, my_app_name: &str) -> bool {
         self.get_app_name() == my_app_name
     }
     fn get_app_name(&self) -> &str;
-    fn try_get_my_event(self) -> Result<T, Self>;
+    fn try_get_my_event(self) -> Result<B::Through, Self>;
 }
 
-pub trait LauncherSender<T: Serialize + for<'de> Deserialize<'de>>: Send + Clone + 'static {
-    type LauncherScope: LauncherTypes<T>;
-    type AppsEvents: Appsthrough<T>;
+pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + AknShutdown<<B as Builder>::State> {
+    type Through;
+    type AppsEvents: Appsthrough<B>;
     fn start_app(&mut self, app_name: &str);
     fn shutdown_app(&mut self, app_name: &str);
     fn request_service(&mut self);
@@ -125,7 +118,7 @@ macro_rules! launcher {
     (@count $t1:tt, $($t:tt),+) => { 1 + launcher!(@count $($t),+) };
     (@count $t:tt) => { 1 };
     (
-        builder: $name:ident {$( [$($dep:ty),*] -> $app:ident : $app_builder:tt  ),+},
+        builder: $name:ident {$( [$($dep:ty),*] -> $app:ident : $app_builder:tt$(<$($i:tt),*>)?  ),+},
         state: $apps:ident {$($field:ident : $type:ty),*}
     ) => {
         use std::collections::VecDeque;
@@ -136,20 +129,20 @@ macro_rules! launcher {
             Deserialize,
             Serialize,
         };
-        pub struct GlobalTypes;
+
         const APPS: [&str; launcher!(@count $($app),+)] = [$(stringify!($app)),*];
         /// AppsEvents identify the applications specs
         /// AppsEvents used to identify the socket msg
         #[derive(Deserialize, Serialize)]
         pub enum AppsEvents {
             $(
-                $app(<$app_builder as ThroughType>::Through),
+                $app(<$app_builder$(<$($i,)*>)? as ThroughType>::Through),
             )*
         }
         /// used to identfiy the  of all applications
         pub enum AppsStates {
             $(
-                $app(<$app_builder as Starter<Sender>>::Input),
+                $app(<$app_builder$(<$($i,)*>)? as Starter<Sender>>::Input),
             )*
         }
 
@@ -157,7 +150,7 @@ macro_rules! launcher {
         #[allow(non_snake_case)]
         pub struct AppsHandlers {
             $(
-                $app: Option<<$app_builder as Starter<Sender>>::Ok>,
+                $app: Option<<$app_builder$(<$($i,)*>)? as Starter<Sender>>::Ok>,
             )*
         }
 
@@ -198,8 +191,8 @@ macro_rules! launcher {
         impl Actor<NullSupervisor> for $apps {}
 
         $(
-            impl LauncherSender<<$app_builder as ThroughType>::Through> for Sender {
-                type LauncherScope = GlobalTypes;
+            impl LauncherSender<$app_builder$(<$($i,)*>)?> for Sender {
+                type Through = <$app_builder$(<$($i,)*>)? as ThroughType>::Through;
                 type AppsEvents = AppsEvents;
                 fn start_app(&mut self, app_name: &str) {
                     let start_app_event = Event::StartApp(app_name.to_string(), None);
@@ -227,17 +220,12 @@ macro_rules! launcher {
                 }
             }
 
-            impl LauncherTypes<<$app_builder as ThroughType>::Through> for GlobalTypes {
-                type LauncherHandle = Sender;
-                type Appsthrough = AppsEvents;
-            }
-
-            impl Appsthrough<<$app_builder as ThroughType>::Through> for AppsEvents {
+            impl Appsthrough<$app_builder$(<$($i,)*>)?> for AppsEvents {
                 fn get_app_name(&self) -> &str {
                     stringify!($app)
                 }
                 #[allow(unreachable_patterns)]
-                fn try_get_my_event(self) -> Result<<$app_builder as ThroughType>::Through, Self> {
+                fn try_get_my_event(self) -> Result<<$app_builder$(<$($i,)*>)? as ThroughType>::Through, Self> {
                     match self {
                         AppsEvents::$app(e) => Ok(e),
                         _ => Err(self),
@@ -246,9 +234,9 @@ macro_rules! launcher {
             }
 
             #[async_trait::async_trait]
-            impl AknShutdown<<$app_builder as Builder>::State> for Sender {
-                async fn aknowledge_shutdown(self, state: <$app_builder as Builder>::State, status: Result<(), Need>) {
-                    let input = From::< <$app_builder as Builder>::State >::from(state);
+            impl AknShutdown<<$app_builder$(<$($i,)*>)? as Builder>::State> for Sender {
+                async fn aknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: Result<(), Need>) {
+                    let input = From::< <$app_builder$(<$($i,)*>)? as Builder>::State >::from(state);
                     let aknowledge_shutdown_event = Event::AknShutdown(AppsStates::$app(input), status);
                     let _ = self.0.send(aknowledge_shutdown_event);
                 }
@@ -259,7 +247,7 @@ macro_rules! launcher {
         #[allow(non_snake_case)]
         pub struct $name {
             $(
-                $app: Option<$app_builder>,
+                $app: Option<$app_builder$(<$($i,)*>)?>,
             )*
             $(
                 $field: Option<$type>,
@@ -323,7 +311,7 @@ macro_rules! launcher {
 
             $(
                 #[allow(non_snake_case)]
-                pub fn $app(mut self, $app_builder: $app_builder) -> Self {
+                pub fn $app(mut self, $app_builder: $app_builder$(<$($i,)*>)?) -> Self {
                     self.$app.replace($app_builder);
                     self
                 }
@@ -342,7 +330,7 @@ macro_rules! launcher {
             tx: Sender,
             rx: Receiver,
             $(
-                $app: Option<$app_builder>,
+                $app: Option<$app_builder$(<$($i,)*>)?>,
             )*
             $(
                 $field: $type,

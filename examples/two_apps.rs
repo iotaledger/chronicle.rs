@@ -1,10 +1,9 @@
 //////////////////////////////// HelloWorld App ////////////////////////////////////////////
-
 use async_trait::async_trait;
 use chronicle::*;
 
 // App builder
-chronicle::builder!(
+builder!(
     #[derive(Clone)]
     HelloWorldBuilder {}
 );
@@ -26,9 +25,9 @@ impl Builder for HelloWorldBuilder {
     }
 }
 
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<HelloWorld>> AppBuilder<H> for HelloWorldBuilder {}
+impl<H: LauncherSender<HelloWorldBuilder>> AppBuilder<H> for HelloWorldBuilder {}
 
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Actor<H> for HelloWorld {}
+impl<H: LauncherSender<HelloWorldBuilder>> Actor<H> for HelloWorld {}
 
 impl Name for HelloWorld {
     fn get_name(&self) -> String {
@@ -55,7 +54,7 @@ impl Shutdown for HelloWorldSender {
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<HelloWorld>> Starter<H> for HelloWorldBuilder {
+impl<H: LauncherSender<Self>> Starter<H> for HelloWorldBuilder {
     type Ok = HelloWorldSender;
     type Error = ();
     // if application asked for Need::Restart or RescheduleAfter then the input will hold the prev app From::from(state)
@@ -74,7 +73,7 @@ impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<HelloWorld>> Starter<H> fo
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Init<H> for HelloWorld {
+impl<H: LauncherSender<HelloWorldBuilder>> Init<H> for HelloWorld {
     async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Initializing
         self.service.update_status(ServiceStatus::Initializing);
@@ -85,7 +84,7 @@ impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Init<H> for HelloWo
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> EventLoop<H> for HelloWorld {
+impl<H: LauncherSender<HelloWorldBuilder>> EventLoop<H> for HelloWorld {
     async fn event_loop(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Running
         self.service.update_status(ServiceStatus::Running);
@@ -122,7 +121,7 @@ impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> EventLoop<H> for He
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Terminating<H> for HelloWorld {
+impl<H: LauncherSender<HelloWorldBuilder>> Terminating<H> for HelloWorld {
     async fn terminating(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Stopping
         self.service.update_status(ServiceStatus::Stopping);
@@ -154,7 +153,7 @@ pub enum HelloWorldEvent {
 //////////////////////////////// Howdy App ////////////////////////////////////////////
 
 // App builder
-chronicle::builder!(
+builder!(
     #[derive(Clone)]
     HowdyBuilder {}
 );
@@ -176,9 +175,9 @@ impl Builder for HowdyBuilder {
     }
 }
 
-impl<H: LauncherSender<HowdyEvent> + AknShutdown<Howdy>> AppBuilder<H> for HowdyBuilder {}
+impl<H: LauncherSender<HowdyBuilder>> AppBuilder<H> for HowdyBuilder {}
 
-impl<H: LauncherSender<HowdyEvent> + AknShutdown<Self>> Actor<H> for Howdy {}
+impl<H: LauncherSender<HowdyBuilder>> Actor<H> for Howdy {}
 
 impl Name for Howdy {
     fn get_name(&self) -> String {
@@ -205,7 +204,7 @@ impl Shutdown for HowdySender {
 }
 
 #[async_trait]
-impl<H: LauncherSender<HowdyEvent> + AknShutdown<Howdy>> Starter<H> for HowdyBuilder {
+impl<H: LauncherSender<HowdyBuilder>> Starter<H> for HowdyBuilder {
     type Ok = HowdySender;
     type Error = ();
     // if application asked for Need::Restart or RescheduleAfter then the input will hold the prev app From::from(state)
@@ -222,7 +221,7 @@ impl<H: LauncherSender<HowdyEvent> + AknShutdown<Howdy>> Starter<H> for HowdyBui
 }
 
 #[async_trait]
-impl<H: LauncherSender<HowdyEvent> + AknShutdown<Self>> Init<H> for Howdy {
+impl<H: LauncherSender<HowdyBuilder>> Init<H> for Howdy {
     async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Initializing
         self.service.update_status(ServiceStatus::Initializing);
@@ -233,7 +232,7 @@ impl<H: LauncherSender<HowdyEvent> + AknShutdown<Self>> Init<H> for Howdy {
 }
 
 #[async_trait]
-impl<H: LauncherSender<HowdyEvent> + AknShutdown<Self>> EventLoop<H> for Howdy {
+impl<H: LauncherSender<HowdyBuilder>> EventLoop<H> for Howdy {
     async fn event_loop(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Running
         self.service.update_status(ServiceStatus::Running);
@@ -270,7 +269,7 @@ impl<H: LauncherSender<HowdyEvent> + AknShutdown<Self>> EventLoop<H> for Howdy {
 }
 
 #[async_trait]
-impl<H: LauncherSender<HowdyEvent> + AknShutdown<Self>> Terminating<H> for Howdy {
+impl<H: LauncherSender<HowdyBuilder>> Terminating<H> for Howdy {
     async fn terminating(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Stopping
         self.service.update_status(ServiceStatus::Stopping);

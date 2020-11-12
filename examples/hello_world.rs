@@ -2,16 +2,16 @@ use async_trait::async_trait;
 use chronicle::*;
 
 // App builder
-chronicle::builder!(
+builder!(
     #[derive(Clone)]
-    HelloWorldBuilder {}
+    HelloWorldBuilder<T> {}
 );
 
-impl ThroughType for HelloWorldBuilder {
+impl<H: LauncherSender<Self>> ThroughType for HelloWorldBuilder<H> {
     type Through = HelloWorldEvent;
 }
 
-impl Builder for HelloWorldBuilder {
+impl<H: LauncherSender<Self>> Builder for HelloWorldBuilder<H> {
     type State = HelloWorld;
     fn build(self) -> Self::State {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<HelloWorldEvent>();
@@ -24,9 +24,9 @@ impl Builder for HelloWorldBuilder {
     }
 }
 
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<HelloWorld>> AppBuilder<H> for HelloWorldBuilder {}
+impl<H: LauncherSender<Self>> AppBuilder<H> for HelloWorldBuilder<H> {}
 
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Actor<H> for HelloWorld {}
+impl<H: LauncherSender<HelloWorldBuilder<H>> + AknShutdown<Self>> Actor<H> for HelloWorld {}
 
 impl Name for HelloWorld {
     fn get_name(&self) -> String {
@@ -53,7 +53,7 @@ impl Shutdown for HelloWorldSender {
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<HelloWorld>> Starter<H> for HelloWorldBuilder {
+impl<H: LauncherSender<Self>> Starter<H> for HelloWorldBuilder<H> {
     type Ok = HelloWorldSender;
     type Error = ();
     // if application asked for Need::Restart or RescheduleAfter then the input will hold the prev app From::from(state)
@@ -72,7 +72,7 @@ impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<HelloWorld>> Starter<H> fo
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Init<H> for HelloWorld {
+impl<H: LauncherSender<HelloWorldBuilder<H>>> Init<H> for HelloWorld {
     async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Initializing
         self.service.update_status(ServiceStatus::Initializing);
@@ -83,7 +83,7 @@ impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Init<H> for HelloWo
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> EventLoop<H> for HelloWorld {
+impl<H: LauncherSender<HelloWorldBuilder<H>>> EventLoop<H> for HelloWorld {
     async fn event_loop(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Running
         self.service.update_status(ServiceStatus::Running);
@@ -120,7 +120,7 @@ impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> EventLoop<H> for He
 }
 
 #[async_trait]
-impl<H: LauncherSender<HelloWorldEvent> + AknShutdown<Self>> Terminating<H> for HelloWorld {
+impl<H: LauncherSender<HelloWorldBuilder<H>>> Terminating<H> for HelloWorld {
     async fn terminating(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Stopping
         self.service.update_status(ServiceStatus::Stopping);
@@ -150,7 +150,7 @@ pub enum HelloWorldEvent {
 }
 
 // launcher
-launcher!(builder: AppsBuilder {[] -> HelloWorld: HelloWorldBuilder}, state: Apps {});
+launcher!(builder: AppsBuilder {[] -> HelloWorld: HelloWorldBuilder<Sender>}, state: Apps {});
 
 impl Builder for AppsBuilder {
     type State = Apps;

@@ -14,7 +14,7 @@ where
 }
 
 /// Should be implemented on the AppBuilder struct
-pub trait AppBuilder<H: LauncherSender<Self::Through> + AknShutdown<Self::State>>: Builder + ThroughType + Clone + Starter<H>
+pub trait AppBuilder<H: LauncherSender<Self> + AknShutdown<Self::State>>: Builder + ThroughType + Clone + Starter<H>
 where
     Self::State: Actor<H>,
     Self::Ok: Shutdown + Passthrough<Self::Through>,
@@ -30,11 +30,11 @@ pub trait ThroughType {
 
 #[macro_export]
 macro_rules! builder {
-    ( #[derive($($der:tt),*)] $struct:ident {$( $field:ident: $type:ty ),*} ) => {
-        #[derive($($der,)*Default)]
+    ( $(#[derive($($der:tt),*)])?  $struct:ident {$( $field:ident: $type:tt$(<$($i:tt),*>)? ),*} ) => {
+        #[derive($($($der,)*)?Default)]
         pub struct $struct {
             $(
-                $field: Option<$type>,
+                $field: Option<$type$(<$($i,)*>)?>,
             )*
         }
         impl $struct {
@@ -47,7 +47,7 @@ macro_rules! builder {
             }
 
             $(
-                pub fn $field(mut self, $field: $type) -> Self {
+                pub fn $field(mut self, $field: $type$(<$($i,)*>)?) -> Self {
                     self.$field.replace($field);
                     self
                 }
@@ -55,17 +55,19 @@ macro_rules! builder {
         }
 
     };
-    (#[derive($($der:tt),*)] $struct:ident<$( $extra:tt ),*> {$( $field:ident:$type:tt ),*}) => {
-        #[derive($($der,)*Default)]
-        pub struct $struct< $( $extra ),* > {
+    ($(#[derive($($der:tt),*)])? $struct:ident$(<$($extra:tt),*>)? {$( $field:ident: $type:tt$(<$($i:tt),*>)? ),*}) => {
+        #[derive($($($der,)*)?Default)]
+        pub struct $struct$(<$($extra,)*>)? {
             $(
-                $field: Option<$type>,
+                $field: Option<$type$(<$($i,)*>)?>,
             )*
             #[allow(unused_parens)]
-            _phantom: std::marker::PhantomData<($( $extra ),*)>
+            $(
+                _phantom: std::marker::PhantomData<$($extra,)*>
+            )?
         }
 
-        impl<$( $extra ),*> $struct< $( $extra ),* > {
+        impl$(<$($extra,)*>)? $struct$(<$($extra,)*>)? {
             pub fn new() -> Self {
                 Self {
                     $(
@@ -75,7 +77,7 @@ macro_rules! builder {
                 }
             }
             $(
-                pub fn $field(mut self, $field: $type) -> Self {
+                pub fn $field(mut self, $field: $type$(<$($i,)*>)?) -> Self {
                     self.$field.replace($field);
                     self
                 }
@@ -83,56 +85,5 @@ macro_rules! builder {
         }
     };
 
-    ($struct:ident {$( $field:ident: $type:ty ),*}) => {
-        #[derive(Default)]
-        pub struct $struct {
-            $(
-                $field: Option<$type>,
-            )*
-        }
-        impl $struct {
-            pub fn new() -> Self {
-                Self {
-                    $(
-                        $field: None,
-                    )*
-                }
-            }
-
-            $(
-                pub fn $field(mut self, $field: $type) -> Self {
-                    self.$field.replace($field);
-                    self
-                }
-            )*
-        }
-    };
-    ($struct:ident<$( $extra:tt ),*> {$( $field:ident:$type:tt ),*}) => {
-        #[derive(Default)]
-        pub struct $struct< $( $extra ),* > {
-            $(
-                $field: Option<$type>,
-            )*
-            #[allow(unused_parens)]
-            _phantom: std::marker::PhantomData<($( $extra ),*)>
-        }
-
-        impl<$( $extra ),*> $struct< $( $extra ),* > {
-            pub fn new() -> Self {
-                Self {
-                    $(
-                        $field: None,
-                    )*
-                    _phantom: std::marker::PhantomData,
-                }
-            }
-            $(
-                pub fn $field(mut self, $field: $type) -> Self {
-                    self.$field.replace($field);
-                    self
-                }
-            )*
-        }
-    };
 
 }
