@@ -9,7 +9,7 @@ where
     type LauncherHandle: LauncherSender<T>;
 }
 
-pub trait Appsthrough<T>: for<'de> Deserialize<'de> + Serialize + Send {
+pub trait Appsthrough<T>: for<'de> Deserialize<'de> + Serialize + Send + 'static {
     fn is_self(&self, my_app_name: &str) -> bool {
         self.get_app_name() == my_app_name
     }
