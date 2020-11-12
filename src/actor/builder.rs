@@ -25,7 +25,7 @@ where
 
 pub trait ThroughType {
     /// identfiy the Through which is the event type with predefind functionality to the outdoor (ie websocket msg)
-    type Through: Deserialize<'static> + Serialize;
+    type Through: for<'de> Deserialize<'de> + Serialize;
 }
 
 #[macro_export]

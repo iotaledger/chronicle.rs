@@ -1,15 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
-pub trait LauncherTypes<T>: 'static
+pub trait LauncherTypes<T>
 where
-    T: Deserialize<'static> + Serialize,
+    T: for<'de> Deserialize<'de> + Serialize,
 {
     type Appsthrough: Appsthrough<T>;
     type LauncherHandle: LauncherSender<T>;
 }
 
-pub trait Appsthrough<T>: Deserialize<'static> + Serialize + Send + 'static {
+pub trait Appsthrough<T>: for<'de> Deserialize<'de> + Serialize + Send {
     fn is_self(&self, my_app_name: &str) -> bool {
         self.get_app_name() == my_app_name
     }
@@ -17,7 +17,7 @@ pub trait Appsthrough<T>: Deserialize<'static> + Serialize + Send + 'static {
     fn try_get_my_event(self) -> Result<T, Self>;
 }
 
-pub trait LauncherSender<T: Serialize + Deserialize<'static>>: Send + Clone + 'static {
+pub trait LauncherSender<T: Serialize + for<'de> Deserialize<'de>>: Send + Clone + 'static {
     type LauncherScope: LauncherTypes<T>;
     type AppsEvents: Appsthrough<T>;
     fn start_app(&mut self, app_name: &str);
