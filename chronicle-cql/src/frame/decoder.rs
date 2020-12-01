@@ -304,20 +304,12 @@ impl Frame for Decoder {
     }
     fn rows_flags(&self) -> Flags {
         // cql rows specs, flags is [int] and protocol is big-endian
-        let flags = i32::from_be_bytes(
-            self.buffer_as_ref()[self.body_start(4)..self.body_start(8)]
-                .try_into()
-                .unwrap(),
-        );
+        let flags = i32::from_be_bytes(self.buffer_as_ref()[self.body_start(4)..self.body_start(8)].try_into().unwrap());
         Flags::from_i32(flags)
     }
     fn columns_count(&self) -> ColumnsCount {
         // column count located right after flags, therefore
-        i32::from_be_bytes(
-            self.buffer_as_ref()[self.body_start(8)..self.body_start(12)]
-                .try_into()
-                .unwrap(),
-        )
+        i32::from_be_bytes(self.buffer_as_ref()[self.body_start(8)..self.body_start(12)].try_into().unwrap())
     }
     fn paging_state(&self, has_more_pages: bool) -> PagingState {
         let paging_state_bytes_start = self.body_start(12);

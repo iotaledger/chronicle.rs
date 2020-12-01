@@ -147,13 +147,7 @@ pub async fn connect(
         stream.set_send_buffer_size(send_buffer_size)?
     }
     // create options frame
-    let options = options::Options::new()
-        .version()
-        .flags(0)
-        .stream(0)
-        .opcode()
-        .length()
-        .build();
+    let options = options::Options::new().version().flags(0).stream(0).opcode().length().build();
     // write_all options frame to stream
     stream.write_all(&options.0).await?;
     // get_frame_payload
@@ -163,10 +157,7 @@ pub async fn connect(
     if decoder.is_error() {
         // check if response is_error.
         error!("{:?}", decoder.get_error());
-        return Err(Error::new(
-            ErrorKind::Other,
-            "CQL connection not supported due to CqlError",
-        ));
+        return Err(Error::new(ErrorKind::Other, "CQL connection not supported due to CqlError"));
     }
     assert!(decoder.is_supported());
     // decode supported options from decoder
@@ -225,10 +216,7 @@ pub async fn connect(
         if decoder.is_auth_challenge() {
             let auth_challenge = AuthChallenge::new(&decoder);
             error!("Unsupported auth_challenge {:?}", auth_challenge);
-            return Err(Error::new(
-                ErrorKind::Other,
-                "CQL connection not ready due to Auth Challenge",
-            ));
+            return Err(Error::new(ErrorKind::Other, "CQL connection not ready due to Auth Challenge"));
         }
         assert!(decoder.is_auth_success());
     } else if decoder.is_error() {
@@ -239,9 +227,7 @@ pub async fn connect(
     }
     // copy usefull options
     let shard = supported.get_options().get("SCYLLA_SHARD").unwrap()[0].parse().unwrap();
-    let nr_shard = supported.get_options().get("SCYLLA_NR_SHARDS").unwrap()[0]
-        .parse()
-        .unwrap();
+    let nr_shard = supported.get_options().get("SCYLLA_NR_SHARDS").unwrap()[0].parse().unwrap();
     let ignore_msb = supported.get_options().get("SCYLLA_SHARDING_IGNORE_MSB").unwrap()[0]
         .parse()
         .unwrap();
@@ -273,9 +259,7 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
         let data_center = String::new();
         let broadcast_address = Ipv4Addr::new(0, 0, 0, 0);
         let tokens = Vec::new();
-        info = Info::new(decoder, data_center, broadcast_address, tokens)
-            .decode()
-            .finalize();
+        info = Info::new(decoder, data_center, broadcast_address, tokens).decode().finalize();
     } else {
         error!("{:?}", decoder.get_error());
         return Err(Error::new(ErrorKind::Other, "CQL connection not rows due to CqlError"));
@@ -284,13 +268,7 @@ pub async fn fetch_tokens(connection: Result<CqlConn, Error>) -> Result<CqlConn,
     for token in info.tokens.iter() {
         let node_id = gen_node_id(&info.broadcast_address.to_string());
         let token = i64::from_str_radix(token, 10).unwrap();
-        cluster_tokens.push((
-            token,
-            node_id,
-            info.data_center.clone(),
-            cqlconn.msb,
-            cqlconn.shard_count,
-        ))
+        cluster_tokens.push((token, node_id, info.data_center.clone(), cqlconn.msb, cqlconn.shard_count))
     }
     cqlconn.tokens.replace(cluster_tokens);
     cqlconn.dc.replace(info.data_center);

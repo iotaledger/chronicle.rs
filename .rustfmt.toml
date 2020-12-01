@@ -1,7 +1,6 @@
-imports_layout = "Vertical"
-comment_width = 120
+comment_width = 140
 format_code_in_doc_comments = true
-max_width = 120
+max_width = 140
 merge_imports = true
 normalize_comments = true
 normalize_doc_attributes = true

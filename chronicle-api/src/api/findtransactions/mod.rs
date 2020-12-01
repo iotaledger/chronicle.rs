@@ -173,10 +173,7 @@ impl FindTransactions {
                                 }
                             }
                         }
-                        Event::Error {
-                            kind: _error,
-                            pid: _pid,
-                        } => {
+                        Event::Error { kind: _error, pid: _pid } => {
                             return Err(
                                 response!(status: INTERNAL_SERVER_ERROR, body: r#"{"error":"internal error while processing bundle"}"#),
                             );
@@ -213,9 +210,7 @@ impl FindTransactions {
                             worker = pid;
                             let decoder = Decoder::new(giveload, MyCompression::get());
                             if decoder.is_rows() {
-                                hints = tags::Hints::new(decoder, tag, 0, 0, VecDeque::new(), hints)
-                                    .decode()
-                                    .finalize();
+                                hints = tags::Hints::new(decoder, tag, 0, 0, VecDeque::new(), hints).decode().finalize();
                                 break;
                             } else {
                                 error!("tag: {:?}", decoder.get_error());

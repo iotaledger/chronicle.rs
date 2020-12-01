@@ -18,9 +18,10 @@ chrono = "0.4"
 rand = "0.7"
 paho-mqtt = { git = "https://github.com/eclipse/paho.mqtt.rust", branch = "master", default-features = false, features = ["bundled"]}
 log = "0.4.8"
-lru = "0.6.0"
+lru = "0.6"
 serde = { version = "1.0.114", features = ["derive" ] }
 serde_json = "*"
+
 [features]
 default = ["mainnet"]
 mainnet = []

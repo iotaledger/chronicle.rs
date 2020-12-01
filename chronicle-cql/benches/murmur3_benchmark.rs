@@ -53,9 +53,7 @@ fn address_murmur3_cassandra_x64_128() {
 }
 
 fn bench_tx(c: &mut Criterion) {
-    c.bench_function("tx_murmur3_cassandra_x64_128", |b| {
-        b.iter(|| tx_murmur3_cassandra_x64_128())
-    });
+    c.bench_function("tx_murmur3_cassandra_x64_128", |b| b.iter(|| tx_murmur3_cassandra_x64_128()));
 }
 
 fn bench_address(c: &mut Criterion) {

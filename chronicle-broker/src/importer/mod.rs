@@ -13,6 +13,8 @@
 //! This module implements the historical file importer.
 
 pub mod trytes;
+pub mod validator;
+pub mod validator_worker;
 use bee_ternary::TryteBuf;
 use chronicle_common::actor;
 use chronicle_cql::frame::encoder::ColumnEncoder;
@@ -46,6 +48,7 @@ impl Milestone {
         Milestone(index)
     }
 }
+
 impl chronicle_cql::frame::encoder::ColumnEncoder for Milestone {
     fn encode(&self, buffer: &mut Vec<u8>) {
         if self.0 != 0 {
@@ -147,9 +150,7 @@ impl Importer {
         let pb = ProgressBar::new(len);
         pb.set_style(
             ProgressStyle::default_bar()
-                .template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) \n {msg}",
-                )
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) \n {msg}")
                 .progress_chars("#>-"),
         );
         self.progress_bar.replace(pb);
@@ -209,7 +210,10 @@ impl Importer {
                         timestamp_ms = attachment_timestamp;
                     } else {
                         if self.milestone > 0 {
-                            warn!("Unable to import transaction: {} with invalid attachment_timestamp: {} confirmed by milestone: {}",hash, attachment_timestamp,self.milestone);
+                            warn!(
+                                "Unable to import transaction: {} with invalid attachment_timestamp: {} confirmed by milestone: {}",
+                                hash, attachment_timestamp, self.milestone
+                            );
                         }
                         // invalid attachment_timestamp therefore for unconfirmed transaction, so we skip it
                         // update the progresss bar
@@ -224,7 +228,10 @@ impl Importer {
                         timestamp_ms = timestamp * 1000;
                     } else {
                         if self.milestone > 0 {
-                            warn!("Unable to import transaction: {} with invalid timestamp: {} confirmed by milestone: {}",hash, timestamp,self.milestone);
+                            warn!(
+                                "Unable to import transaction: {} with invalid timestamp: {} confirmed by milestone: {}",
+                                hash, timestamp, self.milestone
+                            );
                         }
                         // invalid timestamp for unconfirmed transaction
                         // update the progresss bar
@@ -375,13 +382,8 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 2 => {
-                                    let payload = insert_to_hint_table(
-                                        trytes.address(),
-                                        ADDRESS,
-                                        year,
-                                        month,
-                                        Milestone::new(self.milestone),
-                                    );
+                                    let payload =
+                                        insert_to_hint_table(trytes.address(), ADDRESS, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_local_random_replica(rand::random::<i64>(), request);
                                 }
@@ -400,13 +402,8 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 4 => {
-                                    let payload = insert_to_hint_table(
-                                        trytes.trunk(),
-                                        APPROVEE,
-                                        year,
-                                        month,
-                                        Milestone::new(self.milestone),
-                                    );
+                                    let payload =
+                                        insert_to_hint_table(trytes.trunk(), APPROVEE, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -425,13 +422,8 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 6 => {
-                                    let payload = insert_to_hint_table(
-                                        trytes.branch(),
-                                        APPROVEE,
-                                        year,
-                                        month,
-                                        Milestone::new(self.milestone),
-                                    );
+                                    let payload =
+                                        insert_to_hint_table(trytes.branch(), APPROVEE, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -450,13 +442,8 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 8 => {
-                                    let payload = insert_to_hint_table(
-                                        trytes.bundle(),
-                                        BUNDLE,
-                                        year,
-                                        month,
-                                        Milestone::new(self.milestone),
-                                    );
+                                    let payload =
+                                        insert_to_hint_table(trytes.bundle(), BUNDLE, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -475,8 +462,7 @@ impl Importer {
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
                                 10 => {
-                                    let payload =
-                                        insert_to_hint_table(tag, TAG, year, month, Milestone::new(self.milestone));
+                                    let payload = insert_to_hint_table(tag, TAG, year, month, Milestone::new(self.milestone));
                                     let request = reporter::Event::Request { payload, worker: pid };
                                     Ring::send_global_random_replica(rand::random::<i64>(), request);
                                 }
@@ -633,6 +619,15 @@ pub fn trytes_to_i64(slice: &str) -> i64 {
     i64::try_from(TryteBuf::try_from_str(slice).unwrap().as_trits()).unwrap()
 }
 
+/// try converting valid trytes to i64
+pub fn try_trytes_to_i64(slice: &str) -> Option<i64> {
+    if let Ok(time) = i64::try_from(TryteBuf::try_from_str(slice).unwrap().as_trits()) {
+        Some(time)
+    } else {
+        None
+    }
+}
+
 /// Count the timestamp digit.
 pub fn count_digit(mut timestamp: i64) -> usize {
     let mut count = 0;
@@ -653,6 +648,40 @@ pub fn valid_timestamp(timestamp: i64, digit_count: usize) -> bool {
     }
 }
 
+pub fn get_timestamp_ms(timestamp: i64) -> i64 {
+    if valid_timestamp(timestamp, 10) {
+        timestamp * 1000
+    } else if valid_timestamp(timestamp, 13) {
+        // timestamp is presented as milliseconds in some old data
+        timestamp
+    } else {
+        // timestamp is invalid so use dummy timestamp
+        0
+    }
+}
+
+pub fn pick_timestamp_ms(attachment_timestamp_slice: &str, timestamp_slice: &str) -> i64 {
+    if let Some(attachment_timestamp) = try_trytes_to_i64(attachment_timestamp_slice) {
+        if attachment_timestamp != 0 {
+            // validate if attachment_timestamp is 13 digit number
+            if valid_timestamp(attachment_timestamp, 13) {
+                attachment_timestamp
+            } else {
+                // validate timestamp and get_timestamp_ms
+                let timestamp = trytes_to_i64(timestamp_slice);
+                get_timestamp_ms(timestamp)
+            }
+        } else {
+            // use timestamp
+            let timestamp = trytes_to_i64(timestamp_slice);
+            get_timestamp_ms(timestamp)
+        }
+    } else {
+        // overflow in the attachment_timestamp, but because the tx is confirmed we fall back to timestamp
+        let timestamp = trytes_to_i64(timestamp_slice);
+        get_timestamp_ms(timestamp)
+    }
+}
 // kind consts
 /// The `address` string.
 pub const ADDRESS: &str = "address";

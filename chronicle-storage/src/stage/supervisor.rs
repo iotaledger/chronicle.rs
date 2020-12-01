@@ -176,11 +176,7 @@ impl Supervisor {
             self.shard_id, self.address
         );
         // Send self event::connect
-        self.tx
-            .as_ref()
-            .unwrap()
-            .send(Event::Connect(sender_tx, sender_rx))
-            .unwrap();
+        self.tx.as_ref().unwrap().send(Event::Connect(sender_tx, sender_rx)).unwrap();
         // Supervisor event loop
         while let Some(event) = self.rx.recv().await {
             match event {
@@ -259,9 +255,7 @@ impl Supervisor {
                     // sender_tx and eventaully stage_tx, draining reporters is important
                     // otherwise we have to close the rx channel.
                     for (_, reporter_tx) in self.reporters.drain() {
-                        reporter_tx
-                            .send(reporter::Event::Session(reporter::Session::Shutdown))
-                            .unwrap();
+                        reporter_tx.send(reporter::Event::Session(reporter::Session::Shutdown)).unwrap();
                     }
                 }
             }

@@ -98,9 +98,7 @@ impl Websocket {
                             let _ = self
                                 .dashboard_tx
                                 .0
-                                .send(dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild(
-                                    uniform_rf as usize,
-                                )));
+                                .send(dashboard::Event::Toplogy(dashboard::Toplogy::TryBuild(uniform_rf as usize)));
                         }
                         _ => warn!("unexpected SocketMsg from {}", self.peer),
                     }

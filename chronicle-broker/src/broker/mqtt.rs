@@ -117,11 +117,7 @@ pub struct Mqtt {
 }
 impl Mqtt {
     /// Start to run the MQTT event receiving loop.
-    pub async fn run(
-        mut self,
-        supervisor_tx: SupervisorTx,
-        mut stream: impl Stream<Item = Option<Message>> + std::marker::Unpin,
-    ) {
+    pub async fn run(mut self, supervisor_tx: SupervisorTx, mut stream: impl Stream<Item = Option<Message>> + std::marker::Unpin) {
         // For now mqtt worker directly persist the Mqtt messages,
         // NOTE: later we will have collector/cache/persisting layer.
         match self.peer.get_topic() {
@@ -141,9 +137,7 @@ impl Mqtt {
                     let m = &msg.payload_str();
                     let l = m.len();
                     // parse timestamp
-                    let timestamp_millis = DateTime::parse_from_rfc3339(&m[(l - 22)..(l - 2)])
-                        .unwrap()
-                        .timestamp_millis();
+                    let timestamp_millis = DateTime::parse_from_rfc3339(&m[(l - 22)..(l - 2)]).unwrap().timestamp_millis();
                     let milestone = Some(m[2789..(l - 36)].parse::<i64>().unwrap());
                     // create MqttMsg
                     let mqtt_msg = MqttMsg::new(msg, milestone, timestamp_millis);
@@ -209,11 +203,7 @@ impl Mqtt {
                             );
                         }
                     } else {
-                        debug!(
-                            "Persisted transaction Tryte topic: {}, pending: {}",
-                            msg.hash(),
-                            self.pending
-                        );
+                        debug!("Persisted transaction Tryte topic: {}, pending: {}", msg.hash(), self.pending);
                     }
                 } else {
                     error!("Unable to store transaction from trytes topic due to invalid time window")
@@ -243,11 +233,7 @@ impl Mqtt {
                             );
                         }
                     } else {
-                        debug!(
-                            "Persisted transaction Tryte topic: {}, pending: {}",
-                            msg.hash(),
-                            self.pending
-                        );
+                        debug!("Persisted transaction Tryte topic: {}, pending: {}", msg.hash(), self.pending);
                     }
                 } else {
                     error!("Unable to store transaction from trytes topic due to invalid time window")
@@ -324,11 +310,7 @@ impl Mqtt {
         }
     }
     /// Persist the received transactions from the MQTT topic.
-    pub async fn persist_transaction(
-        &mut self,
-        msg: &MqttMsg,
-        timestamp_ms: i64,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn persist_transaction(&mut self, msg: &MqttMsg, timestamp_ms: i64) -> Result<(), Box<dyn std::error::Error>> {
         let naive = NaiveDateTime::from_timestamp(timestamp_ms / 1000, 0);
         let year = naive.year() as u16;
         let month = naive.month() as u8;
@@ -363,16 +345,7 @@ impl Mqtt {
             worker: self.pids.pop().unwrap().query_id(2),
         };
         Ring::send_local_random_replica(rand::random::<i64>(), request);
-        let payload = insert_to_data_table(
-            trytes.address(),
-            year,
-            month,
-            address_kind,
-            timestamp_ms,
-            hash,
-            value,
-            milestone,
-        );
+        let payload = insert_to_data_table(trytes.address(), year, month, address_kind, timestamp_ms, hash, value, milestone);
         let request = reporter::Event::Request {
             payload,
             worker: self.pids.pop().unwrap().query_id(3),
@@ -409,11 +382,7 @@ impl Mqtt {
                     self.pids.push(pid);
                     // check if this was the last response for a given line.
                     if self.pending == 0 {
-                        debug!(
-                            "Topic: {}, All Void for Hash: {}",
-                            self.peer.get_topic_as_string(),
-                            hash
-                        );
+                        debug!("Topic: {}, All Void for Hash: {}", self.peer.get_topic_as_string(), hash);
                         // reset max_retries to the initial state for the next line
                         self.max_retries = self.initial_max_retries;
                         // reset delay to 0 seconds for the next line
@@ -462,16 +431,8 @@ impl Mqtt {
                                 Ring::send_local_random_replica(rand::random::<i64>(), request);
                             }
                             3 => {
-                                let payload = insert_to_data_table(
-                                    trytes.address(),
-                                    year,
-                                    month,
-                                    address_kind,
-                                    timestamp_ms,
-                                    hash,
-                                    value,
-                                    milestone,
-                                );
+                                let payload =
+                                    insert_to_data_table(trytes.address(), year, month, address_kind, timestamp_ms, hash, value, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -481,16 +442,8 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             5 => {
-                                let payload = insert_to_data_table(
-                                    trytes.trunk(),
-                                    year,
-                                    month,
-                                    TRUNK,
-                                    timestamp_ms,
-                                    hash,
-                                    value,
-                                    milestone,
-                                );
+                                let payload =
+                                    insert_to_data_table(trytes.trunk(), year, month, TRUNK, timestamp_ms, hash, value, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -500,16 +453,8 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             7 => {
-                                let payload = insert_to_data_table(
-                                    trytes.branch(),
-                                    year,
-                                    month,
-                                    BRANCH,
-                                    timestamp_ms,
-                                    hash,
-                                    value,
-                                    milestone,
-                                );
+                                let payload =
+                                    insert_to_data_table(trytes.branch(), year, month, BRANCH, timestamp_ms, hash, value, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -519,16 +464,8 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             9 => {
-                                let payload = insert_to_data_table(
-                                    trytes.bundle(),
-                                    year,
-                                    month,
-                                    BUNDLE,
-                                    timestamp_ms,
-                                    hash,
-                                    value,
-                                    milestone,
-                                );
+                                let payload =
+                                    insert_to_data_table(trytes.bundle(), year, month, BUNDLE, timestamp_ms, hash, value, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -538,16 +475,7 @@ impl Mqtt {
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
                             11 => {
-                                let payload = insert_to_data_table(
-                                    trytes.tag(),
-                                    year,
-                                    month,
-                                    TAG,
-                                    timestamp_ms,
-                                    hash,
-                                    value,
-                                    milestone,
-                                );
+                                let payload = insert_to_data_table(trytes.tag(), year, month, TAG, timestamp_ms, hash, value, milestone);
                                 let request = reporter::Event::Request { payload, worker: pid };
                                 Ring::send_global_random_replica(rand::random::<i64>(), request);
                             }
@@ -567,7 +495,7 @@ pub struct MqttMsg {
     pub msg: Message,
     /// The received milestone.
     pub milestone: Option<i64>,
-    /// The received timestamp in millisecond.    
+    /// The received timestamp in millisecond.
     pub timestamp_millis: i64,
 }
 

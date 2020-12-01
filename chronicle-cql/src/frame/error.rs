@@ -49,48 +49,20 @@ impl From<&[u8]> for CqlError {
                     &slice[(6 + message.len()..)],
                 )))
             }
-            ErrorCodes::WriteTimeout => {
-                additional = Some(Additional::WriteTimeout(WriteTimeout::from(
-                    &slice[(6 + message.len()..)],
-                )))
-            }
-            ErrorCodes::ReadTimeout => {
-                additional = Some(Additional::ReadTimeout(ReadTimeout::from(
-                    &slice[(6 + message.len()..)],
-                )))
-            }
-            ErrorCodes::ReadFailure => {
-                additional = Some(Additional::ReadFailure(ReadFailure::from(
-                    &slice[(6 + message.len()..)],
-                )))
-            }
+            ErrorCodes::WriteTimeout => additional = Some(Additional::WriteTimeout(WriteTimeout::from(&slice[(6 + message.len()..)]))),
+            ErrorCodes::ReadTimeout => additional = Some(Additional::ReadTimeout(ReadTimeout::from(&slice[(6 + message.len()..)]))),
+            ErrorCodes::ReadFailure => additional = Some(Additional::ReadFailure(ReadFailure::from(&slice[(6 + message.len()..)]))),
             ErrorCodes::FunctionFailure => {
-                additional = Some(Additional::FunctionFailure(FunctionFailure::from(
-                    &slice[(6 + message.len()..)],
-                )))
+                additional = Some(Additional::FunctionFailure(FunctionFailure::from(&slice[(6 + message.len()..)])))
             }
-            ErrorCodes::WriteFailure => {
-                additional = Some(Additional::WriteFailure(WriteFailure::from(
-                    &slice[(6 + message.len()..)],
-                )))
-            }
-            ErrorCodes::AlreadyExists => {
-                additional = Some(Additional::AlreadyExists(AlreadyExists::from(
-                    &slice[(6 + message.len()..)],
-                )))
-            }
-            ErrorCodes::Unprepared => {
-                additional = Some(Additional::Unprepared(Unprepared::from(&slice[(6 + message.len()..)])))
-            }
+            ErrorCodes::WriteFailure => additional = Some(Additional::WriteFailure(WriteFailure::from(&slice[(6 + message.len()..)]))),
+            ErrorCodes::AlreadyExists => additional = Some(Additional::AlreadyExists(AlreadyExists::from(&slice[(6 + message.len()..)]))),
+            ErrorCodes::Unprepared => additional = Some(Additional::Unprepared(Unprepared::from(&slice[(6 + message.len()..)]))),
             _ => {
                 additional = None;
             }
         }
-        CqlError {
-            code,
-            message,
-            additional,
-        }
+        CqlError { code, message, additional }
     }
 }
 

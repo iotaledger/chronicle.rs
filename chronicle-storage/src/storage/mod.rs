@@ -72,10 +72,7 @@ impl Storage {
         // check if nodes is provided to start in local mode
         if let Some(nodes) = self.nodes {
             // build helper (is supposed to simulate the websocket)
-            let helper = HelperBuilder::new()
-                .nodes(nodes)
-                .dashboard_tx(dashboard_tx.unwrap())
-                .build();
+            let helper = HelperBuilder::new().nodes(nodes).dashboard_tx(dashboard_tx.unwrap()).build();
             // spawn helper
             tokio::spawn(helper.run());
         };

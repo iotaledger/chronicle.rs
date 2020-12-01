@@ -53,9 +53,7 @@ pub async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
                             if let Ok(request) = serde_json::from_slice::<ReqBody>(&buffer) {
                                 Ok(route(request).await)
                             } else {
-                                Ok(
-                                    response!(status: BAD_REQUEST, body: r#"{"error":"invalid request, check the api reference"}"#),
-                                )
+                                Ok(response!(status: BAD_REQUEST, body: r#"{"error":"invalid request, check the api reference"}"#))
                             }
                         } else {
                             Ok(response!(status: BAD_REQUEST, body: r#"{"error":"invalid request"}"#))

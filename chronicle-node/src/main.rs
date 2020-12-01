@@ -22,7 +22,7 @@ use chronicle_common::{
 };
 use log::*;
 // import helper async fns to add scylla nodes and build ring, initialize schema, import dmps
-use chronicle_broker::importer::ImporterBuilder;
+use chronicle_broker::importer::{validator::ValidatorBuilder, ImporterBuilder};
 use chronicle_cql::frame::auth_response::PasswordAuth;
 use chronicle_storage::{dashboard::client::add_nodes, worker::schema_cql::SchemaCqlBuilder};
 
@@ -45,6 +45,7 @@ pub struct Config {
     version: Version,
     scylla_cluster: ScyllaCluster,
     dmp_files: Option<DmpFiles>,
+    validator: Option<Validator>,
     tokio: Tokio,
     storage: Storage,
     api: Api,
@@ -107,6 +108,14 @@ struct Broker {
     stream_capacity: usize,
     max_retries: usize,
 }
+#[derive(Debug, Clone, Deserialize)]
+struct Validator {
+    start_ms: u32,
+    stop_ms: u32,
+    milestones_file: String,
+    force_correctness: bool,
+    max_retries: Option<usize>,
+}
 
 launcher!(
     apps_builder: AppsBuilder {storage: StorageBuilder, api: ApiBuilder, broker: BrokerBuilder},
@@ -116,7 +125,7 @@ launcher!(
 // build your apps
 impl AppsBuilder {
     fn build(self, config: Config) -> Apps {
-        //
+        // 
         // - storage app:
         let mut storage = StorageBuilder::new()
             .listen_address(config.storage.dashboard_websocket.clone())
@@ -129,12 +138,12 @@ impl AppsBuilder {
         if let Some(ref auth) = config.scylla_cluster.auth {
             storage = storage.authenticator(PasswordAuth::new(auth.user.clone(), auth.pass.clone()));
         }
-        //
+        // 
         // - api app
         let api = ApiBuilder::new()
             .listen_address(config.api.endpoint.clone())
             .content_length(config.api.content_length);
-        //
+        // 
         // - broker app
         let mut broker = BrokerBuilder::new()
             .max_retries(config.broker.max_retries)
@@ -225,6 +234,16 @@ fn main() {
                     .expect("failed to create data table");
                 if let Some(dmp_files) = config.dmp_files {
                     import_files(dmp_files).await;
+                }
+                if let Some(validator) = config.validator {
+                    let validator = ValidatorBuilder::new()
+                        .start_ms(validator.start_ms)
+                        .stop_ms(validator.stop_ms)
+                        .max_retries(validator.max_retries.unwrap_or(100))
+                        .milestones_file(validator.milestones_file)
+                        .force_correctness(validator.force_correctness)
+                        .build();
+                    validator.run().await.expect("unable to validate");
                 }
                 apps
             })
@@ -336,26 +355,14 @@ fn create_statements(scylla_cluster: ScyllaCluster) -> HashMap<String, String> {
     )
     .unwrap();
 
-    statement_map.insert(
-        "CREATE_KEYSPACE_QUERY".to_string(),
-        create_key_space_statement.to_string(),
-    );
-    statement_map.insert(
-        "CREATE_TX_TABLE_QUERY".to_string(),
-        create_tx_table_statement.to_string(),
-    );
+    statement_map.insert("CREATE_KEYSPACE_QUERY".to_string(), create_key_space_statement.to_string());
+    statement_map.insert("CREATE_TX_TABLE_QUERY".to_string(), create_tx_table_statement.to_string());
     statement_map.insert(
         "CREATE_INDEX_ON_TX_TABLE_QUERY".to_string(),
         create_index_on_tx_table_milestone_col_statement.to_string(),
     );
-    statement_map.insert(
-        "CREATE_HINT_TABLE_QUERY".to_string(),
-        create_hint_table_statement.to_string(),
-    );
-    statement_map.insert(
-        "CREATE_DATE_TABLE_QUERY".to_string(),
-        create_data_table_statement.to_string(),
-    );
+    statement_map.insert("CREATE_HINT_TABLE_QUERY".to_string(), create_hint_table_statement.to_string());
+    statement_map.insert("CREATE_DATE_TABLE_QUERY".to_string(), create_data_table_statement.to_string());
     statement_map
 }
 

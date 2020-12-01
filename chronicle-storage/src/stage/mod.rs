@@ -11,11 +11,11 @@
 
 //! The ScyllaDB stage-level module.
 //! Stage in summary is an isolated connection state for a given scylla-shard with corresponding(reporter(s),
-//! sender, receiver) while stage-supervisor is the one who handles restarting/shutingdown the whole stage or just sender
-//! & receiver in case they lost connection with the socket now in order to start stage you should spawn a stage-supervisor
-//! who is going to do so and make sure the stage always with active connection and correct state .
-//! Node-supervisor is the one who spawns stage-supervisor per node-core(shard), and also can force it to shutdown if needed
-//! Hierarchy: Cluster -> Node -> Stage
+//! sender, receiver) while stage-supervisor is the one who handles restarting/shutingdown the whole stage or just
+//! sender & receiver in case they lost connection with the socket now in order to start stage you should spawn a
+//! stage-supervisor who is going to do so and make sure the stage always with active connection and correct state .
+//! Node-supervisor is the one who spawns stage-supervisor per node-core(shard), and also can force it to shutdown if
+//! needed Hierarchy: Cluster -> Node -> Stage
 
 mod receiver;
 pub mod reporter;

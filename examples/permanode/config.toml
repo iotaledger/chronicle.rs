@@ -37,11 +37,18 @@ endpoint = "0.0.0.0:4000"
 content_length = 65535
 
 [broker]
-trytes_nodes = ["tcp://mqtt.iota.org:1883"]
-conf_trytes_nodes = ["tcp://mqtt.iota.org:1883"]
+trytes_nodes = []
+conf_trytes_nodes = []
 stream_capacity = 10000 # buffer up to 10k transactions per node
 max_retries = 100 # There is +1 sec delay between each retry. therefore the max delay is sum of 1 up to max_retries.
 # note: max_retries defined per transaction and only occur when a node in scylla cluster is overloaded or dead.
 # that's why the retry will use global strategy to select random replica in any datacenter.
 # for example: max_retries = 10
 # the delay to consume all of them for a given transaction is 1+2+3+4+5+6+7+8+9+10 = 55 seconds.
+
+[validator]
+start_ms = 1
+stop_ms = 18675
+force_correctness = true
+milestones_file = "/path/to/milestones.txt"
+max_retries = 100

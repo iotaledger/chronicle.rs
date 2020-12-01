@@ -171,10 +171,8 @@ impl Supervisor {
     /// Run the event receiving loop of broker supervisor.
     pub async fn run(mut self) {
         // register broker app with launcher
-        self.launcher_tx.register_app(
-            "broker".to_string(),
-            Box::new(Shutdown(self.tx.as_ref().unwrap().clone())),
-        );
+        self.launcher_tx
+            .register_app("broker".to_string(), Box::new(Shutdown(self.tx.as_ref().unwrap().clone())));
         while let Some(event) = self.rx.recv().await {
             match event {
                 Event::AddMqtt(mut peer) => {
@@ -258,7 +256,9 @@ impl Supervisor {
                         } else {
                             error!(
                                 "Unable to reconnect MQTT peer 'topic: {}, address: {}, id: {}', will retry every 5 seconds",
-                                mqtt.peer.get_topic_as_string(),mqtt.peer.address, peer_id
+                                mqtt.peer.get_topic_as_string(),
+                                mqtt.peer.address,
+                                peer_id
                             );
                             // return client to our state
                             let client = mqtt.client.take().unwrap();

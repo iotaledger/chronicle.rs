@@ -48,15 +48,7 @@ type Vcell = Box<dyn Vnode>;
 /// The registry of `NodeID` to its reporters.
 pub type Registry = HashMap<NodeId, Reporters>;
 /// The global ring  of ScyllaDB.
-pub type GlobalRing = (
-    Vec<DC>,
-    Uniform<usize>,
-    Uniform<usize>,
-    Uniform<u8>,
-    u8,
-    Registry,
-    Vcell,
-);
+pub type GlobalRing = (Vec<DC>, Uniform<usize>, Uniform<usize>, Uniform<u8>, u8, Registry, Vcell);
 /// The atomic `GlobalRing`.
 pub type AtomicRing = AtomicPtr<Weak<GlobalRing>>;
 /// The reference counting pointer for `GlobalRing`.
@@ -108,12 +100,7 @@ thread_local! {
 impl Ring {
     /// Send request to a given data_center with the given replica_index and token.
     pub fn send(data_center: &str, replica_index: usize, token: Token, request: Event) {
-        RING.with(|local| {
-            local
-                .borrow_mut()
-                .sending()
-                .global(data_center, replica_index, token, request)
-        })
+        RING.with(|local| local.borrow_mut().sending().global(data_center, replica_index, token, request))
     }
     /// Send request to the first local datacenter with the given replica_index and token.
     pub fn send_local(replica_index: usize, token: Token, request: Event) {
@@ -131,9 +118,7 @@ impl Ring {
         unsafe {
             if VERSION != self.version {
                 // load weak and upgrade to arc if strong_count > 0;
-                if let Some(mut arc) =
-                    Weak::upgrade(GLOBAL_RING.as_ref().unwrap().load(Ordering::Relaxed).as_ref().unwrap())
-                {
+                if let Some(mut arc) = Weak::upgrade(GLOBAL_RING.as_ref().unwrap().load(Ordering::Relaxed).as_ref().unwrap()) {
                     let new_weak = Arc::downgrade(&arc);
                     let (dcs, uniform_dcs, uniform_rf, uniform, version, registry, root) = Arc::make_mut(&mut arc);
                     // update the local ring
@@ -238,24 +223,10 @@ impl Ring {
     }
 }
 trait SmartId {
-    fn send_reporter(
-        &mut self,
-        token: Token,
-        registry: &mut Registry,
-        rng: &mut ThreadRng,
-        uniform: Uniform<u8>,
-        request: Event,
-    );
+    fn send_reporter(&mut self, token: Token, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>, request: Event);
 }
 impl SmartId for Replica {
-    fn send_reporter(
-        &mut self,
-        token: Token,
-        registry: &mut Registry,
-        rng: &mut ThreadRng,
-        uniform: Uniform<u8>,
-        request: Event,
-    ) {
+    fn send_reporter(&mut self, token: Token, registry: &mut Registry, rng: &mut ThreadRng, uniform: Uniform<u8>, request: Event) {
         // shard awareness algo,
         self.0[4] = (((((token as i128 + MIN as i128) as u64) << self.1) as u128 * self.2 as u128) >> 64) as u8;
         registry
@@ -315,28 +286,13 @@ impl Endpoints for Replicas {
         mut rng: &mut ThreadRng,
         uniform: Uniform<u8>,
     ) {
-        self.get_mut(data_center).unwrap()[replica_index].send_reporter(
-            token,
-            &mut registry,
-            &mut rng,
-            uniform,
-            request,
-        );
+        self.get_mut(data_center).unwrap()[replica_index].send_reporter(token, &mut registry, &mut rng, uniform, request);
     }
 }
 impl Endpoints for Option<Replicas> {
     // this method will be invoked when we store Replicas as None.
     // used for initial ring to simulate the reporter and respond to worker(self) with NoRing error
-    fn send(
-        &mut self,
-        _: &str,
-        _: usize,
-        _: Token,
-        request: Event,
-        _: &mut Registry,
-        _: &mut ThreadRng,
-        _uniform: Uniform<u8>,
-    ) {
+    fn send(&mut self, _: &str, _: usize, _: Token, request: Event, _: &mut Registry, _: &mut ThreadRng, _uniform: Uniform<u8>) {
         // simulate reporter,
         if let Event::Request { worker, .. } = request {
             worker.send_error(Error::NoRing);
@@ -412,9 +368,7 @@ struct DeadEnd {
 
 impl DeadEnd {
     fn initial_vnode() -> Vcell {
-        Box::new(DeadEnd {
-            replicas: Box::new(None),
-        })
+        Box::new(DeadEnd { replicas: Box::new(None) })
     }
 }
 // this struct represent the mild possible vnode(..)
@@ -535,14 +489,7 @@ pub fn build_ring(
     let last_vnode = vnodes.last().unwrap();
     // confirm if the vnode max is not present in our token-range
     if last_vnode.1 != MAX {
-        let max_vnode = (
-            recent_left,
-            MAX,
-            last_vnode.2,
-            last_vnode.3.clone(),
-            last_vnode.4,
-            last_vnode.5,
-        );
+        let max_vnode = (recent_left, MAX, last_vnode.2, last_vnode.3.clone(), last_vnode.4, last_vnode.5);
         // now push it
         vnodes.push(max_vnode);
     }

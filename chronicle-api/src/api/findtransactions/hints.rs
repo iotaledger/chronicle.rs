@@ -270,12 +270,7 @@ impl HintsDecoder for Milestone {
 /// Query the ScyllaDB with `Hint`.
 pub fn query(hint: &mut Hint) -> Option<Vec<u8>> {
     let mut query_flags = SKIP_METADATA | VALUES | PAGE_SIZE;
-    let query = Query::new()
-        .version()
-        .flags(MyCompression::flag())
-        .stream(0)
-        .opcode()
-        .length();
+    let query = Query::new().version().flags(MyCompression::flag()).stream(0).opcode().length();
     match hint {
         Hint::Address {
             address,
@@ -409,29 +404,29 @@ let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex 
 //
 const SELECT_BY_BUNDLE_DATA_QUERY: &str = {
     #[cfg(feature = "mainnet")]
-let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
+    let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
     #[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "comnet"))]
-let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "comnet"))]
+    let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
     #[cfg(feature = "comnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "devnet"))]
-let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "devnet"))]
+    let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'bundle'";
     cql
 };
 //
 const SELECT_BY_TAG_DATA_QUERY: &str = {
     #[cfg(feature = "mainnet")]
-let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
+    let cql = "SELECT timestamp, tx, value, milestone FROM mainnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
     #[cfg(feature = "devnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "comnet"))]
-let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "comnet"))]
+    let cql = "SELECT timestamp, tx, value, milestone FROM devnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
     #[cfg(feature = "comnet")]
-#[cfg(not(feature = "mainnet"))]
-#[cfg(not(feature = "devnet"))]
-let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
+    #[cfg(not(feature = "mainnet"))]
+    #[cfg(not(feature = "devnet"))]
+    let cql = "SELECT timestamp, tx, value, milestone FROM comnet.data WHERE vertex = ? AND year = ? AND month = ? AND kind = 'tag'";
     cql
 };
 //

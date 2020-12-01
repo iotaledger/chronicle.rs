@@ -60,12 +60,6 @@ mod tests {
     #[test]
     // note: junk data
     fn simple_options_builder_test() {
-        let Options(_payload) = Options::new()
-            .version()
-            .flags(header::IGNORE)
-            .stream(0)
-            .opcode()
-            .length()
-            .build(); // build uncompressed
+        let Options(_payload) = Options::new().version().flags(header::IGNORE).stream(0).opcode().length().build(); // build uncompressed
     }
 }

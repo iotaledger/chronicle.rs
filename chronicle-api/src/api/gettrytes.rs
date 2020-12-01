@@ -81,12 +81,7 @@ impl GetTrytes {
         response!(body: serde_json::to_string(&res_trytes).unwrap())
     }
 
-    async fn process(
-        value: &mut JsonValue,
-        milestones: &mut Milestones,
-        worker: Box<GetTrytesId>,
-        rx: &mut Receiver,
-    ) -> Box<GetTrytesId> {
+    async fn process(value: &mut JsonValue, milestones: &mut Milestones, worker: Box<GetTrytesId>, rx: &mut Receiver) -> Box<GetTrytesId> {
         // by taking the value we are leaving behind null.
         // now we try to query and get the result
         if let JsonValue::String(hash) = value.take() {

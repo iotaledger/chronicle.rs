@@ -126,9 +126,7 @@ impl Receiver {
             self.reporters
                 .get(&compute_reporter_num(self.stream_id, self.appends_num))
                 .unwrap()
-                .send(reporter::Event::Response {
-                    stream_id: self.stream_id,
-                });
+                .send(reporter::Event::Response { stream_id: self.stream_id });
             // set header to false
             self.header = false;
             // update current_length
