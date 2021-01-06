@@ -27,8 +27,6 @@ impl Builder for HelloWorldBuilder {
 
 impl<H: LauncherSender<HelloWorldBuilder>> AppBuilder<H> for HelloWorldBuilder {}
 
-impl<H: LauncherSender<HelloWorldBuilder>> Actor<H> for HelloWorld {}
-
 impl Name for HelloWorld {
     fn get_name(&self) -> String {
         self.service.get_name()
@@ -176,8 +174,6 @@ impl Builder for HowdyBuilder {
 }
 
 impl<H: LauncherSender<HowdyBuilder>> AppBuilder<H> for HowdyBuilder {}
-
-impl<H: LauncherSender<HowdyBuilder>> Actor<H> for Howdy {}
 
 impl Name for Howdy {
     fn get_name(&self) -> String {

@@ -188,7 +188,7 @@ macro_rules! launcher {
             type Builder = $name;
         }
 
-        impl Actor<NullSupervisor> for $apps {}
+
 
         $(
             impl LauncherSender<$app_builder$(<$($i,)*>)?> for Sender {
