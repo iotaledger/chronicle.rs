@@ -40,7 +40,7 @@ impl Name for HelloWorld {
 }
 
 impl Passthrough<HelloWorldEvent> for HelloWorldSender {
-    fn send_event(&mut self, _event: HelloWorldEvent, _from_app_name: String) {}
+    fn passthrough(&mut self, _event: HelloWorldEvent, _from_app_name: String) {}
     fn service(&mut self, _service: &Service) {}
     fn launcher_status_change(&mut self, _service: &Service) {}
     fn app_status_change(&mut self, _service: &Service) {}
@@ -190,7 +190,7 @@ impl Name for Howdy {
 }
 
 impl Passthrough<HowdyEvent> for HowdySender {
-    fn send_event(&mut self, _event: HowdyEvent, _from_app_name: String) {}
+    fn passthrough(&mut self, _event: HowdyEvent, _from_app_name: String) {}
     fn service(&mut self, _service: &Service) {}
     fn launcher_status_change(&mut self, _service: &Service) {}
     fn app_status_change(&mut self, _service: &Service) {}

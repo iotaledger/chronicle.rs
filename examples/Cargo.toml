@@ -7,7 +7,7 @@ edition = "2018"
 [dev-dependencies]
 serde = { version = "1.0.114", features = ["derive"] }
 chronicle = {path = "../"}
-tokio = { version = "0.3", features = ["full", "time", "signal"] }
+tokio = { version = "1.0", features = ["full", "time", "signal"] }
 futures = "0.3"
 env_logger = "0.7.1"
 log = "*"

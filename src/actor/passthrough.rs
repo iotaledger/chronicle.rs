@@ -2,7 +2,7 @@ use super::launcher::Service;
 
 pub trait Passthrough<T>: Send {
     /// Here we recv events passed to us from passthrough
-    fn send_event(&mut self, event: T, from_app_name: String);
+    fn passthrough(&mut self, event: T, from_app_name: String);
     /// Tells apps about status_change for a given app
     /// this method will be invoked when any application broadcast status change in its service
     fn app_status_change(&mut self, service: &Service);

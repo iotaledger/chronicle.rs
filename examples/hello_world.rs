@@ -26,7 +26,7 @@ impl<H: LauncherSender<Self>> Builder for HelloWorldBuilder<H> {
 
 impl<H: LauncherSender<Self>> AppBuilder<H> for HelloWorldBuilder<H> {}
 
-impl<H: LauncherSender<HelloWorldBuilder<H>> + AknShutdown<Self>> Actor<H> for HelloWorld {}
+impl<H: LauncherSender<HelloWorldBuilder<H>>> Actor<H> for HelloWorld {}
 
 impl Name for HelloWorld {
     fn get_name(&self) -> String {
@@ -39,7 +39,7 @@ impl Name for HelloWorld {
 }
 
 impl Passthrough<HelloWorldEvent> for HelloWorldSender {
-    fn send_event(&mut self, _event: HelloWorldEvent, _from_app_name: String) {}
+    fn passthrough(&mut self, _event: HelloWorldEvent, _from_app_name: String) {}
     fn service(&mut self, _service: &Service) {}
     fn launcher_status_change(&mut self, _service: &Service) {}
     fn app_status_change(&mut self, _service: &Service) {}

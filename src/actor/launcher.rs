@@ -662,7 +662,7 @@ macro_rules! launcher {
                                 $(
                                     AppsEvents::$app(event) => {
                                         if let Some(app_handler) = self.apps_handlers.$app.as_mut() {
-                                            app_handler.send_event(event, from_app_name)
+                                            app_handler.passthrough(event, from_app_name)
                                         }
                                     },
                                 )*
