@@ -101,6 +101,9 @@ impl Service {
     pub fn update_microservice_status(&mut self, service_name: &str, status: ServiceStatus) {
         self.microservices.get_mut(service_name).unwrap().status = status;
     }
+    pub fn delete_microservice(&mut self, service_name: &str) {
+        self.microservices.remove(service_name);
+    }
     pub fn is_stopping(&self) -> bool {
         self.status == ServiceStatus::Stopping
     }
