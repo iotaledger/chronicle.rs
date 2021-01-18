@@ -116,6 +116,15 @@ impl Service {
     pub fn is_initializing(&self) -> bool {
         self.status == ServiceStatus::Initializing
     }
+    pub fn is_maintenance(&self) -> bool {
+        self.status == ServiceStatus::Maintenance
+    }
+    pub fn is_degraded(&self) -> bool {
+        self.status == ServiceStatus::Degraded
+    }
+    pub fn service_status(&self) -> &ServiceStatus {
+        &self.status
+    }
 }
 
 #[macro_export]

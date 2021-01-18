@@ -23,8 +23,6 @@ where
 {
 }
 
-impl<T: super::Name + super::EventLoop<H> + super::Init<H> + super::Terminating<H>, H: Send + 'static + AknShutdown<Self>> Actor<H> for T {}
-
 pub trait ThroughType {
     /// identfiy the Through which is the event type with predefind functionality to the outdoor (ie websocket msg)
     type Through: for<'de> Deserialize<'de> + Serialize;
