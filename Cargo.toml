@@ -1,0 +1,10 @@
+[package]
+name = "permanode"
+version = "0.1.0"
+authors = ["IOTA Stiftung"]
+edition = "2018"
+license = "APACHE 2.0"
+homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
+repository = "https://github.com/iotaledger/scylla.rs"
+
+[dependencies]
