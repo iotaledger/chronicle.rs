@@ -13,8 +13,8 @@ pub trait Appsthrough<B: ThroughType>: for<'de> Deserialize<'de> + Serialize + S
 pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + AcknowledgeShutdown<<B as Builder>::State> {
     type Through;
     type AppsEvents: Appsthrough<B>;
-    fn start_app(&mut self, app_name: &str);
-    fn shutdown_app(&mut self, app_name: &str);
+    fn start_app(&mut self, app_name: String);
+    fn shutdown_app(&mut self, app_name: String);
     fn request_service(&mut self);
     /// Keep the launcher up to date with service status changes,
     /// NOTE: don't use it to send ServiceStatus::Stopped as it will be set automatically when app aknowledge_shutdown
@@ -181,7 +181,7 @@ macro_rules! launcher {
         pub enum Event {
             StartApp(String, Option<AppsStates>),
             ShutdownApp(String),
-            AcknowledgeShutdown(AppsStates, NeedResult),
+            AcknowledgeShutdown(AppsStates, StartResult),
             RequestService(String),
             StatusChange(Service),
             Passthrough(AppsEvents, String),
@@ -209,12 +209,12 @@ macro_rules! launcher {
             impl LauncherSender<$app_builder$(<$($i,)*>)?> for Sender {
                 type Through = <$app_builder$(<$($i,)*>)? as ThroughType>::Through;
                 type AppsEvents = AppsEvents;
-                fn start_app(&mut self, app_name: &str) {
-                    let start_app_event = Event::StartApp(app_name.to_string(), None);
+                fn start_app(&mut self, app_name: String) {
+                    let start_app_event = Event::StartApp(app_name, None);
                     let _ = self.0.send(start_app_event);
                 }
-                fn shutdown_app(&mut self, app_name: &str) {
-                    let shutdown_app_event = Event::ShutdownApp(app_name.to_string());
+                fn shutdown_app(&mut self, app_name: String) {
+                    let shutdown_app_event = Event::ShutdownApp(app_name);
                     let _ = self.0.send(shutdown_app_event);
                 }
                 fn request_service(&mut self) {
@@ -250,7 +250,7 @@ macro_rules! launcher {
 
             #[async_trait::async_trait]
             impl AcknowledgeShutdown<<$app_builder$(<$($i,)*>)? as Builder>::State> for Sender {
-                async fn acknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: NeedResult) {
+                async fn acknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: StartResult) {
                     let input = From::< <$app_builder$(<$($i,)*>)? as Builder>::State >::from(state);
                     let aknowledge_shutdown_event = Event::AcknowledgeShutdown(AppsStates::$app(input), status);
                     let _ = self.0.send(aknowledge_shutdown_event);
@@ -286,7 +286,8 @@ macro_rules! launcher {
                 }
             )*
             pub fn to_apps(self) -> $apps {
-                let service = Service::new();
+                let mut service = Service::new();
+                service.update_name(stringify!($apps).to_string().to_string());
                 let apps_names = vec![ $(stringify!($app).to_string()),*];
                 let apps_handlers = AppsHandlers::default();
                 let mut apps_deps: AppsDeps = AppsDeps::default();
@@ -321,7 +322,7 @@ macro_rules! launcher {
                     $(
                         $field: self.$field.unwrap(),
                     )*
-                }.set_name()
+                }
             }
 
             $(
@@ -333,8 +334,6 @@ macro_rules! launcher {
             )*
 
         }
-
-        actor!($apps);
 
         /// Launcher state
         #[allow(non_snake_case)]
@@ -545,35 +544,17 @@ macro_rules! launcher {
                     }
                 } else {
                     // Apps is stopping, and we shouldn't start any application durring this state,
-                    warn!("cannot starts {}, because {} is stopping", app_name, self.get_name());
+                    warn!("cannot starts {}, because {} is stopping", app_name, self.name());
                 }
             }
         }
 
-        /// Name of the launcher
-        impl Name for $apps {
-            fn get_name(&self) -> String {
+        #[async_trait::async_trait]
+        impl Actor<NullSupervisor> for $apps {
+            fn name(&self) -> String {
                 self.service.name.clone()
             }
-            fn set_name(mut self) -> Self {
-                self.service.update_name(stringify!($apps).to_string().to_string());
-                self
-            }
-        }
 
-        #[async_trait::async_trait]
-        impl StartActor<NullSupervisor> for $apps {
-            fn aborted(&self, aborted: Aborted, supervisor: &mut Option<NullSupervisor>) {
-                info!("Supervisor app was aborted!");
-            }
-
-            fn timed_out(&self, elapsed: Elapsed, supervisor: &mut Option<NullSupervisor>) {
-                info!("Supervisor app timed out!");
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Init<NullSupervisor> for $apps {
             async fn init(&mut self, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
                 tokio::spawn(ctrl_c(self.tx.clone()));
                 info!("Initializing {} Apps", self.app_count);
@@ -583,10 +564,7 @@ macro_rules! launcher {
                 self.launcher_status_change();
                 Ok(())
             }
-        }
 
-        #[async_trait::async_trait]
-        impl EventLoop<NullSupervisor> for $apps {
             async fn event_loop(&mut self, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
                 // update service to be Running
                 self.service.update_status(ServiceStatus::Running);
@@ -624,7 +602,7 @@ macro_rules! launcher {
                                         // drop handler if any
                                         let app_handler_opt = self.apps_handlers.$app.take();
                                         // check if the app needs restart/kill or RescheduleAfter
-                                        match result {
+                                        match result.result {
                                             Err(Need::RescheduleAfter(after_duration)) => {
                                                 // reschedule a restart after duration
                                                 info!(
@@ -652,7 +630,7 @@ macro_rules! launcher {
                                                     warn!("cannot restart {}, as we asked to shutdown", app_name);
                                                 }
                                             }
-                                            Err(Need::Abort) => {
+                                            Err(Need::Abort(_)) => {
                                                 if app_handler_opt.is_some() {
                                                     // the application is aborting
                                                     info!("{} aborted itself", app_name)
@@ -747,17 +725,12 @@ macro_rules! launcher {
                 }
                 Ok(())
             }
-        }
 
-        #[async_trait::async_trait]
-        impl Terminating<NullSupervisor> for $apps {
-            async fn terminating(&mut self, status: ResultSource, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
-                let res = if let ResultSource::Init(Err(Need::Abort)) |
-                                ResultSource::Loop(Err(Need::Abort)) |
-                                ResultSource::End(Err(Need::Abort)) = status {
+            async fn terminating(&mut self, status: StartResult, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
+                let res = if let Err(Need::Abort(_)) = status.result {
                     let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
                     let _ = self.tx.0.send(exit_program_event);
-                    <Self as EventLoop<NullSupervisor>>::event_loop(self, supervisor).await
+                    self.event_loop(supervisor).await
                 } else {
                     Ok(())
                 };
@@ -767,6 +740,7 @@ macro_rules! launcher {
                 res
             }
         }
+
 
         /// Useful function to exit program using ctrl_c signal
         async fn ctrl_c(mut handle: Sender) {

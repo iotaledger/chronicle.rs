@@ -1,13 +1,20 @@
 use async_trait::async_trait;
 use std::time::Duration;
 
-pub type NeedResult = Result<(), Need>;
+use crate::StartResult;
 
 #[derive(Copy, Clone)]
 pub enum Need {
     Restart,
     RescheduleAfter(Duration),
-    Abort,
+    Abort(AbortType),
+}
+
+#[derive(Copy, Clone)]
+pub enum AbortType {
+    Error,
+    Timeout,
+    Manual,
 }
 
 /// Should be implemented on the Actor(or pid) that should become a child
@@ -20,7 +27,7 @@ pub trait Child<H, S>: Send {
 /// Should be implemented on the supervisor_handle
 #[async_trait]
 pub trait AcknowledgeShutdown<A>: Send {
-    async fn acknowledge_shutdown(self, state: A, status: NeedResult);
+    async fn acknowledge_shutdown(self, state: A, status: StartResult);
 }
 
 /// Should be implemented on the child_shutdown_handle
@@ -39,5 +46,5 @@ impl NullSupervisor {
 }
 #[async_trait]
 impl<A: Send + 'static> AcknowledgeShutdown<A> for NullSupervisor {
-    async fn acknowledge_shutdown(self, state: A, status: NeedResult) {}
+    async fn acknowledge_shutdown(self, state: A, status: StartResult) {}
 }
