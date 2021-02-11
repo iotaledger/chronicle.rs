@@ -10,7 +10,7 @@ pub trait Appsthrough<B: ThroughType>: for<'de> Deserialize<'de> + Serialize + S
     fn try_get_my_event(self) -> Result<B::Through, Self>;
 }
 
-pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + AknShutdown<<B as Builder>::State> {
+pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + AcknowledgeShutdown<<B as Builder>::State> {
     type Through;
     type AppsEvents: Appsthrough<B>;
     fn start_app(&mut self, app_name: &str);
@@ -181,7 +181,7 @@ macro_rules! launcher {
         pub enum Event {
             StartApp(String, Option<AppsStates>),
             ShutdownApp(String),
-            AknShutdown(AppsStates, Result<(), Need>),
+            AcknowledgeShutdown(AppsStates, NeedResult),
             RequestService(String),
             StatusChange(Service),
             Passthrough(AppsEvents, String),
@@ -249,10 +249,10 @@ macro_rules! launcher {
             }
 
             #[async_trait::async_trait]
-            impl AknShutdown<<$app_builder$(<$($i,)*>)? as Builder>::State> for Sender {
-                async fn aknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: Result<(), Need>) {
+            impl AcknowledgeShutdown<<$app_builder$(<$($i,)*>)? as Builder>::State> for Sender {
+                async fn acknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: NeedResult) {
                     let input = From::< <$app_builder$(<$($i,)*>)? as Builder>::State >::from(state);
-                    let aknowledge_shutdown_event = Event::AknShutdown(AppsStates::$app(input), status);
+                    let aknowledge_shutdown_event = Event::AcknowledgeShutdown(AppsStates::$app(input), status);
                     let _ = self.0.send(aknowledge_shutdown_event);
                 }
             }
@@ -333,6 +333,9 @@ macro_rules! launcher {
             )*
 
         }
+
+        actor!($apps);
+
         /// Launcher state
         #[allow(non_snake_case)]
         pub struct $apps {
@@ -559,21 +562,32 @@ macro_rules! launcher {
         }
 
         #[async_trait::async_trait]
+        impl StartActor<NullSupervisor> for $apps {
+            fn aborted(&self, aborted: Aborted, supervisor: &mut Option<NullSupervisor>) {
+                info!("Supervisor app was aborted!");
+            }
+
+            fn timed_out(&self, elapsed: Elapsed, supervisor: &mut Option<NullSupervisor>) {
+                info!("Supervisor app timed out!");
+            }
+        }
+
+        #[async_trait::async_trait]
         impl Init<NullSupervisor> for $apps {
-            async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
+            async fn init(&mut self, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
                 tokio::spawn(ctrl_c(self.tx.clone()));
                 info!("Initializing {} Apps", self.app_count);
                 // update service to be Initializing
                 self.service.update_status(ServiceStatus::Initializing);
                 // tell active apps
                 self.launcher_status_change();
-                status
+                Ok(())
             }
         }
 
         #[async_trait::async_trait]
         impl EventLoop<NullSupervisor> for $apps {
-            async fn event_loop(&mut self, status: Result<(), Need>, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
+            async fn event_loop(&mut self, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
                 // update service to be Running
                 self.service.update_status(ServiceStatus::Running);
                 // tell active apps
@@ -592,7 +606,7 @@ macro_rules! launcher {
                             info!("{} is {:?}, telling all active applications", service.name, service.status,);
                             self.status_change(service);
                         }
-                        Event::AknShutdown(app_states, result) => {
+                        Event::AcknowledgeShutdown(app_states, result) => {
                             // shutdown next app
                             match app_states {
                                 //$apps
@@ -731,22 +745,26 @@ macro_rules! launcher {
                         }
                     }
                 }
-                status
+                Ok(())
             }
         }
 
         #[async_trait::async_trait]
         impl Terminating<NullSupervisor> for $apps {
-            async fn terminating(&mut self, mut status: Result<(), Need>, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
-                if let Err(Need::Abort) = status {
+            async fn terminating(&mut self, status: ResultSource, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
+                let res = if let ResultSource::Init(Err(Need::Abort)) |
+                                ResultSource::Loop(Err(Need::Abort)) |
+                                ResultSource::End(Err(Need::Abort)) = status {
                     let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
                     let _ = self.tx.0.send(exit_program_event);
-                    status = self.event_loop(status, _supervisor).await;
-                }
+                    <Self as EventLoop<NullSupervisor>>::event_loop(self, supervisor).await
+                } else {
+                    Ok(())
+                };
                 // update service to stopped
                 self.service.update_status(ServiceStatus::Stopped);
                 info!("Thank you for using Chronicle.rs, GoodBye");
-                status
+                res
             }
         }
 

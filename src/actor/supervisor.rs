@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 use std::time::Duration;
 
+pub type NeedResult = Result<(), Need>;
+
+#[derive(Copy, Clone)]
 pub enum Need {
     Restart,
     RescheduleAfter(Duration),
@@ -16,8 +19,8 @@ pub trait Child<H, S>: Send {
 
 /// Should be implemented on the supervisor_handle
 #[async_trait]
-pub trait AknShutdown<A>: Send {
-    async fn aknowledge_shutdown(self, state: A, status: Result<(), Need>);
+pub trait AcknowledgeShutdown<A>: Send {
+    async fn acknowledge_shutdown(self, state: A, status: NeedResult);
 }
 
 /// Should be implemented on the child_shutdown_handle
@@ -35,6 +38,6 @@ impl NullSupervisor {
     }
 }
 #[async_trait]
-impl<A: Send + 'static> AknShutdown<A> for NullSupervisor {
-    async fn aknowledge_shutdown(self, _state: A, _status: Result<(), Need>) {}
+impl<A: Send + 'static> AcknowledgeShutdown<A> for NullSupervisor {
+    async fn acknowledge_shutdown(self, state: A, status: NeedResult) {}
 }

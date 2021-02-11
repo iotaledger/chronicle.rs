@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use chronicle::*;
 
+actor!(HelloWorld);
+
 // App builder
 builder!(
     #[derive(Clone)]
@@ -63,30 +65,41 @@ impl<H: LauncherSender<Self>> Starter<H> for HelloWorldBuilder<H> {
             tx: hello_world.tx.clone(),
         };
         // spawn and start HelloWorld
-        tokio::spawn(hello_world.start(Some(handle)));
+        tokio::spawn(Actor::start(hello_world, Some(handle)));
         // return app_handle
         Ok(app_handle)
     }
 }
 
 #[async_trait]
+impl<H: LauncherSender<HelloWorldBuilder<H>>> StartActor<H> for HelloWorld {
+    fn aborted(&self, aborted: Aborted, supervisor: &mut Option<H>) {
+        todo!()
+    }
+
+    fn timed_out(&self, elapsed: Elapsed, supervisor: &mut Option<H>) {
+        todo!()
+    }
+}
+
+#[async_trait]
 impl<H: LauncherSender<HelloWorldBuilder<H>>> Init<H> for HelloWorld {
-    async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
+    async fn init(&mut self, supervisor: &mut Option<H>) -> NeedResult {
         // update service to be Initializing
         self.service.update_status(ServiceStatus::Initializing);
         // tell active apps
-        _supervisor.as_mut().unwrap().status_change(self.service.clone());
-        status
+        supervisor.as_mut().unwrap().status_change(self.service.clone());
+        Ok(())
     }
 }
 
 #[async_trait]
 impl<H: LauncherSender<HelloWorldBuilder<H>>> EventLoop<H> for HelloWorld {
-    async fn event_loop(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
+    async fn event_loop(&mut self, supervisor: &mut Option<H>) -> NeedResult {
         // update service to be Running
         self.service.update_status(ServiceStatus::Running);
         // tell active apps
-        _supervisor.as_mut().unwrap().status_change(self.service.clone());
+        supervisor.as_mut().unwrap().status_change(self.service.clone());
         // this scope is an example of how the application can make use of Appsthrough,
         // it's meant to be used to dynamically re-configure the applicaitons during runtime
         {
@@ -96,12 +109,12 @@ impl<H: LauncherSender<HelloWorldBuilder<H>>> EventLoop<H> for HelloWorld {
                 match apps_events.try_get_my_event() {
                     // event belong to self application
                     Ok(HelloWorldEvent::Shutdown) => {
-                        _supervisor.as_mut().unwrap().shutdown_app(&self.get_name());
+                        supervisor.as_mut().unwrap().shutdown_app(&self.get_name());
                     }
                     // event belong to other application, so we passthrough to the launcher in order to route it
                     // to the corresponding application
                     Err(other_app_event) => {
-                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name());
+                        supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name());
                     }
                 }
             } else {
@@ -113,18 +126,18 @@ impl<H: LauncherSender<HelloWorldBuilder<H>>> EventLoop<H> for HelloWorld {
             self.rx.close();
             // or break; NOTE: the application must make sure to shutdown all of its childern
         }
-        _status
+        Ok(())
     }
 }
 
 #[async_trait]
 impl<H: LauncherSender<HelloWorldBuilder<H>>> Terminating<H> for HelloWorld {
-    async fn terminating(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
+    async fn terminating(&mut self, status: ResultSource, supervisor: &mut Option<H>) -> NeedResult {
         // update service to be Stopping
         self.service.update_status(ServiceStatus::Stopping);
         // tell active apps
-        _supervisor.as_mut().unwrap().status_change(self.service.clone());
-        _status
+        supervisor.as_mut().unwrap().status_change(self.service.clone());
+        Ok(())
     }
 }
 
@@ -166,5 +179,5 @@ async fn main() {
     // create apps_builder and build apps
     let apps = AppsBuilder::new().build();
     // start the launcher
-    apps.HelloWorld().await.start(None).await;
+    Actor::start(apps.HelloWorld().await, None).await;
 }

@@ -1,4 +1,4 @@
-use super::{Actor, AknShutdown, LauncherSender, Passthrough, Shutdown, Starter};
+use super::{AcknowledgeShutdown, Actor, LauncherSender, Passthrough, Shutdown, Starter};
 use serde::{Deserialize, Serialize};
 
 pub trait Builder {
@@ -7,14 +7,14 @@ pub trait Builder {
 }
 
 /// Should be implemented on the ActorBuilder struct
-pub trait ActorBuilder<H: AknShutdown<Self::State> + 'static>: Builder
+pub trait ActorBuilder<H: AcknowledgeShutdown<Self::State> + 'static>: Builder
 where
     Self::State: Actor<H>,
 {
 }
 
 /// Should be implemented on the AppBuilder struct
-pub trait AppBuilder<H: LauncherSender<Self> + AknShutdown<Self::State>>: Builder + ThroughType + Clone + Starter<H>
+pub trait AppBuilder<H: LauncherSender<Self> + AcknowledgeShutdown<Self::State>>: Builder + ThroughType + Clone + Starter<H>
 where
     Self::State: Actor<H>,
     Self::Ok: Shutdown + Passthrough<Self::Through>,
