@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::time::Duration;
 
-use crate::StartResult;
+use crate::ActorResult;
 
 #[derive(Copy, Clone)]
 pub enum Need {
@@ -27,7 +27,7 @@ pub trait Child<H, S>: Send {
 /// Should be implemented on the supervisor_handle
 #[async_trait]
 pub trait AcknowledgeShutdown<A>: Send {
-    async fn acknowledge_shutdown(self, state: A, status: StartResult);
+    async fn acknowledge_shutdown(self, state: A, status: ActorResult);
 }
 
 /// Should be implemented on the child_shutdown_handle
@@ -46,5 +46,5 @@ impl NullSupervisor {
 }
 #[async_trait]
 impl<A: Send + 'static> AcknowledgeShutdown<A> for NullSupervisor {
-    async fn acknowledge_shutdown(self, state: A, status: StartResult) {}
+    async fn acknowledge_shutdown(self, state: A, status: ActorResult) {}
 }

@@ -181,7 +181,7 @@ macro_rules! launcher {
         pub enum Event {
             StartApp(String, Option<AppsStates>),
             ShutdownApp(String),
-            AcknowledgeShutdown(AppsStates, StartResult),
+            AcknowledgeShutdown(AppsStates, ActorResult),
             RequestService(String),
             StatusChange(Service),
             Passthrough(AppsEvents, String),
@@ -250,7 +250,7 @@ macro_rules! launcher {
 
             #[async_trait::async_trait]
             impl AcknowledgeShutdown<<$app_builder$(<$($i,)*>)? as Builder>::State> for Sender {
-                async fn acknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: StartResult) {
+                async fn acknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: ActorResult) {
                     let input = From::< <$app_builder$(<$($i,)*>)? as Builder>::State >::from(state);
                     let aknowledge_shutdown_event = Event::AcknowledgeShutdown(AppsStates::$app(input), status);
                     let _ = self.0.send(aknowledge_shutdown_event);
@@ -726,7 +726,7 @@ macro_rules! launcher {
                 Ok(())
             }
 
-            async fn terminating(&mut self, status: StartResult, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
+            async fn terminating(&mut self, status: ActorResult, supervisor: &mut Option<NullSupervisor>) -> NeedResult {
                 let res = if let Err(Need::Abort(_)) = status.result {
                     let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
                     let _ = self.tx.0.send(exit_program_event);

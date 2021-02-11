@@ -110,7 +110,7 @@ where
         Ok(())
     }
 
-    async fn terminating(&mut self, status: StartResult, supervisor: &mut Option<H>) -> NeedResult {
+    async fn terminating(&mut self, status: ActorResult, supervisor: &mut Option<H>) -> NeedResult {
         // update service to be Stopping
         self.service.update_status(ServiceStatus::Stopping);
         // tell active apps

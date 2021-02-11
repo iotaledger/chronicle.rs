@@ -29,20 +29,20 @@ pub enum ResultSource {
 pub type NeedResult = Result<(), Need>;
 
 #[derive(Copy, Clone)]
-pub struct StartResult {
+pub struct ActorResult {
     pub result: NeedResult,
     pub source: ResultSource,
 }
 
-impl StartResult {
+impl ActorResult {
     pub fn new(result: NeedResult, source: ResultSource) -> Self {
-        StartResult { result, source }
+        ActorResult { result, source }
     }
 }
 
 impl ResultSource {
-    pub fn res(self, result: NeedResult) -> StartResult {
-        StartResult { result, source: self }
+    pub fn res(self, result: NeedResult) -> ActorResult {
+        ActorResult { result, source: self }
     }
 }
 
@@ -54,9 +54,9 @@ pub trait Actor<H: AcknowledgeShutdown<Self> + 'static>: Sized {
 
     async fn event_loop(&mut self, supervisor: &mut Option<H>) -> NeedResult;
 
-    async fn terminating(&mut self, status: StartResult, supervisor: &mut Option<H>) -> NeedResult;
+    async fn terminating(&mut self, status: ActorResult, supervisor: &mut Option<H>) -> NeedResult;
 
-    async fn end(mut self, status: StartResult, mut supervisor: Option<H>) -> NeedResult {
+    async fn end(mut self, status: ActorResult, mut supervisor: Option<H>) -> NeedResult {
         let status = ResultSource::End.res(self.terminating(status, &mut supervisor).await);
         // aknowledge_shutdown to supervisor if provided
         if let Some(my_supervisor) = supervisor {
@@ -65,7 +65,7 @@ pub trait Actor<H: AcknowledgeShutdown<Self> + 'static>: Sized {
         Ok(())
     }
 
-    async fn start(mut self, mut supervisor: Option<H>) -> StartResult {
+    async fn start(mut self, mut supervisor: Option<H>) -> ActorResult {
         let mut res = self.init(&mut supervisor).await;
         let mut source = ResultSource::Init.res(res);
         if res.is_ok() {
@@ -84,7 +84,7 @@ pub trait Actor<H: AcknowledgeShutdown<Self> + 'static>: Sized {
     }
     /// This method will start the actor with abortable event loop by using
     /// let (abort_handle, abort_registration) = AbortHandle::new_pair();
-    async fn start_abortable(mut self, abort_registration: AbortRegistration, mut supervisor: Option<H>) -> StartResult {
+    async fn start_abortable(mut self, abort_registration: AbortRegistration, mut supervisor: Option<H>) -> ActorResult {
         let mut res = self.init(&mut supervisor).await;
         let mut source = ResultSource::Init.res(res);
         if res.is_ok() {
@@ -111,7 +111,7 @@ pub trait Actor<H: AcknowledgeShutdown<Self> + 'static>: Sized {
     }
     /// This method will start the actor with timeout/ttl event loop by using
     /// the runtime timer timeout functionality;
-    async fn start_timeout(mut self, duration: Duration, mut supervisor: Option<H>) -> StartResult {
+    async fn start_timeout(mut self, duration: Duration, mut supervisor: Option<H>) -> ActorResult {
         let mut res = self.init(&mut supervisor).await;
         let mut source = ResultSource::Init.res(res);
         if res.is_ok() {
