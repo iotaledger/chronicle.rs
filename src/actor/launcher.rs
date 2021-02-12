@@ -133,7 +133,7 @@ macro_rules! launcher {
     (@count $t1:tt, $($t:tt),+) => { 1 + launcher!(@count $($t),+) };
     (@count $t:tt) => { 1 };
     (
-        builder: $name:ident {$( [$($dep:ty),*] -> $app:ident : $app_builder:tt$(<$($i:tt),*>)?  ),+},
+        builder: $name:ident {$( [$($dep:ty),*] -> $app:ident $(<$($a:tt),*>)? : $app_builder:tt$(<$($i:tt),*>)?  ),+},
         state: $apps:ident {$($field:ident : $type:ty),*}
     ) => {
         use std::collections::VecDeque;
@@ -249,9 +249,9 @@ macro_rules! launcher {
             }
 
             #[async_trait::async_trait]
-            impl AknShutdown<<$app_builder$(<$($i,)*>)? as Builder>::State> for Sender {
-                async fn aknowledge_shutdown(self, state: <$app_builder$(<$($i,)*>)? as Builder>::State, status: Result<(), Need>) {
-                    let input = From::< <$app_builder$(<$($i,)*>)? as Builder>::State >::from(state);
+            impl AknShutdown< $app$( <$($a,)*> )? > for Sender {
+                async fn aknowledge_shutdown(self, state: $app$(<$($a,)*>)?, status: Result<(), Need>) {
+                    let input = From::< $app$(<$($a,)*>)? >::from(state);
                     let aknowledge_shutdown_event = Event::AknShutdown(AppsStates::$app(input), status);
                     let _ = self.0.send(aknowledge_shutdown_event);
                 }
