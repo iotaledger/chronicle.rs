@@ -12,6 +12,9 @@ chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
+bee-tangle = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
+bee-ledger = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
+bee-snapshot = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
 permanode-api = { path = "../permanode-api" }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1.42"

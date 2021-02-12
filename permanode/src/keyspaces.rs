@@ -1,7 +1,4 @@
-use scylla::access::{
-    insert::Insert,
-    keyspace::Keyspace,
-};
+use scylla::access::keyspace::Keyspace;
 use std::borrow::Cow;
 pub struct Mainnet;
 
