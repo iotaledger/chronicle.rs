@@ -5,7 +5,6 @@ use std::borrow::Cow;
 impl<H> Starter<H> for PermanodeBuilder<H>
 where
     H: LauncherSender<PermanodeBuilder<H>>,
-    H::AppsEvents: Clone,
 {
     type Ok = PermanodeSender<H>;
 

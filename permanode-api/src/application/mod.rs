@@ -1,8 +1,11 @@
-pub use super::*;
-pub use chronicle::*;
+use super::*;
 use scylla::application::{
     ScyllaBuilder,
     ScyllaHandle,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 use tokio::sync::mpsc::{
     UnboundedReceiver,
@@ -20,7 +23,6 @@ where
     pub service: Service,
     pub inbox: UnboundedReceiver<PermanodeEvent<H::AppsEvents>>,
     pub sender: PermanodeSender<H>,
-    pub scylla_handle: Option<ScyllaHandle<Sender>>,
 }
 
 pub struct PermanodeSender<H: LauncherSender<PermanodeBuilder<H>>> {
@@ -105,23 +107,4 @@ pub enum PermanodeThrough {
     AddNode(String),
     RemoveNode(String),
     TryBuild(u8),
-}
-
-impl Clone for AppsEvents {
-    fn clone(&self) -> Self {
-        match self {
-            AppsEvents::Permanode(t) => AppsEvents::Permanode(t.clone()),
-            AppsEvents::Scylla(t) => AppsEvents::Scylla(t.clone()),
-        }
-    }
-}
-
-launcher!(builder: AppsBuilder {[] -> Permanode: PermanodeBuilder<Sender>, [Permanode] -> Scylla: ScyllaBuilder<Sender>}, state: Apps {});
-
-impl Builder for AppsBuilder {
-    type State = Apps;
-
-    fn build(self) -> Self::State {
-        todo!()
-    }
 }
