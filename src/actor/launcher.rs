@@ -113,6 +113,9 @@ impl Service {
     pub fn is_running(&self) -> bool {
         self.status == ServiceStatus::Running
     }
+    pub fn is_starting(&self) -> bool {
+        self.status == ServiceStatus::Starting
+    }
     pub fn is_initializing(&self) -> bool {
         self.status == ServiceStatus::Initializing
     }
