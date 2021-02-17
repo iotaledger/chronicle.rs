@@ -13,6 +13,8 @@ serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1.42"
 env_logger = "0.8.3"
 log = "0.4.14"
+http = "0.2.3"
+rocket = { git = "https://github.com/SergioBenitez/Rocket.git", rev = "e4c2324" }
 
 [dependencies.tokio]
 version = "1.0"

@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeBuilder<H>>> Init<PermanodeSender<H>> for AddFeedSource {
+impl<H: LauncherSender<PermanodeBuilder<H>>> Init<PermanodeSender<H>> for Listener {
     async fn init(
         &mut self,
         status: Result<(), Need>,

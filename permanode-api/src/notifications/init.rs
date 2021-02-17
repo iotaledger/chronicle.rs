@@ -1,5 +1,3 @@
-use application::PermanodeSender;
-
 use super::*;
 
 #[async_trait]
