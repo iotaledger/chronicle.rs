@@ -13,6 +13,7 @@ chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 permanode-storage = { path = "../permanode-storage" }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.62"
 async-trait = "0.1.42"
 env_logger = "0.8.3"
 log = "0.4.14"

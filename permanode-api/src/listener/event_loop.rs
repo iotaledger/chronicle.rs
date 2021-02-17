@@ -4,20 +4,27 @@ use std::{
 };
 
 use super::*;
-use bee_common::packable::Packable;
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
         MessageId,
+        MessageMetadata,
         ReporterEvent,
         RowsDecoder,
         SelectQuery,
     },
     keyspaces::Mainnet,
 };
-use rocket::get;
+use rocket::{
+    get,
+    response::content::Json,
+};
 use scylla::ring::Ring;
-use scylla_cql::CqlError;
+use scylla_cql::{
+    CqlError,
+    Query,
+};
+use serde::Serialize;
 use tokio::sync::mpsc;
 
 #[async_trait]
@@ -44,17 +51,13 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for L
     }
 }
 
-#[get("/messages/<message_id>")]
-async fn get_message(message_id: String) -> Result<Vec<u8>, Cow<'static, str>> {
+async fn query<S: RowsDecoder<V>, V: Serialize>(keyspace: S, query: Query) -> Result<Json<String>, Cow<'static, str>> {
     let (sender, mut inbox) = unbounded_channel::<Event>();
     let worker = Box::new(DecoderWorker(sender));
 
-    let keyspace = Mainnet;
-    let query: SelectQuery<MessageId, Message> = keyspace.select(&MessageId::from_str(&message_id).unwrap());
-
     let request = ReporterEvent::Request {
         worker,
-        payload: query.into_bytes(),
+        payload: query.0,
     };
 
     Ring::send_local_random_replica(rand::random::<i64>(), request);
@@ -62,11 +65,9 @@ async fn get_message(message_id: String) -> Result<Vec<u8>, Cow<'static, str>> {
     while let Some(event) = inbox.recv().await {
         match event {
             Event::Response { giveload } => {
-                let res: Result<Option<Message>, CqlError> = Mainnet::try_decode(giveload.into());
+                let res: Result<Option<V>, CqlError> = S::try_decode(giveload.into());
                 if let Ok(Some(message)) = res {
-                    let mut bytes = Vec::<u8>::new();
-                    message.pack(&mut bytes).unwrap();
-                    return Ok(bytes);
+                    return Ok(Json(serde_json::to_string(&message).unwrap()));
                 }
             }
             Event::Error { kind } => return Err(kind.to_string().into()),
@@ -76,17 +77,27 @@ async fn get_message(message_id: String) -> Result<Vec<u8>, Cow<'static, str>> {
     Err("Failed to receive response!".into())
 }
 
+#[get("/messages/<message_id>")]
+async fn get_message(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
+    let keyspace = Mainnet;
+    let select_query: SelectQuery<MessageId, Message> = keyspace.select(&MessageId::from_str(&message_id).unwrap());
+    query::<_, Message>(keyspace, select_query.into_inner()).await
+}
+
 #[get("/messages/<message_id>/metadata")]
-async fn get_message_metadata(message_id: u32) -> String {
-    "okay".to_string()
+async fn get_message_metadata(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
+    let keyspace = Mainnet;
+    let select_query: SelectQuery<MessageId, MessageMetadata> =
+        keyspace.select(&MessageId::from_str(&message_id).unwrap());
+    query::<_, Message>(keyspace, select_query.into_inner()).await
 }
 
 #[get("/messages/<message_id>/children")]
-async fn get_message_children(message_id: u32) -> String {
-    "okay".to_string()
+async fn get_message_children(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
+    todo!()
 }
 
 #[get("/messages?<index>")]
-async fn get_message_by_index(index: u32) -> String {
-    "okay".to_string()
+async fn get_message_by_index(index: String) -> Result<Json<String>, Cow<'static, str>> {
+    todo!()
 }
