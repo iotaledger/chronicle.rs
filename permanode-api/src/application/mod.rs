@@ -1,8 +1,5 @@
 use super::*;
-use scylla::application::{
-    ScyllaBuilder,
-    ScyllaHandle,
-};
+
 use serde::{
     Deserialize,
     Serialize,

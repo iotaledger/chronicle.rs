@@ -16,6 +16,7 @@ bee-tangle = { git = "https://github.com/iotaledger/bee.git", branch = "chrysali
 bee-ledger = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
 bee-snapshot = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
 permanode-api = { path = "../permanode-api" }
+permanode-storage = { path = "../permanode-storage" }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1.42"
 env_logger = "0.8.3"

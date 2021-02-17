@@ -1,14 +1,16 @@
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{
-        Context,
-        Poll,
-    },
-};
-
 use super::*;
 use application::*;
+use permanode_storage::access::{
+    Delete,
+    Insert,
+    Message,
+    MessageId,
+    ReporterHandle,
+    Select,
+    Update,
+    Worker,
+    WorkerError,
+};
 use tokio::sync::mpsc::{
     UnboundedReceiver,
     UnboundedSender,
@@ -20,6 +22,35 @@ mod terminating;
 
 pub struct Listener {
     pub service: Service,
+}
+
+#[derive(Debug)]
+pub enum Event {
+    /// Response from scylla with a payload
+    Response {
+        /// The payload.
+        giveload: Vec<u8>,
+    },
+    /// Error from scylla
+    Error {
+        /// The Error kind.
+        kind: WorkerError,
+    },
+}
+
+#[derive(Debug)]
+pub struct DecoderWorker(pub UnboundedSender<Event>);
+
+impl Worker for DecoderWorker {
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
+        let event = Event::Response { giveload };
+        self.0.send(event).expect("AHHHHHH");
+    }
+
+    fn handle_error(self: Box<Self>, error: WorkerError, reporter: &Option<ReporterHandle>) {
+        let event = Event::Error { kind: error };
+        self.0.send(event).expect("AHHHHHH");
+    }
 }
 
 builder!(ListenerBuilder {});
