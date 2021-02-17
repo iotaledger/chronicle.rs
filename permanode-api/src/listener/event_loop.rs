@@ -8,7 +8,6 @@ use bee_common::packable::Packable;
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
-        Decoder,
         MessageId,
         ReporterEvent,
         RowsDecoder,
@@ -18,10 +17,7 @@ use permanode_storage::{
 };
 use rocket::get;
 use scylla::ring::Ring;
-use scylla_cql::{
-    compression::Lz4,
-    CqlError,
-};
+use scylla_cql::CqlError;
 use tokio::sync::mpsc;
 
 #[async_trait]
@@ -66,7 +62,7 @@ async fn get_message(message_id: String) -> Result<Vec<u8>, Cow<'static, str>> {
     while let Some(event) = inbox.recv().await {
         match event {
             Event::Response { giveload } => {
-                let res: Result<Option<Message>, CqlError> = Mainnet::try_decode(Decoder::new(giveload, Lz4));
+                let res: Result<Option<Message>, CqlError> = Mainnet::try_decode(giveload.into());
                 if let Ok(Some(message)) = res {
                     let mut bytes = Vec::<u8>::new();
                     message.pack(&mut bytes).unwrap();
