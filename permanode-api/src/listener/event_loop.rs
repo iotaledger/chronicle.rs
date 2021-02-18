@@ -58,7 +58,7 @@ async fn query<V: Serialize, S: Select<K, V>, K>(
 
     let request = ReporterEvent::Request {
         worker,
-        payload: select_query.take().0,
+        payload: select_query.take(),
     };
 
     Ring::send_local_random_replica(rand::random::<i64>(), request);
