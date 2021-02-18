@@ -22,7 +22,7 @@ where
 {
     service: Service,
     inbox: UnboundedReceiver<PermanodeEvent<H::AppsEvents>>,
-    sender: PermanodeSender<H>,
+    sender: Option<PermanodeSender<H>>,
     listener: AbortHandle,
 }
 
@@ -86,7 +86,7 @@ where
 
     fn build(self) -> Self::State {
         let (tx, inbox) = tokio::sync::mpsc::unbounded_channel();
-        let sender = PermanodeSender { tx };
+        let sender = Some(PermanodeSender { tx });
         Self::State {
             service: Service::new(),
             inbox,

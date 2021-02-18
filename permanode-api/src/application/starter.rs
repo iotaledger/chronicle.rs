@@ -19,7 +19,7 @@ where
 
         let permanode = self.listener_handle(listener_handle).build();
 
-        let supervisor = permanode.sender.clone();
+        let supervisor = permanode.sender.clone().unwrap();
 
         tokio::spawn(listener.start_abortable(listener_abort_registration, Some(supervisor.clone())));
 
