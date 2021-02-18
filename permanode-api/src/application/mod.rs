@@ -93,6 +93,7 @@ where
             sender,
             listener: self.listener_handle.expect("No listener handle was provided!"),
         }
+        .set_name()
     }
 }
 

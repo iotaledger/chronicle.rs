@@ -15,9 +15,6 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<H> for Permanode<H> {
                         Ok(my_event) => match my_event {
                             PermanodeThrough::Shutdown => {
                                 if !self.service.is_stopping() {
-                                    // Ask launcher to shutdown scylla application,
-                                    // this is usefull in case the shutdown event sent by the websocket
-                                    // client.
                                     supervisor.shutdown_app(&self.get_name());
                                 }
                             }

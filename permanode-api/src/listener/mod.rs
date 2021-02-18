@@ -62,6 +62,7 @@ impl Builder for ListenerBuilder {
         Self::State {
             service: Service::new(),
         }
+        .set_name()
     }
 }
 
