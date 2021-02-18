@@ -14,7 +14,6 @@ where
     type Input = Permanode<H>;
 
     async fn starter(self, handle: H, input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
-        dotenv::dotenv().map_err(|e| Cow::from(e.to_string()))?;
         let listener = ListenerBuilder::new().build();
         let (listener_handle, listener_abort_registration) = AbortHandle::new_pair();
 

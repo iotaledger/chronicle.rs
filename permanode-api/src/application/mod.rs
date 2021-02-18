@@ -45,21 +45,13 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> Clone for PermanodeSender<H> {
 }
 
 impl<H: LauncherSender<PermanodeBuilder<H>>> Passthrough<PermanodeThrough> for PermanodeSender<H> {
-    fn passthrough(&mut self, event: PermanodeThrough, from_app_name: String) {
-        todo!()
-    }
+    fn passthrough(&mut self, event: PermanodeThrough, from_app_name: String) {}
 
-    fn app_status_change(&mut self, service: &Service) {
-        todo!()
-    }
+    fn app_status_change(&mut self, service: &Service) {}
 
-    fn launcher_status_change(&mut self, service: &Service) {
-        todo!()
-    }
+    fn launcher_status_change(&mut self, service: &Service) {}
 
-    fn service(&mut self, service: &Service) {
-        todo!()
-    }
+    fn service(&mut self, service: &Service) {}
 }
 
 impl<H: LauncherSender<PermanodeBuilder<H>>> Shutdown for PermanodeSender<H> {

@@ -10,17 +10,14 @@ repository = "https://github.com/iotaledger/scylla.rs"
 [dependencies]
 chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
-scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
-bee-tangle = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
-bee-ledger = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
-bee-snapshot = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
 permanode-api = { path = "../permanode-api" }
 permanode-storage = { path = "../permanode-storage" }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1.42"
 env_logger = "0.8.3"
 log = "0.4.14"
+num_cpus = "1.13.0"
+dotenv = "0.15.0"
 
 [dependencies.tokio]
 version = "1.0"
