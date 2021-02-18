@@ -19,6 +19,10 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<H> for Permanode<H> {
                                     // this is usefull in case the shutdown event sent by the websocket
                                     // client.
                                     supervisor.shutdown_app(&self.get_name());
+                                    // shutdown children
+                                    self.listener.abort();
+                                    // make sure to drop self handler
+                                    self.sender.take();
                                 }
                             }
                             PermanodeThrough::AddNode(_) => {}
