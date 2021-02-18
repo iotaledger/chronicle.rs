@@ -20,6 +20,7 @@ log = "0.4.14"
 http = "0.2.3"
 rocket = { git = "https://github.com/SergioBenitez/Rocket.git", rev = "e4c2324" }
 rand = "0.8.3"
+dotenv = "0.15.0"
 
 [dependencies.tokio]
 version = "1.0"
@@ -35,4 +36,4 @@ features = [
     "rt-multi-thread",
     "signal", 
     "full"
-] 
+]

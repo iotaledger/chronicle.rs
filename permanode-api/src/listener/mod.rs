@@ -59,7 +59,9 @@ impl Builder for ListenerBuilder {
     type State = Listener;
 
     fn build(self) -> Self::State {
-        todo!()
+        Self::State {
+            service: Service::new(),
+        }
     }
 }
 

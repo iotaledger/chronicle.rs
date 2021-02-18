@@ -1,5 +1,8 @@
+use std::ops::Deref;
+
 use super::*;
 
+use rocket::futures::future::AbortHandle;
 use serde::{
     Deserialize,
     Serialize,
@@ -17,13 +20,22 @@ pub struct Permanode<H>
 where
     H: LauncherSender<PermanodeBuilder<H>>,
 {
-    pub service: Service,
-    pub inbox: UnboundedReceiver<PermanodeEvent<H::AppsEvents>>,
-    pub sender: PermanodeSender<H>,
+    service: Service,
+    inbox: UnboundedReceiver<PermanodeEvent<H::AppsEvents>>,
+    sender: PermanodeSender<H>,
+    listener: AbortHandle,
 }
 
 pub struct PermanodeSender<H: LauncherSender<PermanodeBuilder<H>>> {
     tx: UnboundedSender<PermanodeEvent<H::AppsEvents>>,
+}
+
+impl<H: LauncherSender<PermanodeBuilder<H>>> Deref for PermanodeSender<H> {
+    type Target = UnboundedSender<PermanodeEvent<H::AppsEvents>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tx
+    }
 }
 
 impl<H: LauncherSender<PermanodeBuilder<H>>> Clone for PermanodeSender<H> {
@@ -55,14 +67,18 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> Shutdown for PermanodeSender<H> {
     where
         Self: Sized,
     {
-        todo!()
+        self.send(PermanodeEvent::Passthrough(
+            serde_json::from_str("{\"Permanode\": \"Shutdown\"}").unwrap(),
+        ))
+        .ok();
+        None
     }
 }
 
 builder!(
     #[derive(Clone)]
     PermanodeBuilder<H> {
-        listen_address: String
+        listener_handle: AbortHandle
     }
 );
 
@@ -77,7 +93,14 @@ where
     type State = Permanode<H>;
 
     fn build(self) -> Self::State {
-        todo!()
+        let (tx, inbox) = tokio::sync::mpsc::unbounded_channel();
+        let sender = PermanodeSender { tx };
+        Self::State {
+            service: Service::new(),
+            inbox,
+            sender,
+            listener: self.listener_handle.expect("No listener handle was provided!"),
+        }
     }
 }
 
@@ -85,17 +108,23 @@ impl<H> Name for Permanode<H>
 where
     H: LauncherSender<PermanodeBuilder<H>>,
 {
-    fn set_name(self) -> Self {
-        todo!()
+    fn set_name(mut self) -> Self {
+        self.service.update_name("Permanode".to_string());
+        self
     }
 
     fn get_name(&self) -> String {
-        todo!()
+        self.service.get_name()
     }
 }
 
 pub enum PermanodeEvent<T> {
     Passthrough(T),
+    Children(PermanodeChild),
+}
+
+pub enum PermanodeChild {
+    Listener(Service),
 }
 
 #[derive(Deserialize, Serialize, Clone)]

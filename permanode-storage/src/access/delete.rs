@@ -3,7 +3,7 @@ use super::*;
 macro_rules! impl_delete {
     ($keyspace:ty: <$key:ty> -> $block:block) => {
         impl Delete<$key> for $keyspace {
-            fn delete(&self, key: &$key) -> DeleteQuery<$key>
+            fn delete(&self, key: &$key) -> DeleteQuery<Self, $key>
             $block
         }
     };

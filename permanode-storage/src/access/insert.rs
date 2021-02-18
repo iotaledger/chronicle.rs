@@ -3,7 +3,7 @@ use super::*;
 macro_rules! impl_insert {
     ($keyspace:ty: <$val:ty> -> $block:block) => {
         impl Insert<$val> for $keyspace {
-            fn insert(&self, value: &$val) -> InsertQuery<$val>
+            fn insert(&self, value: &$val) -> InsertQuery<Self, $val>
             $block
         }
     };

@@ -29,6 +29,12 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<H> for Permanode<H> {
                             supervisor.passthrough(other_app_event, self.get_name());
                         }
                     },
+                    PermanodeEvent::Children(child) => match child {
+                        PermanodeChild::Listener(service) => {
+                            self.service.update_microservice(service.get_name(), service);
+                            supervisor.status_change(self.service.clone());
+                        }
+                    },
                 }
             }
             Ok(())

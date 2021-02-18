@@ -46,13 +46,10 @@ pub use scylla_cql::{
     CqlError,
     Decoder,
     Frame,
-    RowsDecoder,
-    VoidDecoder,
+    Query,
 };
 
 mod delete;
 mod insert;
 mod select;
 mod update;
-
-impl VoidDecoder for Mainnet {}

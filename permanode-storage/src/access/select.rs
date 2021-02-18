@@ -1,27 +1,39 @@
 use super::*;
 
-macro_rules! impl_select {
-    ($keyspace:ty: <$key:ty, $val:ty> -> $block:block) => {
-        impl Select<$key, $val> for $keyspace {
-            fn select(&self, key: &$key) -> SelectQuery<$key, $val>
-            $block
-        }
-    };
+impl Select<MessageId, Message> for Mainnet {
+    fn select(&self, key: &MessageId) -> SelectQuery<Self, MessageId, Message> {
+        let query = Query::new()
+            .statement("SELECT message from mainnet.messages WHERE messsage_id = ?")
+            .consistency(scylla_cql::Consistency::One)
+            .value(key.to_string())
+            .build();
+
+        SelectQuery::new(query)
+    }
+
+    fn decode(decoder: Decoder) -> Result<Option<Message>, CqlError> {
+        todo!()
+    }
 }
 
-macro_rules! impl_decode {
-    ($keyspace:ty: <$val:ty> -> $block:block) => {
-        impl RowsDecoder<$val> for $keyspace {
-            fn try_decode(decoder: Decoder) -> Result<Option<$val>, CqlError>
-            $block
-        }
-    };
+impl Select<MessageId, MessageMetadata> for Mainnet {
+    fn select(&self, key: &MessageId) -> SelectQuery<Self, MessageId, MessageMetadata> {
+        let query = Query::new()
+            .statement("SELECT metadata from mainnet.messages WHERE messsage_id = ?")
+            .consistency(scylla_cql::Consistency::One)
+            .value(key.to_string())
+            .build();
+
+        SelectQuery::new(query)
+    }
+
+    fn decode(decoder: Decoder) -> Result<Option<MessageMetadata>, CqlError> {
+        todo!()
+    }
 }
 
-impl_select!(Mainnet: <MessageId, Message> -> { todo!() });
-impl_select!(Mainnet: <MessageId, MessageMetadata> -> { todo!() });
-impl_decode!(Mainnet: <Message> -> { todo!()} );
-impl_decode!(Mainnet: <MessageMetadata> -> { todo!()} );
+// impl_select!(Mainnet: <MessageId, Message> -> { todo!() }, { todo!() });
+// impl_select!(Mainnet: <MessageId, MessageMetadata> -> { todo!() }, { todo!() });
 // impl_select!(Mainnet: <(HashedIndex, MessageId), ()> -> { todo!() });
 // impl_select!(Mainnet: <OutputId, CreatedOutput> -> { todo!() });
 // impl_select!(Mainnet: <OutputId, ConsumedOutput> -> { todo!() });

@@ -1,8 +1,3 @@
-use std::{
-    borrow::Cow,
-    str::FromStr,
-};
-
 use super::*;
 use mpsc::unbounded_channel;
 use permanode_storage::{
@@ -10,7 +5,6 @@ use permanode_storage::{
         MessageId,
         MessageMetadata,
         ReporterEvent,
-        RowsDecoder,
         SelectQuery,
     },
     keyspaces::Mainnet,
@@ -20,21 +14,26 @@ use rocket::{
     response::content::Json,
 };
 use scylla::ring::Ring;
-use scylla_cql::{
-    CqlError,
-    Query,
-};
 use serde::Serialize;
+use std::{
+    borrow::Cow,
+    str::FromStr,
+};
 use tokio::sync::mpsc;
 
 #[async_trait]
 impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for Listener {
     async fn event_loop(
         &mut self,
-        status: Result<(), Need>,
+        _status: Result<(), Need>,
         supervisor: &mut Option<PermanodeSender<H>>,
     ) -> Result<(), Need> {
-        std::env::set_var("ROCKET_PORT", "3000");
+        self.service.update_status(ServiceStatus::Running);
+        if let Some(ref mut supervisor) = supervisor {
+            supervisor
+                .send(PermanodeEvent::Children(PermanodeChild::Listener(self.service.clone())))
+                .map_err(|_| Need::Abort)?;
+        }
         rocket::ignite()
             .mount(
                 "/",
@@ -47,17 +46,19 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for L
             )
             .launch()
             .await
-            .map_err(|e| Need::Abort)
+            .map_err(|_| Need::Abort)
     }
 }
 
-async fn query<S: RowsDecoder<V>, V: Serialize>(keyspace: S, query: Query) -> Result<Json<String>, Cow<'static, str>> {
+async fn query<V: Serialize, S: Select<K, V>, K>(
+    mut select_query: SelectQuery<S, K, V>,
+) -> Result<Json<String>, Cow<'static, str>> {
     let (sender, mut inbox) = unbounded_channel::<Event>();
     let worker = Box::new(DecoderWorker(sender));
 
     let request = ReporterEvent::Request {
         worker,
-        payload: query.0,
+        payload: select_query.take().0,
     };
 
     Ring::send_local_random_replica(rand::random::<i64>(), request);
@@ -65,7 +66,7 @@ async fn query<S: RowsDecoder<V>, V: Serialize>(keyspace: S, query: Query) -> Re
     while let Some(event) = inbox.recv().await {
         match event {
             Event::Response { giveload } => {
-                let res: Result<Option<V>, CqlError> = S::try_decode(giveload.into());
+                let res = select_query.decode(giveload);
                 if let Ok(Some(message)) = res {
                     return Ok(Json(serde_json::to_string(&message).unwrap()));
                 }
@@ -79,17 +80,14 @@ async fn query<S: RowsDecoder<V>, V: Serialize>(keyspace: S, query: Query) -> Re
 
 #[get("/messages/<message_id>")]
 async fn get_message(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
-    let keyspace = Mainnet;
-    let select_query: SelectQuery<MessageId, Message> = keyspace.select(&MessageId::from_str(&message_id).unwrap());
-    query::<_, Message>(keyspace, select_query.into_inner()).await
+    let select_query: SelectQuery<_, _, Message> = Mainnet.select(&MessageId::from_str(&message_id).unwrap());
+    query(select_query).await
 }
 
 #[get("/messages/<message_id>/metadata")]
 async fn get_message_metadata(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
-    let keyspace = Mainnet;
-    let select_query: SelectQuery<MessageId, MessageMetadata> =
-        keyspace.select(&MessageId::from_str(&message_id).unwrap());
-    query::<_, Message>(keyspace, select_query.into_inner()).await
+    let select_query: SelectQuery<_, _, MessageMetadata> = Mainnet.select(&MessageId::from_str(&message_id).unwrap());
+    query(select_query).await
 }
 
 #[get("/messages/<message_id>/children")]
