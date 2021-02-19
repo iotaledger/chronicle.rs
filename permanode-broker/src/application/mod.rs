@@ -57,6 +57,7 @@ impl<H: BrokerScope> Clone for BrokerHandle<H> {
 pub struct PermanodeBroker<H: BrokerScope> {
     service: Service,
     websockets: HashMap<String, WsTx>,
+    listener_handle: Option<ListenerHandle>,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
 }
@@ -109,6 +110,7 @@ impl<H: BrokerScope> Builder for BrokerBuilder<H> {
         PermanodeBroker::<H> {
             service: Service::new(),
             websockets: HashMap::new(),
+            listener_handle: self.listener_handle,
             handle,
             inbox,
         }

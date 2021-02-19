@@ -6,7 +6,7 @@ use tokio::net::TcpListener;
 #[async_trait::async_trait]
 impl<H> Starter<H> for BrokerBuilder<H>
 where
-    H: LauncherSender<BrokerBuilder<H>>,
+    H: BrokerScope,
 {
     type Ok = BrokerHandle<H>;
 

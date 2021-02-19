@@ -1,10 +1,10 @@
 use super::*;
 
 #[async_trait]
-impl<H: LauncherSender<BrokerBuilder<H>>> EventLoop<H> for PermanodeBroker<H> {
+impl<H: BrokerScope> EventLoop<H> for PermanodeBroker<H> {
     async fn event_loop(
         &mut self,
-        status: Result<(), chronicle::Need>,
+        _status: Result<(), chronicle::Need>,
         supervisor: &mut Option<H>,
     ) -> Result<(), chronicle::Need> {
         if let Some(ref mut supervisor) = supervisor {
@@ -20,13 +20,15 @@ impl<H: LauncherSender<BrokerBuilder<H>>> EventLoop<H> for PermanodeBroker<H> {
                                     // client.
                                     supervisor.shutdown_app(&self.get_name());
                                     // shutdown children
-
+                                    if let Some(listener) = self.listener_handle.take() {
+                                        listener.shutdown();
+                                    }
                                     // drop self handler
                                     self.handle.take();
                                 }
                             }
                             BrokerThrough::Topology(t) => {
-                                todo!()
+                                todo!("add/remove feed source")
                             }
                         },
                         Err(other_app_event) => {
@@ -34,7 +36,7 @@ impl<H: LauncherSender<BrokerBuilder<H>>> EventLoop<H> for PermanodeBroker<H> {
                         }
                     },
                     BrokerEvent::Children(child) => {
-                        
+
                     }
                 }
             }
