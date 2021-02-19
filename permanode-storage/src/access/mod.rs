@@ -1,5 +1,4 @@
 use crate::keyspaces::*;
-use async_trait::async_trait;
 pub use bee_ledger::{
     balance::Balance,
     model::{

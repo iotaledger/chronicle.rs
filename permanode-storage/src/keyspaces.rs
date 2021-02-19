@@ -1,8 +1,10 @@
+pub use scylla::access::keyspace::Keyspace;
 use scylla::{
-    access::keyspace::Keyspace,
     ring::Ring,
     stage::ReporterEvent,
 };
+
+#[derive(Default)]
 pub struct Mainnet;
 
 impl Keyspace for Mainnet {
