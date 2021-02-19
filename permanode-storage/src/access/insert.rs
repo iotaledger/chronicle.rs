@@ -1,15 +1,15 @@
 use super::*;
 
 macro_rules! impl_insert {
-    ($keyspace:ty: <$val:ty> -> $block:block) => {
-        impl Insert<$val> for $keyspace {
-            fn insert(&self, value: &$val) -> InsertQuery<Self, $val>
+    ($keyspace:ty: <$key:ty, $val:ty> -> $block:block) => {
+        impl<'a> Insert<'a, $key, $val> for $keyspace {
+            fn get_request(&self, key: &$key, value: &$val) -> InsertRequest<Self, $key, $val>
             $block
         }
     };
 }
 
-impl_insert!(Mainnet: <Message> -> { todo!() });
+impl_insert!(Mainnet: <MessageId, Message> -> { todo!() });
 // impl_insert!(Mainnet: <MessageId, MessageMetadata> -> { todo!() });
 // impl_insert!(Mainnet: <(MessageId, MessageId), ()> -> { todo!() });
 // impl_insert!(Mainnet: <(HashedIndex, MessageId), ()> -> { todo!() });

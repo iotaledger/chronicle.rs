@@ -7,8 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "rework-access-traits" }
-scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "rework-access-traits" }
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
+scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
 bee-ledger = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}
 bee-snapshot = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2"}

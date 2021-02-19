@@ -2,10 +2,11 @@ use super::*;
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
+        GetSelectRequest,
         MessageId,
         MessageMetadata,
         ReporterEvent,
-        SelectQuery,
+        SelectRequest,
     },
     keyspaces::Mainnet,
 };
@@ -50,23 +51,18 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for L
     }
 }
 
-async fn query<V: Serialize, S: Select<K, V>, K>(
-    mut select_query: SelectQuery<S, K, V>,
+async fn query<'a, V: Serialize, S: Select<'a, K, V>, K>(
+    request: SelectRequest<'a, S, K, V>,
 ) -> Result<Json<String>, Cow<'static, str>> {
     let (sender, mut inbox) = unbounded_channel::<Event>();
     let worker = Box::new(DecoderWorker(sender));
 
-    let request = ReporterEvent::Request {
-        worker,
-        payload: select_query.take(),
-    };
-
-    Ring::send_local_random_replica(rand::random::<i64>(), request);
+    let decoder = request.send_local(worker);
 
     while let Some(event) = inbox.recv().await {
         match event {
             Event::Response { giveload } => {
-                let res = select_query.decode(giveload);
+                let res = decoder.decode(giveload);
                 if let Ok(Some(message)) = res {
                     return Ok(Json(serde_json::to_string(&message).unwrap()));
                 }
@@ -80,14 +76,14 @@ async fn query<V: Serialize, S: Select<K, V>, K>(
 
 #[get("/messages/<message_id>")]
 async fn get_message(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
-    let select_query: SelectQuery<_, _, Message> = Mainnet.select(&MessageId::from_str(&message_id).unwrap());
-    query(select_query).await
+    let request = Mainnet.select::<Message>(&MessageId::from_str(&message_id).unwrap());
+    query(request).await
 }
 
 #[get("/messages/<message_id>/metadata")]
 async fn get_message_metadata(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
-    let select_query: SelectQuery<_, _, MessageMetadata> = Mainnet.select(&MessageId::from_str(&message_id).unwrap());
-    query(select_query).await
+    let request = Mainnet.select::<MessageMetadata>(&MessageId::from_str(&message_id).unwrap());
+    query(request).await
 }
 
 #[get("/messages/<message_id>/children")]

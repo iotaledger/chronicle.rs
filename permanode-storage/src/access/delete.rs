@@ -1,15 +1,15 @@
 use super::*;
 
 macro_rules! impl_delete {
-    ($keyspace:ty: <$key:ty> -> $block:block) => {
-        impl Delete<$key> for $keyspace {
-            fn delete(&self, key: &$key) -> DeleteQuery<Self, $key>
+    ($keyspace:ty: <$key:ty, $val:ty> -> $block:block) => {
+        impl<'a> Delete<'a, $key, $val> for $keyspace {
+            fn get_request(&self, key: &$key) -> DeleteRequest<Self, $key, $val>
             $block
         }
     };
 }
 
-impl_delete!(Mainnet: <MessageId> -> { todo!() });
+impl_delete!(Mainnet: <Message, MessageId> -> { todo!() });
 // impl_delete!(Mainnet: <(MessageId, MessageId)> -> { todo!() });
 // impl_delete!(Mainnet: <(HashedIndex, MessageId)> -> { todo!() });
 // impl_delete!(Mainnet: <OutputId> -> { todo!() });

@@ -42,6 +42,7 @@ pub use scylla::{
     worker::WorkerError,
     Worker,
 };
+use scylla_cql::VoidDecoder;
 pub use scylla_cql::{
     CqlError,
     Decoder,
@@ -53,3 +54,5 @@ mod delete;
 mod insert;
 mod select;
 mod update;
+
+impl VoidDecoder for Mainnet {}

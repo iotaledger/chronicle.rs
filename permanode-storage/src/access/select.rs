@@ -1,33 +1,50 @@
+use scylla::access::keyspace::Keyspace;
+use scylla_cql::RowsDecoder;
+
 use super::*;
 
-impl Select<MessageId, Message> for Mainnet {
-    fn select(&self, key: &MessageId) -> SelectQuery<Self, MessageId, Message> {
+impl<'a> Select<'a, MessageId, Message> for Mainnet {
+    fn get_request(&'a self, key: &MessageId) -> SelectRequest<'a, Self, MessageId, Message> {
         let query = Query::new()
-            .statement("SELECT message from mainnet.messages WHERE messsage_id = ?")
+            .statement(&format!(
+                "SELECT message from {}.messages WHERE messsage_id = ?",
+                Self::name()
+            ))
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
 
-        SelectQuery::new(query)
-    }
+        let token = 1;
 
-    fn decode(decoder: Decoder) -> Result<Option<Message>, CqlError> {
+        SelectRequest::new(query, token, self)
+    }
+}
+
+impl RowsDecoder<MessageId, Message> for Mainnet {
+    fn try_decode(decoder: Decoder) -> Result<Option<Message>, CqlError> {
         todo!()
     }
 }
 
-impl Select<MessageId, MessageMetadata> for Mainnet {
-    fn select(&self, key: &MessageId) -> SelectQuery<Self, MessageId, MessageMetadata> {
+impl<'a> Select<'a, MessageId, MessageMetadata> for Mainnet {
+    fn get_request(&self, key: &MessageId) -> SelectRequest<Self, MessageId, MessageMetadata> {
         let query = Query::new()
-            .statement("SELECT metadata from mainnet.messages WHERE messsage_id = ?")
+            .statement(&format!(
+                "SELECT metadata from {}.messages WHERE messsage_id = ?",
+                Self::name()
+            ))
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
 
-        SelectQuery::new(query)
-    }
+        let token = 1;
 
-    fn decode(decoder: Decoder) -> Result<Option<MessageMetadata>, CqlError> {
+        SelectRequest::new(query, token, self)
+    }
+}
+
+impl RowsDecoder<MessageId, MessageMetadata> for Mainnet {
+    fn try_decode(decoder: Decoder) -> Result<Option<MessageMetadata>, CqlError> {
         todo!()
     }
 }

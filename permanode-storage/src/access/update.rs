@@ -2,8 +2,8 @@ use super::*;
 
 macro_rules! impl_update {
     ($keyspace:ty: <$key:ty, $val:ty> -> $block:block) => {
-        impl Update<$key, $val> for $keyspace {
-            fn update(&self, key: &$key, value: &$val) -> UpdateQuery<Self, $key, $val>
+        impl<'a> Update<'a, $key, $val> for $keyspace {
+            fn get_request(&self, key: &$key, value: &$val) -> UpdateRequest<Self, $key, $val>
             $block
         }
     };
