@@ -12,6 +12,7 @@ log = "0.4.14"
 tokio-tungstenite = "0.13.0"
 futures = "0.3"
 async-trait = "*"
+paho-mqtt = "0.9.1"
 
 [dependencies.tokio]
 version = "1.2"
