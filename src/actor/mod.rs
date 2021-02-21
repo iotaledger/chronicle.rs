@@ -11,16 +11,17 @@ pub use end::End;
 pub use event_loop::EventLoop;
 pub use init::Init;
 pub use launcher::*;
-pub use name::Name;
 pub use passthrough::Passthrough;
-pub use preparer::Preparer;
 pub use start::StartActor;
 pub use starter::Starter;
 pub use supervisor::*;
 pub use terminating::Terminating;
 
 #[async_trait]
-pub trait Actor<H: AknShutdown<Self> + 'static>: StartActor<H> + Name {
+pub trait Actor<H: AknShutdown<Self> + 'static>: StartActor<H> {}
+
+/// Runtime to be implemented on the Service
+pub trait Runtime {
     fn spawn<T>(task: T) -> tokio::task::JoinHandle<T::Output>
     where
         T: core::future::Future + Send + 'static,
@@ -28,6 +29,10 @@ pub trait Actor<H: AknShutdown<Self> + 'static>: StartActor<H> + Name {
     {
         tokio::spawn(task)
     }
+    fn spawn_child<T>(&mut self, task: T, service: Self) -> tokio::task::JoinHandle<T::Output>
+    where
+        T: core::future::Future + Send + 'static,
+        T::Output: Send + 'static;
     fn sleep(duration: core::time::Duration) -> tokio::time::Sleep {
         tokio::time::sleep(duration)
     }
@@ -36,6 +41,17 @@ pub trait Actor<H: AknShutdown<Self> + 'static>: StartActor<H> + Name {
     }
     fn yield_now() -> YieldNow {
         YieldNow::default()
+    }
+}
+
+impl Runtime for Service {
+    fn spawn_child<T>(&mut self, task: T, service: Self) -> tokio::task::JoinHandle<T::Output>
+    where
+        T: core::future::Future + Send + 'static,
+        T::Output: Send + 'static,
+    {
+        self.update_microservice(service.get_name(), service);
+        Self::spawn(task)
     }
 }
 
@@ -59,7 +75,7 @@ impl Future for YieldNow {
     }
 }
 
-impl<T: super::Name + super::EventLoop<H> + super::Init<H> + super::Terminating<H>, H: Send + 'static + AknShutdown<Self>> Actor<H> for T {}
+impl<T: super::EventLoop<H> + super::Init<H> + super::Terminating<H>, H: Send + 'static + AknShutdown<Self>> Actor<H> for T {}
 
 impl<T, H: 'static> StartActor<H> for T
 where
@@ -80,9 +96,7 @@ mod end;
 mod event_loop;
 mod init;
 mod launcher;
-mod name;
 mod passthrough;
-mod preparer;
 mod start;
 mod starter;
 mod supervisor;

@@ -19,23 +19,12 @@ impl Builder for HelloWorldBuilder {
         HelloWorld {
             tx,
             rx,
-            service: Service::new(),
+            service: Service::new().set_name("HelloWorld".to_string()),
         }
-        .set_name()
     }
 }
 
 impl<H: LauncherSender<HelloWorldBuilder>> AppBuilder<H> for HelloWorldBuilder {}
-
-impl Name for HelloWorld {
-    fn get_name(&self) -> String {
-        self.service.get_name()
-    }
-    fn set_name(mut self) -> Self {
-        self.service.update_name("HelloWorld".to_string());
-        self
-    }
-}
 
 impl Passthrough<HelloWorldEvent> for HelloWorldSender {
     fn passthrough(&mut self, _event: HelloWorldEvent, _from_app_name: String) {}
@@ -72,18 +61,18 @@ impl<H: LauncherSender<Self>> Starter<H> for HelloWorldBuilder {
 
 #[async_trait]
 impl<H: LauncherSender<HelloWorldBuilder>> Init<H> for HelloWorld {
-    async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
+    async fn init(&mut self, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Initializing
         self.service.update_status(ServiceStatus::Initializing);
         // tell active apps
         _supervisor.as_mut().unwrap().status_change(self.service.clone());
-        status
+        Ok(())
     }
 }
 
 #[async_trait]
 impl<H: LauncherSender<HelloWorldBuilder>> EventLoop<H> for HelloWorld {
-    async fn event_loop(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
+    async fn event_loop(&mut self, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Running
         self.service.update_status(ServiceStatus::Running);
         // tell active apps
@@ -97,16 +86,16 @@ impl<H: LauncherSender<HelloWorldBuilder>> EventLoop<H> for HelloWorld {
                 match apps_events.try_get_my_event() {
                     // event belong to self application
                     Ok(HelloWorldEvent::Shutdown) => {
-                        _supervisor.as_mut().unwrap().shutdown_app(&self.get_name());
+                        _supervisor.as_mut().unwrap().shutdown_app(&self.service.get_name());
                     }
                     // event belongs to other application, so we passthrough to the launcher in order to route it
                     // to the corresponding application
                     Err(other_app_event) => {
-                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name());
+                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.service.get_name());
                     }
                 }
             } else {
-                return Err(Need::Abort);
+                return Err(Need::Abort(AbortType::Error));
             };
         }
         while let Some(HelloWorldEvent::Shutdown) = self.rx.recv().await {
@@ -114,7 +103,7 @@ impl<H: LauncherSender<HelloWorldBuilder>> EventLoop<H> for HelloWorld {
             self.rx.close();
             // or break; NOTE: the application must make sure to shutdown all of its children
         }
-        _status
+        Ok(())
     }
 }
 
@@ -167,23 +156,12 @@ impl Builder for HowdyBuilder {
         Howdy {
             tx,
             rx,
-            service: Service::new(),
+            service: Service::new().set_name("Howdy".to_string()),
         }
-        .set_name()
     }
 }
 
 impl<H: LauncherSender<HowdyBuilder>> AppBuilder<H> for HowdyBuilder {}
-
-impl Name for Howdy {
-    fn get_name(&self) -> String {
-        self.service.get_name()
-    }
-    fn set_name(mut self) -> Self {
-        self.service.update_name("Howdy".to_string());
-        self
-    }
-}
 
 impl Passthrough<HowdyEvent> for HowdySender {
     fn passthrough(&mut self, _event: HowdyEvent, _from_app_name: String) {}
@@ -218,18 +196,18 @@ impl<H: LauncherSender<HowdyBuilder>> Starter<H> for HowdyBuilder {
 
 #[async_trait]
 impl<H: LauncherSender<HowdyBuilder>> Init<H> for Howdy {
-    async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
+    async fn init(&mut self, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Initializing
         self.service.update_status(ServiceStatus::Initializing);
         // tell active apps
         _supervisor.as_mut().unwrap().status_change(self.service.clone());
-        status
+        Ok(())
     }
 }
 
 #[async_trait]
 impl<H: LauncherSender<HowdyBuilder>> EventLoop<H> for Howdy {
-    async fn event_loop(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<H>) -> Result<(), Need> {
+    async fn event_loop(&mut self, _supervisor: &mut Option<H>) -> Result<(), Need> {
         // update service to be Running
         self.service.update_status(ServiceStatus::Running);
         // tell active apps
@@ -243,16 +221,16 @@ impl<H: LauncherSender<HowdyBuilder>> EventLoop<H> for Howdy {
                 match apps_events.try_get_my_event() {
                     // event belong to self application
                     Ok(HowdyEvent::Shutdown) => {
-                        _supervisor.as_mut().unwrap().shutdown_app(&self.get_name());
+                        _supervisor.as_mut().unwrap().shutdown_app(&self.service.get_name());
                     }
                     // event belong to other application, so we passthrough to the launcher in order to route it
                     // to the corresponding application
                     Err(other_app_event) => {
-                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name());
+                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.service.get_name());
                     }
                 }
             } else {
-                return Err(Need::Abort);
+                return Err(Need::Abort(AbortType::Error));
             };
         }
         while let Some(HowdyEvent::Shutdown) = self.rx.recv().await {
@@ -260,7 +238,7 @@ impl<H: LauncherSender<HowdyBuilder>> EventLoop<H> for Howdy {
             self.rx.close();
             // or break; NOTE: the application must make sure to shutdown all of its children
         }
-        _status
+        Ok(())
     }
 }
 

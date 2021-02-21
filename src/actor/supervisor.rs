@@ -4,16 +4,15 @@ use std::time::Duration;
 pub enum Need {
     Restart,
     RescheduleAfter(Duration),
-    Abort,
+    Abort(AbortType),
 }
 
-/// Should be implemented on the Actor(or pid) that should become a child
-pub trait Child<H, S>: Send {
-    fn handle_shutdown(self, handle: Option<H>, supervisor_state: &mut S)
-    where
-        Self: Sized;
+#[repr(u8)]
+pub enum AbortType {
+    Error = 0,
+    Manual = 1,
+    Timeout = 2,
 }
-
 /// Should be implemented on the supervisor_handle
 #[async_trait]
 pub trait AknShutdown<A>: Send {

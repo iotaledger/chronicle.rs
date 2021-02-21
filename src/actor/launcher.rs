@@ -289,7 +289,7 @@ macro_rules! launcher {
                 }
             )*
             pub fn to_apps(self) -> $apps {
-                let service = Service::new();
+                let service = Service::new().set_name(stringify!($apps).to_string());
                 let apps_names = vec![ $(stringify!($app).to_string()),*];
                 let apps_handlers = AppsHandlers::default();
                 let mut apps_deps: AppsDeps = AppsDeps::default();
@@ -324,7 +324,7 @@ macro_rules! launcher {
                     $(
                         $field: self.$field.unwrap(),
                     )*
-                }.set_name()
+                }
             }
 
             $(
@@ -545,38 +545,27 @@ macro_rules! launcher {
                     }
                 } else {
                     // Apps is stopping, and we shouldn't start any application durring this state,
-                    warn!("cannot starts {}, because {} is stopping", app_name, self.get_name());
+                    warn!("cannot starts {}, because {} is stopping", app_name, self.service.get_name());
                 }
-            }
-        }
-
-        /// Name of the launcher
-        impl Name for $apps {
-            fn get_name(&self) -> String {
-                self.service.name.clone()
-            }
-            fn set_name(mut self) -> Self {
-                self.service.update_name(stringify!($apps).to_string().to_string());
-                self
             }
         }
 
         #[async_trait::async_trait]
         impl Init<NullSupervisor> for $apps {
-            async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
+            async fn init(&mut self, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
                 tokio::spawn(ctrl_c(self.tx.clone()));
                 info!("Initializing {} Apps", self.app_count);
                 // update service to be Initializing
                 self.service.update_status(ServiceStatus::Initializing);
                 // tell active apps
                 self.launcher_status_change();
-                status
+                Ok(())
             }
         }
 
         #[async_trait::async_trait]
         impl EventLoop<NullSupervisor> for $apps {
-            async fn event_loop(&mut self, status: Result<(), Need>, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
+            async fn event_loop(&mut self,_supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
                 // update service to be Running
                 self.service.update_status(ServiceStatus::Running);
                 // tell active apps
@@ -641,7 +630,7 @@ macro_rules! launcher {
                                                     warn!("cannot restart {}, as we asked to shutdown", app_name);
                                                 }
                                             }
-                                            Err(Need::Abort) => {
+                                            Err(Need::Abort(_)) => {
                                                 if app_handler_opt.is_some() {
                                                     // the application is aborting
                                                     info!("{} aborted itself", app_name)
@@ -734,17 +723,17 @@ macro_rules! launcher {
                         }
                     }
                 }
-                status
+                Ok(())
             }
         }
 
         #[async_trait::async_trait]
         impl Terminating<NullSupervisor> for $apps {
             async fn terminating(&mut self, mut status: Result<(), Need>, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
-                if let Err(Need::Abort) = status {
+                if let Err(Need::Abort(_)) = status {
                     let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
                     let _ = self.tx.0.send(exit_program_event);
-                    status = self.event_loop(status, _supervisor).await;
+                    status = self.event_loop(_supervisor).await;
                 }
                 // update service to stopped
                 self.service.update_status(ServiceStatus::Stopped);
