@@ -9,6 +9,7 @@ use permanode_storage::{
         SelectRequest,
     },
     keyspaces::Mainnet,
+    types::Bee,
 };
 use rocket::{
     get,
@@ -76,13 +77,13 @@ async fn query<'a, V: Serialize, S: Select<'a, K, V>, K>(
 
 #[get("/messages/<message_id>")]
 async fn get_message(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
-    let request = Mainnet.select::<Message>(&MessageId::from_str(&message_id).unwrap());
+    let request = Mainnet.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
     query(request).await
 }
 
 #[get("/messages/<message_id>/metadata")]
 async fn get_message_metadata(message_id: String) -> Result<Json<String>, Cow<'static, str>> {
-    let request = Mainnet.select::<MessageMetadata>(&MessageId::from_str(&message_id).unwrap());
+    let request = Mainnet.select::<Bee<MessageMetadata>>(&MessageId::from_str(&message_id).unwrap().into());
     query(request).await
 }
 
