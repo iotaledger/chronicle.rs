@@ -32,3 +32,6 @@ features = [
 [dependencies.paho-mqtt]
 version = "0.9.1"
 default-features = false
+features = [
+    "bundled"
+]
