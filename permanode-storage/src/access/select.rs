@@ -7,33 +7,45 @@ use scylla_cql::{
 };
 
 impl<'a> Select<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
-    fn get_request(&'a self, key: &Bee<MessageId>) -> SelectRequest<'a, Self, Bee<MessageId>, Bee<Message>> {
-        let query = Query::new()
-            .statement(&format!(
-                "SELECT message from {}.messages WHERE message_id = ?",
-                Self::name()
-            ))
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!("SELECT message from {}.messages WHERE message_id = ?", Self::name()).into()
+    }
+
+    fn get_request(&'a self, key: &Bee<MessageId>) -> SelectRequest<'a, Self, Bee<MessageId>, Bee<Message>>
+    where
+        Self: Select<'a, Bee<MessageId>, Bee<Message>>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
 
         let token = 1;
 
-        SelectRequest::new(query, token, self)
+        SelectRequest::from_prepared(query, token, self)
     }
 }
 
 impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
-    fn get_request(&'a self, key: &Bee<MessageId>) -> SelectRequest<'a, Self, Bee<MessageId>, MessageChildren> {
-        let query = Query::new()
-            .statement(&format!(
-                "SELECT m.message
-                FROM {0}.edges e
-                JOIN {0}.messages m ON e.children = m.id
-                WHERE e.parent = ?
-                AND e.partition_id = ?",
-                Self::name()
-            ))
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT m.message_id
+            FROM {0}.edges e
+            JOIN {0}.messages m ON e.children = m.id
+            WHERE e.parent = ?
+            AND e.partition_id = ?",
+            Self::name()
+        )
+        .into()
+    }
+
+    fn get_request(&'a self, key: &Bee<MessageId>) -> SelectRequest<'a, Self, Bee<MessageId>, MessageChildren>
+    where
+        Self: Select<'a, Bee<MessageId>, MessageChildren>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             // TODO: .value(partition)
@@ -41,7 +53,7 @@ impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
 
         let token = 1;
 
-        SelectRequest::new(query, token, self)
+        SelectRequest::from_prepared(query, token, self)
     }
 }
 
@@ -56,33 +68,48 @@ impl RowsDecoder<Bee<MessageId>, MessageChildren> for Mainnet {
 }
 
 impl<'a> Select<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
-    fn get_request(&self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, Bee<MessageMetadata>> {
-        let query = Query::new()
-            .statement(&format!(
-                "SELECT metadata from {}.messages WHERE message_id = ?",
-                Self::name()
-            ))
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!("SELECT metadata from {}.messages WHERE message_id = ?", Self::name()).into()
+    }
+
+    fn get_request(&'a self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, Bee<MessageMetadata>>
+    where
+        Self: Select<'a, Bee<MessageId>, Bee<MessageMetadata>>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
 
         let token = 1;
 
-        SelectRequest::new(query, token, self)
+        SelectRequest::from_prepared(query, token, self)
     }
 }
 
 impl<'a> Select<'a, Bee<MessageId>, MessageRow> for Mainnet {
-    fn get_request(&self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, MessageRow> {
-        let query = Query::new()
-            .statement(&format!("SELECT * from {}.messages WHERE message_id = ?", Self::name()))
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT message_id, message, metadata from {}.messages WHERE message_id = ?",
+            Self::name()
+        )
+        .into()
+    }
+
+    fn get_request(&'a self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, MessageRow>
+    where
+        Self: Select<'a, Bee<MessageId>, MessageRow>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
 
         let token = 1;
 
-        SelectRequest::new(query, token, self)
+        SelectRequest::from_prepared(query, token, self)
     }
 }
 
@@ -98,19 +125,27 @@ impl RowsDecoder<Bee<MessageId>, MessageRow> for Mainnet {
 }
 
 impl<'a> Select<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
-    fn get_request(&self, key: &Bee<MilestoneIndex>) -> SelectRequest<Self, Bee<MilestoneIndex>, Bee<Milestone>> {
-        let query = Query::new()
-            .statement(&format!(
-                "SELECT milestone from {}.milestones WHERE milestone_index = ?",
-                Self::name()
-            ))
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT milestone from {}.milestones WHERE milestone_index = ?",
+            Self::name()
+        )
+        .into()
+    }
+
+    fn get_request(&'a self, key: &Bee<MilestoneIndex>) -> SelectRequest<Self, Bee<MilestoneIndex>, Bee<Milestone>>
+    where
+        Self: Select<'a, Bee<MilestoneIndex>, Bee<Milestone>>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
 
         let token = 1;
 
-        SelectRequest::new(query, token, self)
+        SelectRequest::from_prepared(query, token, self)
     }
 }
 
@@ -125,16 +160,24 @@ impl RowsDecoder<Bee<HashedIndex>, IndexMessages> for Mainnet {
 }
 
 impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
-    fn get_request(&self, key: &Bee<HashedIndex>) -> SelectRequest<Self, Bee<HashedIndex>, IndexMessages> {
-        let query = Query::new()
-            .statement(&format!(
-                "SELECT m.message
-                FROM {0}.index_lookup i
-                JOIN {0}.messages m ON i.message_id = m.id
-                WHERE i.hashed_index = ?
-                AND i.partition_id = ?",
-                Self::name()
-            ))
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT m.message_id
+            FROM {0}.index_lookup i
+            JOIN {0}.messages m ON i.message_id = m.id
+            WHERE i.hashed_index = ?
+            AND i.partition_id = ?",
+            Self::name()
+        )
+        .into()
+    }
+
+    fn get_request(&'a self, key: &Bee<HashedIndex>) -> SelectRequest<Self, Bee<HashedIndex>, IndexMessages>
+    where
+        Self: Select<'a, Bee<HashedIndex>, IndexMessages>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
             .consistency(scylla_cql::Consistency::One)
             .value(key.as_ref())
             // TODO: .value(partition)
@@ -142,7 +185,7 @@ impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
 
         let token = 1;
 
-        SelectRequest::new(query, token, self)
+        SelectRequest::from_prepared(query, token, self)
     }
 }
 

@@ -1,15 +1,22 @@
 use super::*;
 
-macro_rules! impl_update {
-    ($keyspace:ty: <$key:ty, $val:ty> -> $block:block) => {
-        impl<'a> Update<'a, $key, $val> for $keyspace {
-            fn get_request(&self, key: &$key, value: &$val) -> UpdateRequest<Self, $key, $val>
-            $block
-        }
-    };
+impl<'a> Update<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        todo!()
+    }
+
+    fn get_request(
+        &'a self,
+        key: &Bee<MessageId>,
+        value: &Bee<Message>,
+    ) -> UpdateRequest<'a, Self, Bee<MessageId>, Bee<Message>>
+    where
+        Self: Update<'a, Bee<MessageId>, Bee<Message>>,
+    {
+        todo!()
+    }
 }
 
-impl_update!(Mainnet: <MessageId, Message> -> { todo!() });
 // impl_update!(Mainnet: <MessageId, MessageMetadata> -> { todo!() });
 // impl_update!(Mainnet: <(MessageId, MessageId), ()> -> { todo!() });
 // impl_update!(Mainnet: <(HashedIndex, MessageId), ()> -> { todo!() });

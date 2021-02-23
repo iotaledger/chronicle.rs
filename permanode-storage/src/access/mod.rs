@@ -32,6 +32,7 @@ use scylla_cql::{
 pub use scylla_cql::{
     CqlError,
     Decoder,
+    Execute,
     Frame,
     Query,
 };

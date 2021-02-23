@@ -16,4 +16,4 @@ rows!(
 
 simple_rows!(rows: IndexMessages, row: Bee<Message>, row_into: Bee<Message>);
 
-simple_rows!(rows: MessageChildren, row: Bee<Message>, row_into: Bee<Message>);
+simple_rows!(rows: MessageChildren, row: Bee<MessageId>, row_into: Bee<MessageId>);
