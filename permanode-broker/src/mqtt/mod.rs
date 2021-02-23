@@ -2,13 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::application::*;
-use paho_mqtt::{AsyncClient, Message};
-use futures::stream::{Stream, StreamExt};
-use std::time::Duration;
+use futures::stream::{
+    Stream,
+    StreamExt,
+};
+use paho_mqtt::{
+    AsyncClient,
+    Message,
+};
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    ops::{Deref, DerefMut},
+    ops::{
+        Deref,
+        DerefMut,
+    },
+    time::Duration,
 };
 
 mod event_loop;
@@ -28,7 +37,7 @@ pub struct MqttHandle {
 }
 /// MqttInbox is used to recv events
 pub struct MqttInbox {
-    stream: Box<dyn Stream<Item = Option<Message>> + Send + std::marker::Unpin>
+    stream: Box<dyn Stream<Item = Option<Message>> + Send + std::marker::Unpin>,
 }
 
 impl Shutdown for MqttHandle {
@@ -47,7 +56,7 @@ pub struct Mqtt<T> {
     stream_capacity: usize,
     handle: Option<MqttHandle>,
     inbox: Option<MqttInbox>,
-    _marker: std::marker::PhantomData<T>
+    _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> Mqtt<T> {
@@ -102,7 +111,8 @@ impl<T: Topic> Builder for MqttBuilder<T> {
             handle,
             inbox,
             _marker: std::marker::PhantomData::<T>,
-        }.set_name()
+        }
+        .set_name()
     }
 }
 
@@ -120,7 +130,7 @@ impl<T: Topic> Name for Mqtt<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: Topic,H: BrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
+impl<T: Topic, H: BrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Mqtt<T>, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Mqtt(_state.service.clone()));

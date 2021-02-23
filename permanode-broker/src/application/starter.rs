@@ -1,6 +1,6 @@
 use super::*;
-use std::borrow::Cow;
 use futures::future::AbortHandle;
+use std::borrow::Cow;
 use tokio::net::TcpListener;
 
 #[async_trait::async_trait]

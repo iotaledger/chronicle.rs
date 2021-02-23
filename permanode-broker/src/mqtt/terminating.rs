@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<T: Topic ,H: BrokerScope> Terminating<BrokerHandle<H>> for Mqtt<T> {
+impl<T: Topic, H: BrokerScope> Terminating<BrokerHandle<H>> for Mqtt<T> {
     async fn terminating(
         &mut self,
         _status: Result<(), Need>,

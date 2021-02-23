@@ -16,7 +16,7 @@ impl<H: BrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
                 // TODO handle Messages topic
                 println!("{}", msg);
             } else {
-                return Err(Need::Restart)
+                return Err(Need::Restart);
             }
         }
         Ok(())
@@ -37,7 +37,7 @@ impl<H: BrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Metadata> {
                 println!("{}", msg);
             } else {
                 // None, we were disconnected, so we ask supervisor for reconnect
-                return Err(Need::Restart)
+                return Err(Need::Restart);
             }
         }
         Ok(())

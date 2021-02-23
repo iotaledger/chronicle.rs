@@ -4,11 +4,12 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<T: Topic,H: BrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
+impl<T: Topic, H: BrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         // create async client
-        let mut cli = AsyncClient::new((&self.address.to_string()[..], &self.get_name()[..])).map_err(|_| Need::Abort)?;
+        let mut cli =
+            AsyncClient::new((&self.address.to_string()[..], &self.get_name()[..])).map_err(|_| Need::Abort)?;
         let stream = cli.get_stream(self.stream_capacity);
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
             .keep_alive_interval(Duration::from_secs(20))
@@ -21,11 +22,13 @@ impl<T: Topic,H: BrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
         // subscribe to T::name() topic with T::qos()
         cli.subscribe(T::name(), T::qos()).await.map_err(|_| Need::Restart)?;
         // TODO send client/handle to supervisor
-        
+
         let event = BrokerEvent::Children(BrokerChild::Mqtt(self.service.clone()));
         let _ = supervisor.as_mut().unwrap().send(event);
         // create inbox
-        self.inbox = Some(MqttInbox {stream: Box::new(stream)});
+        self.inbox = Some(MqttInbox {
+            stream: Box::new(stream),
+        });
         status
     }
 }

@@ -35,9 +35,7 @@ impl<H: BrokerScope> EventLoop<H> for PermanodeBroker<H> {
                             supervisor.passthrough(other_app_event, self.get_name());
                         }
                     },
-                    BrokerEvent::Children(child) => {
-
-                    }
+                    BrokerEvent::Children(child) => {}
                 }
             }
             Ok(())

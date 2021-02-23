@@ -3,13 +3,20 @@
 
 use crate::application::*;
 use futures::{
-    stream::{SplitSink, SplitStream},
+    stream::{
+        SplitSink,
+        SplitStream,
+    },
     StreamExt,
 };
 
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-pub(crate) use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
+pub(crate) use tokio_tungstenite::{
+    connect_async,
+    tungstenite::Message,
+    WebSocketStream,
+};
 mod event_loop;
 mod init;
 mod terminating;

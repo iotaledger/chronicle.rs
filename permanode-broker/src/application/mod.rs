@@ -1,16 +1,28 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use crate::{listener::*, websocket::*};
+use crate::{
+    listener::*,
+    websocket::*,
+};
 
+use async_trait::async_trait;
 pub use chronicle::*;
 pub use log::*;
-pub use tokio::{spawn, sync::mpsc};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    ops::{Deref, DerefMut},
+    ops::{
+        Deref,
+        DerefMut,
+    },
+};
+pub use tokio::{
+    spawn,
+    sync::mpsc,
 };
 
 mod event_loop;
