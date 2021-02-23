@@ -1,5 +1,8 @@
 use super::*;
-use crate::listener::ListenerBuilder;
+use crate::listener::{
+    ListenerBuilder,
+    WarpListener,
+};
 use std::borrow::Cow;
 
 #[async_trait]
@@ -14,7 +17,7 @@ where
     type Input = Permanode<H>;
 
     async fn starter(self, handle: H, input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
-        let listener = ListenerBuilder::new().build();
+        let listener = ListenerBuilder::<WarpListener>::new().build();
         let (listener_handle, listener_abort_registration) = AbortHandle::new_pair();
 
         let permanode = self.listener_handle(listener_handle).build();

@@ -1,4 +1,3 @@
-#![feature(decl_macro)]
 pub mod add_feed_source;
 pub mod application;
 pub mod listener;

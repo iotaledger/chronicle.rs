@@ -5,7 +5,6 @@ use permanode_storage::{
         GetSelectRequest,
         MessageId,
         MessageMetadata,
-        ReporterEvent,
         SelectRequest,
     },
     keyspaces::Mainnet,
@@ -15,7 +14,6 @@ use rocket::{
     get,
     response::content::Json,
 };
-use scylla::ring::Ring;
 use serde::Serialize;
 use std::{
     borrow::Cow,
@@ -24,7 +22,7 @@ use std::{
 use tokio::sync::mpsc;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for Listener {
+impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for Listener<RocketListener> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,

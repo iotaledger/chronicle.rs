@@ -7,8 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "rework-access-traits" }
-scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "rework-access-traits" }
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
+scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 permanode-storage = { path = "../permanode-storage" }
@@ -20,6 +20,7 @@ log = "0.4.14"
 http = "0.2.3"
 rocket = { git = "https://github.com/SergioBenitez/Rocket.git", rev = "e4c2324" }
 rand = "0.8.3"
+warp = "0.3.0"
 
 [dependencies.tokio]
 version = "1.0"

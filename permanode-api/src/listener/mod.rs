@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use super::*;
 use application::*;
 use permanode_storage::access::{
@@ -16,12 +18,17 @@ use tokio::sync::mpsc::{
     UnboundedSender,
 };
 
-mod event_loop;
 mod init;
+mod rocket_event_loop;
 mod terminating;
+mod warp_event_loop;
 
-pub struct Listener {
+pub struct RocketListener;
+pub struct WarpListener;
+
+pub struct Listener<T> {
     pub service: Service,
+    _data: PhantomData<T>,
 }
 
 #[derive(Debug)]
@@ -53,22 +60,23 @@ impl Worker for DecoderWorker {
     }
 }
 
-builder!(ListenerBuilder {});
+builder!(ListenerBuilder<T> {});
 
-impl Builder for ListenerBuilder {
-    type State = Listener;
+impl<T> Builder for ListenerBuilder<T> {
+    type State = Listener<T>;
 
     fn build(self) -> Self::State {
         Self::State {
             service: Service::new(),
+            _data: PhantomData,
         }
         .set_name()
     }
 }
 
-impl Name for Listener {
+impl<T> Name for Listener<T> {
     fn set_name(mut self) -> Self {
-        self.service.update_name("Listener".to_string());
+        self.service.update_name(format!("{} Listener", stringify!(T)));
         self
     }
 
@@ -78,8 +86,8 @@ impl Name for Listener {
 }
 
 #[async_trait::async_trait]
-impl<H: LauncherSender<PermanodeBuilder<H>>> AknShutdown<Listener> for PermanodeSender<H> {
-    async fn aknowledge_shutdown(self, mut state: Listener, status: Result<(), Need>) {
+impl<T: 'static + Send, H: LauncherSender<PermanodeBuilder<H>>> AknShutdown<Listener<T>> for PermanodeSender<H> {
+    async fn aknowledge_shutdown(self, mut state: Listener<T>, status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
     }
 }
