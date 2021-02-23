@@ -57,16 +57,6 @@ impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
     }
 }
 
-impl RowsDecoder<Bee<MessageId>, MessageChildren> for Mainnet {
-    fn try_decode(decoder: Decoder) -> Result<Option<MessageChildren>, CqlError> {
-        if decoder.is_error() {
-            Err(decoder.get_error())
-        } else {
-            Ok(Some(MessageChildren::new(decoder)))
-        }
-    }
-}
-
 impl<'a> Select<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
     fn statement(&'a self) -> std::borrow::Cow<'static, str> {
         format!("SELECT metadata from {}.messages WHERE message_id = ?", Self::name()).into()
@@ -124,7 +114,7 @@ impl RowsDecoder<Bee<MessageId>, MessageRow> for Mainnet {
     }
 }
 
-impl<'a> Select<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
+impl<'a> Select<'a, Bee<MilestoneIndex>, NeedsSerialize<Milestone>> for Mainnet {
     fn statement(&'a self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT milestone from {}.milestones WHERE milestone_index = ?",
@@ -133,9 +123,12 @@ impl<'a> Select<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
         .into()
     }
 
-    fn get_request(&'a self, key: &Bee<MilestoneIndex>) -> SelectRequest<Self, Bee<MilestoneIndex>, Bee<Milestone>>
+    fn get_request(
+        &'a self,
+        key: &Bee<MilestoneIndex>,
+    ) -> SelectRequest<Self, Bee<MilestoneIndex>, NeedsSerialize<Milestone>>
     where
-        Self: Select<'a, Bee<MilestoneIndex>, Bee<Milestone>>,
+        Self: Select<'a, Bee<MilestoneIndex>, NeedsSerialize<Milestone>>,
     {
         let query = Execute::new()
             .id(&Select::get_prepared_hash(self))
@@ -146,16 +139,6 @@ impl<'a> Select<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
         let token = 1;
 
         SelectRequest::from_prepared(query, token, self)
-    }
-}
-
-impl RowsDecoder<Bee<HashedIndex>, IndexMessages> for Mainnet {
-    fn try_decode(decoder: Decoder) -> Result<Option<IndexMessages>, CqlError> {
-        if decoder.is_error() {
-            Err(decoder.get_error())
-        } else {
-            Ok(Some(IndexMessages::new(decoder)))
-        }
     }
 }
 
@@ -175,6 +158,60 @@ impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
     fn get_request(&'a self, key: &Bee<HashedIndex>) -> SelectRequest<Self, Bee<HashedIndex>, IndexMessages>
     where
         Self: Select<'a, Bee<HashedIndex>, IndexMessages>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
+            .consistency(scylla_cql::Consistency::One)
+            .value(key.as_ref())
+            // TODO: .value(partition)
+            .build();
+
+        let token = 1;
+
+        SelectRequest::from_prepared(query, token, self)
+    }
+}
+
+impl<'a> Select<'a, Bee<OutputId>, Bee<Output>> for Mainnet {
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT data from {}.transactions WHERE transaction_id = ? AND index = ? and variant = 'output'",
+            Self::name()
+        )
+        .into()
+    }
+
+    fn get_request(&'a self, key: &Bee<OutputId>) -> SelectRequest<'a, Self, Bee<OutputId>, Bee<Output>>
+    where
+        Self: Select<'a, Bee<OutputId>, Bee<Output>>,
+    {
+        let query = Execute::new()
+            .id(&Select::get_prepared_hash(self))
+            .consistency(scylla_cql::Consistency::One)
+            .value(key.transaction_id().to_string())
+            .value(key.index())
+            .build();
+
+        let token = 1;
+
+        SelectRequest::from_prepared(query, token, self)
+    }
+}
+
+impl<'a> Select<'a, Bee<Ed25519Address>, Outputs> for Mainnet {
+    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT transaction_id, index 
+            FROM {}.addresses 
+            WHERE address = ? AND address_type = 0 AND partition_id = ?",
+            Self::name()
+        )
+        .into()
+    }
+
+    fn get_request(&'a self, key: &Bee<Ed25519Address>) -> SelectRequest<Self, Bee<Ed25519Address>, Outputs>
+    where
+        Self: Select<'a, Bee<Ed25519Address>, Outputs>,
     {
         let query = Execute::new()
             .id(&Select::get_prepared_hash(self))

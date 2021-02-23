@@ -8,3 +8,9 @@ impl<P: Packable> ColumnDecoder for Bee<P> {
         P::unpack(&mut Cursor::new(slice)).unwrap().into()
     }
 }
+
+impl<P: Packable> ColumnDecoder for NeedsSerialize<P> {
+    fn decode(slice: &[u8]) -> Self {
+        NeedsSerialize::please(P::unpack(&mut Cursor::new(slice)).unwrap().into())
+    }
+}

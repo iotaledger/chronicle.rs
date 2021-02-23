@@ -21,6 +21,7 @@ http = "0.2.3"
 rocket = { git = "https://github.com/SergioBenitez/Rocket.git", rev = "e4c2324" }
 rand = "0.8.3"
 warp = "0.3.0"
+hex = "0.4.2"
 
 [dependencies.tokio]
 version = "1.0"

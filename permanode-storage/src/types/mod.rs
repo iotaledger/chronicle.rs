@@ -22,7 +22,10 @@ pub use bee_message::{
         Ed25519Address,
         HashedIndex,
         MilestoneIndex,
+        Output,
         OutputId,
+        TransactionId,
+        HASHED_INDEX_LENGTH,
     },
     solid_entry_point::SolidEntryPoint,
     Message,
@@ -34,6 +37,7 @@ pub use bee_tangle::{
     unconfirmed_message::UnconfirmedMessage,
 };
 use serde::{
+    ser::SerializeStruct,
     Deserialize,
     Serialize,
 };
@@ -70,5 +74,27 @@ impl<Type> DerefMut for Bee<Type> {
 impl<Type> From<Type> for Bee<Type> {
     fn from(t: Type) -> Self {
         Bee::wrap(t)
+    }
+}
+
+pub struct NeedsSerialize<Type> {
+    bee_type: Bee<Type>,
+}
+
+impl<Type> NeedsSerialize<Type> {
+    pub fn please(bee_type: Bee<Type>) -> Self {
+        Self { bee_type }
+    }
+}
+
+impl Serialize for NeedsSerialize<Milestone> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("Milestone", 2)?;
+        state.serialize_field("message_id", self.bee_type.message_id())?;
+        state.serialize_field("timestamp", &self.bee_type.timestamp())?;
+        state.end()
     }
 }
