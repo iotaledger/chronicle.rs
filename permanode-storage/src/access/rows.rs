@@ -55,7 +55,6 @@ rows!(
     row: OutputRow {
         message_id: Bee<MessageId>,
         data: TransactionData,
-        is_spent: u8
     },
     row_into: OutputRow,
 );

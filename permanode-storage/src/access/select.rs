@@ -167,7 +167,7 @@ impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
 impl<'a> Select<'a, Bee<OutputId>, Outputs> for Mainnet {
     fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT data from {}.transactions WHERE transaction_id = ? AND index = ? and variant = 'utxoinput'",
+            "SELECT message_id, data from {}.transactions WHERE transaction_id = ? AND index = ? and variant = 'utxoinput'",
             Self::name()
         )
         .into()
