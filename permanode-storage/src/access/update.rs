@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> Update<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn update_statement() -> std::borrow::Cow<'static, str> {
         todo!()
     }
 

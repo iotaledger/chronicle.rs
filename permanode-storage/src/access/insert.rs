@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> Insert<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn insert_statement() -> std::borrow::Cow<'static, str> {
         format!(
             "INSERT INTO {}.messages (message_id, message) VALUES (?, ?)",
             Self::name()
@@ -33,7 +33,7 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
 }
 
 impl<'a> Insert<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn insert_statement() -> std::borrow::Cow<'static, str> {
         format!(
             "INSERT INTO {}.messages (message_id, message_metadata) VALUES (?, ?)",
             Self::name()
@@ -67,7 +67,7 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
 }
 
 impl<'a> Insert<'a, Bee<MessageId>, (Bee<Message>, Bee<MessageMetadata>)> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn insert_statement() -> std::borrow::Cow<'static, str> {
         format!(
             "INSERT INTO {}.messages (message_id, message, message_metadata) VALUES (?, ?, ?)",
             Self::name()
@@ -108,7 +108,7 @@ impl<'a> Insert<'a, Bee<MessageId>, (Bee<Message>, Bee<MessageMetadata>)> for Ma
 }
 
 impl<'a> Insert<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn insert_statement() -> std::borrow::Cow<'static, str> {
         format!(
             "INSERT INTO {}.milestones (milestone_index, milestone) VALUES (?, ?)",
             Self::name()

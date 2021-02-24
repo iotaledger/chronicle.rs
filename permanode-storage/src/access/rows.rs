@@ -1,10 +1,7 @@
 use std::cell::RefCell;
 
 use super::*;
-use scylla_cql::{
-    rows,
-    simple_rows,
-};
+use scylla_cql::rows;
 use serde::Serialize;
 
 rows!(
@@ -17,26 +14,51 @@ rows!(
     row_into: MessageRow
 );
 
-simple_rows!(rows: IndexMessages, row: Bee<Message>, row_into: Bee<Message>);
+rows!(rows: IndexMessages, row: Bee<MessageId>, row_into: Bee<MessageId>);
 
-simple_rows!(rows: MessageChildren, row: Bee<MessageId>, row_into: Bee<MessageId>);
+rows!(rows: MessageChildren, row: Bee<MessageId>, row_into: Bee<MessageId>);
 
 rows!(
-    rows: Outputs,
-    row: OutputRow {
+    rows: OutputIds,
+    row: OutputIdRow {
         transaction_id: Bee<TransactionId>,
         index: u16,
     },
     row_into: Bee<OutputId>
 );
 
-impl From<OutputRow> for Bee<OutputId> {
-    fn from(row: OutputRow) -> Self {
+impl From<OutputIdRow> for Bee<OutputId> {
+    fn from(row: OutputIdRow) -> Self {
         OutputId::new(row.transaction_id.into_inner(), row.index)
             .unwrap()
             .into()
     }
 }
+
+rows!(
+    single_row: SingleMilestone,
+    row: MilestoneRow {
+        message_id: Bee<MessageId>,
+        timestamp: u64,
+    },
+    row_into: Bee<Milestone>
+);
+
+impl From<MilestoneRow> for Bee<Milestone> {
+    fn from(row: MilestoneRow) -> Self {
+        Milestone::new(row.message_id.into_inner(), row.timestamp).into()
+    }
+}
+
+rows!(
+    rows: Outputs,
+    row: OutputRow {
+        message_id: Bee<MessageId>,
+        data: TransactionData,
+        is_spent: u8
+    },
+    row_into: OutputRow,
+);
 
 impl<K, V: Rows> RowsDecoder<K, V> for Mainnet {
     fn try_decode(decoder: Decoder) -> Result<Option<V>, CqlError> {
@@ -45,26 +67,5 @@ impl<K, V: Rows> RowsDecoder<K, V> for Mainnet {
         } else {
             Ok(Some(V::new(decoder)))
         }
-    }
-}
-
-pub struct IteratorSerializer<I>(RefCell<I>);
-
-impl<I> IteratorSerializer<I> {
-    pub fn new(iter: I) -> Self {
-        Self(RefCell::new(iter))
-    }
-}
-
-impl<I> Serialize for IteratorSerializer<I>
-where
-    I: Iterator,
-    I::Item: Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.collect_seq(self.0.borrow_mut().by_ref())
     }
 }

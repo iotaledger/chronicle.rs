@@ -9,16 +9,16 @@ edition = "2018"
 [dependencies]
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
-bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "4c45559" }
-bee-ledger = { git = "https://github.com/iotaledger/bee.git", rev = "4c45559" }
-bee-snapshot = { git = "https://github.com/iotaledger/bee.git", rev = "4c45559" }
+bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "8baba87" }
+bee-ledger = { git = "https://github.com/iotaledger/bee.git", rev = "8baba87" }
+bee-snapshot = { git = "https://github.com/iotaledger/bee.git", rev = "8baba87" }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 async-trait = "0.1.42"
 serde = { version = "1.0", features = ["derive"] }
 
 [dependencies.bee-message]
 git = "https://github.com/iotaledger/bee.git"
-rev = "4c45559"
+rev = "8baba87"
 features = [
     "serde"
 ]

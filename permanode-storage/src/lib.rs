@@ -1,6 +1,5 @@
 pub mod access;
 pub mod keyspaces;
-pub mod types;
 
 #[cfg(test)]
 mod tests {

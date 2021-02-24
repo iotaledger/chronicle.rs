@@ -1,5 +1,4 @@
 use super::*;
-use crate::types::*;
 use scylla::access::keyspace::Keyspace;
 use scylla_cql::{
     Frame,
@@ -7,7 +6,7 @@ use scylla_cql::{
 };
 
 impl<'a> Select<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!("SELECT message from {}.messages WHERE message_id = ?", Self::name()).into()
     }
 
@@ -28,7 +27,7 @@ impl<'a> Select<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
 }
 
 impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT m.message_id
             FROM {0}.edges e
@@ -58,7 +57,7 @@ impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
 }
 
 impl<'a> Select<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!("SELECT metadata from {}.messages WHERE message_id = ?", Self::name()).into()
     }
 
@@ -79,7 +78,7 @@ impl<'a> Select<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
 }
 
 impl<'a> Select<'a, Bee<MessageId>, MessageRow> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id, message, metadata from {}.messages WHERE message_id = ?",
             Self::name()
@@ -114,21 +113,18 @@ impl RowsDecoder<Bee<MessageId>, MessageRow> for Mainnet {
     }
 }
 
-impl<'a> Select<'a, Bee<MilestoneIndex>, NeedsSerialize<Milestone>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+impl<'a> Select<'a, Bee<MilestoneIndex>, SingleMilestone> for Mainnet {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT milestone from {}.milestones WHERE milestone_index = ?",
+            "SELECT message_id, timestamp from {}.milestones WHERE milestone_index = ?",
             Self::name()
         )
         .into()
     }
 
-    fn get_request(
-        &'a self,
-        key: &Bee<MilestoneIndex>,
-    ) -> SelectRequest<Self, Bee<MilestoneIndex>, NeedsSerialize<Milestone>>
+    fn get_request(&'a self, key: &Bee<MilestoneIndex>) -> SelectRequest<Self, Bee<MilestoneIndex>, SingleMilestone>
     where
-        Self: Select<'a, Bee<MilestoneIndex>, NeedsSerialize<Milestone>>,
+        Self: Select<'a, Bee<MilestoneIndex>, SingleMilestone>,
     {
         let query = Execute::new()
             .id(&Select::get_prepared_hash(self))
@@ -143,13 +139,9 @@ impl<'a> Select<'a, Bee<MilestoneIndex>, NeedsSerialize<Milestone>> for Mainnet 
 }
 
 impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT m.message_id
-            FROM {0}.index_lookup i
-            JOIN {0}.messages m ON i.message_id = m.id
-            WHERE i.hashed_index = ?
-            AND i.partition_id = ?",
+            "SELECT message_id from {}.indexes WHERE hashed_index = ? AND partition_id = ?",
             Self::name()
         )
         .into()
@@ -172,18 +164,18 @@ impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
     }
 }
 
-impl<'a> Select<'a, Bee<OutputId>, Bee<Output>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+impl<'a> Select<'a, Bee<OutputId>, Outputs> for Mainnet {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT data from {}.transactions WHERE transaction_id = ? AND index = ? and variant = 'output'",
+            "SELECT data from {}.transactions WHERE transaction_id = ? AND index = ? and variant = 'utxoinput'",
             Self::name()
         )
         .into()
     }
 
-    fn get_request(&'a self, key: &Bee<OutputId>) -> SelectRequest<'a, Self, Bee<OutputId>, Bee<Output>>
+    fn get_request(&'a self, key: &Bee<OutputId>) -> SelectRequest<'a, Self, Bee<OutputId>, Outputs>
     where
-        Self: Select<'a, Bee<OutputId>, Bee<Output>>,
+        Self: Select<'a, Bee<OutputId>, Outputs>,
     {
         let query = Execute::new()
             .id(&Select::get_prepared_hash(self))
@@ -198,8 +190,8 @@ impl<'a> Select<'a, Bee<OutputId>, Bee<Output>> for Mainnet {
     }
 }
 
-impl<'a> Select<'a, Bee<Ed25519Address>, Outputs> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+impl<'a> Select<'a, Bee<Ed25519Address>, OutputIds> for Mainnet {
+    fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT transaction_id, index 
             FROM {}.addresses 
@@ -209,9 +201,9 @@ impl<'a> Select<'a, Bee<Ed25519Address>, Outputs> for Mainnet {
         .into()
     }
 
-    fn get_request(&'a self, key: &Bee<Ed25519Address>) -> SelectRequest<Self, Bee<Ed25519Address>, Outputs>
+    fn get_request(&'a self, key: &Bee<Ed25519Address>) -> SelectRequest<Self, Bee<Ed25519Address>, OutputIds>
     where
-        Self: Select<'a, Bee<Ed25519Address>, Outputs>,
+        Self: Select<'a, Bee<Ed25519Address>, OutputIds>,
     {
         let query = Execute::new()
             .id(&Select::get_prepared_hash(self))

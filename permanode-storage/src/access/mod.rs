@@ -1,16 +1,13 @@
 use std::marker::PhantomData;
 
-pub use crate::types::*;
-use crate::{
-    keyspaces::*,
-    types::Bee,
-};
+use crate::keyspaces::Mainnet;
 use bee_common::packable::Packable;
 pub use rows::*;
 pub use scylla::{
     access::{
         delete::*,
         insert::*,
+        keyspace::*,
         select::*,
         update::*,
     },
@@ -36,11 +33,13 @@ pub use scylla_cql::{
     Frame,
     Query,
 };
+pub use types::*;
 
 mod delete;
 mod insert;
 mod rows;
 mod select;
+mod types;
 mod update;
 
 impl VoidDecoder for Mainnet {}
@@ -112,21 +111,6 @@ where
         } else {
             let mut rows = BeeRows::<V>::new(decoder);
             Ok(rows.next())
-        }
-    }
-}
-
-impl<K, V> RowsDecoder<K, NeedsSerialize<V>> for Mainnet
-where
-    V: Packable,
-    NeedsSerialize<V>: ColumnDecoder,
-{
-    fn try_decode(decoder: Decoder) -> Result<Option<NeedsSerialize<V>>, CqlError> {
-        if decoder.is_error() {
-            Err(decoder.get_error())
-        } else {
-            let mut rows = BeeRows::<V>::new(decoder);
-            Ok(rows.next().and_then(|row| Some(NeedsSerialize::please(row))))
         }
     }
 }

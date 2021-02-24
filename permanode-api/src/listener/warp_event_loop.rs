@@ -2,13 +2,13 @@ use super::*;
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
+        Bee,
         GetSelectRequest,
         MessageId,
         MessageMetadata,
         SelectRequest,
     },
     keyspaces::Mainnet,
-    types::Bee,
 };
 use serde::Serialize;
 use std::{

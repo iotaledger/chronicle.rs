@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> Delete<'a, Bee<Message>, Bee<MessageId>> for Mainnet {
-    fn statement(&'a self) -> std::borrow::Cow<'static, str> {
+    fn delete_statement() -> std::borrow::Cow<'static, str> {
         todo!()
     }
 
