@@ -1,21 +1,14 @@
 use super::*;
 use application::*;
 use permanode_storage::access::{
-    Delete,
-    Insert,
     Message,
-    MessageId,
     ReporterHandle,
     Select,
-    Update,
     Worker,
     WorkerError,
 };
 use std::marker::PhantomData;
-use tokio::sync::mpsc::{
-    UnboundedReceiver,
-    UnboundedSender,
-};
+use tokio::sync::mpsc::UnboundedSender;
 
 mod init;
 mod rocket_event_loop;

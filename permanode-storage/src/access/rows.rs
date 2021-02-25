@@ -1,8 +1,5 @@
-use std::cell::RefCell;
-
 use super::*;
 use scylla_cql::rows;
-use serde::Serialize;
 
 rows!(
     rows: MessageRows,
