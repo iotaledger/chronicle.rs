@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 //////////////////////////////// HelloWorld App ////////////////////////////////////////////
 use async_trait::async_trait;
 use chronicle::*;
@@ -54,7 +56,7 @@ impl Shutdown for HelloWorldSender {
 #[async_trait]
 impl<H: LauncherSender<Self>> Starter<H> for HelloWorldBuilder {
     type Ok = HelloWorldSender;
-    type Error = ();
+    type Error = Cow<'static, str>;
     // if application asked for Need::Restart or RescheduleAfter then the input will hold the prev app From::from(state)
     type Input = HelloWorld;
     async fn starter(mut self, handle: H, mut _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
@@ -202,7 +204,7 @@ impl Shutdown for HowdySender {
 #[async_trait]
 impl<H: LauncherSender<HowdyBuilder>> Starter<H> for HowdyBuilder {
     type Ok = HowdySender;
-    type Error = ();
+    type Error = Cow<'static, str>;
     // if application asked for Need::Restart or RescheduleAfter then the input will hold the prev app From::from(state)
     type Input = Howdy;
     async fn starter(mut self, handle: H, mut _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {

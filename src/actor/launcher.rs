@@ -381,12 +381,12 @@ macro_rules! launcher {
                             self.service.update_microservice(app_name, service);
                             info!("Succesfully starting {}", stringify!($app));
                         }
-                        Err(_) => {
+                        Err(e) => {
                             // create new service that indicates the app is stopped
                             let service = Service::new().set_status(ServiceStatus::Stopped).set_name(app_name.clone());
                             // update main service
                             self.service.update_microservice(app_name, service);
-                            error!("unable to start {}", stringify!($app));
+                            error!("Unable to start {}: {}", stringify!($app), e.to_string());
                         }
                     }
                     self
