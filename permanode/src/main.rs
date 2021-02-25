@@ -12,7 +12,7 @@ impl Builder for AppsBuilder {
     type State = Apps;
 
     fn build(self) -> Self::State {
-        let config = Config::from_file(Path::new("../example_config.ron")).expect("Failed to deserialize config!");
+        let config = Config::from_file(Path::new("./example_config.ron")).expect("Failed to deserialize config!");
         let permanode_builder = PermanodeBuilder::new().config(config);
         let scylla_builder = ScyllaBuilder::new()
             .listen_address("127.0.0.1:8080".to_owned())

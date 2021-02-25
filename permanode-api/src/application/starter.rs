@@ -18,7 +18,10 @@ where
     type Input = Permanode<H>;
 
     async fn starter(self, handle: H, input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
-        let config = self.config.clone().expect("Tried to start application without config!");
+        let config = self
+            .config
+            .clone()
+            .ok_or("Tried to start application without config!")?;
         let listener = ListenerBuilder::<RocketListener>::new().config(config).build();
         let (listener_handle, listener_abort_registration) = AbortHandle::new_pair();
 

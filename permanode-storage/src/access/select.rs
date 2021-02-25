@@ -28,11 +28,7 @@ impl<'a> Select<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
 impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
     fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT m.message_id
-            FROM {0}.edges e
-            JOIN {0}.messages m ON e.children = m.id
-            WHERE e.parent = ?
-            AND e.partition_id = ?",
+            "SELECT message_id FROM {}.parents WHERE parent_id = ? AND partition_id = ?",
             Self::name()
         )
         .into()
@@ -166,7 +162,7 @@ impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
 impl<'a> Select<'a, Bee<OutputId>, Outputs> for Mainnet {
     fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, data from {}.transactions WHERE transaction_id = ? AND index = ? and variant = 'utxoinput'",
+            "SELECT message_id, data from {}.transactions WHERE transaction_id = ? AND idx = ? and variant = 'utxoinput'",
             Self::name()
         )
         .into()
@@ -192,7 +188,7 @@ impl<'a> Select<'a, Bee<OutputId>, Outputs> for Mainnet {
 impl<'a> Select<'a, Bee<Ed25519Address>, OutputIds> for Mainnet {
     fn select_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT transaction_id, index 
+            "SELECT transaction_id, idx 
             FROM {}.addresses 
             WHERE address = ? AND address_type = 0 AND partition_id = ?",
             Self::name()
