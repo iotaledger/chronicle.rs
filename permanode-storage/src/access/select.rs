@@ -1,5 +1,4 @@
 use super::*;
-use scylla::access::keyspace::Keyspace;
 use scylla_cql::{
     Frame,
     RowsDecoder,
@@ -15,7 +14,7 @@ impl<'a> Select<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
         Self: Select<'a, Bee<MessageId>, Bee<Message>>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
@@ -44,7 +43,7 @@ impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
         Self: Select<'a, Bee<MessageId>, MessageChildren>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             // TODO: .value(partition)
@@ -66,7 +65,7 @@ impl<'a> Select<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
         Self: Select<'a, Bee<MessageId>, Bee<MessageMetadata>>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
@@ -91,7 +90,7 @@ impl<'a> Select<'a, Bee<MessageId>, MessageRow> for Mainnet {
         Self: Select<'a, Bee<MessageId>, MessageRow>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
@@ -127,7 +126,7 @@ impl<'a> Select<'a, Bee<MilestoneIndex>, SingleMilestone> for Mainnet {
         Self: Select<'a, Bee<MilestoneIndex>, SingleMilestone>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .build();
@@ -152,7 +151,7 @@ impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
         Self: Select<'a, Bee<HashedIndex>, IndexMessages>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.as_ref())
             // TODO: .value(partition)
@@ -178,7 +177,7 @@ impl<'a> Select<'a, Bee<OutputId>, Outputs> for Mainnet {
         Self: Select<'a, Bee<OutputId>, Outputs>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.transaction_id().to_string())
             .value(key.index())
@@ -206,7 +205,7 @@ impl<'a> Select<'a, Bee<Ed25519Address>, OutputIds> for Mainnet {
         Self: Select<'a, Bee<Ed25519Address>, OutputIds>,
     {
         let query = Execute::new()
-            .id(&Select::get_prepared_hash(self))
+            .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.as_ref())
             // TODO: .value(partition)

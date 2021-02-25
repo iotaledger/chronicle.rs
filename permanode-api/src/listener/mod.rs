@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use super::*;
 use application::*;
 use permanode_storage::access::{
@@ -13,6 +11,7 @@ use permanode_storage::access::{
     Worker,
     WorkerError,
 };
+use std::marker::PhantomData;
 use tokio::sync::mpsc::{
     UnboundedReceiver,
     UnboundedSender,

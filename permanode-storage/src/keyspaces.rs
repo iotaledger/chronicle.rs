@@ -1,4 +1,4 @@
-pub use scylla::access::keyspace::Keyspace;
+pub use scylla::access::Keyspace;
 use scylla::{
     ring::Ring,
     stage::ReporterEvent,
@@ -9,6 +9,10 @@ pub struct Mainnet;
 
 impl Keyspace for Mainnet {
     const NAME: &'static str = "mainnet";
+
+    fn new() -> Self {
+        Mainnet
+    }
 
     fn send_local(&self, token: i64, payload: Vec<u8>, worker: Box<dyn scylla::Worker>) {
         let request = ReporterEvent::Request { worker, payload };

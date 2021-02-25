@@ -20,7 +20,7 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
         let mut message_bytes = Vec::new();
         value.pack(&mut message_bytes).expect("Error occurred packing Message");
         let query = Execute::new()
-            .id(&Insert::get_prepared_hash(self))
+            .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .value(message_bytes)
@@ -54,7 +54,7 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
             .pack(&mut metadata_bytes)
             .expect("Error occurred packing MessageMetadata");
         let query = Execute::new()
-            .id(&Insert::get_prepared_hash(self))
+            .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .value(metadata_bytes)
@@ -94,7 +94,7 @@ impl<'a> Insert<'a, Bee<MessageId>, (Bee<Message>, Bee<MessageMetadata>)> for Ma
             .expect("Error occurred packing MessageMetadata");
 
         let query = Execute::new()
-            .id(&Insert::get_prepared_hash(self))
+            .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .value(message_bytes)
@@ -129,7 +129,7 @@ impl<'a> Insert<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
             .pack(&mut milestone_bytes)
             .expect("Error occurred packing Milestone");
         let query = Execute::new()
-            .id(&Insert::get_prepared_hash(self))
+            .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
             .value(milestone_bytes)

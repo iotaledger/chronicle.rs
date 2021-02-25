@@ -4,13 +4,7 @@ use crate::keyspaces::Mainnet;
 use bee_common::packable::Packable;
 pub use rows::*;
 pub use scylla::{
-    access::{
-        delete::*,
-        insert::*,
-        keyspace::*,
-        select::*,
-        update::*,
-    },
+    access::*,
     stage::{
         ReporterEvent,
         ReporterHandle,
