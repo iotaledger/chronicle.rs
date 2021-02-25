@@ -386,7 +386,7 @@ macro_rules! launcher {
                             let service = Service::new().set_status(ServiceStatus::Stopped).set_name(app_name.clone());
                             // update main service
                             self.service.update_microservice(app_name, service);
-                            error!("Unable to start {}: {}", stringify!($app), e.to_string());
+                            error!("Unable to start {}: {}", stringify!($app), e);
                         }
                     }
                     self

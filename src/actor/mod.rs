@@ -14,9 +14,7 @@ pub use supervisor::*;
 pub use terminating::Terminating;
 
 #[async_trait]
-pub trait Actor<H: AknShutdown<Self> + 'static>: StartActor<H> + Name {
-    
-}
+pub trait Actor<H: AknShutdown<Self> + 'static>: StartActor<H> + Name {}
 
 impl<T: super::Name + super::EventLoop<H> + super::Init<H> + super::Terminating<H>, H: Send + 'static + AknShutdown<Self>> Actor<H> for T {}
 
