@@ -23,3 +23,6 @@ rev = "8baba87"
 features = [
     "serde"
 ]
+
+[dev-dependencies]
+maplit = "1.0.2"
