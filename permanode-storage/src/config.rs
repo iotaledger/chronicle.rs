@@ -7,7 +7,7 @@ use std::{
 pub type DatacenterName = String;
 pub type KeyspaceName = String;
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Config {
     pub keyspaces: HashMap<KeyspaceName, KeyspaceConfig>,
 }
@@ -19,18 +19,18 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct KeyspaceConfig {
-    keyspace: IotaKeyspace,
-    data_centers: HashMap<DatacenterName, DatacenterConfig>,
+    pub keyspace: IotaKeyspace,
+    pub data_centers: HashMap<DatacenterName, DatacenterConfig>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct DatacenterConfig {
-    replication_factor: usize,
+    pub replication_factor: usize,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Copy, Clone)]
 pub enum IotaKeyspace {
     Mainnet,
     Devnet,

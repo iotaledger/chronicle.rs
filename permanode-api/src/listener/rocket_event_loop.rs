@@ -33,6 +33,10 @@ use permanode_storage::{
         TransactionData,
         HASHED_INDEX_LENGTH,
     },
+    config::{
+        IotaKeyspace,
+        KeyspaceConfig,
+    },
     keyspaces::Mainnet,
 };
 use rocket::get;
@@ -58,22 +62,46 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for L
                 .send(PermanodeEvent::Children(PermanodeChild::Listener(self.service.clone())))
                 .map_err(|_| Need::Abort)?;
         }
-        rocket::ignite()
-            .mount(
-                "/",
-                routes![
-                    get_message,
-                    get_message_metadata,
-                    get_message_children,
-                    get_message_by_index,
-                    get_output,
-                    get_ed25519_outputs,
-                    get_milestone
-                ],
-            )
-            .launch()
-            .await
-            .map_err(|_| Need::Abort)
+        let mut server = rocket::ignite();
+
+        for KeyspaceConfig {
+            keyspace,
+            data_centers: _,
+        } in self.config.keyspaces.values()
+        {
+            match keyspace {
+                IotaKeyspace::Mainnet => {
+                    server = server.mount(
+                        "/mainnet",
+                        routes![
+                            mainnet::get_message,
+                            mainnet::get_message_metadata,
+                            mainnet::get_message_children,
+                            mainnet::get_message_by_index,
+                            mainnet::get_output,
+                            mainnet::get_ed25519_outputs,
+                            mainnet::get_milestone
+                        ],
+                    );
+                }
+                IotaKeyspace::Devnet => {
+                    server = server.mount(
+                        "/devnet",
+                        routes![
+                            devnet::get_message,
+                            devnet::get_message_metadata,
+                            devnet::get_message_children,
+                            devnet::get_message_by_index,
+                            devnet::get_output,
+                            devnet::get_ed25519_outputs,
+                            devnet::get_milestone
+                        ],
+                    );
+                }
+            }
+        }
+
+        server.launch().await.map_err(|_| Need::Abort)
     }
 }
 
@@ -98,125 +126,168 @@ async fn query<'a, V, S: Select<'a, K, V>, K>(request: SelectRequest<'a, S, K, V
     Err("Failed to receive response!".into())
 }
 
-#[get("/messages/<message_id>")]
-async fn get_message(message_id: String) -> Result<Json<MessageResponse>, Cow<'static, str>> {
-    let request = Mainnet.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
-    query(request)
-        .await?
-        .deref()
-        .try_into()
-        .map(|dto| Json(MessageResponse(dto)))
-        .map_err(|e| e.into())
-}
+mod mainnet {
+    use super::*;
 
-#[get("/messages/<message_id>/metadata")]
-async fn get_message_metadata(message_id: String) -> Result<Json<MessageMetadataResponse>, Cow<'static, str>> {
-    let request = Mainnet.select::<MessageRow>(&MessageId::from_str(&message_id).unwrap().into());
-    message_row_to_response(query(request).await?).map(|res| Json(res))
-}
+    #[get("/messages/<message_id>")]
+    pub async fn get_message(message_id: String) -> Result<Json<MessageResponse>, Cow<'static, str>> {
+        let request = Mainnet.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
+        query(request)
+            .await?
+            .deref()
+            .try_into()
+            .map(|dto| Json(MessageResponse(dto)))
+            .map_err(|e| e.into())
+    }
 
-#[get("/messages/<message_id>/children")]
-async fn get_message_children(message_id: String) -> Result<Json<MessageChildrenResponse>, Cow<'static, str>> {
-    let request = Mainnet.select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap().into());
-    // TODO: Paging
-    let children = query(request).await?;
-    let count = children.rows_count();
-    let max_results = 1000;
+    #[get("/messages/<message_id>/metadata")]
+    pub async fn get_message_metadata(message_id: String) -> Result<Json<MessageMetadataResponse>, Cow<'static, str>> {
+        let request = Mainnet.select::<MessageRow>(&MessageId::from_str(&message_id).unwrap().into());
+        message_row_to_response(query(request).await?).map(|res| Json(res))
+    }
 
-    Ok(Json(MessageChildrenResponse {
-        message_id,
-        max_results,
-        count,
-        children_message_ids: children.take(max_results).map(|id| id.to_string()).collect(),
-    }))
-}
+    #[get("/messages/<message_id>/children")]
+    pub async fn get_message_children(message_id: String) -> Result<Json<MessageChildrenResponse>, Cow<'static, str>> {
+        let request = Mainnet.select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap().into());
+        // TODO: Paging
+        let children = query(request).await?;
+        let count = children.rows_count();
+        let max_results = 1000;
 
-#[get("/messages?<index>")]
-async fn get_message_by_index(index: String) -> Result<Json<MessagesForIndexResponse>, Cow<'static, str>> {
-    let bytes: [u8; HASHED_INDEX_LENGTH] = hex::decode(index.clone())
-        .map_err(|_| Cow::from("Invalid Hex character in index!"))?
-        .try_into()
-        .map_err(|_| Cow::from("Invalid index length!"))?;
+        Ok(Json(MessageChildrenResponse {
+            message_id,
+            max_results,
+            count,
+            children_message_ids: children.take(max_results).map(|id| id.to_string()).collect(),
+        }))
+    }
 
-    let request = Mainnet.select::<IndexMessages>(&HashedIndex::from(bytes).into());
-    // TODO: Paging
-    let messages = query(request).await?;
-    let count = messages.rows_count();
-    let max_results = 1000;
+    #[get("/messages?<index>")]
+    pub async fn get_message_by_index(index: String) -> Result<Json<MessagesForIndexResponse>, Cow<'static, str>> {
+        let bytes: [u8; HASHED_INDEX_LENGTH] = hex::decode(index.clone())
+            .map_err(|_| Cow::from("Invalid Hex character in index!"))?
+            .try_into()
+            .map_err(|_| Cow::from("Invalid index length!"))?;
 
-    Ok(Json(MessagesForIndexResponse {
-        index,
-        max_results,
-        count,
-        message_ids: messages.take(max_results).map(|id| id.to_string()).collect(),
-    }))
-}
+        let request = Mainnet.select::<IndexMessages>(&HashedIndex::from(bytes).into());
+        // TODO: Paging
+        let messages = query(request).await?;
+        let count = messages.rows_count();
+        let max_results = 1000;
 
-#[get("/outputs/<output_id>")]
-async fn get_output(output_id: String) -> Result<Json<OutputResponse>, Cow<'static, str>> {
-    let output_id = OutputId::from_str(&output_id).unwrap();
-    let request = Mainnet.select::<Outputs>(&output_id.into());
-    let outputs = query(request).await?;
-    let (output, is_spent) = {
-        let mut output = None;
-        let mut is_spent = false;
-        for row in outputs {
-            match row.data {
-                TransactionData::Input(_) => {}
-                TransactionData::Output(o) => {
-                    output = Some(CreatedOutput::new(row.message_id.into_inner(), o));
-                }
-                TransactionData::Unlock(_) => {
-                    is_spent = true;
+        Ok(Json(MessagesForIndexResponse {
+            index,
+            max_results,
+            count,
+            message_ids: messages.take(max_results).map(|id| id.to_string()).collect(),
+        }))
+    }
+
+    #[get("/outputs/<output_id>")]
+    pub async fn get_output(output_id: String) -> Result<Json<OutputResponse>, Cow<'static, str>> {
+        let output_id = OutputId::from_str(&output_id).unwrap();
+        let request = Mainnet.select::<Outputs>(&output_id.into());
+        let outputs = query(request).await?;
+        let (output, is_spent) = {
+            let mut output = None;
+            let mut is_spent = false;
+            for row in outputs {
+                match row.data {
+                    TransactionData::Input(_) => {}
+                    TransactionData::Output(o) => {
+                        output = Some(CreatedOutput::new(row.message_id.into_inner(), o));
+                    }
+                    TransactionData::Unlock(_) => {
+                        is_spent = true;
+                    }
                 }
             }
-        }
-        (
-            output.ok_or(Cow::from(format!("No output found for id {}", output_id)))?,
+            (
+                output.ok_or(Cow::from(format!("No output found for id {}", output_id)))?,
+                is_spent,
+            )
+        };
+        Ok(Json(OutputResponse {
+            message_id: output.message_id().to_string(),
+            transaction_id: output_id.transaction_id().to_string(),
+            output_index: output_id.index(),
             is_spent,
-        )
-    };
-    Ok(Json(OutputResponse {
-        message_id: output.message_id().to_string(),
-        transaction_id: output_id.transaction_id().to_string(),
-        output_index: output_id.index(),
-        is_spent,
-        output: output.inner().try_into().map_err(|e| Cow::from(e))?,
-    }))
-}
+            output: output.inner().try_into().map_err(|e| Cow::from(e))?,
+        }))
+    }
 
-#[get("/addresses/ed25519/<address>/outputs")]
-async fn get_ed25519_outputs(address: String) -> Result<Json<OutputsForAddressResponse>, Cow<'static, str>> {
-    let request = Mainnet.select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap().into());
+    #[get("/addresses/ed25519/<address>/outputs")]
+    pub async fn get_ed25519_outputs(address: String) -> Result<Json<OutputsForAddressResponse>, Cow<'static, str>> {
+        let request = Mainnet.select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap().into());
 
-    // TODO: Paging
-    let outputs = query(request).await?;
-    let count = outputs.rows_count();
-    let max_results = 1000;
+        // TODO: Paging
+        let outputs = query(request).await?;
+        let count = outputs.rows_count();
+        let max_results = 1000;
 
-    Ok(Json(OutputsForAddressResponse {
-        address_type: 1,
-        address,
-        max_results,
-        count,
-        output_ids: outputs.take(max_results).map(|id| id.to_string()).collect(),
-    }))
-}
+        Ok(Json(OutputsForAddressResponse {
+            address_type: 1,
+            address,
+            max_results,
+            count,
+            output_ids: outputs.take(max_results).map(|id| id.to_string()).collect(),
+        }))
+    }
 
-#[get("/milestones/<index>")]
-async fn get_milestone(index: u32) -> Result<Json<MilestoneResponse>, Cow<'static, str>> {
-    let request = Mainnet.select::<SingleMilestone>(&MilestoneIndex::from(index).into());
-    query(request)
-        .await?
-        .get()
-        .map(|milestone| {
-            Json(MilestoneResponse {
-                milestone_index: index,
-                message_id: milestone.message_id().to_string(),
-                timestamp: milestone.timestamp(),
+    #[get("/milestones/<index>")]
+    pub async fn get_milestone(index: u32) -> Result<Json<MilestoneResponse>, Cow<'static, str>> {
+        let request = Mainnet.select::<SingleMilestone>(&MilestoneIndex::from(index).into());
+        query(request)
+            .await?
+            .get()
+            .map(|milestone| {
+                Json(MilestoneResponse {
+                    milestone_index: index,
+                    message_id: milestone.message_id().to_string(),
+                    timestamp: milestone.timestamp(),
+                })
             })
-        })
-        .ok_or(Cow::from(format!("No milestone found for index {}", index)))
+            .ok_or(Cow::from(format!("No milestone found for index {}", index)))
+    }
+}
+
+mod devnet {
+    use super::*;
+
+    #[get("/messages/<message_id>")]
+    pub async fn get_message(message_id: String) -> Result<Json<MessageResponse>, Cow<'static, str>> {
+        todo!();
+    }
+
+    #[get("/messages/<message_id>/metadata")]
+    pub async fn get_message_metadata(message_id: String) -> Result<Json<MessageMetadataResponse>, Cow<'static, str>> {
+        todo!();
+    }
+
+    #[get("/messages/<message_id>/children")]
+    pub async fn get_message_children(message_id: String) -> Result<Json<MessageChildrenResponse>, Cow<'static, str>> {
+        todo!();
+    }
+
+    #[get("/messages?<index>")]
+    pub async fn get_message_by_index(index: String) -> Result<Json<MessagesForIndexResponse>, Cow<'static, str>> {
+        todo!();
+    }
+
+    #[get("/outputs/<output_id>")]
+    pub async fn get_output(output_id: String) -> Result<Json<OutputResponse>, Cow<'static, str>> {
+        todo!();
+    }
+
+    #[get("/addresses/ed25519/<address>/outputs")]
+    pub async fn get_ed25519_outputs(address: String) -> Result<Json<OutputsForAddressResponse>, Cow<'static, str>> {
+        todo!();
+    }
+
+    #[get("/milestones/<index>")]
+    pub async fn get_milestone(index: u32) -> Result<Json<MilestoneResponse>, Cow<'static, str>> {
+        todo!();
+    }
 }
 
 fn message_row_to_response(

@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use super::*;
 
+use permanode_storage::config::Config;
 use rocket::futures::future::AbortHandle;
 use serde::{
     Deserialize,
@@ -21,6 +22,7 @@ where
     H: LauncherSender<PermanodeBuilder<H>>,
 {
     service: Service,
+    config: Config,
     inbox: UnboundedReceiver<PermanodeEvent<H::AppsEvents>>,
     sender: Option<PermanodeSender<H>>,
     listener: AbortHandle,
@@ -70,6 +72,7 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> Shutdown for PermanodeSender<H> {
 builder!(
     #[derive(Clone)]
     PermanodeBuilder<H> {
+        config: Config,
         listener_handle: AbortHandle
     }
 );
@@ -89,6 +92,7 @@ where
         let sender = Some(PermanodeSender { tx });
         Self::State {
             service: Service::new(),
+            config: self.config.expect("No config was provided!"),
             inbox,
             sender,
             listener: self.listener_handle.expect("No listener handle was provided!"),

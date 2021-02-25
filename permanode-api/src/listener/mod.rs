@@ -1,11 +1,14 @@
 use super::*;
 use application::*;
-use permanode_storage::access::{
-    Message,
-    ReporterHandle,
-    Select,
-    Worker,
-    WorkerError,
+use permanode_storage::{
+    access::{
+        Message,
+        ReporterHandle,
+        Select,
+        Worker,
+        WorkerError,
+    },
+    config::Config,
 };
 use std::marker::PhantomData;
 use tokio::sync::mpsc::UnboundedSender;
@@ -20,6 +23,7 @@ pub struct WarpListener;
 
 pub struct Listener<T> {
     pub service: Service,
+    pub config: Config,
     _data: PhantomData<T>,
 }
 
@@ -52,7 +56,9 @@ impl Worker for DecoderWorker {
     }
 }
 
-builder!(ListenerBuilder<T> {});
+builder!(ListenerBuilder<T> {
+    config: Config
+});
 
 impl<T> Builder for ListenerBuilder<T> {
     type State = Listener<T>;
@@ -60,6 +66,7 @@ impl<T> Builder for ListenerBuilder<T> {
     fn build(self) -> Self::State {
         Self::State {
             service: Service::new(),
+            config: self.config.expect("No config was provided!"),
             _data: PhantomData,
         }
         .set_name()
