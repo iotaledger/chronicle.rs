@@ -67,9 +67,9 @@ where
                 let col_slice = self.decoder.buffer_as_ref()[self.column_start..][..(length as usize)].into();
                 // update the next column_start to start from next column
                 self.column_start += length as usize;
-                Some(Bee::<Type>::decode(col_slice))
+                Option::<Bee<Type>>::decode(col_slice)
             } else {
-                Some(Bee::<Type>::decode(&[]))
+                None
             }
         } else {
             None

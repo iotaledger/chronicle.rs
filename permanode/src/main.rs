@@ -31,5 +31,19 @@ async fn main() {
 
     let apps = AppsBuilder::new().build();
 
-    apps.Scylla().await.Permanode().await.start(None).await;
+    apps.Scylla()
+        .await
+        .future(|apps| async {
+            let ws = format!("ws://{}/", "127.0.0.1:8080");
+            let nodes = vec!["127.0.0.1:9042".parse().unwrap()];
+            add_nodes(&ws, nodes, 1)
+                .await
+                .unwrap_or_else(|e| panic!("Unable to add nodes: {}", e));
+            apps
+        })
+        .await
+        .Permanode()
+        .await
+        .start(None)
+        .await;
 }

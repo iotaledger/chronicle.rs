@@ -115,8 +115,9 @@ async fn query<'a, V, S: Select<'a, K, V>, K>(request: SelectRequest<'a, S, K, V
         match event {
             Event::Response { giveload } => {
                 let res = decoder.decode(giveload);
-                if let Ok(Some(message)) = res {
-                    return Ok(message);
+                match res {
+                    Ok(v) => return v.ok_or("No results returned!".into()),
+                    Err(cql_error) => return Err(format!("{:?}", cql_error).into()),
                 }
             }
             Event::Error { kind } => return Err(kind.to_string().into()),
