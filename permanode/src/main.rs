@@ -6,7 +6,7 @@ use permanode_api::application::*;
 use permanode_storage::config::Config;
 use scylla::application::*;
 
-launcher!(builder: AppsBuilder {[] -> Permanode<Sender>: PermanodeBuilder<Sender>, [Permanode] -> Scylla<Sender>: ScyllaBuilder<Sender>}, state: Apps {});
+launcher!(builder: AppsBuilder {[] -> PermanodeAPI<Sender>: PermanodeAPIBuilder<Sender>, [Permanode] -> Scylla<Sender>: ScyllaBuilder<Sender>}, state: Apps {});
 
 impl Builder for AppsBuilder {
     type State = Apps;
