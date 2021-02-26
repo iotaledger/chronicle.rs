@@ -1,0 +1,28 @@
+[package]
+name = "permanode-storage"
+version = "0.1.0"
+authors = ["Alex Coats <alexandcoats@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
+scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
+bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "8baba87" }
+bee-ledger = { git = "https://github.com/iotaledger/bee.git", rev = "8baba87" }
+bee-snapshot = { git = "https://github.com/iotaledger/bee.git", rev = "8baba87" }
+bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
+async-trait = "0.1.42"
+serde = { version = "1.0", features = ["derive"] }
+ron = "0.6.4"
+
+[dependencies.bee-message]
+git = "https://github.com/iotaledger/bee.git"
+rev = "8baba87"
+features = [
+    "serde"
+]
+
+[dev-dependencies]
+maplit = "1.0.2"

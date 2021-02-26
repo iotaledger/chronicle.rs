@@ -1,0 +1,37 @@
+[package]
+name = "permanode-broker"
+version = "0.1.0"
+authors = ["IOTA Stiftung"]
+edition = "2018"
+
+[dependencies]
+chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4.14"
+tokio-tungstenite = "0.13.0"
+futures = "0.3"
+async-trait = "*"
+
+[dependencies.tokio]
+version = "1.2"
+default-features = false
+features = [
+    "io-std",
+    "fs",
+    "macros",
+    "sync",
+    "net",
+    "io-util",
+    "time",
+    "rt-multi-thread",
+    "signal",
+    "full"
+]
+
+[dependencies.paho-mqtt]
+version = "0.9.1"
+default-features = false
+features = [
+    "bundled"
+]
