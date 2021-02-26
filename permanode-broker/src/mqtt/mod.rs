@@ -19,14 +19,15 @@ use std::{
     },
     time::Duration,
 };
-
+pub(crate) use url::Url;
 mod event_loop;
 mod init;
 mod terminating;
 
 // Mqtt builder
 builder!(MqttBuilder<T> {
-    address: SocketAddr,
+    url: Url,
+    topic: T,
     stream_capacity: usize
 });
 
@@ -52,16 +53,19 @@ impl Shutdown for MqttHandle {
 // Mqtt state
 pub struct Mqtt<T> {
     service: Service,
-    address: SocketAddr,
+    url: Url,
     stream_capacity: usize,
     handle: Option<MqttHandle>,
     inbox: Option<MqttInbox>,
-    _marker: std::marker::PhantomData<T>,
+    topic: T,
 }
 
 impl<T> Mqtt<T> {
-    pub(crate) fn clone_handle(&self) -> MqttHandle {
-        self.handle.clone().unwrap()
+    pub(crate) fn take_handle(&mut self) -> Option<MqttHandle> {
+        self.handle.take()
+    }
+    pub(crate) fn clone_service(&self) -> Service {
+        self.service.clone()
     }
 }
 
@@ -72,9 +76,9 @@ pub trait Topic: Send + 'static {
     /// MQTT Quality of service
     fn qos() -> i32;
 }
-pub trait Peer {}
+
 /// Mqtt Messages topic
-struct Messages;
+pub(crate) struct Messages;
 
 impl Topic for Messages {
     fn name() -> &'static str {
@@ -86,7 +90,7 @@ impl Topic for Messages {
 }
 
 /// Mqtt Metadata topic
-struct Metadata;
+pub(crate) struct Metadata;
 
 impl Topic for Metadata {
     fn name() -> &'static str {
@@ -108,11 +112,11 @@ impl<T: Topic> Builder for MqttBuilder<T> {
         let inbox = None;
         Self::State {
             service: Service::new(),
-            address: self.address.unwrap(),
-            stream_capacity: self.stream_capacity.unwrap(),
+            url: self.url.unwrap(),
+            stream_capacity: self.stream_capacity.unwrap_or(10000),
             handle,
             inbox,
-            _marker: std::marker::PhantomData::<T>,
+            topic: self.topic.unwrap(),
         }
         .set_name()
     }
@@ -121,8 +125,7 @@ impl<T: Topic> Builder for MqttBuilder<T> {
 /// impl name of the Mqtt<T>
 impl<T: Topic> Name for Mqtt<T> {
     fn set_name(mut self) -> Self {
-        // todo name it based on the topic and peer_addr
-        let name = format!("{}.{}", T::name(), "peer_addr");
+        let name = format!("{}.{}", T::name(), self.url.as_str());
         self.service.update_name(name);
         self
     }
