@@ -428,7 +428,7 @@ macro_rules! launcher {
                                         self.shutdown_queue.push_back(app.clone());
                                     }
                                 }
-                                self.shutdown_queue.push_back(app_name.clone());
+                                self.shutdown_queue.push_front(app_name.clone());
                                 // shutdown in order
                                 let shutdown_first = self.shutdown_queue.pop_front().unwrap();
                                 // if shutdown_first == app_name then all deps of app_name are already stopped
