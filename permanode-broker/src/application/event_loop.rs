@@ -27,8 +27,21 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                     self.handle.take();
                                 }
                             }
-                            PermanodeBrokerThrough::Topology(t) => {
-                                todo!("add/remove feed source")
+                            PermanodeBrokerThrough::Topology(topology) => {
+                                match topology {
+                                    Topology::AddMqttMessages(url) => {
+                                        let mqtt = MqttBuilder::new().topic(Messages).url(url).build();
+                                        let microservice = mqtt.clone_service();
+                                        let microservice_name = microservice.get_name();
+                                        if let None = self.service.microservices.get(&microservice_name) {
+                                            self.service.update_microservice(microservice_name, microservice);
+                                            tokio::spawn(mqtt.start(self.handle.clone()));
+                                        } else {
+                                            // it does already exist
+                                            // TODO response with something;
+                                        };
+                                    }
+                                }
                             }
                         },
                         Err(other_app_event) => {

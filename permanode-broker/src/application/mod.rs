@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     listener::*,
+    mqtt::*,
     websocket::*,
 };
 
@@ -95,7 +96,7 @@ pub enum BrokerEvent<T> {
 #[derive(Deserialize, Serialize, Debug)]
 /// Topology event
 pub enum Topology {
-    AddMqtt, // todo!( add broker topology like adding new feed source or removing one)
+    AddMqttMessages(Url), // todo!( add broker topology like adding new feed source or removing one)
 }
 
 #[derive(Deserialize, Serialize)]
