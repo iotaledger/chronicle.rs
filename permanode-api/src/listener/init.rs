@@ -1,16 +1,18 @@
 use super::*;
 
 #[async_trait]
-impl<T: Send, H: LauncherSender<PermanodeBuilder<H>>> Init<PermanodeSender<H>> for Listener<T> {
+impl<T: Send, H: LauncherSender<PermanodeAPIBuilder<H>>> Init<PermanodeAPISender<H>> for Listener<T> {
     async fn init(
         &mut self,
         _status: Result<(), Need>,
-        supervisor: &mut Option<PermanodeSender<H>>,
+        supervisor: &mut Option<PermanodeAPISender<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         if let Some(ref mut supervisor) = supervisor {
             supervisor
-                .send(PermanodeEvent::Children(PermanodeChild::Listener(self.service.clone())))
+                .send(PermanodeAPIEvent::Children(PermanodeAPIChild::Listener(
+                    self.service.clone(),
+                )))
                 .map_err(|_| Need::Abort)
         } else {
             Err(Need::Abort)

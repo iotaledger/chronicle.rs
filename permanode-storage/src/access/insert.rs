@@ -19,11 +19,12 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
     {
         let mut message_bytes = Vec::new();
         value.pack(&mut message_bytes).expect("Error occurred packing Message");
+
         let query = Execute::new()
             .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
-            .value(message_bytes)
+            .value(message_bytes.as_slice())
             .build();
 
         let token = 1;
@@ -35,7 +36,7 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
 impl<'a> Insert<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
     fn insert_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.messages (message_id, message_metadata) VALUES (?, ?)",
+            "INSERT INTO {}.messages (message_id, metadata) VALUES (?, ?)",
             Self::name()
         )
         .into()
@@ -53,11 +54,12 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
         value
             .pack(&mut metadata_bytes)
             .expect("Error occurred packing MessageMetadata");
+
         let query = Execute::new()
             .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
-            .value(metadata_bytes)
+            .value(metadata_bytes.as_slice())
             .build();
 
         let token = 1;
@@ -69,7 +71,7 @@ impl<'a> Insert<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
 impl<'a> Insert<'a, Bee<MessageId>, (Bee<Message>, Bee<MessageMetadata>)> for Mainnet {
     fn insert_statement() -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.messages (message_id, message, message_metadata) VALUES (?, ?, ?)",
+            "INSERT INTO {}.messages (message_id, message, metadata) VALUES (?, ?, ?)",
             Self::name()
         )
         .into()
@@ -97,8 +99,8 @@ impl<'a> Insert<'a, Bee<MessageId>, (Bee<Message>, Bee<MessageMetadata>)> for Ma
             .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
-            .value(message_bytes)
-            .value(metadata_bytes)
+            .value(message_bytes.as_slice())
+            .value(metadata_bytes.as_slice())
             .build();
 
         let token = 1;
@@ -128,11 +130,12 @@ impl<'a> Insert<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
         value
             .pack(&mut milestone_bytes)
             .expect("Error occurred packing Milestone");
+
         let query = Execute::new()
             .id(&Self::insert_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.to_string())
-            .value(milestone_bytes)
+            .value(milestone_bytes.as_slice())
             .build();
 
         let token = 1;

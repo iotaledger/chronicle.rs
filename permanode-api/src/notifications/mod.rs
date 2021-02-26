@@ -38,7 +38,7 @@ impl Name for Notifications {
 pub enum AddFeedSourceEvent {}
 
 #[async_trait::async_trait]
-impl<H: LauncherSender<PermanodeBuilder<H>>> AknShutdown<Notifications> for PermanodeSender<H> {
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> AknShutdown<Notifications> for PermanodeAPISender<H> {
     async fn aknowledge_shutdown(self, mut state: Notifications, status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
     }

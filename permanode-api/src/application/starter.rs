@@ -7,15 +7,15 @@ use crate::listener::{
 use std::borrow::Cow;
 
 #[async_trait]
-impl<H> Starter<H> for PermanodeBuilder<H>
+impl<H> Starter<H> for PermanodeAPIBuilder<H>
 where
-    H: LauncherSender<PermanodeBuilder<H>>,
+    H: LauncherSender<PermanodeAPIBuilder<H>>,
 {
-    type Ok = PermanodeSender<H>;
+    type Ok = PermanodeAPISender<H>;
 
     type Error = Cow<'static, str>;
 
-    type Input = Permanode<H>;
+    type Input = PermanodeAPI<H>;
 
     async fn starter(self, handle: H, input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
         let config = self

@@ -50,16 +50,18 @@ use std::{
 use tokio::sync::mpsc;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for Listener<RocketListener> {
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> EventLoop<PermanodeAPISender<H>> for Listener<RocketListener> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
-        supervisor: &mut Option<PermanodeSender<H>>,
+        supervisor: &mut Option<PermanodeAPISender<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Running);
         if let Some(ref mut supervisor) = supervisor {
             supervisor
-                .send(PermanodeEvent::Children(PermanodeChild::Listener(self.service.clone())))
+                .send(PermanodeAPIEvent::Children(PermanodeAPIChild::Listener(
+                    self.service.clone(),
+                )))
                 .map_err(|_| Need::Abort)?;
         }
         let mut server = rocket::ignite();
@@ -166,9 +168,9 @@ mod mainnet {
     #[get("/messages?<index>")]
     pub async fn get_message_by_index(index: String) -> Result<Json<MessagesForIndexResponse>, Cow<'static, str>> {
         let bytes: [u8; HASHED_INDEX_LENGTH] = hex::decode(index.clone())
-            .map_err(|_| Cow::from("Invalid Hex character in index!"))?
+            .map_err(|_| "Invalid Hex character in index!")?
             .try_into()
-            .map_err(|_| Cow::from("Invalid index length!"))?;
+            .map_err(|_| "Invalid index length!")?;
 
         let request = Mainnet.select::<IndexMessages>(&HashedIndex::from(bytes).into());
         // TODO: Paging
@@ -309,8 +311,8 @@ fn message_row_to_response(
     // TODO: Remove these when we get the solid milestone
     let should_promote = None;
     let should_reattach = None;
-    let metadata = metadata.ok_or("No metadata provided!")?;
-    let message = message.ok_or("No message provided!")?;
+    let metadata = metadata.ok_or("No metadata available for this message id!")?;
+    let message = message.ok_or("No message data available for this message id!")?;
 
     if let Some(milestone) = metadata.milestone_index() {
         // message is referenced by a milestone

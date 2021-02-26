@@ -17,37 +17,37 @@ mod event_loop;
 mod init;
 mod starter;
 mod terminating;
-pub struct Permanode<H>
+pub struct PermanodeAPI<H>
 where
-    H: LauncherSender<PermanodeBuilder<H>>,
+    H: LauncherSender<PermanodeAPIBuilder<H>>,
 {
     service: Service,
     config: Config,
-    inbox: UnboundedReceiver<PermanodeEvent<H::AppsEvents>>,
-    sender: Option<PermanodeSender<H>>,
+    inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
+    sender: Option<PermanodeAPISender<H>>,
     listener: AbortHandle,
 }
 
-pub struct PermanodeSender<H: LauncherSender<PermanodeBuilder<H>>> {
-    tx: UnboundedSender<PermanodeEvent<H::AppsEvents>>,
+pub struct PermanodeAPISender<H: LauncherSender<PermanodeAPIBuilder<H>>> {
+    tx: UnboundedSender<PermanodeAPIEvent<H::AppsEvents>>,
 }
 
-impl<H: LauncherSender<PermanodeBuilder<H>>> Deref for PermanodeSender<H> {
-    type Target = UnboundedSender<PermanodeEvent<H::AppsEvents>>;
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Deref for PermanodeAPISender<H> {
+    type Target = UnboundedSender<PermanodeAPIEvent<H::AppsEvents>>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx
     }
 }
 
-impl<H: LauncherSender<PermanodeBuilder<H>>> Clone for PermanodeSender<H> {
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Clone for PermanodeAPISender<H> {
     fn clone(&self) -> Self {
-        PermanodeSender::<H> { tx: self.tx.clone() }
+        PermanodeAPISender::<H> { tx: self.tx.clone() }
     }
 }
 
-impl<H: LauncherSender<PermanodeBuilder<H>>> Passthrough<PermanodeThrough> for PermanodeSender<H> {
-    fn passthrough(&mut self, event: PermanodeThrough, from_app_name: String) {}
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Passthrough<PermanodeAPIThrough> for PermanodeAPISender<H> {
+    fn passthrough(&mut self, event: PermanodeAPIThrough, from_app_name: String) {}
 
     fn app_status_change(&mut self, service: &Service) {}
 
@@ -56,12 +56,12 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> Passthrough<PermanodeThrough> for P
     fn service(&mut self, service: &Service) {}
 }
 
-impl<H: LauncherSender<PermanodeBuilder<H>>> Shutdown for PermanodeSender<H> {
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Shutdown for PermanodeAPISender<H> {
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized,
     {
-        self.send(PermanodeEvent::Passthrough(
+        self.send(PermanodeAPIEvent::Passthrough(
             serde_json::from_str("{\"Permanode\": \"Shutdown\"}").unwrap(),
         ))
         .ok();
@@ -71,25 +71,25 @@ impl<H: LauncherSender<PermanodeBuilder<H>>> Shutdown for PermanodeSender<H> {
 
 builder!(
     #[derive(Clone)]
-    PermanodeBuilder<H> {
+    PermanodeAPIBuilder<H> {
         config: Config,
         listener_handle: AbortHandle
     }
 );
 
-impl<H: LauncherSender<Self>> ThroughType for PermanodeBuilder<H> {
-    type Through = PermanodeThrough;
+impl<H: LauncherSender<Self>> ThroughType for PermanodeAPIBuilder<H> {
+    type Through = PermanodeAPIThrough;
 }
 
-impl<H> Builder for PermanodeBuilder<H>
+impl<H> Builder for PermanodeAPIBuilder<H>
 where
     H: LauncherSender<Self>,
 {
-    type State = Permanode<H>;
+    type State = PermanodeAPI<H>;
 
     fn build(self) -> Self::State {
         let (tx, inbox) = tokio::sync::mpsc::unbounded_channel();
-        let sender = Some(PermanodeSender { tx });
+        let sender = Some(PermanodeAPISender { tx });
         Self::State {
             service: Service::new(),
             config: self.config.expect("No config was provided!"),
@@ -101,9 +101,9 @@ where
     }
 }
 
-impl<H> Name for Permanode<H>
+impl<H> Name for PermanodeAPI<H>
 where
-    H: LauncherSender<PermanodeBuilder<H>>,
+    H: LauncherSender<PermanodeAPIBuilder<H>>,
 {
     fn set_name(mut self) -> Self {
         self.service.update_name("Permanode".to_string());
@@ -115,17 +115,17 @@ where
     }
 }
 
-pub enum PermanodeEvent<T> {
+pub enum PermanodeAPIEvent<T> {
     Passthrough(T),
-    Children(PermanodeChild),
+    Children(PermanodeAPIChild),
 }
 
-pub enum PermanodeChild {
+pub enum PermanodeAPIChild {
     Listener(Service),
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-pub enum PermanodeThrough {
+pub enum PermanodeAPIThrough {
     Shutdown,
     AddNode(String),
     RemoveNode(String),

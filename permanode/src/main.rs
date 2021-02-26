@@ -13,14 +13,16 @@ impl Builder for AppsBuilder {
 
     fn build(self) -> Self::State {
         let config = Config::from_file(Path::new("./example_config.ron")).expect("Failed to deserialize config!");
-        let permanode_builder = PermanodeBuilder::new().config(config);
+        let permanode_api_builder = PermanodeAPIBuilder::new().config(config);
         let scylla_builder = ScyllaBuilder::new()
             .listen_address("127.0.0.1:8080".to_owned())
             .thread_count(num_cpus::get())
             .reporter_count(2)
             .local_dc("datacenter1".to_owned());
 
-        self.Permanode(permanode_builder).Scylla(scylla_builder).to_apps()
+        self.PermanodeAPI(permanode_api_builder)
+            .Scylla(scylla_builder)
+            .to_apps()
     }
 }
 
@@ -42,7 +44,7 @@ async fn main() {
             apps
         })
         .await
-        .Permanode()
+        .PermanodeAPI()
         .await
         .start(None)
         .await;

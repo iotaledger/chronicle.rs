@@ -85,7 +85,7 @@ impl<T> Name for Listener<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: 'static + Send, H: LauncherSender<PermanodeBuilder<H>>> AknShutdown<Listener<T>> for PermanodeSender<H> {
+impl<T: 'static + Send, H: LauncherSender<PermanodeAPIBuilder<H>>> AknShutdown<Listener<T>> for PermanodeAPISender<H> {
     async fn aknowledge_shutdown(self, mut state: Listener<T>, status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
     }

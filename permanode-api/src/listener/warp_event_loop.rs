@@ -28,16 +28,18 @@ use warp::{
 };
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeBuilder<H>>> EventLoop<PermanodeSender<H>> for Listener<WarpListener> {
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> EventLoop<PermanodeAPISender<H>> for Listener<WarpListener> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
-        supervisor: &mut Option<PermanodeSender<H>>,
+        supervisor: &mut Option<PermanodeAPISender<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Running);
         if let Some(ref mut supervisor) = supervisor {
             supervisor
-                .send(PermanodeEvent::Children(PermanodeChild::Listener(self.service.clone())))
+                .send(PermanodeAPIEvent::Children(PermanodeAPIChild::Listener(
+                    self.service.clone(),
+                )))
                 .map_err(|_| Need::Abort)?;
         }
         let get_message = warp::path!("messages" / String).and_then(get_message);

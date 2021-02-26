@@ -1,11 +1,11 @@
 use super::*;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeBuilder<H>>> Terminating<PermanodeSender<H>> for Notifications {
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Terminating<PermanodeAPISender<H>> for Notifications {
     async fn terminating(
         &mut self,
         status: Result<(), Need>,
-        supervisor: &mut Option<PermanodeSender<H>>,
+        supervisor: &mut Option<PermanodeAPISender<H>>,
     ) -> Result<(), Need> {
         todo!()
     }
