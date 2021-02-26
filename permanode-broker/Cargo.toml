@@ -12,6 +12,8 @@ log = "0.4.14"
 tokio-tungstenite = "0.13.0"
 futures = "0.3"
 async-trait = "*"
+url = { version = "2", features = ["serde"] }
+bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 
 [dependencies.tokio]
 version = "1.2"
@@ -34,4 +36,11 @@ version = "0.9.1"
 default-features = false
 features = [
     "bundled"
+]
+
+[dependencies.bee-message]
+git = "https://github.com/iotaledger/bee.git"
+rev = "8baba87"
+features = [
+    "serde"
 ]
