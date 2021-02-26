@@ -95,8 +95,7 @@ pub enum BrokerEvent<T> {
 #[derive(Deserialize, Serialize, Debug)]
 /// Topology event
 pub enum Topology {
-    AddMqtt
-    // todo!( add broker topology like adding new feed source or removing one)
+    AddMqtt, // todo!( add broker topology like adding new feed source or removing one)
 }
 
 #[derive(Deserialize, Serialize)]

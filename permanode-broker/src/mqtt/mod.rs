@@ -72,9 +72,7 @@ pub trait Topic: Send + 'static {
     /// MQTT Quality of service
     fn qos() -> i32;
 }
-pub trait Peer {
-
-}
+pub trait Peer {}
 /// Mqtt Messages topic
 struct Messages;
 
