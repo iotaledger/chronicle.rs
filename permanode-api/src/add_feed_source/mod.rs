@@ -38,7 +38,7 @@ impl Name for AddFeedSource {
 pub enum AddFeedSourceEvent {}
 
 #[async_trait::async_trait]
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> AknShutdown<AddFeedSource> for PermanodeAPISender<H> {
+impl<H: PermanodeAPIScope> AknShutdown<AddFeedSource> for PermanodeAPISender<H> {
     async fn aknowledge_shutdown(self, mut state: AddFeedSource, status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
     }

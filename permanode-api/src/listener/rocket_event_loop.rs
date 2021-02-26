@@ -50,7 +50,7 @@ use std::{
 use tokio::sync::mpsc;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> EventLoop<PermanodeAPISender<H>> for Listener<RocketListener> {
+impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketListener> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,

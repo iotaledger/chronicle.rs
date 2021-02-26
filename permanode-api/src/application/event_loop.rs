@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> EventLoop<H> for PermanodeAPI<H> {
+impl<H: PermanodeAPIScope> EventLoop<H> for PermanodeAPI<H> {
     async fn event_loop(
         &mut self,
         status: Result<(), chronicle::Need>,

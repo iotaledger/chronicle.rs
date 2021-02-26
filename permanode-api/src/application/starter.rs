@@ -9,7 +9,7 @@ use std::borrow::Cow;
 #[async_trait]
 impl<H> Starter<H> for PermanodeAPIBuilder<H>
 where
-    H: LauncherSender<PermanodeAPIBuilder<H>>,
+    H: PermanodeAPIScope,
 {
     type Ok = PermanodeAPISender<H>;
 

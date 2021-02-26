@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl<T: 'static + Send, H: LauncherSender<PermanodeAPIBuilder<H>>> Terminating<PermanodeAPISender<H>> for Listener<T> {
+impl<T: APIEngine, H: PermanodeAPIScope> Terminating<PermanodeAPISender<H>> for Listener<T> {
     async fn terminating(
         &mut self,
         _status: Result<(), Need>,

@@ -17,9 +17,14 @@ mod event_loop;
 mod init;
 mod starter;
 mod terminating;
+
+/// Define the application scope trait
+pub trait PermanodeAPIScope: LauncherSender<PermanodeAPIBuilder<Self>> {}
+impl<H: LauncherSender<PermanodeAPIBuilder<H>>> PermanodeAPIScope for H {}
+
 pub struct PermanodeAPI<H>
 where
-    H: LauncherSender<PermanodeAPIBuilder<H>>,
+    H: PermanodeAPIScope,
 {
     service: Service,
     config: Config,
@@ -28,11 +33,11 @@ where
     listener: AbortHandle,
 }
 
-pub struct PermanodeAPISender<H: LauncherSender<PermanodeAPIBuilder<H>>> {
+pub struct PermanodeAPISender<H: PermanodeAPIScope> {
     tx: UnboundedSender<PermanodeAPIEvent<H::AppsEvents>>,
 }
 
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Deref for PermanodeAPISender<H> {
+impl<H: PermanodeAPIScope> Deref for PermanodeAPISender<H> {
     type Target = UnboundedSender<PermanodeAPIEvent<H::AppsEvents>>;
 
     fn deref(&self) -> &Self::Target {
@@ -40,13 +45,13 @@ impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Deref for PermanodeAPISender<H> 
     }
 }
 
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Clone for PermanodeAPISender<H> {
+impl<H: PermanodeAPIScope> Clone for PermanodeAPISender<H> {
     fn clone(&self) -> Self {
         PermanodeAPISender::<H> { tx: self.tx.clone() }
     }
 }
 
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Passthrough<PermanodeAPIThrough> for PermanodeAPISender<H> {
+impl<H: PermanodeAPIScope> Passthrough<PermanodeAPIThrough> for PermanodeAPISender<H> {
     fn passthrough(&mut self, event: PermanodeAPIThrough, from_app_name: String) {}
 
     fn app_status_change(&mut self, service: &Service) {}
@@ -56,13 +61,13 @@ impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Passthrough<PermanodeAPIThrough>
     fn service(&mut self, service: &Service) {}
 }
 
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Shutdown for PermanodeAPISender<H> {
+impl<H: PermanodeAPIScope> Shutdown for PermanodeAPISender<H> {
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized,
     {
         self.send(PermanodeAPIEvent::Passthrough(
-            serde_json::from_str("{\"Permanode\": \"Shutdown\"}").unwrap(),
+            serde_json::from_str("{\"PermanodeAPI\": \"Shutdown\"}").unwrap(),
         ))
         .ok();
         None
@@ -77,7 +82,7 @@ builder!(
     }
 );
 
-impl<H: LauncherSender<Self>> ThroughType for PermanodeAPIBuilder<H> {
+impl<H: PermanodeAPIScope> ThroughType for PermanodeAPIBuilder<H> {
     type Through = PermanodeAPIThrough;
 }
 
@@ -103,7 +108,7 @@ where
 
 impl<H> Name for PermanodeAPI<H>
 where
-    H: LauncherSender<PermanodeAPIBuilder<H>>,
+    H: PermanodeAPIScope,
 {
     fn set_name(mut self) -> Self {
         self.service.update_name("Permanode".to_string());

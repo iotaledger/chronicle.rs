@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Init<H> for PermanodeAPI<H> {
+impl<H: PermanodeAPIScope> Init<H> for PermanodeAPI<H> {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<H>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         if let Some(ref mut supervisor) = supervisor {

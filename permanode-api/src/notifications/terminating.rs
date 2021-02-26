@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> Terminating<PermanodeAPISender<H>> for Notifications {
+impl<H: PermanodeAPIScope> Terminating<PermanodeAPISender<H>> for Notifications {
     async fn terminating(
         &mut self,
         status: Result<(), Need>,

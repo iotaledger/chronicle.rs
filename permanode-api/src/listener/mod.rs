@@ -27,6 +27,24 @@ pub struct Listener<T> {
     _data: PhantomData<T>,
 }
 
+/// Trait to be implemented on the API engines (ie Rocket, warp, etc)
+pub trait APIEngine: Send + 'static {
+    /// API Engine name
+    fn name() -> &'static str;
+}
+
+impl APIEngine for RocketListener {
+    fn name() -> &'static str {
+        stringify!(RocketListener)
+    }
+}
+
+impl APIEngine for WarpListener {
+    fn name() -> &'static str {
+        stringify!(RocketListener)
+    }
+}
+
 #[derive(Debug)]
 pub enum Event {
     /// Response from scylla with a payload
@@ -60,7 +78,7 @@ builder!(ListenerBuilder<T> {
     config: Config
 });
 
-impl<T> Builder for ListenerBuilder<T> {
+impl<T: APIEngine> Builder for ListenerBuilder<T> {
     type State = Listener<T>;
 
     fn build(self) -> Self::State {
@@ -73,9 +91,9 @@ impl<T> Builder for ListenerBuilder<T> {
     }
 }
 
-impl<T> Name for Listener<T> {
+impl<T: APIEngine> Name for Listener<T> {
     fn set_name(mut self) -> Self {
-        self.service.update_name(format!("{} Listener", stringify!(T)));
+        self.service.update_name(format!("{} Listener", T::name()));
         self
     }
 
@@ -85,7 +103,7 @@ impl<T> Name for Listener<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: 'static + Send, H: LauncherSender<PermanodeAPIBuilder<H>>> AknShutdown<Listener<T>> for PermanodeAPISender<H> {
+impl<T: APIEngine, H: PermanodeAPIScope> AknShutdown<Listener<T>> for PermanodeAPISender<H> {
     async fn aknowledge_shutdown(self, mut state: Listener<T>, status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
     }

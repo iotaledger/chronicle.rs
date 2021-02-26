@@ -28,7 +28,7 @@ use warp::{
 };
 
 #[async_trait]
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> EventLoop<PermanodeAPISender<H>> for Listener<WarpListener> {
+impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<WarpListener> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
