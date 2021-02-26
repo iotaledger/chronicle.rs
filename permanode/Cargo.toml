@@ -12,12 +12,14 @@ chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 permanode-api = { path = "../permanode-api" }
 permanode-storage = { path = "../permanode-storage" }
+permanode-broker = { path = "../permanode-broker" }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1.42"
 env_logger = "0.8.3"
 log = "0.4.14"
 num_cpus = "1.13.0"
 dotenv = "0.15.0"
+ron = "0.6.4"
 
 [dependencies.tokio]
 version = "1.0"
@@ -34,3 +36,6 @@ features = [
     "signal", 
     "full"
 ] 
+
+[dev-dependencies]
+maplit = "1.0.2"

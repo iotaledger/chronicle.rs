@@ -1,13 +1,11 @@
-use std::ops::Deref;
-
 use super::*;
-
-use permanode_storage::config::Config;
+use permanode_storage::StorageConfig;
 use rocket::futures::future::AbortHandle;
 use serde::{
     Deserialize,
     Serialize,
 };
+use std::ops::Deref;
 use tokio::sync::mpsc::{
     UnboundedReceiver,
     UnboundedSender,
@@ -27,7 +25,8 @@ where
     H: PermanodeAPIScope,
 {
     service: Service,
-    config: Config,
+    api_config: ApiConfig,
+    storage_config: StorageConfig,
     inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
     sender: Option<PermanodeAPISender<H>>,
     listener: AbortHandle,
@@ -77,7 +76,8 @@ impl<H: PermanodeAPIScope> Shutdown for PermanodeAPISender<H> {
 builder!(
     #[derive(Clone)]
     PermanodeAPIBuilder<H> {
-        config: Config,
+        api_config: ApiConfig,
+        storage_config: StorageConfig,
         listener_handle: AbortHandle
     }
 );
@@ -97,7 +97,8 @@ where
         let sender = Some(PermanodeAPISender { tx });
         Self::State {
             service: Service::new(),
-            config: self.config.expect("No config was provided!"),
+            api_config: self.api_config.expect("No API config was provided!"),
+            storage_config: self.storage_config.expect("No Storage config was provided!"),
             inbox,
             sender,
             listener: self.listener_handle.expect("No listener handle was provided!"),

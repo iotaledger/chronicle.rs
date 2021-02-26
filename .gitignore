@@ -2,3 +2,5 @@
 **/*.rs.bk
 Cargo.lock
 examples/target
+
+config.ron

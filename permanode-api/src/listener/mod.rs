@@ -8,7 +8,7 @@ use permanode_storage::{
         Worker,
         WorkerError,
     },
-    config::Config,
+    StorageConfig,
 };
 use std::marker::PhantomData;
 use tokio::sync::mpsc::UnboundedSender;
@@ -23,7 +23,7 @@ pub struct WarpListener;
 
 pub struct Listener<T> {
     pub service: Service,
-    pub config: Config,
+    pub config: StorageConfig,
     _data: PhantomData<T>,
 }
 
@@ -75,7 +75,7 @@ impl Worker for DecoderWorker {
 }
 
 builder!(ListenerBuilder<T> {
-    config: Config
+    config: StorageConfig
 });
 
 impl<T: APIEngine> Builder for ListenerBuilder<T> {

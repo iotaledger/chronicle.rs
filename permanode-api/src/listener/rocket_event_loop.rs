@@ -33,11 +33,9 @@ use permanode_storage::{
         TransactionData,
         HASHED_INDEX_LENGTH,
     },
-    config::{
-        IotaKeyspace,
-        KeyspaceConfig,
-    },
     keyspaces::Mainnet,
+    IotaKeyspace,
+    KeyspaceConfig,
 };
 use rocket::get;
 use rocket_contrib::json::Json;

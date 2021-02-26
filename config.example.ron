@@ -1,0 +1,23 @@
+(
+    storage_config: (
+        keyspaces: {
+            "my_mainnet": (
+                keyspace: Mainnet,
+                data_centers: {
+                    "USA": (
+                        replication_factor: 2,
+                    ),
+                    "Canada": (
+                        replication_factor: 1,
+                    )
+                }
+            )
+        }
+    ),
+    api_config: (
+
+    ),
+    broker_config: (
+
+    ),
+)

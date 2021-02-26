@@ -18,11 +18,11 @@ where
     type Input = PermanodeAPI<H>;
 
     async fn starter(self, handle: H, input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
-        let config = self
-            .config
+        let storage_config = self
+            .storage_config
             .clone()
-            .ok_or("Tried to start application without config!")?;
-        let listener = ListenerBuilder::<RocketListener>::new().config(config).build();
+            .ok_or("Tried to start application without Storage config!")?;
+        let listener = ListenerBuilder::<RocketListener>::new().config(storage_config).build();
         let (listener_handle, listener_abort_registration) = AbortHandle::new_pair();
 
         let permanode = self.listener_handle(listener_handle).build();

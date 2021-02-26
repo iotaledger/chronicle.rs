@@ -1,5 +1,6 @@
 pub mod add_feed_source;
 pub mod application;
+pub mod config;
 pub mod listener;
 pub mod notifications;
 
@@ -8,6 +9,7 @@ extern crate rocket;
 
 use async_trait::async_trait;
 use chronicle::*;
+pub use config::ApiConfig;
 
 #[cfg(test)]
 mod tests {
