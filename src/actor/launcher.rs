@@ -419,16 +419,16 @@ macro_rules! launcher {
                         stringify!($app) => {
 
                             if let Some(app_handler) = self.apps_handlers.$app.take() {
+                                self.shutdown_queue.push_front(app_name.clone());
                                 // make sure app deps to get shutdown first
                                 for app in &self.apps_deps.$app {
                                     // add only if the app not stopped
                                     let is_dep_stopped = self.service.microservices.get(&app[..]).unwrap().is_stopped();
                                     if !is_dep_stopped {
                                         // shutdown the dep if not already stopped
-                                        self.shutdown_queue.push_back(app.clone());
+                                        self.shutdown_queue.push_front(app.clone());
                                     }
                                 }
-                                self.shutdown_queue.push_front(app_name.clone());
                                 // shutdown in order
                                 let shutdown_first = self.shutdown_queue.pop_front().unwrap();
                                 // if shutdown_first == app_name then all deps of app_name are already stopped
