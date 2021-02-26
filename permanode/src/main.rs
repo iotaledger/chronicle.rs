@@ -6,7 +6,16 @@ use std::path::Path;
 
 mod config;
 
-launcher!(builder: AppsBuilder {[] -> PermanodeBroker<Sender>: PermanodeBrokerBuilder<Sender>,[] -> PermanodeAPI<Sender>: PermanodeAPIBuilder<Sender>, [PermanodeBroker,PermanodeAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>}, state: Apps {});
+launcher!
+(
+    builder: AppsBuilder
+    {
+        [] -> PermanodeBroker<Sender>: PermanodeBrokerBuilder<Sender>,
+        [] -> PermanodeAPI<Sender>: PermanodeAPIBuilder<Sender>,
+        [PermanodeBroker, PermanodeAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
+    },
+    state: Apps {}
+);
 
 impl Builder for AppsBuilder {
     type State = Apps;
