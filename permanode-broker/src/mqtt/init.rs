@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<T: Topic, H: BrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
+impl<T: Topic, H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         // create async client

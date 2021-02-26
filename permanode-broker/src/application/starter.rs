@@ -4,9 +4,9 @@ use std::borrow::Cow;
 use tokio::net::TcpListener;
 
 #[async_trait::async_trait]
-impl<H> Starter<H> for BrokerBuilder<H>
+impl<H> Starter<H> for PermanodeBrokerBuilder<H>
 where
-    H: BrokerScope,
+    H: PermanodeBrokerScope,
 {
     type Ok = BrokerHandle<H>;
 

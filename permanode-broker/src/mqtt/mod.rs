@@ -72,6 +72,9 @@ pub trait Topic: Send + 'static {
     /// MQTT Quality of service
     fn qos() -> i32;
 }
+pub trait Peer {
+
+}
 /// Mqtt Messages topic
 struct Messages;
 
@@ -83,6 +86,7 @@ impl Topic for Messages {
         0
     }
 }
+
 /// Mqtt Metadata topic
 struct Metadata;
 
@@ -95,8 +99,8 @@ impl Topic for Metadata {
     }
 }
 
-impl<H: BrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
-impl<H: BrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Metadata> {}
+impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
+impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Metadata> {}
 
 /// implementation of builder
 impl<T: Topic> Builder for MqttBuilder<T> {
@@ -130,7 +134,7 @@ impl<T: Topic> Name for Mqtt<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: Topic, H: BrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
+impl<T: Topic, H: PermanodeBrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Mqtt<T>, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Mqtt(_state.service.clone()));

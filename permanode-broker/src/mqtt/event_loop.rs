@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: BrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
+impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
@@ -24,7 +24,7 @@ impl<H: BrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
 }
 
 #[async_trait::async_trait]
-impl<H: BrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Metadata> {
+impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Metadata> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,

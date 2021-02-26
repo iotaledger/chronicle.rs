@@ -1,4 +1,4 @@
-mod application;
+pub mod application;
 mod config;
 mod listener;
 mod mqtt;

@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: BrokerScope> Init<BrokerHandle<H>> for Websocket {
+impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Websocket {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         // todo authenticator using static secert key and noise protocol
         if true {

@@ -29,7 +29,7 @@ pub struct Listener {
     service: Service,
     tcp_listener: TcpListener,
 }
-impl<H: BrokerScope> ActorBuilder<BrokerHandle<H>> for ListenerBuilder {}
+impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for ListenerBuilder {}
 
 /// implementation of builder
 impl Builder for ListenerBuilder {
@@ -66,7 +66,7 @@ impl Shutdown for ListenerHandle {
 }
 
 #[async_trait::async_trait]
-impl<H: BrokerScope> AknShutdown<Listener> for BrokerHandle<H> {
+impl<H: PermanodeBrokerScope> AknShutdown<Listener> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Listener, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Listener(_state.service.clone()));

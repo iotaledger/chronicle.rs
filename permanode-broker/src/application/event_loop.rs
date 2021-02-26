@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl<H: BrokerScope> EventLoop<H> for PermanodeBroker<H> {
+impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
     async fn event_loop(
         &mut self,
         _status: Result<(), chronicle::Need>,
@@ -13,7 +13,7 @@ impl<H: BrokerScope> EventLoop<H> for PermanodeBroker<H> {
                 match event {
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
                         Ok(my_event) => match my_event {
-                            BrokerThrough::Shutdown => {
+                            PermanodeBrokerThrough::Shutdown => {
                                 if !self.service.is_stopping() {
                                     // Ask launcher to shutdown broker application,
                                     // this is usefull in case the shutdown event sent by the websocket
@@ -27,7 +27,7 @@ impl<H: BrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                     self.handle.take();
                                 }
                             }
-                            BrokerThrough::Topology(t) => {
+                            PermanodeBrokerThrough::Topology(t) => {
                                 todo!("add/remove feed source")
                             }
                         },
