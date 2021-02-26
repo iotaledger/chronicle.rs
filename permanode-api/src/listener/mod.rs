@@ -41,7 +41,7 @@ impl APIEngine for RocketListener {
 
 impl APIEngine for WarpListener {
     fn name() -> &'static str {
-        stringify!(RocketListener)
+        stringify!(WarpListener)
     }
 }
 
