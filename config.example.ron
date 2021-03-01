@@ -1,8 +1,8 @@
 (
     storage_config: (
         keyspaces: {
-            "my_mainnet": (
-                keyspace: Mainnet,
+            Mainnet: (
+                name: "my_mainnet",
                 data_centers: {
                     "USA": (
                         replication_factor: 2,

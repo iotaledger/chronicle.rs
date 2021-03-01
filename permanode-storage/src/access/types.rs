@@ -40,6 +40,7 @@ pub use bee_message::{
 };
 pub use bee_snapshot::SnapshotInfo;
 pub use bee_tangle::{
+    flags::Flags,
     metadata::MessageMetadata,
     unconfirmed_message::UnconfirmedMessage,
 };

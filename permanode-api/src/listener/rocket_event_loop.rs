@@ -1,5 +1,6 @@
 use super::*;
 use bee_rest_api::handlers::{
+    info::InfoResponse,
     message::MessageResponse,
     message_children::MessageChildrenResponse,
     message_metadata::{
@@ -34,10 +35,18 @@ use permanode_storage::{
         HASHED_INDEX_LENGTH,
     },
     keyspaces::Mainnet,
-    IotaKeyspace,
-    KeyspaceConfig,
+    TangleNetwork,
 };
-use rocket::get;
+use rocket::{
+    fairing::{
+        Fairing,
+        Info,
+        Kind,
+    },
+    get,
+    Request,
+    Response,
+};
 use rocket_contrib::json::Json;
 use scylla_cql::TryInto;
 use std::{
@@ -64,16 +73,14 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
         }
         let mut server = rocket::ignite();
 
-        for KeyspaceConfig {
-            keyspace,
-            data_centers: _,
-        } in self.config.keyspaces.values()
-        {
-            match keyspace {
-                IotaKeyspace::Mainnet => {
+        for network in self.config.keyspaces.keys() {
+            match network {
+                TangleNetwork::Mainnet => {
                     server = server.mount(
                         "/mainnet",
                         routes![
+                            options,
+                            info,
                             mainnet::get_message,
                             mainnet::get_message_metadata,
                             mainnet::get_message_children,
@@ -84,10 +91,12 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                         ],
                     );
                 }
-                IotaKeyspace::Devnet => {
+                TangleNetwork::Devnet => {
                     server = server.mount(
                         "/devnet",
                         routes![
+                            options,
+                            info,
                             devnet::get_message,
                             devnet::get_message_metadata,
                             devnet::get_message_children,
@@ -101,8 +110,48 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
             }
         }
 
+        server = server.attach(CORS);
+
         server.launch().await.map_err(|_| Need::Abort)
     }
+}
+
+struct CORS;
+
+#[rocket::async_trait]
+impl Fairing for CORS {
+    fn info(&self) -> rocket::fairing::Info {
+        Info {
+            name: "Add CORS Headers",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_raw_header("Access-Control-Allow-Origin", "*");
+        response.set_raw_header("Access-Control-Allow-Methods", "GET, OPTIONS");
+        response.set_raw_header("Access-Control-Allow-Headers", "*");
+        response.set_raw_header("Access-Control-Allow-Credentials", "true");
+    }
+}
+
+#[options("/info")]
+async fn options() {}
+
+#[get("/info")]
+async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
+    Ok(Json(InfoResponse {
+        name: "Permanode".into(),
+        version: "1.0".into(),
+        is_healthy: true,
+        network_id: "network id".into(),
+        bech32_hrp: "bech32 hrp".into(),
+        latest_milestone_index: 0,
+        solid_milestone_index: 0,
+        pruning_index: 0,
+        features: vec![],
+        min_pow_score: 0.0,
+    }))
 }
 
 async fn query<'a, V, S: Select<'a, K, V>, K>(request: SelectRequest<'a, S, K, V>) -> Result<V, Cow<'static, str>> {

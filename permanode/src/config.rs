@@ -26,8 +26,8 @@ mod test {
     use maplit::hashmap;
     use permanode_storage::{
         DatacenterConfig,
-        IotaKeyspace,
         KeyspaceConfig,
+        TangleNetwork,
     };
 
     #[test]
@@ -35,8 +35,8 @@ mod test {
         let config = Config {
             storage_config: StorageConfig {
                 keyspaces: hashmap! {
-                    "my_mainnet".to_string() => KeyspaceConfig {
-                        keyspace: IotaKeyspace::Mainnet,
+                    TangleNetwork::Mainnet => KeyspaceConfig {
+                        name: "my_mainnet".to_string(),
                         data_centers: hashmap!{
                             "USA".to_string() => DatacenterConfig {
                                 replication_factor: 2,

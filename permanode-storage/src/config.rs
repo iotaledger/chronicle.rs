@@ -6,11 +6,11 @@ pub type KeyspaceName = String;
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct StorageConfig {
-    pub keyspaces: HashMap<KeyspaceName, KeyspaceConfig>,
+    pub keyspaces: HashMap<TangleNetwork, KeyspaceConfig>,
 }
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct KeyspaceConfig {
-    pub keyspace: IotaKeyspace,
+    pub name: KeyspaceName,
     pub data_centers: HashMap<DatacenterName, DatacenterConfig>,
 }
 
@@ -19,8 +19,8 @@ pub struct DatacenterConfig {
     pub replication_factor: usize,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Copy, Clone)]
-pub enum IotaKeyspace {
+#[derive(Debug, Deserialize, PartialEq, Eq, Copy, Clone, Hash)]
+pub enum TangleNetwork {
     Mainnet,
     Devnet,
 }
