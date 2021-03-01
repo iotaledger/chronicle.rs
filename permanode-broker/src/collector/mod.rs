@@ -61,11 +61,8 @@ pub struct Mqtt<T> {
 }
 
 impl<T> Mqtt<T> {
-    pub(crate) fn take_handle(&mut self) -> Option<MqttHandle> {
-        self.handle.take()
-    }
-    pub(crate) fn clone_service(&self) -> Service {
-        self.service.clone()
+    pub(crate) fn clone_handle(&self) -> MqttHandle {
+        self.handle.clone().unwrap()
     }
 }
 

@@ -112,7 +112,7 @@ where
     H: PermanodeAPIScope,
 {
     fn set_name(mut self) -> Self {
-        self.service.update_name("Permanode".to_string());
+        self.service.update_name("PermanodeAPI".to_string());
         self
     }
 

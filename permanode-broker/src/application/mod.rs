@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     listener::*,
+    mqtt::*,
     websocket::*,
 };
 
@@ -31,42 +32,42 @@ mod starter;
 mod terminating;
 
 /// Define the application scope trait
-pub trait BrokerScope: LauncherSender<BrokerBuilder<Self>> {}
-impl<H: LauncherSender<BrokerBuilder<H>>> BrokerScope for H {}
+pub trait PermanodeBrokerScope: LauncherSender<PermanodeBrokerBuilder<Self>> {}
+impl<H: LauncherSender<PermanodeBrokerBuilder<H>>> PermanodeBrokerScope for H {}
 
 // Scylla builder
 builder!(
     #[derive(Clone)]
-    BrokerBuilder<H> {
+    PermanodeBrokerBuilder<H> {
         listen_address: SocketAddr,
         listener_handle: ListenerHandle
 });
 
 #[derive(Deserialize, Serialize)]
 /// It's the Interface of the broker app to dynamiclly configure the application during runtime
-pub enum BrokerThrough {
+pub enum PermanodeBrokerThrough {
     /// Shutdown json to gracefully shutdown broker app
     Shutdown,
     Topology(Topology),
 }
 
 /// BrokerHandle to be passed to the children
-pub struct BrokerHandle<H: BrokerScope> {
+pub struct BrokerHandle<H: PermanodeBrokerScope> {
     tx: tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>,
 }
 /// BrokerInbox used to recv events
-pub struct BrokerInbox<H: BrokerScope> {
+pub struct BrokerInbox<H: PermanodeBrokerScope> {
     rx: tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>,
 }
 
-impl<H: BrokerScope> Clone for BrokerHandle<H> {
+impl<H: PermanodeBrokerScope> Clone for BrokerHandle<H> {
     fn clone(&self) -> Self {
         BrokerHandle::<H> { tx: self.tx.clone() }
     }
 }
 
 /// Application state
-pub struct PermanodeBroker<H: BrokerScope> {
+pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     service: Service,
     websockets: HashMap<String, WsTx>,
     listener_handle: Option<ListenerHandle>,
@@ -95,7 +96,7 @@ pub enum BrokerEvent<T> {
 #[derive(Deserialize, Serialize, Debug)]
 /// Topology event
 pub enum Topology {
-    // todo!( add broker topology like adding new feed source or removing one)
+    AddMqttMessages(Url), // todo!( add broker topology like adding new feed source or removing one)
 }
 
 #[derive(Deserialize, Serialize)]
@@ -105,15 +106,15 @@ pub enum SocketMsg<T> {
 }
 
 /// implementation of the AppBuilder
-impl<H: BrokerScope> AppBuilder<H> for BrokerBuilder<H> {}
+impl<H: PermanodeBrokerScope> AppBuilder<H> for PermanodeBrokerBuilder<H> {}
 
 /// implementation of through type
-impl<H: BrokerScope> ThroughType for BrokerBuilder<H> {
-    type Through = BrokerThrough;
+impl<H: PermanodeBrokerScope> ThroughType for PermanodeBrokerBuilder<H> {
+    type Through = PermanodeBrokerThrough;
 }
 
 /// implementation of builder
-impl<H: BrokerScope> Builder for BrokerBuilder<H> {
+impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
     type State = PermanodeBroker<H>;
     fn build(self) -> Self::State {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -132,15 +133,15 @@ impl<H: BrokerScope> Builder for BrokerBuilder<H> {
 
 // TODO integrate well with other services;
 /// implementation of passthrough functionality
-impl<H: BrokerScope> Passthrough<BrokerThrough> for BrokerHandle<H> {
+impl<H: PermanodeBrokerScope> Passthrough<PermanodeBrokerThrough> for BrokerHandle<H> {
     fn launcher_status_change(&mut self, _service: &Service) {}
     fn app_status_change(&mut self, _service: &Service) {}
-    fn passthrough(&mut self, _event: BrokerThrough, _from_app_name: String) {}
+    fn passthrough(&mut self, _event: PermanodeBrokerThrough, _from_app_name: String) {}
     fn service(&mut self, _service: &Service) {}
 }
 
 /// implementation of shutdown functionality
-impl<H: BrokerScope> Shutdown for BrokerHandle<H> {
+impl<H: PermanodeBrokerScope> Shutdown for BrokerHandle<H> {
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized,
@@ -151,7 +152,7 @@ impl<H: BrokerScope> Shutdown for BrokerHandle<H> {
     }
 }
 
-impl<H: BrokerScope> Deref for BrokerHandle<H> {
+impl<H: PermanodeBrokerScope> Deref for BrokerHandle<H> {
     type Target = tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>;
 
     fn deref(&self) -> &Self::Target {
@@ -159,13 +160,13 @@ impl<H: BrokerScope> Deref for BrokerHandle<H> {
     }
 }
 
-impl<H: BrokerScope> DerefMut for BrokerHandle<H> {
+impl<H: PermanodeBrokerScope> DerefMut for BrokerHandle<H> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.tx
     }
 }
 
-impl<H: BrokerScope> Deref for BrokerInbox<H> {
+impl<H: PermanodeBrokerScope> Deref for BrokerInbox<H> {
     type Target = tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>;
 
     fn deref(&self) -> &Self::Target {
@@ -173,14 +174,14 @@ impl<H: BrokerScope> Deref for BrokerInbox<H> {
     }
 }
 
-impl<H: BrokerScope> DerefMut for BrokerInbox<H> {
+impl<H: PermanodeBrokerScope> DerefMut for BrokerInbox<H> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.rx
     }
 }
 
 /// impl name of the application
-impl<H: BrokerScope> Name for PermanodeBroker<H> {
+impl<H: PermanodeBrokerScope> Name for PermanodeBroker<H> {
     fn set_name(mut self) -> Self {
         self.service.update_name("PermanodeBroker".to_string());
         self

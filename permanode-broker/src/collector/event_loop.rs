@@ -3,8 +3,8 @@
 
 use super::*;
 
-use bee_common::packable::Packable;
 use bee_message::Message;
+use bee_common::packable::Packable;
 
 #[async_trait::async_trait]
 impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
@@ -17,7 +17,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
         let inbox = self.inbox.as_mut().unwrap();
         while let Some(msg_opt) = inbox.stream.next().await {
             if let Some(msg) = msg_opt {
-                if let Ok(msg) = Message::unpack(&mut msg.payload()) {
+                if let Ok(msg) = Message::unpack(&mut msg.payload()){
                     trace!("{:?}", msg);
                     // publish msg to collector
                 };

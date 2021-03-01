@@ -6,7 +6,7 @@ use crate::websocket::WebsocketdBuilder;
 use tokio_tungstenite::accept_async;
 
 #[async_trait::async_trait]
-impl<H: BrokerScope> EventLoop<BrokerHandle<H>> for Listener {
+impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Listener {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,

@@ -9,10 +9,10 @@ impl<T: Topic, H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
         self.service.update_status(ServiceStatus::Initializing);
         // create async client
         let mut cli = AsyncClient::new((&self.url.as_str()[..], &self.get_name()[..])).map_err(|e| {
-            error!("Unable to create AsyncClient: {}, error: {}", &self.url.as_str(), e);
+            error!("Unable to create AsyncClient: {}, error: {}",&self.url.as_str(), e);
             Need::Abort
-        })?;
-        info!("Created AsyncClient: {}", &self.url.to_string());
+         })?;
+        info!("Created AsyncClient: {}",&self.url.to_string());
         let stream = cli.get_stream(self.stream_capacity);
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
             .keep_alive_interval(Duration::from_secs(20))
@@ -22,26 +22,16 @@ impl<T: Topic, H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
             .finalize();
         // connect client with the remote broker
         cli.connect(conn_opts).await.map_err(|e| {
-            error!(
-                "Unable to connect AsyncClient: {}, topic: {}, error: {}",
-                &self.url.as_str(),
-                T::name(),
-                e
-            );
+            error!("Unable to connect AsyncClient: {}, topic: {}, error: {}",&self.url.as_str(),T::name(), e);
             Need::Restart
         })?;
-        info!("Connected AsyncClient: {}", &self.url.as_str());
+        info!("Connected AsyncClient: {}",&self.url.as_str());
         // subscribe to T::name() topic with T::qos()
-        cli.subscribe(T::name(), T::qos()).await.map_err(|e| {
-            error!(
-                "Unable to subscribe AsyncClient: {}, topic: {}, error: {}",
-                &self.url.as_str(),
-                T::name(),
-                e
-            );
+        cli.subscribe(T::name(), T::qos()).await.map_err(|e|{
+            error!("Unable to subscribe AsyncClient: {}, topic: {}, error: {}",&self.url.as_str(),T::name(), e);
             Need::Restart
         })?;
-        info!("Subscribed AsyncClient: {}, topic: {}", &self.url.as_str(), T::name());
+        info!("Subscribed AsyncClient: {}, topic: {}",&self.url.as_str(), T::name());
         // TODO send client/handle to supervisor
 
         let event = BrokerEvent::Children(BrokerChild::Mqtt(self.service.clone()));

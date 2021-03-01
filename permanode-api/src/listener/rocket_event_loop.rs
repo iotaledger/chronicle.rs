@@ -34,6 +34,7 @@ use permanode_storage::{
         TransactionData,
         HASHED_INDEX_LENGTH,
     },
+    config::KeyspaceConfig,
     keyspaces::Mainnet,
     TangleNetwork,
 };

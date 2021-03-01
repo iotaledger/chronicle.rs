@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: BrokerScope> EventLoop<BrokerHandle<H>> for Websocket {
+impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Websocket {
     async fn event_loop(
         &mut self,
         status: Result<(), Need>,
