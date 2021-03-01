@@ -30,6 +30,7 @@ where
     inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
     sender: Option<PermanodeAPISender<H>>,
     listener: AbortHandle,
+    websocket: AbortHandle,
 }
 
 pub struct PermanodeAPISender<H: PermanodeAPIScope> {
@@ -78,7 +79,8 @@ builder!(
     PermanodeAPIBuilder<H> {
         api_config: ApiConfig,
         storage_config: StorageConfig,
-        listener_handle: AbortHandle
+        listener_handle: AbortHandle,
+        websocket_handle: AbortHandle
     }
 );
 
@@ -102,6 +104,7 @@ where
             inbox,
             sender,
             listener: self.listener_handle.expect("No listener handle was provided!"),
+            websocket: self.websocket_handle.expect("No websocket handle was provided!"),
         }
         .set_name()
     }
@@ -128,6 +131,7 @@ pub enum PermanodeAPIEvent<T> {
 
 pub enum PermanodeAPIChild {
     Listener(Service),
+    Websocket(Service),
 }
 
 #[derive(Deserialize, Serialize, Clone)]

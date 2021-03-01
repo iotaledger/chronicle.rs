@@ -13,10 +13,14 @@ impl<'a> Select<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
     where
         Self: Select<'a, Bee<MessageId>, Bee<Message>>,
     {
+        let mut message_id_bytes = Vec::new();
+        key.pack(&mut message_id_bytes)
+            .expect("Error occurred packing Message ID");
+
         let query = Execute::new()
             .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
-            .value(key.to_string())
+            .value(message_id_bytes.as_slice())
             .build();
 
         let token = 1;
@@ -38,11 +42,15 @@ impl<'a> Select<'a, Bee<MessageId>, MessageChildren> for Mainnet {
     where
         Self: Select<'a, Bee<MessageId>, MessageChildren>,
     {
+        let mut message_id_bytes = Vec::new();
+        key.pack(&mut message_id_bytes)
+            .expect("Error occurred packing Message ID");
+
         let query = Execute::new()
             .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
-            .value(key.to_string())
-            // TODO: .value(partition)
+            .value(message_id_bytes.as_slice())
+            .value(0u16)
             .build();
 
         let token = 1;
@@ -60,10 +68,14 @@ impl<'a> Select<'a, Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
     where
         Self: Select<'a, Bee<MessageId>, Bee<MessageMetadata>>,
     {
+        let mut message_id_bytes = Vec::new();
+        key.pack(&mut message_id_bytes)
+            .expect("Error occurred packing Message ID");
+
         let query = Execute::new()
             .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
-            .value(key.to_string())
+            .value(message_id_bytes.as_slice())
             .build();
 
         let token = 1;
@@ -85,10 +97,14 @@ impl<'a> Select<'a, Bee<MessageId>, MessageRow> for Mainnet {
     where
         Self: Select<'a, Bee<MessageId>, MessageRow>,
     {
+        let mut message_id_bytes = Vec::new();
+        key.pack(&mut message_id_bytes)
+            .expect("Error occurred packing Message ID");
+
         let query = Execute::new()
             .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
-            .value(key.to_string())
+            .value(message_id_bytes.as_slice())
             .build();
 
         let token = 1;
@@ -121,10 +137,14 @@ impl<'a> Select<'a, Bee<MilestoneIndex>, SingleMilestone> for Mainnet {
     where
         Self: Select<'a, Bee<MilestoneIndex>, SingleMilestone>,
     {
+        let mut index_bytes = Vec::new();
+        key.pack(&mut index_bytes)
+            .expect("Error occurred packing Milestone Index");
+
         let query = Execute::new()
             .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
-            .value(key.to_string())
+            .value(index_bytes.as_slice())
             .build();
 
         let token = 1;
@@ -150,7 +170,7 @@ impl<'a> Select<'a, Bee<HashedIndex>, IndexMessages> for Mainnet {
             .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.as_ref())
-            // TODO: .value(partition)
+            .value(0u16)
             .build();
 
         let token = 1;
@@ -204,7 +224,7 @@ impl<'a> Select<'a, Bee<Ed25519Address>, OutputIds> for Mainnet {
             .id(&Self::select_id())
             .consistency(scylla_cql::Consistency::One)
             .value(key.as_ref())
-            // TODO: .value(partition)
+            .value(0u16)
             .build();
 
         let token = 1;

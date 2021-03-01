@@ -31,7 +31,7 @@ impl<H: PermanodeAPIScope> EventLoop<H> for PermanodeAPI<H> {
                         }
                     },
                     PermanodeAPIEvent::Children(child) => match child {
-                        PermanodeAPIChild::Listener(service) => {
+                        PermanodeAPIChild::Listener(service) | PermanodeAPIChild::Websocket(service) => {
                             self.service.update_microservice(service.get_name(), service);
                             supervisor.status_change(self.service.clone());
                         }

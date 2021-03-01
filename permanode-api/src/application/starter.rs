@@ -1,8 +1,11 @@
 use super::*;
-use crate::listener::{
-    ListenerBuilder,
-    RocketListener,
-    WarpListener,
+use crate::{
+    listener::{
+        ListenerBuilder,
+        RocketListener,
+        WarpListener,
+    },
+    websocket::WebsocketBuilder,
 };
 use std::borrow::Cow;
 
@@ -17,7 +20,7 @@ where
 
     type Input = PermanodeAPI<H>;
 
-    async fn starter(self, handle: H, input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
+    async fn starter(self, handle: H, _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
         let storage_config = self
             .storage_config
             .clone()
@@ -25,11 +28,19 @@ where
         let listener = ListenerBuilder::<RocketListener>::new().config(storage_config).build();
         let (listener_handle, listener_abort_registration) = AbortHandle::new_pair();
 
-        let permanode = self.listener_handle(listener_handle).build();
+        let websocket = WebsocketBuilder::new().build();
+        let (websocket_handle, websocket_abort_registration) = AbortHandle::new_pair();
+
+        let permanode = self
+            .listener_handle(listener_handle)
+            .websocket_handle(websocket_handle)
+            .build();
 
         let supervisor = permanode.sender.clone().unwrap();
 
         tokio::spawn(listener.start_abortable(listener_abort_registration, Some(supervisor.clone())));
+
+        tokio::spawn(websocket.start_abortable(websocket_abort_registration, Some(supervisor.clone())));
 
         tokio::spawn(permanode.start(Some(handle)));
 

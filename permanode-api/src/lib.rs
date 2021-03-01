@@ -3,6 +3,7 @@ pub mod application;
 pub mod config;
 pub mod listener;
 pub mod notifications;
+pub mod websocket;
 
 #[macro_use]
 extern crate rocket;
