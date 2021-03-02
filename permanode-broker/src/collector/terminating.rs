@@ -4,14 +4,14 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<T: Topic, H: PermanodeBrokerScope> Terminating<BrokerHandle<H>> for Mqtt<T> {
+impl<H: PermanodeBrokerScope> Terminating<BrokerHandle<H>> for Collector {
     async fn terminating(
         &mut self,
         _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Stopping);
-        let event = BrokerEvent::Children(BrokerChild::Mqtt(self.service.clone()));
+        let event = BrokerEvent::Children(BrokerChild::Collector(self.service.clone()));
         let _ = _supervisor.as_mut().unwrap().send(event);
         _status
     }

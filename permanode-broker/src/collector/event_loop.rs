@@ -3,49 +3,34 @@
 
 use super::*;
 
-use bee_message::Message;
-use bee_common::packable::Packable;
-
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
+impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
     async fn event_loop(
         &mut self,
-        status: Result<(), Need>,
+        _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
-        status?;
-        let inbox = self.inbox.as_mut().unwrap();
-        while let Some(msg_opt) = inbox.stream.next().await {
-            if let Some(msg) = msg_opt {
-                if let Ok(msg) = Message::unpack(&mut msg.payload()){
-                    trace!("{:?}", msg);
-                    // publish msg to collector
-                };
-            } else {
-                error!("Mqtt: {}, Lost connection", self.get_name());
-                return Err(Need::Restart);
-            }
-        }
-        Ok(())
-    }
-}
-
-#[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Metadata> {
-    async fn event_loop(
-        &mut self,
-        status: Result<(), Need>,
-        _supervisor: &mut Option<BrokerHandle<H>>,
-    ) -> Result<(), Need> {
-        status?;
-        let inbox = self.inbox.as_mut().unwrap();
-        while let Some(msg_opt) = inbox.stream.next().await {
-            if let Some(msg) = msg_opt {
-                // TODO handle Metadata topic
-                println!("{}", msg);
-            } else {
-                // None, we were disconnected, so we ask supervisor for reconnect
-                return Err(Need::Restart);
+        while let Some(event) = self.inbox.recv().await {
+            match event {
+                CollectorEvent::Message(message_id, message) => {
+                    // check if msg already in lru cache(if so then it's already presisted)
+                    if let None = self.lru_msg.get(&message_id) {
+                        // TODO store it
+                    } else {
+                        // add it to the cache in order to not presist it again.
+                        self.lru_msg.put(message_id, message);
+                    }
+                }
+                CollectorEvent::MessageReferenced(msg_ref) => {
+                    let message_id = msg_ref.message_id;
+                    // check if msg already in lru cache(if so then it's already presisted)
+                    if let None = self.lru_msg_ref.get(&message_id) {
+                        // TODO store it as metadata
+                    } else {
+                        // add it to the cache in order to not presist it again.
+                        self.lru_msg_ref.put(message_id, msg_ref);
+                    }
+                }
             }
         }
         Ok(())

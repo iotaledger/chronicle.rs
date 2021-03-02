@@ -1,128 +1,123 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::application::*;
-use futures::stream::{
-    Stream,
-    StreamExt,
+use crate::{
+    application::*,
+    mqtt::*,
 };
-use paho_mqtt::{
-    AsyncClient,
-    Message,
+
+use lru::LruCache;
+use std::ops::{
+    Deref,
+    DerefMut,
 };
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    ops::{
-        Deref,
-        DerefMut,
-    },
-    time::Duration,
-};
-pub(crate) use url::Url;
+
 mod event_loop;
 mod init;
 mod terminating;
 
-// Mqtt builder
-builder!(MqttBuilder<T> {
-    url: Url,
-    topic: T,
-    stream_capacity: usize
+// Collector builder
+builder!(CollectorBuilder {
+    partition_id: u8,
+    lru_capacity: usize,
+    collectors_count: u8
 });
 
-/// MqttHandle to be passed to the supervisor in order to shutdown
-#[derive(Clone)]
-pub struct MqttHandle {
-    client: AsyncClient,
+pub enum CollectorEvent {
+    /// Newly seen message from feed source(s)
+    Message(MessageId, Message),
+    /// Newly seen MessageReferenced from feed source(s)
+    MessageReferenced(MessageReferenced),
 }
-/// MqttInbox is used to recv events
-pub struct MqttInbox {
-    stream: Box<dyn Stream<Item = Option<Message>> + Send + std::marker::Unpin>,
+/// CollectorHandle to be passed to siblings(feed sources) and the supervisor(in order to shutdown)
+#[derive(Clone)]
+pub struct CollectorHandle {
+    tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
+}
+/// CollectorInbox is used to recv events
+pub struct CollectorInbox {
+    rx: tokio::sync::mpsc::UnboundedReceiver<CollectorEvent>,
+}
+impl Deref for CollectorHandle {
+    type Target = tokio::sync::mpsc::UnboundedSender<CollectorEvent>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tx
+    }
 }
 
-impl Shutdown for MqttHandle {
+impl DerefMut for CollectorHandle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tx
+    }
+}
+
+impl Deref for CollectorInbox {
+    type Target = tokio::sync::mpsc::UnboundedReceiver<CollectorEvent>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.rx
+    }
+}
+
+impl DerefMut for CollectorInbox {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.rx
+    }
+}
+
+impl Shutdown for CollectorHandle {
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized,
     {
-        self.client.disconnect(None);
+        // to shutdown te collector, we simply drop the collectorhandle
         None
     }
 }
-// Mqtt state
-pub struct Mqtt<T> {
+
+// collector state, each collector is basically LRU cache
+pub struct Collector {
     service: Service,
-    url: Url,
-    stream_capacity: usize,
-    handle: Option<MqttHandle>,
-    inbox: Option<MqttInbox>,
-    topic: T,
+    partition_id: u8,
+    lru_msg: LruCache<MessageId, Message>,
+    lru_msg_ref: LruCache<MessageId, MessageReferenced>,
+    handle: Option<CollectorHandle>,
+    inbox: CollectorInbox,
 }
 
-impl<T> Mqtt<T> {
-    pub(crate) fn clone_handle(&self) -> MqttHandle {
-        self.handle.clone().unwrap()
+impl Collector {
+    pub(crate) fn take_handle(&mut self) -> Option<CollectorHandle> {
+        self.handle.take()
     }
 }
 
-/// Trait to be implemented on the mqtt topics
-pub trait Topic: Send + 'static {
-    /// MQTT Topic name
-    fn name() -> &'static str;
-    /// MQTT Quality of service
-    fn qos() -> i32;
-}
-
-/// Mqtt Messages topic
-pub(crate) struct Messages;
-
-impl Topic for Messages {
-    fn name() -> &'static str {
-        "messages"
-    }
-    fn qos() -> i32 {
-        0
-    }
-}
-
-/// Mqtt Metadata topic
-pub(crate) struct Metadata;
-
-impl Topic for Metadata {
-    fn name() -> &'static str {
-        "messages/{messageId}/metadata"
-    }
-    fn qos() -> i32 {
-        0
-    }
-}
-
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Metadata> {}
+impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder {}
 
 /// implementation of builder
-impl<T: Topic> Builder for MqttBuilder<T> {
-    type State = Mqtt<T>;
+impl Builder for CollectorBuilder {
+    type State = Collector;
     fn build(self) -> Self::State {
-        let handle = None;
-        let inbox = None;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = Some(CollectorHandle { tx });
+        let inbox = CollectorInbox { rx };
+        let lru_cap = self.lru_capacity.unwrap_or(1000);
         Self::State {
             service: Service::new(),
-            url: self.url.unwrap(),
-            stream_capacity: self.stream_capacity.unwrap_or(10000),
+            lru_msg: LruCache::new(lru_cap),
+            lru_msg_ref: LruCache::new(lru_cap),
+            partition_id: self.partition_id.unwrap(),
             handle,
             inbox,
-            topic: self.topic.unwrap(),
         }
         .set_name()
     }
 }
 
-/// impl name of the Mqtt<T>
-impl<T: Topic> Name for Mqtt<T> {
+/// impl name of the Collector
+impl Name for Collector {
     fn set_name(mut self) -> Self {
-        let name = format!("{}.{}", T::name(), self.url.as_str());
+        let name = format!("{}", self.partition_id);
         self.service.update_name(name);
         self
     }
@@ -132,10 +127,10 @@ impl<T: Topic> Name for Mqtt<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: Topic, H: PermanodeBrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
-    async fn aknowledge_shutdown(self, mut _state: Mqtt<T>, _status: Result<(), Need>) {
+impl<H: PermanodeBrokerScope> AknShutdown<Collector> for BrokerHandle<H> {
+    async fn aknowledge_shutdown(self, mut _state: Collector, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Mqtt(_state.service.clone()));
+        let event = BrokerEvent::Children(BrokerChild::Collector(_state.service.clone()));
         let _ = self.send(event);
     }
 }
