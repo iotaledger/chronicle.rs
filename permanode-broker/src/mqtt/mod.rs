@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::application::*;
+
+use crate::collector::*;
+
 use futures::stream::{
     Stream,
     StreamExt,
 };
-use paho_mqtt::{
-    AsyncClient,
-    Message,
-};
+
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -28,6 +28,7 @@ mod terminating;
 builder!(MqttBuilder<T> {
     url: Url,
     topic: T,
+    collectors_handles: HashMap<u8, CollectorHandle>,
     stream_capacity: usize
 });
 
@@ -36,9 +37,9 @@ builder!(MqttBuilder<T> {
 pub struct MqttHandle {
     client: AsyncClient,
 }
-/// MqttInbox is used to recv events
+/// MqttInbox is used to recv events from topic
 pub struct MqttInbox {
-    stream: Box<dyn Stream<Item = Option<Message>> + Send + std::marker::Unpin>,
+    stream: futures::channel::mpsc::Receiver<Option<paho_mqtt::Message>>,
 }
 
 impl Shutdown for MqttHandle {
@@ -55,17 +56,30 @@ pub struct Mqtt<T> {
     service: Service,
     url: Url,
     stream_capacity: usize,
-    handle: Option<MqttHandle>,
+    collectors_count: u8,
+    collectors_handles: HashMap<u8, CollectorHandle>,
     inbox: Option<MqttInbox>,
     topic: T,
 }
 
 impl<T> Mqtt<T> {
-    pub(crate) fn take_handle(&mut self) -> Option<MqttHandle> {
-        self.handle.take()
-    }
     pub(crate) fn clone_service(&self) -> Service {
         self.service.clone()
+    }
+}
+pub enum Topics {
+    Messages,
+    MessagesReferenced,
+}
+
+impl TryFrom<&str> for Topics {
+    type Error = String;
+    fn try_from(value: &str) -> Result<Self, String> {
+        match value {
+            "messages" => Ok(Topics::Messages),
+            "messages/referenced" => Ok(Topics::MessagesReferenced),
+            _ => Err(format!("Unsupported topic: {}", value).into()),
+        }
     }
 }
 
@@ -89,12 +103,12 @@ impl Topic for Messages {
     }
 }
 
-/// Mqtt Metadata topic
-pub(crate) struct Metadata;
+/// Mqtt MessagesReferenced topic
+pub(crate) struct MessagesReferenced;
 
-impl Topic for Metadata {
+impl Topic for MessagesReferenced {
     fn name() -> &'static str {
-        "messages/{messageId}/metadata"
+        "messages/referenced"
     }
     fn qos() -> i32 {
         0
@@ -102,20 +116,21 @@ impl Topic for Metadata {
 }
 
 impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Metadata> {}
+impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<MessagesReferenced> {}
 
 /// implementation of builder
 impl<T: Topic> Builder for MqttBuilder<T> {
     type State = Mqtt<T>;
     fn build(self) -> Self::State {
-        let handle = None;
-        let inbox = None;
+        let collectors_handles = self.collectors_handles.expect("Expected collectors handles");
+
         Self::State {
             service: Service::new(),
             url: self.url.unwrap(),
+            collectors_count: collectors_handles.len() as u8,
+            collectors_handles,
             stream_capacity: self.stream_capacity.unwrap_or(10000),
-            handle,
-            inbox,
+            inbox: None,
             topic: self.topic.unwrap(),
         }
         .set_name()
@@ -125,7 +140,7 @@ impl<T: Topic> Builder for MqttBuilder<T> {
 /// impl name of the Mqtt<T>
 impl<T: Topic> Name for Mqtt<T> {
     fn set_name(mut self) -> Self {
-        let name = format!("{}.{}", T::name(), self.url.as_str());
+        let name = format!("{}@{}", T::name(), self.url.as_str());
         self.service.update_name(name);
         self
     }
@@ -136,9 +151,9 @@ impl<T: Topic> Name for Mqtt<T> {
 
 #[async_trait::async_trait]
 impl<T: Topic, H: PermanodeBrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
-    async fn aknowledge_shutdown(self, mut _state: Mqtt<T>, _status: Result<(), Need>) {
+    async fn aknowledge_shutdown(self, mut _state: Mqtt<T>, status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Mqtt(_state.service.clone()));
+        let event = BrokerEvent::Children(BrokerChild::Mqtt(_state.service.clone(), None, status));
         let _ = self.send(event);
     }
 }
