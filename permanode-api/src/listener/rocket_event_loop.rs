@@ -72,7 +72,8 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 )))
                 .map_err(|_| Need::Abort)?;
         }
-        let mut server = rocket::ignite();
+
+        let mut server = self.data.rocket.take().ok_or(Need::Abort)?;
 
         for network in self.config.keyspaces.keys() {
             match network {

@@ -25,8 +25,13 @@ where
             .storage_config
             .clone()
             .ok_or("Tried to start application without Storage config!")?;
-        let listener = ListenerBuilder::<RocketListener>::new().config(storage_config).build();
-        let (listener_handle, listener_abort_registration) = AbortHandle::new_pair();
+
+        let rocket = rocket::ignite();
+        let listener_handle = rocket.shutdown();
+        let listener = ListenerBuilder::new()
+            .config(storage_config)
+            .data(RocketListener::new(rocket))
+            .build();
 
         let websocket = WebsocketBuilder::new().build();
         let (websocket_handle, websocket_abort_registration) = AbortHandle::new_pair();
@@ -38,7 +43,7 @@ where
 
         let supervisor = permanode.sender.clone().unwrap();
 
-        tokio::spawn(listener.start_abortable(listener_abort_registration, Some(supervisor.clone())));
+        tokio::spawn(listener.start(Some(supervisor.clone())));
 
         tokio::spawn(websocket.start_abortable(websocket_abort_registration, Some(supervisor.clone())));
 

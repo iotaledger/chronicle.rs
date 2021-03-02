@@ -10,7 +10,7 @@ use permanode_storage::{
     },
     StorageConfig,
 };
-use std::marker::PhantomData;
+use rocket::Rocket;
 use tokio::sync::mpsc::UnboundedSender;
 
 mod init;
@@ -18,13 +18,21 @@ mod rocket_event_loop;
 mod terminating;
 mod warp_event_loop;
 
-pub struct RocketListener;
+pub struct RocketListener {
+    rocket: Option<Rocket>,
+}
+
+impl RocketListener {
+    pub fn new(rocket: Rocket) -> Self {
+        Self { rocket: Some(rocket) }
+    }
+}
 pub struct WarpListener;
 
 pub struct Listener<T> {
     pub service: Service,
     pub config: StorageConfig,
-    _data: PhantomData<T>,
+    data: T,
 }
 
 /// Trait to be implemented on the API engines (ie Rocket, warp, etc)
@@ -75,7 +83,8 @@ impl Worker for DecoderWorker {
 }
 
 builder!(ListenerBuilder<T> {
-    config: StorageConfig
+    config: StorageConfig,
+    data: T
 });
 
 impl<T: APIEngine> Builder for ListenerBuilder<T> {
@@ -85,7 +94,7 @@ impl<T: APIEngine> Builder for ListenerBuilder<T> {
         Self::State {
             service: Service::new(),
             config: self.config.expect("No config was provided!"),
-            _data: PhantomData,
+            data: self.data.expect("No listener data was provided!"),
         }
         .set_name()
     }

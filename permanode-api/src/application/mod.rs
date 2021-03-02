@@ -1,6 +1,7 @@
 use super::*;
+use futures::future::AbortHandle;
 use permanode_storage::StorageConfig;
-use rocket::futures::future::AbortHandle;
+use rocket::Shutdown as RocketShutdown;
 use serde::{
     Deserialize,
     Serialize,
@@ -29,7 +30,7 @@ where
     storage_config: StorageConfig,
     inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
     sender: Option<PermanodeAPISender<H>>,
-    listener: AbortHandle,
+    listener: Option<RocketShutdown>,
     websocket: AbortHandle,
 }
 
@@ -79,7 +80,7 @@ builder!(
     PermanodeAPIBuilder<H> {
         api_config: ApiConfig,
         storage_config: StorageConfig,
-        listener_handle: AbortHandle,
+        listener_handle: RocketShutdown,
         websocket_handle: AbortHandle
     }
 );
@@ -103,7 +104,7 @@ where
             storage_config: self.storage_config.expect("No Storage config was provided!"),
             inbox,
             sender,
-            listener: self.listener_handle.expect("No listener handle was provided!"),
+            listener: Some(self.listener_handle.expect("No listener handle was provided!")),
             websocket: self.websocket_handle.expect("No websocket handle was provided!"),
         }
         .set_name()
