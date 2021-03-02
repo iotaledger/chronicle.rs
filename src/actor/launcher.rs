@@ -700,13 +700,10 @@ macro_rules! launcher {
                                                 }
                                             }
                                         }
-                                        // shutdown next app (if any) only if is not already stopping
+                                        // shutdown next app (if any)
                                         if let Some(app) = self.shutdown_queue.pop_front() {
-                                            if !self.service.microservices.get(&app[..]).unwrap().is_stopping() {
-                                                self.shutdown_app(app);
-                                            } else {
-                                                self.shutdown_queue.push_front(app);
-                                            };
+                                            // try to shutdown app
+                                            self.shutdown_app(app);
                                         } else if self.service.is_stopping() {
                                             // keep exiting
                                             let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
