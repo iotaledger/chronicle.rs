@@ -426,12 +426,12 @@ macro_rules! launcher {
                             self.service.update_microservice(app_name, service);
                             info!("Succesfully starting {}", stringify!($app));
                         }
-                        Err(_) => {
+                        Err(e) => {
                             // create new service that indicates the app is stopped
                             let service = Service::new().set_status(ServiceStatus::Stopped).set_name(app_name.clone());
                             // update main service
                             self.service.update_microservice(app_name, service);
-                            error!("unable to start {}", stringify!($app));
+                            error!("Unable to start {}: {}", stringify!($app), e);
                         }
                     }
                     self
@@ -461,16 +461,16 @@ macro_rules! launcher {
                         stringify!($app) => {
 
                             if let Some(app_handler) = self.apps_handlers.$app.take() {
+                                self.shutdown_queue.push_front(app_name.clone());
                                 // make sure app deps to get shutdown first
                                 for app in &self.apps_deps.$app {
                                     // add only if the app not stopped
                                     let is_dep_stopped = self.service.microservices.get(&app[..]).unwrap().is_stopped();
                                     if !is_dep_stopped {
                                         // shutdown the dep if not already stopped
-                                        self.shutdown_queue.push_back(app.clone());
+                                        self.shutdown_queue.push_front(app.clone());
                                     }
                                 }
-                                self.shutdown_queue.push_back(app_name.clone());
                                 // shutdown in order
                                 let shutdown_first = self.shutdown_queue.pop_front().unwrap();
                                 // if shutdown_first == app_name then all deps of app_name are already stopped
