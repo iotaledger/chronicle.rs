@@ -4,6 +4,7 @@ use scylla::{
     stage::ReporterEvent,
 };
 
+/// The Mainnet keyspace, which will organize its tables to pull data from the Mainnet tangle network
 #[derive(Default)]
 pub struct Mainnet;
 

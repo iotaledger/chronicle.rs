@@ -4,7 +4,7 @@ use super::*;
 impl<H: PermanodeAPIScope> EventLoop<H> for PermanodeAPI<H> {
     async fn event_loop(
         &mut self,
-        status: Result<(), chronicle::Need>,
+        _status: Result<(), chronicle::Need>,
         supervisor: &mut Option<H>,
     ) -> Result<(), chronicle::Need> {
         if let Some(ref mut supervisor) = supervisor {

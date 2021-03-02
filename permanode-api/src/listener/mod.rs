@@ -18,19 +18,26 @@ mod rocket_event_loop;
 mod terminating;
 mod warp_event_loop;
 
+/// A listener implementation using Rocket.rs
 pub struct RocketListener {
     rocket: Option<Rocket>,
 }
 
 impl RocketListener {
+    /// Create a rocket listener data structure using a Rocket instance
     pub fn new(rocket: Rocket) -> Self {
         Self { rocket: Some(rocket) }
     }
 }
+
+/// A listener implementation using Warp
 pub struct WarpListener;
 
+/// A listener. Can use Rocket or Warp depending on data provided
 pub struct Listener<T> {
+    /// The listener's service
     pub service: Service,
+    /// Storage configuration needed to enable endpoints by network
     pub config: StorageConfig,
     data: T,
 }
@@ -53,6 +60,7 @@ impl APIEngine for WarpListener {
     }
 }
 
+/// A listener event
 #[derive(Debug)]
 pub enum Event {
     /// Response from scylla with a payload
@@ -67,6 +75,7 @@ pub enum Event {
     },
 }
 
+/// A worker used to decode responses from the Ring with result sets
 #[derive(Debug)]
 pub struct DecoderWorker(pub UnboundedSender<Event>);
 

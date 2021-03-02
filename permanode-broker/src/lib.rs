@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 pub mod application;
 pub mod config;
 pub mod listener;

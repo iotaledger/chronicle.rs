@@ -51,16 +51,20 @@ use serde::{
 };
 use std::io::Cursor;
 
+/// A `bee` type wrapper which is used to apply the `ColumnEncoder`
+/// functionality over predefined types which are `Packable`.
 #[derive(Copy, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct Bee<Type> {
     inner: Type,
 }
 
 impl<Type> Bee<Type> {
+    /// Wrap a `bee` type
     pub fn wrap(t: Type) -> Bee<Type> {
         Bee { inner: t }
     }
 
+    /// Consume the wrapper and return the inner `bee` type
     pub fn into_inner(self) -> Type {
         self.inner
     }
@@ -92,9 +96,13 @@ impl<P: Packable> ColumnDecoder for Bee<P> {
     }
 }
 
+/// Chrysalis transaction data
 pub enum TransactionData {
+    /// An unspent transaction input
     Input(UTXOInput),
+    /// A transaction output
     Output(Output),
+    /// A signed block which can be used to unlock an input
     Unlock(UnlockBlock),
 }
 

@@ -8,7 +8,9 @@ mod init;
 mod terminating;
 pub mod topics;
 
+/// A websocket actor, used to communicate with a dashboard
 pub struct Websocket {
+    /// The websocket's service
     pub service: Service,
 }
 

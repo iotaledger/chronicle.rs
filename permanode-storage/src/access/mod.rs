@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::keyspaces::Mainnet;
 use bee_common::packable::Packable;
 pub use rows::*;
@@ -27,10 +25,12 @@ pub use scylla_cql::{
     Frame,
     Query,
 };
+use std::marker::PhantomData;
 pub use types::*;
 
 mod delete;
 mod insert;
+#[allow(missing_docs)]
 mod rows;
 mod select;
 mod types;
@@ -38,11 +38,11 @@ mod update;
 
 impl VoidDecoder for Mainnet {}
 
-pub struct BeeRows<Type> {
+pub(crate) struct BeeRows<Type> {
     decoder: Decoder,
-    rows_count: usize,
-    remaining_rows_count: usize,
-    metadata: Metadata,
+    pub rows_count: usize,
+    pub remaining_rows_count: usize,
+    _metadata: Metadata,
     column_start: usize,
     _type: PhantomData<Type>,
 }
@@ -85,7 +85,7 @@ impl<Type: Packable> Rows for BeeRows<Type> {
         let rows_count = i32::from_be_bytes(decoder.buffer_as_ref()[rows_start..column_start].try_into().unwrap());
         Self {
             decoder,
-            metadata,
+            _metadata: metadata,
             rows_count: rows_count as usize,
             remaining_rows_count: rows_count as usize,
             column_start,

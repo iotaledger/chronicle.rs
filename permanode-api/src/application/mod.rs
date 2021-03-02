@@ -21,6 +21,8 @@ mod terminating;
 pub trait PermanodeAPIScope: LauncherSender<PermanodeAPIBuilder<Self>> {}
 impl<H: LauncherSender<PermanodeAPIBuilder<H>>> PermanodeAPIScope for H {}
 
+/// The Permanode API. Defines endpoints which can be used to
+/// retrieve data from the scylla database.
 pub struct PermanodeAPI<H>
 where
     H: PermanodeAPIScope,
@@ -34,6 +36,7 @@ where
     websocket: AbortHandle,
 }
 
+/// A wrapper type for the sender end of the Permanode API event channel
 pub struct PermanodeAPISender<H: PermanodeAPIScope> {
     tx: UnboundedSender<PermanodeAPIEvent<H::AppsEvents>>,
 }
@@ -125,16 +128,23 @@ where
     }
 }
 
+/// A Permanode API Event
 pub enum PermanodeAPIEvent<T> {
+    /// Passthrough type
     Passthrough(T),
+    /// Event which targets a specific child app
     Children(PermanodeAPIChild),
 }
 
+/// Permanode API children apps
 pub enum PermanodeAPIChild {
+    /// The listener, which defines http endpoints
     Listener(Service),
+    /// The websocket, which provides topics for the dashboard
     Websocket(Service),
 }
 
+/// Permanode API throughtype
 #[derive(Deserialize, Serialize, Clone)]
 pub enum PermanodeAPIThrough {
     Shutdown,

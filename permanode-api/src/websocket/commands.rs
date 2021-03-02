@@ -1,9 +1,12 @@
 use std::convert::TryFrom;
 
+/// A websocket command sent from the dashboard
 #[repr(u8)]
 #[derive(Debug)]
 pub enum WsCommand {
+    /// Register a topic
     Register = 0,
+    /// Unregister a topic
     Unregister = 1,
 }
 
