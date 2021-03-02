@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::time::Duration;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 /// Need enum used by children to ask their supervisors
 pub enum Need {
     /// Child is asking for Restart the actor/service
