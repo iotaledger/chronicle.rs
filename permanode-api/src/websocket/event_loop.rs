@@ -48,8 +48,8 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Websocket {
             .and(warp::ws())
             .map(|ws: Ws| ws.on_upgrade(|socket| manage_connection(socket)));
 
-        let address = std::env::var("WARP_ADDRESS").unwrap_or("127.0.0.1".to_string());
-        let port = std::env::var("WARP_PORT").unwrap_or("8081".to_string());
+        let address = std::env::var("WEBSOCKET_ADDRESS").unwrap_or("127.0.0.1".to_string());
+        let port = std::env::var("WEBSOCKET_PORT").unwrap_or("8081".to_string());
 
         warp::serve(route)
             .run(SocketAddr::from_str(&format!("{}:{}", address, port)).unwrap())

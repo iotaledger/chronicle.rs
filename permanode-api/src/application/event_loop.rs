@@ -17,7 +17,8 @@ impl<H: PermanodeAPIScope> EventLoop<H> for PermanodeAPI<H> {
                                 if !self.service.is_stopping() {
                                     supervisor.shutdown_app(&self.get_name());
                                     // shutdown children
-                                    self.listener.take().map(|handle| handle.shutdown());
+                                    self.rocket_listener.take().map(|handle| handle.shutdown());
+                                    self.warp_listener.take().map(|handle| handle.abort());
                                     self.websocket.abort();
                                     // make sure to drop self handler
                                     self.sender.take();

@@ -354,7 +354,7 @@ mod devnet {
     }
 }
 
-fn message_row_to_response(
+pub(super) fn message_row_to_response(
     MessageRow {
         id: message_id,
         message,
