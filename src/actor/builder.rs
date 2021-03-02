@@ -1,8 +1,11 @@
 use super::{Actor, AknShutdown, LauncherSender, Passthrough, Shutdown, Starter};
 use serde::{Deserialize, Serialize};
 
+/// Allows an actor to be built by parts
 pub trait Builder {
+    /// The "state" (actor type) which is built
     type State;
+    /// Build the actor
     fn build(self) -> Self::State;
 }
 
@@ -28,9 +31,11 @@ pub trait ThroughType {
     type Through: for<'de> Deserialize<'de> + Serialize;
 }
 
+/// Create the builder type for an actor, which can be used to construct an actor by parts
 #[macro_export]
 macro_rules! builder {
     ( $(#[derive($($der:tt),*)])?  $struct:ident {$( $field:ident: $type:tt$(<$($i:tt),*>)? ),*} ) => {
+        #[allow(missing_docs)]
         #[derive($($($der,)*)?Default)]
         pub struct $struct {
             $(
@@ -57,6 +62,7 @@ macro_rules! builder {
     };
     ($(#[derive($($der:tt),*)])? $struct:ident$(<$($extra:tt),*>)? {$( $field:ident: $type:tt$(<$($i:tt),*>)? ),*}) => {
         #[derive($($($der,)*)?Default)]
+        #[allow(missing_docs)]
         pub struct $struct$(<$($extra,)*>)? {
             $(
                 $field: Option<$type$(<$($i,)*>)?>,
@@ -68,6 +74,7 @@ macro_rules! builder {
         }
 
         impl$(<$($extra,)*>)? $struct$(<$($extra,)*>)? {
+            #[allow(missing_docs)]
             pub fn new() -> Self {
                 Self {
                     $(

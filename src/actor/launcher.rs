@@ -23,6 +23,7 @@ pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + Akn
     fn exit_program(&mut self, using_ctrl_c: bool);
 }
 
+/// The possible statuses a service (application) can be
 #[repr(u8)]
 #[derive(Clone, PartialEq, Debug)]
 pub enum ServiceStatus {
@@ -43,6 +44,7 @@ pub enum ServiceStatus {
     Stopped = 6,
 }
 
+/// An application's metrics
 #[derive(Clone, Debug)]
 pub struct Service {
     /// The status of the service
@@ -60,6 +62,7 @@ pub struct Service {
 }
 
 impl Service {
+    /// Create a new Service
     pub fn new() -> Self {
         Self {
             status: ServiceStatus::Starting,
@@ -70,66 +73,85 @@ impl Service {
             log_path: None,
         }
     }
+    /// Set the service status
     pub fn set_status(mut self, service_status: ServiceStatus) -> Self {
         self.status = service_status;
         self
     }
+    /// Update the service status
     pub fn update_status(&mut self, service_status: ServiceStatus) {
         self.status = service_status;
     }
+    /// Set the service (application) name
     pub fn set_name(mut self, name: String) -> Self {
         self.name = name;
         self
     }
+    /// Update the service (application) name
     pub fn update_name(&mut self, name: String) {
         self.name = name;
     }
+    /// Get the service (application) name
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
+    /// Set the service downtime in milliseconds
     pub fn set_downtime_ms(mut self, downtime_ms: u64) -> Self {
         self.downtime_ms = downtime_ms;
         self
     }
+    /// Set the logging filepath
     pub fn set_log(mut self, log_path: String) -> Self {
         self.log_path = Some(log_path);
         self
     }
+    /// Insert a new microservice
     pub fn update_microservice(&mut self, service_name: String, microservice: Self) {
         self.microservices.insert(service_name, microservice);
     }
+    /// Update the status of a microservice
     pub fn update_microservice_status(&mut self, service_name: &str, status: ServiceStatus) {
         self.microservices.get_mut(service_name).unwrap().status = status;
     }
+    /// Delete a microservice
     pub fn delete_microservice(&mut self, service_name: &str) {
         self.microservices.remove(service_name);
     }
+    /// Check if the service is stopping
     pub fn is_stopping(&self) -> bool {
         self.status == ServiceStatus::Stopping
     }
+    /// Check if the service is stopped
     pub fn is_stopped(&self) -> bool {
         self.status == ServiceStatus::Stopped
     }
+    /// Check if the service is running
     pub fn is_running(&self) -> bool {
         self.status == ServiceStatus::Running
     }
+    /// Check if the service is starting
     pub fn is_starting(&self) -> bool {
         self.status == ServiceStatus::Starting
     }
+    /// Check if the service is initializing
     pub fn is_initializing(&self) -> bool {
         self.status == ServiceStatus::Initializing
     }
+    /// Check if the service is in maintenance
     pub fn is_maintenance(&self) -> bool {
         self.status == ServiceStatus::Maintenance
     }
+    /// Check if the service is degraded
     pub fn is_degraded(&self) -> bool {
         self.status == ServiceStatus::Degraded
     }
+    /// Get the service status
     pub fn service_status(&self) -> &ServiceStatus {
         &self.status
     }
 }
 
+/// Creates a launcher application and its managed apps
 #[macro_export]
 macro_rules! launcher {
     // useful to count how many field in a struct at the compile time.
@@ -149,6 +171,7 @@ macro_rules! launcher {
         };
 
         const APPS: [&str; launcher!(@count $($app),+)] = [$(stringify!($app)),*];
+        #[allow(missing_docs)]
         /// AppsEvents identify the applications specs
         /// AppsEvents used to identify the socket msg
         #[derive(Deserialize, Serialize)]
@@ -157,7 +180,8 @@ macro_rules! launcher {
                 $app(<$app_builder$(<$($i,)*>)? as ThroughType>::Through),
             )*
         }
-        /// used to identfiy the  of all applications
+        #[allow(missing_docs)]
+        /// All applications defined by this launcher
         pub enum AppsStates {
             $(
                 $app(<$app_builder$(<$($i,)*>)? as Starter<Sender>>::Input),
@@ -166,6 +190,7 @@ macro_rules! launcher {
 
         #[derive(Default)]
         #[allow(non_snake_case)]
+        /// Application handlers defined by this launcher
         pub struct AppsHandlers {
             $(
                 $app: Option<<$app_builder$(<$($i,)*>)? as Starter<Sender>>::Ok>,
@@ -174,6 +199,7 @@ macro_rules! launcher {
 
         #[derive(Default)]
         #[allow(non_snake_case)]
+        /// Application dependencies defined by this launcher
         pub struct AppsDeps {
             $(
                 /// List of applications names that depend on $app
@@ -181,23 +207,36 @@ macro_rules! launcher {
             )*
         }
 
+        /// Global event types
         pub enum Event {
+            /// Start an application
             StartApp(String, Option<AppsStates>),
+            /// Shutdown an application
             ShutdownApp(String),
+            /// Acknowledge an application shutdown
             AknShutdown(AppsStates, Result<(), Need>),
+            /// Request an application's status
             RequestService(String),
+            /// Notify a status change
             StatusChange(Service),
+            /// Passthrough event
             Passthrough(AppsEvents, String),
             /// ExitProgram(using_ctrl_c: bool) using_ctrl_c will identify if the shutdown signal was initiated by ctrl_c
             ExitProgram {
+                /// Did this exit program event happen because of a ctrl-c?
                 using_ctrl_c: bool,
             },
         }
+
+        /// Sender half of an event channel
         #[derive(Clone)]
         pub struct Sender(mpsc::UnboundedSender<Event>);
+        /// Receiver half of an event channel
         pub struct Receiver(mpsc::UnboundedReceiver<Event>);
 
+        /// Defines a builder type for this launcher
         pub trait LauncherBuilder {
+            /// Builder type
             type Builder: Builder;
         }
 
@@ -205,8 +244,6 @@ macro_rules! launcher {
         impl LauncherBuilder for $name {
             type Builder = $name;
         }
-
-
 
         $(
             impl LauncherSender<$app_builder$(<$($i,)*>)?> for Sender {
@@ -272,6 +309,7 @@ macro_rules! launcher {
             )*
         }
         impl $name {
+            /// Instantiate a launcher
             pub fn new() -> Self {
                 Self {
                     $(
@@ -288,6 +326,7 @@ macro_rules! launcher {
                     self
                 }
             )*
+            /// Consume the launcher and emit its apps
             pub fn to_apps(self) -> $apps {
                 let service = Service::new();
                 let apps_names = vec![ $(stringify!($app).to_string()),*];
@@ -328,6 +367,7 @@ macro_rules! launcher {
             }
 
             $(
+                /// Access the $app application
                 #[allow(non_snake_case)]
                 pub fn $app(mut self, $app_builder: $app_builder$(<$($i,)*>)?) -> Self {
                     self.$app.replace($app_builder);
@@ -358,10 +398,12 @@ macro_rules! launcher {
         /// Launcher state implementation
         #[allow(dead_code)]
         impl Apps {
+            /// Helper function to call a synchronous function with $apps
             pub async fn function(mut self, f: impl Fn(&mut $apps)) -> Self {
                 f(&mut self);
                 self
             }
+            /// Helper function to call an asynchronous function with $apps
             pub async fn future<F>(self, f: impl Fn($apps) -> F) -> Self
             where F: Future<Output=$apps>
             {
