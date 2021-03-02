@@ -1,6 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
+    collector::*,
     listener::*,
     mqtt::*,
     websocket::*,
@@ -9,10 +10,12 @@ use crate::{
 use async_trait::async_trait;
 pub use chronicle::*;
 pub use log::*;
+pub(crate) use paho_mqtt::AsyncClient;
 use serde::{
     Deserialize,
     Serialize,
 };
+pub(crate) use std::convert::TryFrom;
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -21,9 +24,16 @@ use std::{
         DerefMut,
     },
 };
+
 pub use tokio::{
     spawn,
     sync::mpsc,
+};
+
+pub(crate) use bee_common::packable::Packable;
+pub(crate) use bee_message::{
+    Message,
+    MessageId,
 };
 
 mod event_loop;
@@ -40,7 +50,8 @@ builder!(
     #[derive(Clone)]
     PermanodeBrokerBuilder<H> {
         listen_address: SocketAddr,
-        listener_handle: ListenerHandle
+        listener_handle: ListenerHandle,
+        collectors_count: u8
 });
 
 #[derive(Deserialize, Serialize)]
@@ -71,6 +82,10 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     service: Service,
     websockets: HashMap<String, WsTx>,
     listener_handle: Option<ListenerHandle>,
+    mqtt_handles: HashMap<String, MqttHandle>,
+    asked_to_shutdown: HashMap<String, ()>,
+    collectors_count: u8,
+    collector_handles: HashMap<u8, CollectorHandle>,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
 }
@@ -80,7 +95,9 @@ pub enum BrokerChild {
     /// Used by Listener to keep broker up to date with its service
     Listener(Service),
     /// Used by Mqtt to keep Broker up to date with its service
-    Mqtt(Service),
+    Mqtt(Service, Option<MqttHandle>, Result<(), Need>),
+    /// Used by Collector(s) to keep Broker up to date with its service
+    Collector(Service),
     /// Used by Websocket to keep Broker up to date with its service
     Websocket(Service, Option<WsTx>),
 }
@@ -96,7 +113,10 @@ pub enum BrokerEvent<T> {
 #[derive(Deserialize, Serialize, Debug)]
 /// Topology event
 pub enum Topology {
-    AddMqttMessages(Url), // todo!( add broker topology like adding new feed source or removing one)
+    AddMqttMessages(Url),
+    AddMqttMessagesReferenced(Url),
+    RemoveMqttMessages(Url),
+    RemoveMqttMessagesReferenced(Url),
 }
 
 #[derive(Deserialize, Serialize)]
@@ -124,6 +144,10 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             service: Service::new(),
             websockets: HashMap::new(),
             listener_handle: self.listener_handle,
+            mqtt_handles: HashMap::new(),
+            asked_to_shutdown: HashMap::new(),
+            collectors_count: self.collectors_count.unwrap_or(10),
+            collector_handles: HashMap::new(),
             handle,
             inbox,
         }
@@ -189,4 +213,34 @@ impl<H: PermanodeBrokerScope> Name for PermanodeBroker<H> {
     fn get_name(&self) -> String {
         self.service.get_name()
     }
+}
+
+// TODO move this to -storage crate along with bee-types
+#[derive(Deserialize, Serialize, Debug)]
+pub struct MessageReferenced {
+    #[serde(rename = "messageId")]
+    pub message_id: MessageId,
+    #[serde(rename = "parentMessageIds")]
+    pub parent_message_ids: Vec<MessageId>,
+    #[serde(rename = "isSolid")]
+    pub is_solid: bool,
+    #[serde(rename = "referencedByMilestoneIndex")]
+    pub referenced_by_milestone_index: u64,
+    #[serde(rename = "ledgerInclusionState")]
+    pub ledger_inclusion_state: LedgerInclusionState,
+    #[serde(rename = "shouldPromote")]
+    pub should_promote: Option<bool>,
+    #[serde(rename = "shouldReattach")]
+    pub should_reattach: Option<bool>,
+}
+
+// TODO ask bee team to make this a general type.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum LedgerInclusionState {
+    #[serde(rename = "conflicting")]
+    Conflicting,
+    #[serde(rename = "included")]
+    Included,
+    #[serde(rename = "noTransaction")]
+    NoTransaction,
 }
