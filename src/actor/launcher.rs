@@ -25,7 +25,7 @@ pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + Akn
 
 /// The possible statuses a service (application) can be
 #[repr(u8)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize)]
 pub enum ServiceStatus {
     /// Early bootup
     Starting = 0,
@@ -45,7 +45,7 @@ pub enum ServiceStatus {
 }
 
 /// An application's metrics
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Service {
     /// The status of the service
     pub status: ServiceStatus,
