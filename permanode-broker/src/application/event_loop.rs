@@ -16,6 +16,10 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                 if let Some(mqtt) = self.add_mqtt(Messages, url) {
                     tokio::spawn(mqtt.start(self.handle.clone()));
                 }
+                let url = Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap();
+                if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
+                    tokio::spawn(mqtt.start(self.handle.clone()));
+                }
             }
             while let Some(event) = self.inbox.recv().await {
                 match event {
@@ -74,6 +78,7 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                         }
                     },
                     BrokerEvent::Children(child) => {
+                        let mut is_not_websocket_child = true;
                         match child {
                             BrokerChild::Listener(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
@@ -128,6 +133,7 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 }
                             }
                             BrokerChild::Websocket(microservice, opt_ws_tx) => {
+                                is_not_websocket_child = false;
                                 if microservice.is_initializing() {
                                     // add ws_tx to websockets
                                     self.websockets.insert(microservice.name, opt_ws_tx.unwrap());
@@ -139,13 +145,14 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 }
                             }
                         }
-
-                        // response to all websocket
-                        let socket_msg = SocketMsg::PermanodeBroker(self.service.clone());
-                        self.response_to_sockets(&socket_msg).await;
-                        let SocketMsg::PermanodeBroker(service) = socket_msg;
-                        // Inform launcher with status change
-                        supervisor.status_change(service);
+                        if is_not_websocket_child {
+                            // response to all websocket
+                            let socket_msg = SocketMsg::PermanodeBroker(self.service.clone());
+                            self.response_to_sockets(&socket_msg).await;
+                            let SocketMsg::PermanodeBroker(service) = socket_msg;
+                            // Inform launcher with status change
+                            supervisor.status_change(service);
+                        }
                     }
                 }
             }
@@ -180,6 +187,7 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                 microservice_name
             );
             // Maybe TODO response with something?;
+
         };
     }
     fn add_mqtt<T: Topic>(&mut self, topic: T, url: Url) -> Option<Mqtt<T>> {

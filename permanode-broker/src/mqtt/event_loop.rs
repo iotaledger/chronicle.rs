@@ -23,7 +23,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
                     }
                 };
             } else {
-                error!("Mqtt: {}, Lost connection", self.get_name());
+                warn!("Mqtt: {}, lost connection", self.get_name());
                 return Err(Need::Restart);
             }
         }
@@ -50,7 +50,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<MessagesRefere
                     }
                 };
             } else {
-                error!("Mqtt: {}, Lost connection", self.get_name());
+                warn!("Mqtt: {}, lost connection", self.get_name());
                 return Err(Need::Restart);
             }
         }
