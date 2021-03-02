@@ -42,7 +42,9 @@ macro_rules! builder {
                 $field: Option<$type$(<$($i,)*>)?>,
             )*
         }
+
         impl $struct {
+            /// Create a new $struct
             pub fn new() -> Self {
                 Self {
                     $(
@@ -52,6 +54,7 @@ macro_rules! builder {
             }
 
             $(
+                /// Set $field on the builder
                 pub fn $field(mut self, $field: $type$(<$($i,)*>)?) -> Self {
                     self.$field.replace($field);
                     self
@@ -74,7 +77,7 @@ macro_rules! builder {
         }
 
         impl$(<$($extra,)*>)? $struct$(<$($extra,)*>)? {
-            #[allow(missing_docs)]
+            /// Create a new $struct
             pub fn new() -> Self {
                 Self {
                     $(
@@ -84,6 +87,7 @@ macro_rules! builder {
                 }
             }
             $(
+                /// Set $field on the builder
                 pub fn $field(mut self, $field: $type$(<$($i,)*>)?) -> Self {
                     self.$field.replace($field);
                     self
