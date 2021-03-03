@@ -40,7 +40,7 @@ impl Config {
         let path = std::env::var("CONFIG_PATH").unwrap_or(CONFIG_PATH.to_string());
         let path = Path::new(&path);
         let f = std::fs::File::create(path).map_err(|e| Cow::from(e.to_string()))?;
-        ron::ser::to_writer(f, self).map_err(|e| e.to_string().into())
+        ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| e.to_string().into())
     }
 }
 
@@ -78,7 +78,12 @@ mod test {
 
         std::env::set_var("CONFIG_PATH", "../config.example.ron");
 
-        let deserialized_config = Config::load().expect("Failed to deserialize example_config!");
+        let mut deserialized_config = Config::load().expect("Failed to deserialize example config!");
+
+        if config != deserialized_config {
+            config.save().expect("Failed to serialize example config!");
+            deserialized_config = Config::load().expect("Failed to deserialize example config!");
+        }
 
         assert_eq!(config, deserialized_config);
     }

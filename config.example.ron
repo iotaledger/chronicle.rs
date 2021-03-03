@@ -9,15 +9,11 @@
                     ),
                     "Canada": (
                         replication_factor: 1,
-                    )
-                }
-            )
-        }
+                    ),
+                },
+            ),
+        },
     ),
-    api_config: (
-
-    ),
-    broker_config: (
-
-    ),
+    api_config: (),
+    broker_config: (),
 )
