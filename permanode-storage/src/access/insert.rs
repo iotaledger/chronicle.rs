@@ -139,8 +139,7 @@ impl<'a> Insert<'a, Bee<MilestoneIndex>, Bee<Milestone>> for Mainnet {
         Self: Insert<'a, Bee<MilestoneIndex>, Bee<Milestone>>,
     {
         let mut index_bytes = Vec::new();
-        value
-            .pack(&mut index_bytes)
+        key.pack(&mut index_bytes)
             .expect("Error occurred packing Milestone Index");
 
         let mut milestone_bytes = Vec::new();
@@ -196,16 +195,3 @@ impl<'a> Insert<'a, Bee<HashedIndex>, Bee<MessageId>> for Mainnet {
         InsertRequest::from_prepared(query, token, self)
     }
 }
-
-// impl_insert!(Mainnet: <(MessageId, MessageId), ()> -> { todo!() });
-// impl_insert!(Mainnet: <(HashedIndex, MessageId), ()> -> { todo!() });
-// impl_insert!(Mainnet: <OutputId, CreatedOutput> -> { todo!() });
-// impl_insert!(Mainnet: <OutputId, ConsumedOutput> -> { todo!() });
-// impl_insert!(Mainnet: <Unspent, ()> -> { todo!() });
-// impl_insert!(Mainnet: <(Ed25519Address, OutputId), ()> -> { todo!() });
-// impl_insert!(Mainnet: <(), LedgerIndex> -> { todo!() });
-// impl_insert!(Mainnet: <(), SnapshotInfo> -> { todo!() });
-// impl_insert!(Mainnet: <SolidEntryPoint, MilestoneIndex> -> { todo!() });
-// impl_insert!(Mainnet: <MilestoneIndex, OutputDiff> -> { todo!() });
-// impl_insert!(Mainnet: <Address, Balance> -> { todo!() });
-// impl_insert!(Mainnet: <(MilestoneIndex, UnconfirmedMessage), ()> -> { todo!() });

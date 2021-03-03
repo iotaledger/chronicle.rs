@@ -28,13 +28,11 @@ pub use scylla_cql::{
 use std::marker::PhantomData;
 pub use types::*;
 
-mod delete;
 mod insert;
 #[allow(missing_docs)]
 mod rows;
 mod select;
 mod types;
-mod update;
 
 impl VoidDecoder for Mainnet {}
 

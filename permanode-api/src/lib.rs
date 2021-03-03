@@ -16,14 +16,12 @@
 //!     - `/addresses/ed25519/<address>/outputs`
 //!     - `/milestones/<index>`
 
-pub mod add_feed_source;
 /// The main actor for the API
 pub mod application;
 /// API configuration
 pub mod config;
 /// The http endpoint listener
 pub mod listener;
-pub mod notifications;
 /// The websocket actor
 pub mod websocket;
 

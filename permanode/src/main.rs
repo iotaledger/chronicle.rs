@@ -1,3 +1,6 @@
+#![warn(missing_docs)]
+//! # Permanode
+
 use config::*;
 use permanode_api::application::*;
 use permanode_broker::application::*;
