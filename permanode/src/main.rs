@@ -24,7 +24,7 @@ impl Builder for AppsBuilder {
     type State = Apps;
 
     fn build(self) -> Self::State {
-        let config = Config::from_file(Path::new("./config.ron")).expect("Failed to deserialize config!");
+        let config = Config::load().expect("Failed to deserialize config!");
         let permanode_api_builder = PermanodeAPIBuilder::new()
             .api_config(config.api_config)
             .storage_config(config.storage_config);

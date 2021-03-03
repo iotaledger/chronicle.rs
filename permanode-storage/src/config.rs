@@ -11,7 +11,7 @@ pub type KeyspaceName = String;
 
 /// Scylla storage configuration. Defines data which can be used
 /// to construct and access the scylla cluster.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct StorageConfig {
     /// Keyspaces defined for this cluster, keyed by the network
     /// they will pull data from
