@@ -187,7 +187,6 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                 microservice_name
             );
             // Maybe TODO response with something?;
-
         };
     }
     fn add_mqtt<T: Topic>(&mut self, topic: T, url: Url) -> Option<Mqtt<T>> {

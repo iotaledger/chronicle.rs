@@ -10,7 +10,10 @@ use crate::{
 use async_trait::async_trait;
 pub use chronicle::*;
 pub use log::*;
-pub(crate) use paho_mqtt::AsyncClient;
+pub(crate) use paho_mqtt::{
+    AsyncClient,
+    CreateOptionsBuilder,
+};
 use serde::{
     Deserialize,
     Serialize,

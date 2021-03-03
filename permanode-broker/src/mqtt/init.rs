@@ -8,7 +8,11 @@ impl<T: Topic, H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         // create async client
-        let mut client = AsyncClient::new((&self.url.as_str()[..], &self.get_name()[..])).map_err(|e| {
+        let create_opts = CreateOptionsBuilder::new()
+            .server_uri(&self.url.as_str()[..])
+            .client_id(&self.get_name()[..])
+            .finalize();
+        let mut client = AsyncClient::new(create_opts).map_err(|e| {
             error!("Unable to create AsyncClient: {}, error: {}", &self.url.as_str(), e);
             Need::Abort
         })?;
