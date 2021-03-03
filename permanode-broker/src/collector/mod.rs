@@ -1,10 +1,8 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    application::*,
-    mqtt::*,
-};
+use crate::application::*;
+use permanode_storage::access::*;
 
 use lru::LruCache;
 use std::ops::{

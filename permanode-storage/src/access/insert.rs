@@ -1,4 +1,40 @@
 use super::*;
+impl<'a> Insert<'a, MessageId, Message> for Mainnet {
+    fn insert_statement() -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.messages (message_id, message) VALUES (?, ?)",
+            Self::name()
+        )
+        .into()
+    }
+
+    fn get_request(
+        &'a self,
+        key: &MessageId,
+        value: &Message,
+    ) -> InsertRequest<Self, MessageId, Message>
+    where
+        Self: Insert<'a, MessageId, Message>,
+    {
+        let mut message_id_bytes = Vec::new();
+        key.pack(&mut message_id_bytes)
+            .expect("Error occurred packing Message ID");
+
+        let mut message_bytes = Vec::new();
+        value.pack(&mut message_bytes).expect("Error occurred packing Message");
+
+        let query = Query::new()
+            .statement(&Self::insert_statement())
+            .consistency(scylla_cql::Consistency::One)
+            .value(message_id_bytes.as_slice())
+            .value(message_bytes.as_slice())
+            .build();
+
+        let token = 1;
+
+        InsertRequest::from_query(query, token, self)
+    }
+}
 
 impl<'a> Insert<'a, Bee<MessageId>, Bee<Message>> for Mainnet {
     fn insert_statement() -> std::borrow::Cow<'static, str> {

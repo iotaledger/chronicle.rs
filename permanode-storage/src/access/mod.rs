@@ -1,4 +1,4 @@
-use crate::keyspaces::Mainnet;
+pub use crate::keyspaces::Mainnet;
 use bee_common::packable::Packable;
 pub use rows::*;
 pub use scylla::{
