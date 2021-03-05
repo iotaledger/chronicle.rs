@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::application::*;
+use crate::solidifier::*;
 use permanode_storage::access::*;
 
 use lru::LruCache;
@@ -18,6 +19,8 @@ mod terminating;
 builder!(CollectorBuilder {
     partition_id: u8,
     lru_capacity: usize,
+    inbox: CollectorInbox,
+    solidifier_handles: HashMap<u8, SolidifierHandle>,
     collectors_count: u8
 });
 
@@ -30,11 +33,11 @@ pub enum CollectorEvent {
 /// CollectorHandle to be passed to siblings(feed sources) and the supervisor(in order to shutdown)
 #[derive(Clone)]
 pub struct CollectorHandle {
-    tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
+    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
 }
 /// CollectorInbox is used to recv events
 pub struct CollectorInbox {
-    rx: tokio::sync::mpsc::UnboundedReceiver<CollectorEvent>,
+    pub(crate) rx: tokio::sync::mpsc::UnboundedReceiver<CollectorEvent>,
 }
 impl Deref for CollectorHandle {
     type Target = tokio::sync::mpsc::UnboundedSender<CollectorEvent>;
@@ -78,16 +81,10 @@ impl Shutdown for CollectorHandle {
 pub struct Collector {
     service: Service,
     partition_id: u8,
+    collectors_count: u8,
     lru_msg: LruCache<MessageId, Message>,
     lru_msg_ref: LruCache<MessageId, MessageReferenced>,
-    handle: Option<CollectorHandle>,
     inbox: CollectorInbox,
-}
-
-impl Collector {
-    pub(crate) fn take_handle(&mut self) -> Option<CollectorHandle> {
-        self.handle.take()
-    }
 }
 
 impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder {}
@@ -96,17 +93,14 @@ impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder
 impl Builder for CollectorBuilder {
     type State = Collector;
     fn build(self) -> Self::State {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let handle = Some(CollectorHandle { tx });
-        let inbox = CollectorInbox { rx };
         let lru_cap = self.lru_capacity.unwrap_or(1000);
         Self::State {
             service: Service::new(),
             lru_msg: LruCache::new(lru_cap),
             lru_msg_ref: LruCache::new(lru_cap),
             partition_id: self.partition_id.unwrap(),
-            handle,
-            inbox,
+            collectors_count: self.collectors_count.unwrap(),
+            inbox: self.inbox.unwrap(),
         }
         .set_name()
     }
@@ -115,7 +109,7 @@ impl Builder for CollectorBuilder {
 /// impl name of the Collector
 impl Name for Collector {
     fn set_name(mut self) -> Self {
-        let name = format!("{}", self.partition_id);
+        let name = format!("Collector_{}", self.partition_id);
         self.service.update_name(name);
         self
     }

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     collector::*,
+    solidifier::*,
     listener::*,
     mqtt::*,
     websocket::*,
@@ -19,7 +20,7 @@ use serde::{
     Serialize,
 };
 pub(crate) use std::convert::TryFrom;
-use std::{
+pub(crate) use std::{
     collections::HashMap,
     net::SocketAddr,
     ops::{
@@ -89,6 +90,7 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     asked_to_shutdown: HashMap<String, ()>,
     collectors_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
+    solidifier_handles: HashMap<u8, SolidifierHandle>,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
 }
@@ -101,6 +103,8 @@ pub enum BrokerChild {
     Mqtt(Service, Option<MqttHandle>, Result<(), Need>),
     /// Used by Collector(s) to keep Broker up to date with its service
     Collector(Service),
+    /// Used by Solidifier(s) to keep Broker up to date with its service
+    Solidifier(Service),
     /// Used by Websocket to keep Broker up to date with its service
     Websocket(Service, Option<WsTx>),
 }
@@ -151,6 +155,7 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             asked_to_shutdown: HashMap::new(),
             collectors_count: self.collectors_count.unwrap_or(10),
             collector_handles: HashMap::new(),
+            solidifier_handles: HashMap::new(),
             handle,
             inbox,
         }
