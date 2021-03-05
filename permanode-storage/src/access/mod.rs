@@ -32,6 +32,7 @@ mod insert;
 #[allow(missing_docs)]
 mod rows;
 mod select;
+mod token;
 mod types;
 
 impl VoidDecoder for Mainnet {}

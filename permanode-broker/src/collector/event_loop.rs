@@ -11,7 +11,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         #[derive(Debug)]
-        struct TestWorker<K, V>{
+        struct TestWorker<K, V> {
             key: K,
             value: V,
         }
@@ -23,12 +23,16 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                 trace!("{:?}", giveload);
             }
         }
+        let mainnet = Mainnet::new();
         while let Some(event) = self.inbox.recv().await {
             match event {
                 CollectorEvent::Message(message_id, message) => {
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
-                        Mainnet.insert(&message_id, &message).send_local(Box::new(TestWorker {key: message_id, value: message}));
+                        mainnet.insert(&message_id, &message).send_local(Box::new(TestWorker {
+                            key: message_id,
+                            value: message,
+                        }));
                     } else {
                         // add it to the cache in order to not presist it again.
                         self.lru_msg.put(message_id, message);

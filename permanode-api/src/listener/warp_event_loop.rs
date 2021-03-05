@@ -1,12 +1,34 @@
 use super::*;
-use bee_rest_api::handlers::info::InfoResponse;
+use bee_rest_api::handlers::{
+    info::InfoResponse,
+    message::MessageResponse,
+    message_children::MessageChildrenResponse,
+    messages_find::MessagesForIndexResponse,
+    milestone::MilestoneResponse,
+    output::OutputResponse,
+    outputs_ed25519::OutputsForAddressResponse,
+    SuccessBody,
+};
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
         Bee,
+        CreatedOutput,
+        Ed25519Address,
         GetSelectRequest,
+        HashedIndex,
+        IndexMessages,
+        MessageChildren,
         MessageId,
+        MessageRow,
+        MilestoneIndex,
+        OutputId,
+        OutputIds,
+        Outputs,
         SelectRequest,
+        SingleMilestone,
+        TransactionData,
+        HASHED_INDEX_LENGTH,
     },
     keyspaces::Mainnet,
     TangleNetwork,
@@ -16,9 +38,14 @@ use std::{
     borrow::Cow,
     convert::TryInto,
     net::SocketAddr,
+    ops::Deref,
     str::FromStr,
+    sync::Arc,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{
+    mpsc,
+    Mutex,
+};
 use warp::{
     reject::Reject,
     reply::{
@@ -29,10 +56,12 @@ use warp::{
     Rejection,
 };
 
+use crate::listener::rocket_event_loop::message_row_to_response;
+
 macro_rules! routes {
-    [$($($path:tt)/ * $(? $query:ty)? => $callback:path),* $(,)?] => {
+    [$($($path:tt)/ * $(? $query:ty)? => $callback:path $(| ($($state:expr),*))?),* $(,)?] => {
         vec![
-            $(warp::path!($($path)/ *)$(.and(warp::query::<$query>()))?.and_then($callback).boxed()),*
+            $(warp::path!($($path)/ *)$(.and(warp::query::<$query>()))?$($(.and($state))*)?.and_then($callback).boxed()),*
         ]
     };
 }
@@ -66,16 +95,17 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<WarpLis
         for network in self.config.keyspaces.keys() {
             match network {
                 TangleNetwork::Mainnet => {
+                    let mainnet = Arc::new(Mutex::new(Mainnet::new()));
                     routes_vec.extend(
                         routes![
                             "mainnet" / "info" => info,
-                            "mainnet" / "messages" ? IndexParam => mainnet::get_message_by_index,
-                            "mainnet" / "messages" / String => mainnet::get_message,
-                            "mainnet" / "messages" / String / "metadata" => mainnet::get_message_metadata,
-                            "mainnet" / "messages" / String / "children" => mainnet::get_message_children,
-                            "mainnet" / "output" / String => mainnet::get_output,
-                            "mainnet" / "addresses" / "ed25519" / String / "outputs" => mainnet::get_ed25519_outputs,
-                            "mainnet" / "milestones" / u32 => mainnet::get_milestone,
+                            "mainnet" / "messages" ? IndexParam => mainnet::get_message_by_index | (mainnet::with_mainnet(mainnet.clone())),
+                            "mainnet" / "messages" / String => mainnet::get_message | (mainnet::with_mainnet(mainnet.clone())),
+                            "mainnet" / "messages" / String / "metadata" => mainnet::get_message_metadata | (mainnet::with_mainnet(mainnet.clone())),
+                            "mainnet" / "messages" / String / "children" => mainnet::get_message_children | (mainnet::with_mainnet(mainnet.clone())),
+                            "mainnet" / "output" / String => mainnet::get_output | (mainnet::with_mainnet(mainnet.clone())),
+                            "mainnet" / "addresses" / "ed25519" / String / "outputs" => mainnet::get_ed25519_outputs | (mainnet::with_mainnet(mainnet.clone())),
+                            "mainnet" / "milestones" / u32 => mainnet::get_milestone | (mainnet::with_mainnet(mainnet.clone())),
                         ]
                         .drain(..),
                     );
@@ -154,7 +184,7 @@ impl From<String> for EndpointError {
 
 impl Reject for EndpointError {}
 
-async fn query<'a, V, S: Select<'a, K, V>, K>(request: SelectRequest<'a, S, K, V>) -> Result<V, EndpointError> {
+async fn query<'a, V, S: Select<K, V>, K>(request: SelectRequest<'a, S, K, V>) -> Result<V, EndpointError> {
     let (sender, mut inbox) = unbounded_channel::<Event>();
     let worker = Box::new(DecoderWorker(sender));
 
@@ -176,39 +206,11 @@ async fn query<'a, V, S: Select<'a, K, V>, K>(request: SelectRequest<'a, S, K, V
     Err("Failed to receive response!".into())
 }
 mod mainnet {
-    use std::ops::Deref;
-
-    use bee_rest_api::handlers::{
-        message::MessageResponse,
-        message_children::MessageChildrenResponse,
-        messages_find::MessagesForIndexResponse,
-        milestone::MilestoneResponse,
-        output::OutputResponse,
-        outputs_ed25519::OutputsForAddressResponse,
-        SuccessBody,
-    };
-    use permanode_storage::access::{
-        CreatedOutput,
-        Ed25519Address,
-        HashedIndex,
-        IndexMessages,
-        MessageChildren,
-        MessageRow,
-        MilestoneIndex,
-        OutputId,
-        OutputIds,
-        Outputs,
-        SingleMilestone,
-        TransactionData,
-        HASHED_INDEX_LENGTH,
-    };
-
-    use crate::listener::rocket_event_loop::message_row_to_response;
-
     use super::*;
 
-    pub(super) async fn get_message(message_id: String) -> Result<Json, Rejection> {
-        let request = Mainnet.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
+    pub(super) async fn get_message(message_id: String, mainnet: Arc<Mutex<Mainnet>>) -> Result<Json, Rejection> {
+        let mainnet = mainnet.lock().await;
+        let request = mainnet.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
         query(request)
             .await?
             .deref()
@@ -217,15 +219,23 @@ mod mainnet {
             .map_err(|e| EndpointError::from(e).into())
     }
 
-    pub(super) async fn get_message_metadata(message_id: String) -> Result<Json, Rejection> {
-        let request = Mainnet.select::<MessageRow>(&MessageId::from_str(&message_id).unwrap().into());
+    pub(super) async fn get_message_metadata(
+        message_id: String,
+        mainnet: Arc<Mutex<Mainnet>>,
+    ) -> Result<Json, Rejection> {
+        let mainnet = mainnet.lock().await;
+        let request = mainnet.select::<MessageRow>(&MessageId::from_str(&message_id).unwrap().into());
         message_row_to_response(query(request).await?)
             .map(|res| json(&SuccessBody::new(res)))
             .map_err(|e| EndpointError::from(e.to_string()).into())
     }
 
-    pub(super) async fn get_message_children(message_id: String) -> Result<Json, Rejection> {
-        let request = Mainnet.select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap().into());
+    pub(super) async fn get_message_children(
+        message_id: String,
+        mainnet: Arc<Mutex<Mainnet>>,
+    ) -> Result<Json, Rejection> {
+        let mainnet = mainnet.lock().await;
+        let request = mainnet.select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap().into());
         // TODO: Paging
         let children = query(request).await?;
         let count = children.rows_count();
@@ -239,7 +249,11 @@ mod mainnet {
         })))
     }
 
-    pub(super) async fn get_message_by_index(index: IndexParam) -> Result<Json, Rejection> {
+    pub(super) async fn get_message_by_index(
+        index: IndexParam,
+        mainnet: Arc<Mutex<Mainnet>>,
+    ) -> Result<Json, Rejection> {
+        let mainnet = mainnet.lock().await;
         let mut bytes_vec = vec![0; HASHED_INDEX_LENGTH];
         let bytes = hex::decode(index.index.clone())
             .map_err(|_| Rejection::from(EndpointError::from("Invalid Hex character in index!")))?;
@@ -248,7 +262,7 @@ mod mainnet {
         info!("Getting message for index: {}", String::from_utf8_lossy(&bytes));
 
         let request =
-            Mainnet.select::<IndexMessages>(&HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()).into());
+            mainnet.select::<IndexMessages>(&HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()).into());
         // TODO: Paging
         let messages = query(request).await?;
         let count = messages.rows_count();
@@ -262,9 +276,10 @@ mod mainnet {
         })))
     }
 
-    pub(super) async fn get_output(output_id: String) -> Result<Json, Rejection> {
+    pub(super) async fn get_output(output_id: String, mainnet: Arc<Mutex<Mainnet>>) -> Result<Json, Rejection> {
+        let mainnet = mainnet.lock().await;
         let output_id = OutputId::from_str(&output_id).unwrap();
-        let request = Mainnet.select::<Outputs>(&output_id.into());
+        let request = mainnet.select::<Outputs>(&output_id.into());
         let outputs = query(request).await?;
         let (output, is_spent) = {
             let mut output = None;
@@ -297,8 +312,9 @@ mod mainnet {
         })))
     }
 
-    pub(super) async fn get_ed25519_outputs(address: String) -> Result<Json, Rejection> {
-        let request = Mainnet.select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap().into());
+    pub(super) async fn get_ed25519_outputs(address: String, mainnet: Arc<Mutex<Mainnet>>) -> Result<Json, Rejection> {
+        let mainnet = mainnet.lock().await;
+        let request = mainnet.select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap().into());
 
         // TODO: Paging
         let outputs = query(request).await?;
@@ -314,8 +330,9 @@ mod mainnet {
         })))
     }
 
-    pub(super) async fn get_milestone(index: u32) -> Result<Json, Rejection> {
-        let request = Mainnet.select::<SingleMilestone>(&MilestoneIndex::from(index).into());
+    pub(super) async fn get_milestone(index: u32, mainnet: Arc<Mutex<Mainnet>>) -> Result<Json, Rejection> {
+        let mainnet = mainnet.lock().await;
+        let request = mainnet.select::<SingleMilestone>(&MilestoneIndex::from(index).into());
         query(request)
             .await?
             .get()
@@ -327,6 +344,12 @@ mod mainnet {
                 }))
             })
             .ok_or(EndpointError::from(format!("No milestone found for index {}", index)).into())
+    }
+
+    pub(super) fn with_mainnet(
+        mainnet: Arc<Mutex<Mainnet>>,
+    ) -> impl Filter<Extract = (Arc<Mutex<Mainnet>>,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || mainnet.clone())
     }
 }
 

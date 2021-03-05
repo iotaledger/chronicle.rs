@@ -11,6 +11,7 @@ use bee_rest_api::handlers::{
     milestone::MilestoneResponse,
     output::OutputResponse,
     outputs_ed25519::OutputsForAddressResponse,
+    SuccessBody,
 };
 use mpsc::unbounded_channel;
 use permanode_storage::{
@@ -46,6 +47,7 @@ use rocket::{
     get,
     Request,
     Response,
+    State,
 };
 use rocket_contrib::json::Json;
 use scylla_cql::TryInto;
@@ -78,20 +80,22 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
         for network in self.config.keyspaces.keys() {
             match network {
                 TangleNetwork::Mainnet => {
-                    server = server.mount(
-                        "/mainnet",
-                        routes![
-                            options,
-                            info,
-                            mainnet::get_message,
-                            mainnet::get_message_metadata,
-                            mainnet::get_message_children,
-                            mainnet::get_message_by_index,
-                            mainnet::get_output,
-                            mainnet::get_ed25519_outputs,
-                            mainnet::get_milestone
-                        ],
-                    );
+                    server = server
+                        .mount(
+                            "/mainnet",
+                            routes![
+                                options,
+                                info,
+                                mainnet::get_message,
+                                mainnet::get_message_metadata,
+                                mainnet::get_message_children,
+                                mainnet::get_message_by_index,
+                                mainnet::get_output,
+                                mainnet::get_ed25519_outputs,
+                                mainnet::get_milestone
+                            ],
+                        )
+                        .manage(Mainnet::new());
                 }
                 TangleNetwork::Devnet => {
                     server = server.mount(
@@ -156,7 +160,7 @@ async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
     }))
 }
 
-async fn query<'a, V, S: Select<'a, K, V>, K>(request: SelectRequest<'a, S, K, V>) -> Result<V, Cow<'static, str>> {
+async fn query<'a, V, S: Select<K, V>, K>(request: SelectRequest<'a, S, K, V>) -> Result<V, Cow<'static, str>> {
     let (sender, mut inbox) = unbounded_channel::<Event>();
     let worker = Box::new(DecoderWorker(sender));
 
@@ -179,13 +183,14 @@ async fn query<'a, V, S: Select<'a, K, V>, K>(request: SelectRequest<'a, S, K, V
 }
 
 mod mainnet {
-    use bee_rest_api::handlers::SuccessBody;
-
     use super::*;
 
     #[get("/messages/<message_id>")]
-    pub async fn get_message(message_id: String) -> Result<Json<SuccessBody<MessageResponse>>, Cow<'static, str>> {
-        let request = Mainnet.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
+    pub async fn get_message(
+        mainnet: State<'_, Mainnet>,
+        message_id: String,
+    ) -> Result<Json<SuccessBody<MessageResponse>>, Cow<'static, str>> {
+        let request = mainnet.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
         query(request)
             .await?
             .deref()
@@ -196,17 +201,19 @@ mod mainnet {
 
     #[get("/messages/<message_id>/metadata")]
     pub async fn get_message_metadata(
+        mainnet: State<'_, Mainnet>,
         message_id: String,
     ) -> Result<Json<SuccessBody<MessageMetadataResponse>>, Cow<'static, str>> {
-        let request = Mainnet.select::<MessageRow>(&MessageId::from_str(&message_id).unwrap().into());
+        let request = mainnet.select::<MessageRow>(&MessageId::from_str(&message_id).unwrap().into());
         message_row_to_response(query(request).await?).map(|res| Json(SuccessBody::new(res)))
     }
 
     #[get("/messages/<message_id>/children")]
     pub async fn get_message_children(
+        mainnet: State<'_, Mainnet>,
         message_id: String,
     ) -> Result<Json<SuccessBody<MessageChildrenResponse>>, Cow<'static, str>> {
-        let request = Mainnet.select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap().into());
+        let request = mainnet.select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap().into());
         // TODO: Paging
         let children = query(request).await?;
         let count = children.rows_count();
@@ -222,6 +229,7 @@ mod mainnet {
 
     #[get("/messages?<index>")]
     pub async fn get_message_by_index(
+        mainnet: State<'_, Mainnet>,
         index: String,
     ) -> Result<Json<SuccessBody<MessagesForIndexResponse>>, Cow<'static, str>> {
         let mut bytes_vec = vec![0; HASHED_INDEX_LENGTH];
@@ -231,7 +239,7 @@ mod mainnet {
         info!("Getting message for index: {}", String::from_utf8_lossy(&bytes));
 
         let request =
-            Mainnet.select::<IndexMessages>(&HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()).into());
+            mainnet.select::<IndexMessages>(&HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()).into());
         // TODO: Paging
         let messages = query(request).await?;
         let count = messages.rows_count();
@@ -246,9 +254,12 @@ mod mainnet {
     }
 
     #[get("/outputs/<output_id>")]
-    pub async fn get_output(output_id: String) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
+    pub async fn get_output(
+        mainnet: State<'_, Mainnet>,
+        output_id: String,
+    ) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
         let output_id = OutputId::from_str(&output_id).unwrap();
-        let request = Mainnet.select::<Outputs>(&output_id.into());
+        let request = mainnet.select::<Outputs>(&output_id.into());
         let outputs = query(request).await?;
         let (output, is_spent) = {
             let mut output = None;
@@ -280,9 +291,10 @@ mod mainnet {
 
     #[get("/addresses/ed25519/<address>/outputs")]
     pub async fn get_ed25519_outputs(
+        mainnet: State<'_, Mainnet>,
         address: String,
     ) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, Cow<'static, str>> {
-        let request = Mainnet.select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap().into());
+        let request = mainnet.select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap().into());
 
         // TODO: Paging
         let outputs = query(request).await?;
@@ -299,8 +311,11 @@ mod mainnet {
     }
 
     #[get("/milestones/<index>")]
-    pub async fn get_milestone(index: u32) -> Result<Json<SuccessBody<MilestoneResponse>>, Cow<'static, str>> {
-        let request = Mainnet.select::<SingleMilestone>(&MilestoneIndex::from(index).into());
+    pub async fn get_milestone(
+        mainnet: State<'_, Mainnet>,
+        index: u32,
+    ) -> Result<Json<SuccessBody<MilestoneResponse>>, Cow<'static, str>> {
+        let request = mainnet.select::<SingleMilestone>(&MilestoneIndex::from(index).into());
         query(request)
             .await?
             .get()
