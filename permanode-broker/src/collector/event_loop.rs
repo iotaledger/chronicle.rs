@@ -15,12 +15,13 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
             key: K,
             value: V,
         }
+        // testing block, to be removed
         impl Worker for TestWorker<MessageId, Message> {
             fn handle_error(self: Box<Self>, error: WorkerError, reporter: &Option<ReporterHandle>) {
-                trace!("{:?}", error);
+                error!("{:?}, is_none {}", error, reporter.is_none());
             }
             fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
-                trace!("{:?}", giveload);
+                info!("{:?}", giveload);
             }
         }
         while let Some(event) = self.inbox.recv().await {
@@ -35,14 +36,18 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     }
                 }
                 CollectorEvent::MessageReferenced(msg_ref) => {
+                    let partition_id = (msg_ref.referenced_by_milestone_index % (self.collectors_count as u64)) as u8;
                     let message_id = msg_ref.message_id;
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg_ref.get(&message_id) {
                         // TODO store it as metadata
+                        // check if msg already exist in the cache, if so we pushed to solidifier
+
                     } else {
                         // add it to the cache in order to not presist it again.
                         self.lru_msg_ref.put(message_id, msg_ref);
                     }
+
                 }
             }
         }

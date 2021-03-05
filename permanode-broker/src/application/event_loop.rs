@@ -48,6 +48,11 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                         info!("Shutting down Collector: {}", collector_name);
                                         collector_handle.shutdown();
                                     }
+                                    // shutdown solidifiers
+                                    for (solidifier_name, solidifier_handle) in self.solidifier_handles.drain() {
+                                        info!("Shutting down Solidifier: {}", solidifier_name);
+                                        solidifier_handle.shutdown();
+                                    }
                                     // Shutdown the websockets
                                     for (_, ws) in &mut self.websockets {
                                         let _ = ws.close().await;
@@ -84,6 +89,9 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
                             BrokerChild::Collector(service) => {
+                                self.service.update_microservice(service.get_name(), service.clone());
+                            }
+                            BrokerChild::Solidifier(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
                             BrokerChild::Mqtt(service, mqtt_handle_opt, mqtt_status) => {
