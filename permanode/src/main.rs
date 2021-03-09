@@ -5,7 +5,6 @@ use config::*;
 use permanode_api::application::*;
 use permanode_broker::application::*;
 use scylla::application::*;
-use std::path::Path;
 
 mod config;
 
@@ -25,10 +24,8 @@ impl Builder for AppsBuilder {
 
     fn build(self) -> Self::State {
         let config = Config::load().expect("Failed to deserialize config!");
-        let permanode_api_builder = PermanodeAPIBuilder::new()
-            .api_config(config.api_config)
-            .storage_config(config.storage_config);
-        let permanode_broker_builder = PermanodeBrokerBuilder::new();
+        let permanode_api_builder = PermanodeAPIBuilder::new().api_config(config.api_config);
+        let permanode_broker_builder = PermanodeBrokerBuilder::new().storage_config(config.storage_config);
         let scylla_builder = ScyllaBuilder::new()
             .listen_address("127.0.0.1:8080".to_owned())
             .thread_count(num_cpus::get())
@@ -53,7 +50,7 @@ async fn main() {
         .await
         .future(|apps| async {
             let ws = format!("ws://{}/", "127.0.0.1:8080");
-            let nodes = vec!["172.17.0.2:19042".parse().unwrap()];
+            let nodes = vec!["127.0.0.1:9042".parse().unwrap()];
             add_nodes(&ws, nodes, 1)
                 .await
                 .unwrap_or_else(|e| panic!("Unable to add nodes: {}", e));

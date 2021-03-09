@@ -37,8 +37,6 @@ pub struct WarpListener;
 pub struct Listener<T> {
     /// The listener's service
     pub service: Service,
-    /// Storage configuration needed to enable endpoints by network
-    pub config: StorageConfig,
     data: T,
 }
 
@@ -92,7 +90,6 @@ impl Worker for DecoderWorker {
 }
 
 builder!(ListenerBuilder<T> {
-    config: StorageConfig,
     data: T
 });
 
@@ -102,7 +99,6 @@ impl<T: APIEngine> Builder for ListenerBuilder<T> {
     fn build(self) -> Self::State {
         Self::State {
             service: Service::new(),
-            config: self.config.expect("No config was provided!"),
             data: self.data.expect("No listener data was provided!"),
         }
         .set_name()

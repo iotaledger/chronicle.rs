@@ -1,4 +1,4 @@
-pub use crate::keyspaces::Mainnet;
+pub use crate::keyspaces::PermanodeKeyspace;
 use bee_common::packable::Packable;
 pub use rows::*;
 pub use scylla::{
@@ -35,7 +35,7 @@ mod select;
 mod token;
 mod types;
 
-impl VoidDecoder for Mainnet {}
+impl VoidDecoder for PermanodeKeyspace {}
 
 pub(crate) struct BeeRows<Type> {
     decoder: Decoder,
@@ -93,7 +93,7 @@ impl<Type: Packable> Rows for BeeRows<Type> {
     }
 }
 
-impl<K, V> RowsDecoder<K, Bee<V>> for Mainnet
+impl<K, V> RowsDecoder<K, Bee<V>> for PermanodeKeyspace
 where
     V: Packable,
     Bee<V>: ColumnDecoder,

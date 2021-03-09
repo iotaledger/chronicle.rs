@@ -19,6 +19,7 @@ lru = "0.6.5"
 url = { version = "2", features = ["serde"] }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", branch = "chrysalis-pt-2" }
+permanode-filter = { path = "../permanode-filter", optional = true }
 
 [dependencies.tokio]
 version = "1.2"
@@ -49,3 +50,6 @@ rev = "8baba87"
 features = [
     "serde"
 ]
+
+[features]
+filter = ["permanode-filter"]

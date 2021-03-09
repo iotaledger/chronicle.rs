@@ -1,7 +1,7 @@
 [package]
 name = "permanode-storage"
 version = "0.1.0"
-authors = ["Alex Coats <alexandcoats@gmail.com>"]
+authors = ["IOTA Stiftung"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

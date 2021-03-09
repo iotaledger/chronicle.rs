@@ -1,9 +1,14 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::application::*;
-use crate::solidifier::*;
-use permanode_storage::access::*;
+use crate::{
+    application::*,
+    solidifier::*,
+};
+use permanode_storage::{
+    access::*,
+    StorageConfig,
+};
 
 use lru::LruCache;
 use std::ops::{
@@ -21,7 +26,8 @@ builder!(CollectorBuilder {
     lru_capacity: usize,
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
-    collectors_count: u8
+    collectors_count: u8,
+    storage_config: StorageConfig
 });
 
 pub enum CollectorEvent {
@@ -85,6 +91,7 @@ pub struct Collector {
     lru_msg: LruCache<MessageId, Message>,
     lru_msg_ref: LruCache<MessageId, MessageReferenced>,
     inbox: CollectorInbox,
+    storage_config: Option<StorageConfig>,
 }
 
 impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder {}
@@ -101,6 +108,7 @@ impl Builder for CollectorBuilder {
             partition_id: self.partition_id.unwrap(),
             collectors_count: self.collectors_count.unwrap(),
             inbox: self.inbox.unwrap(),
+            storage_config: self.storage_config,
         }
         .set_name()
     }

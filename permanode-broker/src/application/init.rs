@@ -14,10 +14,13 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
                 let collector_handle = CollectorHandle { tx };
                 let collector_inbox = CollectorInbox { rx };
                 self.collector_handles.insert(partition_id, collector_handle);
-                let collector_builder = CollectorBuilder::new()
+                let mut collector_builder = CollectorBuilder::new()
                     .collectors_count(self.collectors_count)
                     .inbox(collector_inbox)
                     .partition_id(partition_id);
+                if let Some(ref config) = self.storage_config {
+                    collector_builder = collector_builder.storage_config(config.clone());
+                }
                 collector_builders.push(collector_builder);
                 // create solidifier_builder
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -33,14 +36,14 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
             // we finalize them
             for collector_builder in collector_builders {
                 let collector = collector_builder
-                .solidifier_handles(self.solidifier_handles.clone())
-                .build();
+                    .solidifier_handles(self.solidifier_handles.clone())
+                    .build();
                 tokio::spawn(collector.start(self.handle.clone()));
             }
             for solidifier_builder in solidifier_builders {
                 let solidifier = solidifier_builder
-                .collector_handles(self.collector_handles.clone())
-                .build();
+                    .collector_handles(self.collector_handles.clone())
+                    .build();
                 tokio::spawn(solidifier.start(self.handle.clone()));
             }
             status

@@ -56,7 +56,7 @@ rows!(
     row_into: OutputRow,
 );
 
-impl<K, V: Rows> RowsDecoder<K, V> for Mainnet {
+impl<K, V: Rows> RowsDecoder<K, V> for PermanodeKeyspace {
     fn try_decode(decoder: Decoder) -> Result<Option<V>, CqlError> {
         if decoder.is_error() {
             Err(decoder.get_error())

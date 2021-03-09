@@ -11,6 +11,7 @@ impl<T: Topic, H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
         let create_opts = CreateOptionsBuilder::new()
             .server_uri(&self.url.as_str()[..])
             .client_id(&self.get_name()[..])
+            .persistence(None)
             .finalize();
         let mut client = AsyncClient::new(create_opts).map_err(|e| {
             error!("Unable to create AsyncClient: {}, error: {}", &self.url.as_str(), e);

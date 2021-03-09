@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     collector::*,
-    solidifier::*,
     listener::*,
     mqtt::*,
+    solidifier::*,
     websocket::*,
 };
 
@@ -15,13 +15,14 @@ pub(crate) use paho_mqtt::{
     AsyncClient,
     CreateOptionsBuilder,
 };
+use permanode_storage::StorageConfig;
 use serde::{
     Deserialize,
     Serialize,
 };
-pub(crate) use std::convert::TryFrom;
 pub(crate) use std::{
     collections::HashMap,
+    convert::TryFrom,
     net::SocketAddr,
     ops::{
         Deref,
@@ -55,7 +56,8 @@ builder!(
     PermanodeBrokerBuilder<H> {
         listen_address: SocketAddr,
         listener_handle: ListenerHandle,
-        collectors_count: u8
+        collectors_count: u8,
+        storage_config: StorageConfig
 });
 
 #[derive(Deserialize, Serialize)]
@@ -93,6 +95,7 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
+    storage_config: Option<StorageConfig>,
 }
 
 /// SubEvent type, indicated the children
@@ -158,6 +161,7 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             solidifier_handles: HashMap::new(),
             handle,
             inbox,
+            storage_config: self.storage_config,
         }
         .set_name()
     }

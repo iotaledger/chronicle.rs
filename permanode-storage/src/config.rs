@@ -13,9 +13,9 @@ pub type KeyspaceName = String;
 /// to construct and access the scylla cluster.
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct StorageConfig {
-    /// Keyspaces defined for this cluster, keyed by the network
+    /// Keyspace definition for this cluster, keyed by the network
     /// they will pull data from
-    pub keyspaces: HashMap<TangleNetwork, KeyspaceConfig>,
+    pub keyspaces: Vec<KeyspaceConfig>,
 }
 
 /// Configuration for a scylla keyspace
@@ -32,13 +32,4 @@ pub struct KeyspaceConfig {
 pub struct DatacenterConfig {
     /// The scylla replication factor for this datacenter
     pub replication_factor: usize,
-}
-
-/// Tangle networks available to pull messages from
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Hash)]
-pub enum TangleNetwork {
-    /// The Mainnet network
-    Mainnet,
-    /// The Devnet network
-    Devnet,
 }

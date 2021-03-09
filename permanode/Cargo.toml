@@ -39,3 +39,6 @@ features = [
 
 [dev-dependencies]
 maplit = "1.0.2"
+
+[features]
+filter = ["permanode-broker/filter"]

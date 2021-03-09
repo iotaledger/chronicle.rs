@@ -1,7 +1,7 @@
 (
     storage_config: (
-        keyspaces: {
-            Mainnet: (
+        keyspaces: [
+            (
                 name: "my_mainnet",
                 data_centers: {
                     "USA": (
@@ -12,7 +12,7 @@
                     ),
                 },
             ),
-        },
+        ],
     ),
     api_config: (),
     broker_config: (),

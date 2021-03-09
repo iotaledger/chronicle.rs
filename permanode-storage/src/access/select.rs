@@ -4,7 +4,7 @@ use scylla_cql::{
     RowsDecoder,
 };
 
-impl Select<Bee<MessageId>, Bee<Message>> for Mainnet {
+impl Select<Bee<MessageId>, Bee<Message>> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!("SELECT message from {}.messages WHERE message_id = ?", self.name()).into()
     }
@@ -17,8 +17,8 @@ impl Select<Bee<MessageId>, Bee<Message>> for Mainnet {
         key.pack(&mut message_id_bytes)
             .expect("Error occurred packing Message ID");
 
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<MessageId>, Bee<Message>>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<MessageId>, Bee<Message>>())
             .consistency(scylla_cql::Consistency::One)
             .value(&message_id_bytes.as_slice())
             .build();
@@ -29,7 +29,7 @@ impl Select<Bee<MessageId>, Bee<Message>> for Mainnet {
     }
 }
 
-impl Select<Bee<MessageId>, MessageChildren> for Mainnet {
+impl Select<Bee<MessageId>, MessageChildren> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id FROM {}.parents WHERE parent_id = ? AND partition_id = ?",
@@ -46,8 +46,8 @@ impl Select<Bee<MessageId>, MessageChildren> for Mainnet {
         key.pack(&mut message_id_bytes)
             .expect("Error occurred packing Message ID");
 
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<MessageId>, MessageChildren>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<MessageId>, MessageChildren>())
             .consistency(scylla_cql::Consistency::One)
             .value(&message_id_bytes.as_slice())
             .value(&0u16)
@@ -59,7 +59,7 @@ impl Select<Bee<MessageId>, MessageChildren> for Mainnet {
     }
 }
 
-impl Select<Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
+impl Select<Bee<MessageId>, Bee<MessageMetadata>> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!("SELECT metadata from {}.messages WHERE message_id = ?", self.name()).into()
     }
@@ -72,8 +72,8 @@ impl Select<Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
         key.pack(&mut message_id_bytes)
             .expect("Error occurred packing Message ID");
 
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<MessageId>, Bee<MessageMetadata>>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<MessageId>, Bee<MessageMetadata>>())
             .consistency(scylla_cql::Consistency::One)
             .value(&message_id_bytes.as_slice())
             .build();
@@ -84,7 +84,7 @@ impl Select<Bee<MessageId>, Bee<MessageMetadata>> for Mainnet {
     }
 }
 
-impl Select<Bee<MessageId>, MessageRow> for Mainnet {
+impl Select<Bee<MessageId>, MessageRow> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id, message, metadata from {}.messages WHERE message_id = ?",
@@ -101,8 +101,8 @@ impl Select<Bee<MessageId>, MessageRow> for Mainnet {
         key.pack(&mut message_id_bytes)
             .expect("Error occurred packing Message ID");
 
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<MessageId>, MessageRow>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<MessageId>, MessageRow>())
             .consistency(scylla_cql::Consistency::One)
             .value(&message_id_bytes.as_slice())
             .build();
@@ -113,7 +113,7 @@ impl Select<Bee<MessageId>, MessageRow> for Mainnet {
     }
 }
 
-impl RowsDecoder<Bee<MessageId>, MessageRow> for Mainnet {
+impl RowsDecoder<Bee<MessageId>, MessageRow> for PermanodeKeyspace {
     fn try_decode(decoder: Decoder) -> Result<Option<MessageRow>, CqlError> {
         if decoder.is_error() {
             Err(decoder.get_error())
@@ -124,7 +124,7 @@ impl RowsDecoder<Bee<MessageId>, MessageRow> for Mainnet {
     }
 }
 
-impl Select<Bee<MilestoneIndex>, SingleMilestone> for Mainnet {
+impl Select<Bee<MilestoneIndex>, SingleMilestone> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id, timestamp from {}.milestones WHERE milestone_index = ?",
@@ -141,8 +141,8 @@ impl Select<Bee<MilestoneIndex>, SingleMilestone> for Mainnet {
         key.pack(&mut index_bytes)
             .expect("Error occurred packing Milestone Index");
 
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<MilestoneIndex>, SingleMilestone>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<MilestoneIndex>, SingleMilestone>())
             .consistency(scylla_cql::Consistency::One)
             .value(&index_bytes.as_slice())
             .build();
@@ -153,7 +153,7 @@ impl Select<Bee<MilestoneIndex>, SingleMilestone> for Mainnet {
     }
 }
 
-impl Select<Bee<HashedIndex>, IndexMessages> for Mainnet {
+impl Select<Bee<HashedIndex>, IndexMessages> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id from {}.indexes WHERE hashed_index = ? AND partition_id = ?",
@@ -166,8 +166,8 @@ impl Select<Bee<HashedIndex>, IndexMessages> for Mainnet {
     where
         Self: Select<Bee<HashedIndex>, IndexMessages>,
     {
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<HashedIndex>, IndexMessages>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<HashedIndex>, IndexMessages>())
             .consistency(scylla_cql::Consistency::One)
             .value(&key.as_ref())
             .value(&0u16)
@@ -179,7 +179,7 @@ impl Select<Bee<HashedIndex>, IndexMessages> for Mainnet {
     }
 }
 
-impl Select<Bee<OutputId>, Outputs> for Mainnet {
+impl Select<Bee<OutputId>, Outputs> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id, data from {}.transactions WHERE transaction_id = ? AND idx = ? and variant = 'utxoinput'",
@@ -192,8 +192,8 @@ impl Select<Bee<OutputId>, Outputs> for Mainnet {
     where
         Self: Select<Bee<OutputId>, Outputs>,
     {
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<OutputId>, Outputs>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<OutputId>, Outputs>())
             .consistency(scylla_cql::Consistency::One)
             .value(&key.transaction_id().to_string())
             .value(&key.index())
@@ -205,7 +205,7 @@ impl Select<Bee<OutputId>, Outputs> for Mainnet {
     }
 }
 
-impl Select<Bee<Ed25519Address>, OutputIds> for Mainnet {
+impl Select<Bee<Ed25519Address>, OutputIds> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT transaction_id, idx 
@@ -220,8 +220,8 @@ impl Select<Bee<Ed25519Address>, OutputIds> for Mainnet {
     where
         Self: Select<Bee<Ed25519Address>, OutputIds>,
     {
-        let query = Execute::new()
-            .id(&self.select_id::<Bee<Ed25519Address>, OutputIds>())
+        let query = Query::new()
+            .statement(&self.select_statement::<Bee<Ed25519Address>, OutputIds>())
             .consistency(scylla_cql::Consistency::One)
             .value(&key.as_ref())
             .value(&0u16)

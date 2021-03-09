@@ -51,26 +51,23 @@ mod test {
     use permanode_storage::{
         DatacenterConfig,
         KeyspaceConfig,
-        TangleNetwork,
     };
 
     #[test]
     pub fn example_config() {
         let config = Config {
             storage_config: StorageConfig {
-                keyspaces: hashmap! {
-                    TangleNetwork::Mainnet => KeyspaceConfig {
-                        name: "my_mainnet".to_string(),
-                        data_centers: hashmap!{
-                            "USA".to_string() => DatacenterConfig {
-                                replication_factor: 2,
-                            },
-                            "Canada".to_string() => DatacenterConfig {
-                                replication_factor: 1,
-                            },
-                        }
-                    }
-                },
+                keyspaces: vec![KeyspaceConfig {
+                    name: "my_mainnet".to_string(),
+                    data_centers: hashmap! {
+                        "USA".to_string() => DatacenterConfig {
+                            replication_factor: 2,
+                        },
+                        "Canada".to_string() => DatacenterConfig {
+                            replication_factor: 1,
+                        },
+                    },
+                }],
             },
             api_config: ApiConfig {},
             broker_config: BrokerConfig {},
