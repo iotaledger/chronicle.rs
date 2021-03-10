@@ -137,7 +137,7 @@ impl Insert<Partitioned<MessageId>, (ParentIndex, MessageId)> for PermanodeKeysp
 }
 
 /// Insert Output into Transactions table
-impl Insert<TransactionId, (ParentIndex, MessageId)> for PermanodeKeyspace {
+impl Insert<Partitioned<TransactionId>, (ParentIndex, MessageId)> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -148,7 +148,7 @@ impl Insert<TransactionId, (ParentIndex, MessageId)> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned { inner, partition_id }: &Partitioned<MessageId>,
+        Partitioned { inner, partition_id }: &Partitioned<TransactionId>,
         (parent_index, message_id): &(ParentIndex, MessageId),
     ) -> T::Return {
         builder

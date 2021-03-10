@@ -24,7 +24,6 @@ use permanode_storage::{
         OutputId,
         OutputIds,
         Outputs,
-        SelectRequest,
         TransactionData,
         HASHED_INDEX_LENGTH,
     },
@@ -139,9 +138,21 @@ impl From<String> for EndpointError {
 
 impl Reject for EndpointError {}
 
-async fn query<V, S: Select<K, V>, K>(request: SelectRequest<S, K, V>) -> Result<V, EndpointError> {
+async fn query<V, S, K>(keyspace: S, key: K) -> Result<V, EndpointError>
+where
+    S: 'static + Select<K, V> + std::fmt::Debug,
+    K: 'static + Send + std::fmt::Debug + Clone,
+    V: 'static + Send + std::fmt::Debug + Clone,
+{
+    let request = keyspace.select::<V>(&key).consistency(Consistency::One).build();
+
     let (sender, mut inbox) = unbounded_channel::<Event>();
-    let worker = Box::new(DecoderWorker(sender));
+    let worker = Box::new(DecoderWorker {
+        sender,
+        keyspace: keyspace,
+        key,
+        value: PhantomData,
+    });
 
     let decoder = request.send_local(worker);
 
@@ -163,11 +174,7 @@ async fn query<V, S: Select<K, V>, K>(request: SelectRequest<S, K, V>) -> Result
 
 async fn get_message(keyspace: String, message_id: String) -> Result<Json, Rejection> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace
-        .select::<Message>(&MessageId::from_str(&message_id).unwrap())
-        .consistency(Consistency::One)
-        .build();
-    query(request)
+    query::<Message, _, _>(keyspace, MessageId::from_str(&message_id).unwrap())
         .await
         .and_then(|ref message| {
             message
@@ -181,11 +188,7 @@ async fn get_message(keyspace: String, message_id: String) -> Result<Json, Rejec
 async fn get_message_metadata(keyspace: String, message_id: String) -> Result<Json, Rejection> {
     let keyspace = PermanodeKeyspace::new(keyspace);
     let message_id = MessageId::from_str(&message_id).unwrap();
-    let request = keyspace
-        .select::<MessageMetadata>(&message_id)
-        .consistency(Consistency::One)
-        .build();
-    query(request)
+    query::<MessageMetadata, _, _>(keyspace, message_id)
         .await
         .map(|metadata| json(&SuccessBody::new(metadata)))
         .map_err(|e| e.into())
@@ -193,12 +196,8 @@ async fn get_message_metadata(keyspace: String, message_id: String) -> Result<Js
 
 async fn get_message_children(keyspace: String, message_id: String) -> Result<Json, Rejection> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace
-        .select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap())
-        .consistency(Consistency::One)
-        .build();
     // TODO: Paging
-    query(request)
+    query::<MessageChildren, _, _>(keyspace, MessageId::from_str(&message_id).unwrap())
         .await
         .map(|message_children| {
             let children = message_children.children;
@@ -223,12 +222,7 @@ async fn get_message_by_index(keyspace: String, IndexParam { index }: IndexParam
     bytes.iter().enumerate().for_each(|(i, &b)| bytes_vec[i] = b);
 
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace
-        .select::<IndexMessages>(&HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()))
-        .consistency(Consistency::One)
-        .build();
-    // TODO: Paging
-    query(request)
+    query::<IndexMessages, _, _>(keyspace, HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()))
         .await
         .map(|index_messages| {
             let messages = index_messages.messages;
@@ -248,11 +242,11 @@ async fn get_message_by_index(keyspace: String, IndexParam { index }: IndexParam
 async fn get_output(keyspace: String, output_id: String) -> Result<Json, Rejection> {
     let output_id = OutputId::from_str(&output_id).unwrap();
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace
-        .select::<Outputs>(&output_id)
-        .consistency(Consistency::One)
-        .build();
-    let mut outputs = query(request).await.map_err(|e| Rejection::from(e))?.outputs;
+
+    let mut outputs = query::<Outputs, _, _>(keyspace, output_id)
+        .await
+        .map_err(|e| Rejection::from(e))?
+        .outputs;
     let (output, is_spent) = {
         let mut output = None;
         let mut is_spent = false;
@@ -283,13 +277,11 @@ async fn get_output(keyspace: String, output_id: String) -> Result<Json, Rejecti
 
 async fn get_ed25519_outputs(keyspace: String, address: String) -> Result<Json, Rejection> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace
-        .select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap())
-        .consistency(Consistency::One)
-        .build();
 
     // TODO: Paging
-    let outputs = query(request).await?.ids;
+    let outputs = query::<OutputIds, _, _>(keyspace, Ed25519Address::from_str(&address).unwrap())
+        .await?
+        .ids;
     let count = outputs.len();
     let max_results = 1000;
 
@@ -304,11 +296,8 @@ async fn get_ed25519_outputs(keyspace: String, address: String) -> Result<Json, 
 
 async fn get_milestone(keyspace: String, index: u32) -> Result<Json, Rejection> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace
-        .select::<Milestone>(&MilestoneIndex::from(index))
-        .consistency(Consistency::One)
-        .build();
-    query(request)
+
+    query::<Milestone, _, _>(keyspace, MilestoneIndex::from(index))
         .await
         .map(|milestone| {
             json(&SuccessBody::new(MilestoneResponse {

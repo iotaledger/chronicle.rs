@@ -32,6 +32,7 @@ pub(crate) enum WsEventInner {
      * PeerMetric(PeersResponse), */
 }
 
+#[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize)]
 pub struct PublicNodeStatus {
     pub snapshot_index: u32,

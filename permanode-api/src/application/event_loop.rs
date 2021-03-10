@@ -24,9 +24,6 @@ impl<H: PermanodeAPIScope> EventLoop<H> for PermanodeAPI<H> {
                                     self.sender.take();
                                 }
                             }
-                            PermanodeAPIThrough::AddNode(_) => {}
-                            PermanodeAPIThrough::RemoveNode(_) => {}
-                            PermanodeAPIThrough::TryBuild(_) => {}
                         },
                         Err(other_app_event) => {
                             supervisor.passthrough(other_app_event, self.get_name());

@@ -24,6 +24,7 @@ mod insert;
 mod select;
 mod token;
 mod types;
+pub mod worker;
 
 impl VoidDecoder for PermanodeKeyspace {}
 

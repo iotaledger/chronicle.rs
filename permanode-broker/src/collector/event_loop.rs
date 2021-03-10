@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use permanode_storage::access::worker::InsertWorker;
 
 #[async_trait::async_trait]
 impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
@@ -10,20 +11,6 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
         _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
-        #[derive(Debug)]
-        struct TestWorker<K, V> {
-            key: K,
-            value: V,
-        }
-        // testing block, to be removed
-        impl Worker for TestWorker<MessageId, Message> {
-            fn handle_error(self: Box<Self>, error: WorkerError, reporter: &Option<ReporterHandle>) {
-                error!("{:?}, is_none {}", error, reporter.is_none());
-            }
-            fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
-                info!("{:?}", giveload);
-            }
-        }
         while let Some(event) = self.inbox.recv().await {
             match event {
                 #[allow(unused_mut)]
@@ -39,7 +26,8 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 .insert(&message_id, &message)
                                 .consistency(Consistency::One)
                                 .build()
-                                .send_local(Box::new(TestWorker {
+                                .send_local(Box::new(InsertWorker {
+                                    keyspace: keyspace.clone(),
                                     key: message_id,
                                     value: message,
                                 }));
@@ -64,7 +52,8 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 .insert(&message_id, &message)
                                 .consistency(Consistency::One)
                                 .build()
-                                .send_local(Box::new(TestWorker {
+                                .send_local(Box::new(InsertWorker {
+                                    keyspace: keyspace.clone(),
                                     key: message_id,
                                     value: message,
                                 }));

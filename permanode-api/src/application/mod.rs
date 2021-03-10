@@ -149,8 +149,6 @@ pub enum PermanodeAPIChild {
 /// Permanode API throughtype
 #[derive(Deserialize, Serialize, Clone)]
 pub enum PermanodeAPIThrough {
+    /// Shutdown the API
     Shutdown,
-    AddNode(String),
-    RemoveNode(String),
-    TryBuild(u8),
 }

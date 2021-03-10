@@ -1,12 +1,12 @@
 use super::*;
 use application::*;
 
-pub mod commands;
-pub mod event;
+pub(crate) mod commands;
+pub(crate) mod event;
 mod event_loop;
 mod init;
 mod terminating;
-pub mod topics;
+pub(crate) mod topics;
 
 /// A websocket actor, used to communicate with a dashboard
 pub struct Websocket {
