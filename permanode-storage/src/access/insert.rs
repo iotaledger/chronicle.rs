@@ -1,5 +1,5 @@
 use super::*;
-
+/// Insert Message
 impl Insert<MessageId, Message> for Mainnet {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
@@ -17,7 +17,7 @@ impl Insert<MessageId, Message> for Mainnet {
         builder.value(&message_id.as_ref()).value(&message_bytes)
     }
 }
-
+/// Insert Metadata
 impl Insert<MessageId, MessageMetadata> for Mainnet {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
@@ -27,19 +27,14 @@ impl Insert<MessageId, MessageMetadata> for Mainnet {
         )
         .into()
     }
-    fn bind_values<T: Values>(
-        builder: T,
-        message_id: &MessageId,
-        meta: &MessageMetadata,
-    ) -> T::Return {
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId, meta: &MessageMetadata) -> T::Return {
         // Encode metadata using bincode
         let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
-        builder
-            .value(&message_id.as_ref())
-            .value(&encoded.as_slice())
+        builder.value(&message_id.as_ref()).value(&encoded.as_slice())
     }
 }
 
+/// Insert Message and Metadata
 impl Insert<MessageId, (Message, MessageMetadata)> for Mainnet {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {

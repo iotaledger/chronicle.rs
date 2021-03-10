@@ -8,6 +8,7 @@ use scylla_cql::{
     Metadata,
     PreparedStatement,
     QueryStatement,
+    Row,
     Rows,
     RowsDecoder,
     TryInto,
@@ -46,11 +47,11 @@ pub(crate) fn bincode_config() -> BincodeOptions {
         .allow_trailing_bytes()
 }
 
-pub struct Row<T> {
+pub struct Record<T> {
     inner: T,
 }
 
-impl<T> Row<T> {
+impl<T> Record<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
