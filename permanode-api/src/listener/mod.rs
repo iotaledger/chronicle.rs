@@ -117,7 +117,7 @@ where
                 reporter.send(prepare_request).ok();
                 let req = self
                     .keyspace
-                    .select::<V>(&self.key)
+                    .select_query::<V>(&self.key)
                     .consistency(Consistency::One)
                     .build();
                 let payload = req.payload().clone();

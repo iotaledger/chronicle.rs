@@ -56,7 +56,7 @@ where
                 reporter.send(prepare_request).ok();
                 let req = self
                     .keyspace
-                    .insert(&self.key, &self.value)
+                    .insert_query(&self.key, &self.value)
                     .consistency(Consistency::One)
                     .build();
                 let payload = req.payload().clone();
