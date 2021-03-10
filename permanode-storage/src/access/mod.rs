@@ -66,3 +66,115 @@ impl<T> Record<T> {
         scylla::access::Iter::<Self>::new(decoder)
     }
 }
+pub struct Partitioned<T> {
+    inner: T,
+    partition_id: u16,
+}
+
+impl<T> Partitioned<T> {
+    pub fn new(inner: T, partition_id: u16) -> Self {
+        Self { inner, partition_id }
+    }
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+    pub fn partition_id(self) -> u16 {
+        self.partition_id
+    }
+}
+
+pub struct AddressRecord {
+    transaction_id: TransactionId,
+    index: Index,
+    amount: Amount,
+    address_type: AddressType,
+}
+
+impl AddressRecord {
+    pub fn new(transaction_id: TransactionId, index: Index, amount: Amount, address_type: AddressType) -> Self {
+        Self {
+            transaction_id,
+            index,
+            amount,
+            address_type,
+        }
+    }
+}
+impl From<(TransactionId, Index, Amount, AddressType)> for AddressRecord {
+    fn from((transaction_id, index, amount, address_type): (TransactionId, Index, Amount, AddressType)) -> Self {
+        Self::new(transaction_id, index, amount, address_type)
+    }
+}
+
+pub struct TransactionRecord {
+    transaction_id: TransactionId,
+    index: Index,
+    variant: TransactionVariant,
+    ref_transaction_id: TransactionId,
+    ref_index: Index,
+    message_id: MessageId,
+    data: TransactionData,
+}
+
+impl TransactionRecord {
+    pub fn input(
+        transaction_id: TransactionId,
+        index: Index,
+        ref_transaction_id: TransactionId,
+        ref_index: Index,
+        message_id: MessageId,
+        data: UTXOInput,
+    ) -> Self {
+        Self {
+            transaction_id,
+            index,
+            variant: TransactionVariant::Input,
+            ref_transaction_id,
+            ref_index,
+            message_id,
+            data: TransactionData::Input(data),
+        }
+    }
+    pub fn output(
+        transaction_id: TransactionId,
+        index: Index,
+        ref_transaction_id: TransactionId,
+        ref_index: Index,
+        message_id: MessageId,
+        data: Output,
+    ) -> Self {
+        Self {
+            transaction_id,
+            index,
+            variant: TransactionVariant::Output,
+            ref_transaction_id,
+            ref_index,
+            message_id,
+            data: TransactionData::Output(data),
+        }
+    }
+    pub fn unlock(
+        transaction_id: TransactionId,
+        index: Index,
+        ref_transaction_id: TransactionId,
+        ref_index: Index,
+        message_id: MessageId,
+        data: UnlockBlock,
+    ) -> Self {
+        Self {
+            transaction_id,
+            index,
+            variant: TransactionVariant::Output,
+            ref_transaction_id,
+            ref_index,
+            message_id,
+            data: TransactionData::Unlock(data),
+        }
+    }
+}
+#[repr(u8)]
+pub enum TransactionVariant {
+    Input = 0,
+    Output = 1,
+    Unlock = 2,
+}

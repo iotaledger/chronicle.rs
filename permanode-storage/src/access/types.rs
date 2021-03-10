@@ -14,10 +14,7 @@ pub use bee_ledger::{
         Unspent,
     },
 };
-use bee_message::prelude::{
-    UTXOInput,
-    UnlockBlock,
-};
+
 pub use bee_message::{
     ledger_index::LedgerIndex,
     milestone::Milestone,
@@ -32,6 +29,8 @@ pub use bee_message::{
         OutputId,
         Payload,
         TransactionId,
+        UTXOInput,
+        UnlockBlock,
         HASHED_INDEX_LENGTH,
     },
     solid_entry_point::SolidEntryPoint,
@@ -43,6 +42,14 @@ pub use bee_tangle::{
     flags::Flags,
     unconfirmed_message::UnconfirmedMessage,
 };
+/// Index type
+pub type Index = u16;
+/// Amount type
+pub type Amount = u64;
+/// Address type
+pub type AddressType = u8;
+/// ParentIndex type
+pub type ParentIndex = u16;
 
 use super::*;
 use std::io::Cursor;

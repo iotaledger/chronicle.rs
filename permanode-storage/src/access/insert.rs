@@ -61,3 +61,100 @@ impl Insert<MessageId, (Message, MessageMetadata)> for PermanodeKeyspace {
             .value(&encoded.as_slice())
     }
 }
+/// Insert Address into addresses table
+impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.addresses (address, partition_id, transaction_id, idx, amount, address_type) VALUES (?, ?, ?, ?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        Partitioned { inner, partition_id }: &Partitioned<Ed25519Address>,
+        AddressRecord {
+            transaction_id,
+            index,
+            amount,
+            address_type,
+        }: &AddressRecord,
+    ) -> T::Return {
+        builder
+            .value(&inner.as_ref())
+            .value(partition_id)
+            .value(&transaction_id.as_ref())
+            .value(index)
+            .value(amount)
+            .value(address_type)
+    }
+}
+
+/// Insert Index into Indexes table
+impl Insert<Partitioned<HashedIndex>, MessageId> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.indexes (hashed_index, partition_id, message_id) VALUES (?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        Partitioned { inner, partition_id }: &Partitioned<HashedIndex>,
+        message_id: &MessageId,
+    ) -> T::Return {
+        builder
+            .value(&inner.as_ref())
+            .value(partition_id)
+            .value(&message_id.as_ref())
+    }
+}
+
+/// Insert ParentId into Parents table
+impl Insert<Partitioned<MessageId>, (ParentIndex, MessageId)> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.indexes (hashed_index, partition_id, message_id) VALUES (?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        Partitioned { inner, partition_id }: &Partitioned<MessageId>,
+        (parent_index, message_id): &(ParentIndex, MessageId),
+    ) -> T::Return {
+        builder
+            .value(&inner.as_ref())
+            .value(partition_id)
+            .value(parent_index)
+            .value(&message_id.as_ref())
+    }
+}
+
+/// Insert Output into Transactions table
+impl Insert<TransactionId, (ParentIndex, MessageId)> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.indexes (hashed_index, partition_id, message_id) VALUES (?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        Partitioned { inner, partition_id }: &Partitioned<MessageId>,
+        (parent_index, message_id): &(ParentIndex, MessageId),
+    ) -> T::Return {
+        builder
+            .value(&inner.as_ref())
+            .value(partition_id)
+            .value(parent_index)
+            .value(&message_id.as_ref())
+    }
+}
