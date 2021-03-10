@@ -179,3 +179,27 @@ pub enum TransactionVariant {
     Output = 1,
     Unlock = 2,
 }
+
+impl ColumnDecoder for TransactionVariant {
+    fn decode(slice: &[u8]) -> Self {
+        match std::str::from_utf8(slice).expect("Invalid string in variant column") {
+            "input" => TransactionVariant::Input,
+            "output" => TransactionVariant::Output,
+            "unlock" => TransactionVariant::Unlock,
+            _ => panic!("Unexpected variant type"),
+        }
+    }
+}
+
+impl ColumnEncoder for TransactionVariant {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        let variant;
+        match self {
+            TransactionVariant::Input => variant = "input",
+            TransactionVariant::Output => variant = "output",
+            TransactionVariant::Unlock => variant = "unlock",
+        }
+        buffer.extend(&i32::to_be_bytes(variant.len() as i32));
+        buffer.extend(variant.as_bytes());
+    }
+}

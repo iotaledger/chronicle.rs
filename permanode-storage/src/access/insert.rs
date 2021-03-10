@@ -118,7 +118,7 @@ impl Insert<Partitioned<MessageId>, (ParentIndex, MessageId)> for PermanodeKeysp
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.indexes (hashed_index, partition_id, message_id) VALUES (?, ?, ?)",
+            "INSERT INTO {}.parents (parent_id, partition_id, parent_index, message_id) VALUES (?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -133,5 +133,60 @@ impl Insert<Partitioned<MessageId>, (ParentIndex, MessageId)> for PermanodeKeysp
             .value(partition_id)
             .value(parent_index)
             .value(&message_id.as_ref())
+    }
+}
+/// Insert Transaction into Transactions table
+/// Note: This can be used to store:
+/// -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
+/// -output variant: (OutputTransactionId, OutputIndex) -> Output data column
+/// -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
+impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, ref_transaction_id, ref_idx, message_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        (transaction_id, index): &(TransactionId, Index),
+        transaction_record: &TransactionRecord,
+    ) -> T::Return {
+        builder
+            .value(&transaction_id.as_ref())
+            .value(index)
+            .value(&transaction_record.variant)
+            .value(&transaction_id.as_ref())
+            .value(index)
+            .value(&transaction_record.message_id.as_ref())
+            .value(&transaction_record.data)
+    }
+}
+
+/// Insert Output into Transactions table
+impl Insert<OutputId, TransactionRecord> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, ref_transaction_id, ref_idx, message_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, output_id: &OutputId, transaction_record: &TransactionRecord) -> T::Return {
+        if let TransactionData::Output(_) = &transaction_record.data {
+            builder
+                .value(&output_id.transaction_id().as_ref())
+                .value(&output_id.index())
+                .value(&transaction_record.variant)
+                .value(&output_id.transaction_id().as_ref())
+                .value(&output_id.index())
+                .value(&transaction_record.message_id.as_ref())
+                .value(&transaction_record.data)
+        } else {
+            panic!("Provided invalid TransactionData for an output")
+        }
     }
 }

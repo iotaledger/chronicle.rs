@@ -210,6 +210,14 @@ impl ColumnDecoder for MessageMetadata {
         bincode_config().deserialize(slice).unwrap()
     }
 }
+impl ColumnEncoder for TransactionData {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        let mut bytes = Vec::new();
+        self.pack(&mut bytes).expect("Unable to pack TransactionData");
+        buffer.extend(&i32::to_be_bytes(bytes.len() as i32));
+        buffer.extend(bytes)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MessageChildren {
