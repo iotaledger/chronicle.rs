@@ -5,7 +5,7 @@ use scylla_cql::{
     ColumnDecoder,
     ColumnEncoder,
     PreparedStatement,
-    RowsDecoder,
+    Rows,
     VoidDecoder,
 };
 use serde::{
@@ -39,11 +39,11 @@ pub(crate) fn bincode_config() -> BincodeOptions {
         .allow_trailing_bytes()
 }
 
-pub struct Row<T> {
+pub struct Record<T> {
     inner: T,
 }
 
-impl<T> Deref for Row<T> {
+impl<T> Deref for Record<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -51,7 +51,7 @@ impl<T> Deref for Row<T> {
     }
 }
 
-impl<T> Row<T> {
+impl<T> Record<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }

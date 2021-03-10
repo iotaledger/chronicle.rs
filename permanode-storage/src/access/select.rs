@@ -1,4 +1,5 @@
 use super::*;
+use scylla_cql::Row;
 
 impl Select<MessageId, Message> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
@@ -11,7 +12,7 @@ impl Select<MessageId, Message> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
-    type Row = Row<Message>;
+    type Row = Record<Message>;
     fn try_decode(decoder: Decoder) -> Result<Option<Message>, CqlError> {
         if decoder.is_rows() {
             Ok(Self::Row::rows_iter(decoder).next().map(|row| row.into_inner()))
@@ -21,9 +22,9 @@ impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
     }
 }
 
-impl scylla_cql::Row for Row<Message> {
+impl Row for Record<Message> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Row::new(Message::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
+        Record::new(Message::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
     }
 }
 
@@ -38,7 +39,7 @@ impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
-    type Row = Row<MessageMetadata>;
+    type Row = Record<MessageMetadata>;
     fn try_decode(decoder: Decoder) -> Result<Option<MessageMetadata>, CqlError> {
         if decoder.is_rows() {
             Ok(Self::Row::rows_iter(decoder).next().map(|row| row.into_inner()))
@@ -48,16 +49,20 @@ impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
     }
 }
 
-impl scylla_cql::Row for Row<MessageMetadata> {
+impl Row for Record<MessageMetadata> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Row::new(rows.column_value::<MessageMetadata>())
+        Record::new(rows.column_value::<MessageMetadata>())
     }
 }
 
 impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!("SELECT message, metadata FROM {}.messages WHERE key = ?", self.name()).into()
+        format!(
+            "SELECT message, metadata FROM {}.messages WHERE message_id = ?",
+            self.name()
+        )
+        .into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
         builder.value(&message_id.as_ref())
@@ -65,7 +70,7 @@ impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for Permanode
 }
 
 impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for PermanodeKeyspace {
-    type Row = Row<(Option<Message>, Option<MessageMetadata>)>;
+    type Row = Record<(Option<Message>, Option<MessageMetadata>)>;
     fn try_decode(decoder: Decoder) -> Result<Option<(Option<Message>, Option<MessageMetadata>)>, CqlError> {
         if decoder.is_rows() {
             if let Some(row) = Self::Row::rows_iter(decoder).next() {
@@ -80,14 +85,14 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Perm
     }
 }
 
-impl scylla_cql::Row for Row<(Option<Message>, Option<MessageMetadata>)> {
+impl Row for Record<(Option<Message>, Option<MessageMetadata>)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
         let message = rows
             .column_value::<Option<Cursor<Vec<u8>>>>()
             .as_mut()
             .map(|bytes| Message::unpack(bytes).unwrap());
         let metadata = rows.column_value::<Option<MessageMetadata>>();
-        Row::new((message, metadata))
+        Record::new((message, metadata))
     }
 }
 
@@ -106,7 +111,7 @@ impl Select<MessageId, MessageChildren> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<MessageId, MessageChildren> for PermanodeKeyspace {
-    type Row = Row<MessageId>;
+    type Row = Record<MessageId>;
     fn try_decode(decoder: Decoder) -> Result<Option<MessageChildren>, CqlError> {
         if decoder.is_rows() {
             Ok(Some(MessageChildren {
@@ -118,9 +123,9 @@ impl RowsDecoder<MessageId, MessageChildren> for PermanodeKeyspace {
     }
 }
 
-impl scylla_cql::Row for Row<MessageId> {
+impl Row for Record<MessageId> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Row::new(MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
+        Record::new(MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
     }
 }
 
@@ -139,7 +144,7 @@ impl Select<HashedIndex, IndexMessages> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<HashedIndex, IndexMessages> for PermanodeKeyspace {
-    type Row = Row<MessageId>;
+    type Row = Record<MessageId>;
     fn try_decode(decoder: Decoder) -> Result<Option<IndexMessages>, CqlError> {
         if decoder.is_rows() {
             Ok(Some(IndexMessages {
@@ -168,7 +173,7 @@ impl Select<Ed25519Address, OutputIds> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<Ed25519Address, OutputIds> for PermanodeKeyspace {
-    type Row = Row<(TransactionId, u16)>;
+    type Row = Record<(TransactionId, u16)>;
     fn try_decode(decoder: Decoder) -> Result<Option<OutputIds>, CqlError> {
         if decoder.is_rows() {
             Ok(Some(OutputIds {
@@ -182,11 +187,11 @@ impl RowsDecoder<Ed25519Address, OutputIds> for PermanodeKeyspace {
     }
 }
 
-impl scylla_cql::Row for Row<(TransactionId, u16)> {
+impl Row for Record<(TransactionId, u16)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
         let transaction_id = TransactionId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
         let index = rows.column_value::<u16>();
-        Row::new((transaction_id, index))
+        Record::new((transaction_id, index))
     }
 }
 
@@ -207,7 +212,7 @@ impl Select<OutputId, Outputs> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<OutputId, Outputs> for PermanodeKeyspace {
-    type Row = Row<(MessageId, TransactionData)>;
+    type Row = Record<(MessageId, TransactionData)>;
     fn try_decode(decoder: Decoder) -> Result<Option<Outputs>, CqlError> {
         if decoder.is_rows() {
             Ok(Some(Outputs {
@@ -219,11 +224,11 @@ impl RowsDecoder<OutputId, Outputs> for PermanodeKeyspace {
     }
 }
 
-impl scylla_cql::Row for Row<(MessageId, TransactionData)> {
+impl Row for Record<(MessageId, TransactionData)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
         let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
         let data = rows.column_value::<TransactionData>();
-        Row::new((message_id, data))
+        Record::new((message_id, data))
     }
 }
 
@@ -242,7 +247,7 @@ impl Select<MilestoneIndex, Milestone> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
-    type Row = Row<(MessageId, u64)>;
+    type Row = Record<(MessageId, u64)>;
     fn try_decode(decoder: Decoder) -> Result<Option<Milestone>, CqlError> {
         if decoder.is_rows() {
             Ok(Self::Row::rows_iter(decoder)
@@ -254,10 +259,10 @@ impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
     }
 }
 
-impl scylla_cql::Row for Row<(MessageId, u64)> {
+impl Row for Record<(MessageId, u64)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
         let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
         let timestamp = rows.column_value::<u64>();
-        Row::new((message_id, timestamp))
+        Record::new((message_id, timestamp))
     }
 }

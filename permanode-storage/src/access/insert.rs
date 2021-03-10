@@ -17,6 +17,22 @@ impl Insert<MessageId, Message> for PermanodeKeyspace {
         builder.value(&message_id.as_ref()).value(&message_bytes)
     }
 }
+/// Insert Metadata
+impl Insert<MessageId, MessageMetadata> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.messages (message_id, metadata) VALUES (?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId, meta: &MessageMetadata) -> T::Return {
+        // Encode metadata using bincode
+        let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
+        builder.value(&message_id.as_ref()).value(&encoded.as_slice())
+    }
+}
 
 impl Insert<MessageId, (Message, MessageMetadata)> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
