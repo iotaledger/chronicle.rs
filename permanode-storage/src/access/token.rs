@@ -5,6 +5,6 @@ use super::{
 
 impl<K> ComputeToken<K> for PermanodeKeyspace {
     fn token(_key: &K) -> i64 {
-        0
+        rand::random()
     }
 }
