@@ -1,16 +1,14 @@
 use super::*;
 use application::*;
-use permanode_storage::{
-    access::{
-        Message,
-        ReporterHandle,
-        Select,
-        Worker,
-        WorkerError,
-    },
-    StorageConfig,
+use permanode_storage::access::{
+    Message,
+    ReporterHandle,
+    Select,
+    Worker,
+    WorkerError,
 };
 use rocket::Rocket;
+use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
 
 mod init;
@@ -120,5 +118,24 @@ impl<T: APIEngine> Name for Listener<T> {
 impl<T: APIEngine, H: PermanodeAPIScope> AknShutdown<Listener<T>> for PermanodeAPISender<H> {
     async fn aknowledge_shutdown(self, mut state: Listener<T>, status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
+    }
+}
+
+/// A success wrapper for API responses
+#[derive(Clone, Debug, Serialize)]
+pub struct SuccessBody<T> {
+    data: T,
+}
+
+impl<T> SuccessBody<T> {
+    /// Create a new SuccessBody from any inner type
+    pub fn new(data: T) -> Self {
+        Self { data }
+    }
+}
+
+impl<T> From<T> for SuccessBody<T> {
+    fn from(data: T) -> Self {
+        Self::new(data)
     }
 }

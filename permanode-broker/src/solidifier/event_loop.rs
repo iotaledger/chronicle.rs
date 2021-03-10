@@ -10,9 +10,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
         _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
-        while let Some(event) = self.inbox.recv().await {
-
-        }
+        while let Some(event) = self.inbox.recv().await {}
         Ok(())
     }
 }

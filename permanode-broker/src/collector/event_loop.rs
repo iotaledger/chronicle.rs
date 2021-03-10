@@ -35,10 +35,14 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             let res = permanode_filter::filter_messages(&mut message).await;
                             let keyspace = PermanodeKeyspace::new(res.keyspace.into_owned());
                             // TODO: use the TTL
-                            keyspace.insert(&message_id, &message).send_local(Box::new(TestWorker {
-                                key: message_id,
-                                value: message,
-                            }));
+                            keyspace
+                                .insert(&message_id, &message)
+                                .consistency(Consistency::One)
+                                .build()
+                                .send_local(Box::new(TestWorker {
+                                    key: message_id,
+                                    value: message,
+                                }));
                         }
                         #[cfg(not(feature = "filter"))]
                         {
@@ -56,10 +60,14 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     })
                                     .unwrap_or("permanode".to_owned()),
                             );
-                            keyspace.insert(&message_id, &message).send_local(Box::new(TestWorker {
-                                key: message_id,
-                                value: message,
-                            }));
+                            keyspace
+                                .insert(&message_id, &message)
+                                .consistency(Consistency::One)
+                                .build()
+                                .send_local(Box::new(TestWorker {
+                                    key: message_id,
+                                    value: message,
+                                }));
                         }
                     } else {
                         // add it to the cache in order to not presist it again.

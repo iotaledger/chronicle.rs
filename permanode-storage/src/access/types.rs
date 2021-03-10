@@ -41,14 +41,10 @@ pub use bee_message::{
 pub use bee_snapshot::SnapshotInfo;
 pub use bee_tangle::{
     flags::Flags,
-    metadata::MessageMetadata,
     unconfirmed_message::UnconfirmedMessage,
 };
-use scylla_cql::ColumnDecoder;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+
+use super::*;
 use std::io::Cursor;
 
 /// A `bee` type wrapper which is used to apply the `ColumnEncoder`
@@ -158,4 +154,67 @@ impl ColumnDecoder for TransactionData {
     fn decode(slice: &[u8]) -> Self {
         Self::unpack(&mut Cursor::new(slice)).unwrap().into()
     }
+}
+
+/// Response of GET /api/v1/messages/{message_id}/metadata
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MessageMetadata {
+    #[serde(rename = "messageId")]
+    pub message_id: String,
+    #[serde(rename = "parentMessageIds")]
+    pub parent_message_ids: Vec<String>,
+    #[serde(rename = "isSolid")]
+    pub is_solid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "referencedByMilestoneIndex")]
+    pub referenced_by_milestone_index: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "ledgerInclusionState")]
+    pub ledger_inclusion_state: Option<LedgerInclusionState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "shouldPromote")]
+    pub should_promote: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "shouldReattach")]
+    pub should_reattach: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum LedgerInclusionState {
+    #[serde(rename = "conflicting")]
+    Conflicting,
+    #[serde(rename = "included")]
+    Included,
+    #[serde(rename = "noTransaction")]
+    NoTransaction,
+}
+
+impl ColumnEncoder for MessageMetadata {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        let bytes = bincode_config().serialize(self).unwrap();
+        buffer.extend(&i32::to_be_bytes(bytes.len() as i32));
+        buffer.extend(bytes)
+    }
+}
+
+impl ColumnDecoder for MessageMetadata {
+    fn decode(slice: &[u8]) -> Self {
+        bincode_config().deserialize(slice).unwrap()
+    }
+}
+
+pub struct MessageChildren {
+    pub children: Vec<MessageId>,
+}
+
+pub struct IndexMessages {
+    pub messages: Vec<MessageId>,
+}
+
+pub struct OutputIds {
+    pub ids: Vec<OutputId>,
+}
+
+pub struct Outputs {
+    pub outputs: Vec<(MessageId, TransactionData)>,
 }

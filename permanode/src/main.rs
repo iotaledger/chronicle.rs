@@ -25,12 +25,15 @@ impl Builder for AppsBuilder {
     fn build(self) -> Self::State {
         let config = Config::load().expect("Failed to deserialize config!");
         let permanode_api_builder = PermanodeAPIBuilder::new().api_config(config.api_config);
-        let permanode_broker_builder = PermanodeBrokerBuilder::new().storage_config(config.storage_config);
+        let permanode_broker_builder = PermanodeBrokerBuilder::new().storage_config(config.storage_config.clone());
         let scylla_builder = ScyllaBuilder::new()
-            .listen_address("127.0.0.1:8080".to_owned())
-            .thread_count(num_cpus::get())
-            .reporter_count(2)
-            .local_dc("datacenter1".to_owned());
+            .listen_address(config.storage_config.listen_address)
+            .thread_count(match config.storage_config.thread_count {
+                permanode_storage::ThreadCount::Count(c) => c,
+                permanode_storage::ThreadCount::CoreMultiple(c) => num_cpus::get() * c,
+            })
+            .reporter_count(config.storage_config.reporter_count)
+            .local_dc(config.storage_config.local_datacenter.clone());
 
         self.PermanodeAPI(permanode_api_builder)
             .PermanodeBroker(permanode_broker_builder)

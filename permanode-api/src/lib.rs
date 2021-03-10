@@ -31,11 +31,3 @@ extern crate rocket;
 use async_trait::async_trait;
 use chronicle::*;
 pub use config::ApiConfig;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

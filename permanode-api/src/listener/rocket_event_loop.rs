@@ -3,20 +3,14 @@ use bee_rest_api::handlers::{
     info::InfoResponse,
     message::MessageResponse,
     message_children::MessageChildrenResponse,
-    message_metadata::{
-        LedgerInclusionStateDto,
-        MessageMetadataResponse,
-    },
     messages_find::MessagesForIndexResponse,
     milestone::MilestoneResponse,
     output::OutputResponse,
     outputs_ed25519::OutputsForAddressResponse,
-    SuccessBody,
 };
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
-        Bee,
         CreatedOutput,
         Ed25519Address,
         GetSelectRequest,
@@ -24,14 +18,13 @@ use permanode_storage::{
         IndexMessages,
         MessageChildren,
         MessageId,
-        MessageRow,
+        MessageMetadata,
+        Milestone,
         MilestoneIndex,
         OutputId,
         OutputIds,
         Outputs,
-        Payload,
         SelectRequest,
-        SingleMilestone,
         TransactionData,
         HASHED_INDEX_LENGTH,
     },
@@ -48,10 +41,12 @@ use rocket::{
     Response,
 };
 use rocket_contrib::json::Json;
-use scylla_cql::TryInto;
+use scylla_cql::{
+    Consistency,
+    TryInto,
+};
 use std::{
     borrow::Cow,
-    ops::Deref,
     path::PathBuf,
     str::FromStr,
 };
@@ -73,7 +68,16 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 .map_err(|_| Need::Abort)?;
         }
 
-        let mut server = self.data.rocket.take().ok_or(Need::Abort)?.mount(
+        construct_rocket(self.data.rocket.take().ok_or(Need::Abort)?)
+            .launch()
+            .await
+            .map_err(|_| Need::Abort)
+    }
+}
+
+fn construct_rocket(rocket: Rocket) -> Rocket {
+    rocket
+        .mount(
             "/api",
             routes![
                 options,
@@ -86,10 +90,8 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 get_ed25519_outputs,
                 get_milestone
             ],
-        );
-
-        server.attach(CORS).launch().await.map_err(|_| Need::Abort)
-    }
+        )
+        .attach(CORS)
 }
 
 struct CORS;
@@ -111,8 +113,8 @@ impl Fairing for CORS {
     }
 }
 
-#[options("/<path..>")]
-async fn options(path: PathBuf) {}
+#[options("/<_path..>")]
+async fn options(_path: PathBuf) {}
 
 #[get("/info")]
 async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
@@ -130,7 +132,7 @@ async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
     }))
 }
 
-async fn query<'a, V, S: Select<K, V>, K>(request: SelectRequest<'a, S, K, V>) -> Result<V, Cow<'static, str>> {
+async fn query<V, S: Select<K, V>, K>(request: SelectRequest<S, K, V>) -> Result<V, Cow<'static, str>> {
     let (sender, mut inbox) = unbounded_channel::<Event>();
     let worker = Box::new(DecoderWorker(sender));
 
@@ -158,12 +160,13 @@ pub async fn get_message(
     message_id: String,
 ) -> Result<Json<SuccessBody<MessageResponse>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace.select::<Bee<Message>>(&MessageId::from_str(&message_id).unwrap().into());
-    query(request)
-        .await?
-        .deref()
+    let request = keyspace
+        .select::<Message>(&MessageId::from_str(&message_id).unwrap())
+        .consistency(Consistency::One)
+        .build();
+    (&query(request).await?)
         .try_into()
-        .map(|dto| Json(SuccessBody::new(MessageResponse(dto))))
+        .map(|dto| Json(MessageResponse(dto).into()))
         .map_err(|e| e.into())
 }
 
@@ -171,10 +174,14 @@ pub async fn get_message(
 pub async fn get_message_metadata(
     keyspace: String,
     message_id: String,
-) -> Result<Json<SuccessBody<MessageMetadataResponse>>, Cow<'static, str>> {
+) -> Result<Json<SuccessBody<MessageMetadata>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace.select::<MessageRow>(&MessageId::from_str(&message_id).unwrap().into());
-    message_row_to_response(query(request).await?).map(|res| Json(SuccessBody::new(res)))
+    let message_id = MessageId::from_str(&message_id).unwrap();
+    let request = keyspace
+        .select::<MessageMetadata>(&message_id)
+        .consistency(Consistency::One)
+        .build();
+    Ok(Json(query(request).await?.into()))
 }
 
 #[get("/<keyspace>/messages/<message_id>/children")]
@@ -183,18 +190,24 @@ pub async fn get_message_children(
     message_id: String,
 ) -> Result<Json<SuccessBody<MessageChildrenResponse>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace.select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap().into());
+    let request = keyspace
+        .select::<MessageChildren>(&MessageId::from_str(&message_id).unwrap())
+        .consistency(Consistency::One)
+        .build();
     // TODO: Paging
-    let children = query(request).await?;
-    let count = children.rows_count();
+    let children = query(request).await?.children;
+    let count = children.len();
     let max_results = 1000;
 
-    Ok(Json(SuccessBody::new(MessageChildrenResponse {
-        message_id,
-        max_results,
-        count,
-        children_message_ids: children.take(max_results).map(|id| id.to_string()).collect(),
-    })))
+    Ok(Json(
+        MessageChildrenResponse {
+            message_id,
+            max_results,
+            count,
+            children_message_ids: children.iter().take(max_results).map(|id| id.to_string()).collect(),
+        }
+        .into(),
+    ))
 }
 
 #[get("/<keyspace>/messages?<index>")]
@@ -206,21 +219,25 @@ pub async fn get_message_by_index(
     let bytes = hex::decode(index.clone()).map_err(|_| "Invalid Hex character in index!")?;
     bytes.iter().enumerate().for_each(|(i, &b)| bytes_vec[i] = b);
 
-    info!("Getting message for index: {}", String::from_utf8_lossy(&bytes));
-
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace.select::<IndexMessages>(&HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()).into());
+    let request = keyspace
+        .select::<IndexMessages>(&HashedIndex::new(bytes_vec.as_slice().try_into().unwrap()))
+        .consistency(Consistency::One)
+        .build();
     // TODO: Paging
-    let messages = query(request).await?;
-    let count = messages.rows_count();
+    let messages = query(request).await?.messages;
+    let count = messages.len();
     let max_results = 1000;
 
-    Ok(Json(SuccessBody::new(MessagesForIndexResponse {
-        index,
-        max_results,
-        count,
-        message_ids: messages.take(max_results).map(|id| id.to_string()).collect(),
-    })))
+    Ok(Json(
+        MessagesForIndexResponse {
+            index,
+            max_results,
+            count,
+            message_ids: messages.iter().take(max_results).map(|id| id.to_string()).collect(),
+        }
+        .into(),
+    ))
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
@@ -230,16 +247,19 @@ pub async fn get_output(
 ) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
     let output_id = OutputId::from_str(&output_id).unwrap();
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace.select::<Outputs>(&output_id.into());
-    let outputs = query(request).await?;
+    let request = keyspace
+        .select::<Outputs>(&output_id)
+        .consistency(Consistency::One)
+        .build();
+    let mut outputs = query(request).await?.outputs;
     let (output, is_spent) = {
         let mut output = None;
         let mut is_spent = false;
-        for row in outputs {
-            match row.data {
+        for (message_id, data) in outputs.drain(..) {
+            match data {
                 TransactionData::Input(_) => {}
                 TransactionData::Output(o) => {
-                    output = Some(CreatedOutput::new(row.message_id.into_inner(), o));
+                    output = Some(CreatedOutput::new(message_id, o));
                 }
                 TransactionData::Unlock(_) => {
                     is_spent = true;
@@ -251,13 +271,16 @@ pub async fn get_output(
             is_spent,
         )
     };
-    Ok(Json(SuccessBody::new(OutputResponse {
-        message_id: output.message_id().to_string(),
-        transaction_id: output_id.transaction_id().to_string(),
-        output_index: output_id.index(),
-        is_spent,
-        output: output.inner().try_into().map_err(|e| Cow::from(e))?,
-    })))
+    Ok(Json(
+        OutputResponse {
+            message_id: output.message_id().to_string(),
+            transaction_id: output_id.transaction_id().to_string(),
+            output_index: output_id.index(),
+            is_spent,
+            output: output.inner().try_into().map_err(|e| Cow::from(e))?,
+        }
+        .into(),
+    ))
 }
 
 #[get("/<keyspace>/addresses/ed25519/<address>/outputs")]
@@ -266,20 +289,26 @@ pub async fn get_ed25519_outputs(
     address: String,
 ) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace.select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap().into());
+    let request = keyspace
+        .select::<OutputIds>(&Ed25519Address::from_str(&address).unwrap())
+        .consistency(Consistency::One)
+        .build();
 
     // TODO: Paging
-    let outputs = query(request).await?;
-    let count = outputs.rows_count();
+    let outputs = query(request).await?.ids;
+    let count = outputs.len();
     let max_results = 1000;
 
-    Ok(Json(SuccessBody::new(OutputsForAddressResponse {
-        address_type: 1,
-        address,
-        max_results,
-        count,
-        output_ids: outputs.take(max_results).map(|id| id.to_string()).collect(),
-    })))
+    Ok(Json(
+        OutputsForAddressResponse {
+            address_type: 1,
+            address,
+            max_results,
+            count,
+            output_ids: outputs.iter().take(max_results).map(|id| id.to_string()).collect(),
+        }
+        .into(),
+    ))
 }
 
 #[get("/<keyspace>/milestones/<index>")]
@@ -288,114 +317,97 @@ pub async fn get_milestone(
     index: u32,
 ) -> Result<Json<SuccessBody<MilestoneResponse>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let request = keyspace.select::<SingleMilestone>(&MilestoneIndex::from(index).into());
+    let request = keyspace
+        .select::<Milestone>(&MilestoneIndex::from(index))
+        .consistency(Consistency::One)
+        .build();
     query(request)
-        .await?
-        .get()
+        .await
         .map(|milestone| {
-            Json(SuccessBody::new(MilestoneResponse {
-                milestone_index: index,
-                message_id: milestone.message_id().to_string(),
-                timestamp: milestone.timestamp(),
-            }))
+            Json(
+                MilestoneResponse {
+                    milestone_index: index,
+                    message_id: milestone.message_id().to_string(),
+                    timestamp: milestone.timestamp(),
+                }
+                .into(),
+            )
         })
-        .ok_or(Cow::from(format!("No milestone found for index {}", index)))
+        .map_err(|_| Cow::from(format!("No milestone found for index {}", index)))
 }
 
-pub(super) fn message_row_to_response(
-    MessageRow {
-        id: message_id,
-        message,
-        metadata,
-    }: MessageRow,
-) -> Result<MessageMetadataResponse, Cow<'static, str>> {
-    // TODO: let ymrsi_delta = 8;
-    // TODO: let omrsi_delta = 13;
-    // TODO: let below_max_depth = 15;
-    let is_solid;
-    let referenced_by_milestone_index;
-    let milestone_index;
-    let ledger_inclusion_state;
-    let conflict_reason;
-    // TODO: Remove these when we get the solid milestone
-    let should_promote = None;
-    let should_reattach = None;
-    let metadata = metadata.ok_or("No metadata available for this message id!")?;
-    let message = message.ok_or("No message data available for this message id!")?;
+#[cfg(test)]
+mod tests {
+    use super::construct_rocket;
+    use bee_rest_api::handlers::info::InfoResponse;
+    use rocket::{
+        http::{
+            ContentType,
+            Header,
+            Status,
+        },
+        local::asynchronous::{
+            Client,
+            LocalResponse,
+        },
+    };
 
-    if let Some(milestone) = metadata.milestone_index() {
-        // message is referenced by a milestone
-        is_solid = true;
-        referenced_by_milestone_index = Some(*milestone);
-
-        if metadata.flags().is_milestone() {
-            milestone_index = Some(*milestone);
-        } else {
-            milestone_index = None;
-        }
-
-        ledger_inclusion_state = Some(if let Some(Payload::Transaction(_)) = message.payload() {
-            if metadata.conflict() != 0 {
-                conflict_reason = Some(metadata.conflict());
-                LedgerInclusionStateDto::Conflicting
-            } else {
-                conflict_reason = None;
-                // maybe not checked by the ledger yet, but still
-                // returning "included". should
-                // `metadata.flags().is_conflicting` return an Option
-                // instead?
-                LedgerInclusionStateDto::Included
-            }
-        } else {
-            conflict_reason = None;
-            LedgerInclusionStateDto::NoTransaction
-        });
-        //TODO: should_reattach = None;
-        //TODO: should_promote = None;
-    } else if metadata.flags().is_solid() {
-        // message is not referenced by a milestone but solid
-        is_solid = true;
-        referenced_by_milestone_index = None;
-        milestone_index = None;
-        ledger_inclusion_state = None;
-        conflict_reason = None;
-
-        /* TODO:
-        let lmi = *tangle.get_solid_milestone_index();
-        // unwrap() of OMRSI/YMRSI is safe since message is solid
-        if (lmi - *metadata.omrsi().unwrap().index()) > below_max_depth {
-            should_promote = Some(false);
-            should_reattach = Some(true);
-        } else if (lmi - *metadata.ymrsi().unwrap().index()) > ymrsi_delta
-            || (lmi - omrsi_delta) > omrsi_delta
-        {
-            should_promote = Some(true);
-            should_reattach = Some(false);
-        } else {
-            should_promote = Some(false);
-            should_reattach = Some(false);
-        };
-        */
-    } else {
-        // the message is not referenced by a milestone and not solid
-        is_solid = false;
-        referenced_by_milestone_index = None;
-        milestone_index = None;
-        ledger_inclusion_state = None;
-        conflict_reason = None;
-        //TODO: should_reattach = Some(true);
-        //TODO: should_promote = Some(false);
+    fn check_cors_headers(res: &LocalResponse) {
+        assert_eq!(
+            res.headers().get_one("Access-Control-Allow-Origin"),
+            Some(Header::new("Access-Control-Allow-Origin", "*").value())
+        );
+        assert_eq!(
+            res.headers().get_one("Access-Control-Allow-Methods"),
+            Some(Header::new("Access-Control-Allow-Methods", "GET, OPTIONS").value())
+        );
+        assert_eq!(
+            res.headers().get_one("Access-Control-Allow-Headers"),
+            Some(Header::new("Access-Control-Allow-Headers", "*").value())
+        );
+        assert_eq!(
+            res.headers().get_one("Access-Control-Allow-Credentials"),
+            Some(Header::new("Access-Control-Allow-Credentials", "true").value())
+        );
     }
 
-    Ok(MessageMetadataResponse {
-        message_id: message_id.to_string(),
-        parent_message_ids: message.parents().iter().map(|id| id.to_string()).collect(),
-        is_solid,
-        referenced_by_milestone_index,
-        milestone_index,
-        ledger_inclusion_state,
-        conflict_reason,
-        should_promote,
-        should_reattach,
-    })
+    #[rocket::async_test]
+    async fn options() {
+        let rocket = construct_rocket(rocket::ignite());
+        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+
+        let res = client.options("/api/anything").dispatch().await;
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(res.content_type(), None);
+        check_cors_headers(&res);
+        assert!(res.into_string().await.is_none());
+    }
+
+    #[rocket::async_test]
+    async fn info() {
+        let rocket = construct_rocket(rocket::ignite());
+        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+
+        let res = client.get("/api/info").dispatch().await;
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(res.content_type(), Some(ContentType::JSON));
+        check_cors_headers(&res);
+        let _body: InfoResponse = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+            .expect("Failed to deserialize Info Response!");
+    }
+
+    #[rocket::async_test]
+    async fn get_message() {
+        let rocket = construct_rocket(rocket::ignite());
+        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+
+        let res = client
+            .get("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(res.content_type(), Some(ContentType::Plain));
+        check_cors_headers(&res);
+        assert_eq!(res.into_string().await, Some("Worker NoRing".to_owned()));
+    }
 }

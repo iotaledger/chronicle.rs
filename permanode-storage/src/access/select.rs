@@ -1,35 +1,98 @@
 use super::*;
-use scylla_cql::{
-    Frame,
-    RowsDecoder,
-};
 
-impl Select<Bee<MessageId>, Bee<Message>> for PermanodeKeyspace {
+impl Select<MessageId, Message> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!("SELECT message from {}.messages WHERE message_id = ?", self.name()).into()
+        format!("SELECT message FROM {}.messages WHERE key = ?", self.name()).into()
     }
-
-    fn get_request(&self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, Bee<Message>>
-    where
-        Self: Select<Bee<MessageId>, Bee<Message>>,
-    {
-        let mut message_id_bytes = Vec::new();
-        key.pack(&mut message_id_bytes)
-            .expect("Error occurred packing Message ID");
-
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<MessageId>, Bee<Message>>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&message_id_bytes.as_slice())
-            .build();
-
-        let token = Self::token(key);
-
-        self.create_request(query, token)
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+        builder.value(&message_id.as_ref())
     }
 }
 
-impl Select<Bee<MessageId>, MessageChildren> for PermanodeKeyspace {
+impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
+    type Row = Row<Message>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Message>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Self::Row::rows_iter(decoder).next().map(|row| row.into_inner()))
+        } else {
+            return Err(decoder.get_error());
+        }
+    }
+}
+
+impl scylla_cql::Row for Row<Message> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        Row::new(Message::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
+    }
+}
+
+impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!("SELECT metadata FROM {}.messages WHERE key = ?", self.name()).into()
+    }
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+        builder.value(&message_id.as_ref())
+    }
+}
+
+impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
+    type Row = Row<MessageMetadata>;
+    fn try_decode(decoder: Decoder) -> Result<Option<MessageMetadata>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Self::Row::rows_iter(decoder).next().map(|row| row.into_inner()))
+        } else {
+            return Err(decoder.get_error());
+        }
+    }
+}
+
+impl scylla_cql::Row for Row<MessageMetadata> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        Row::new(rows.column_value::<MessageMetadata>())
+    }
+}
+
+impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!("SELECT message, metadata FROM {}.messages WHERE key = ?", self.name()).into()
+    }
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+        builder.value(&message_id.as_ref())
+    }
+}
+
+impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for PermanodeKeyspace {
+    type Row = Row<(Option<Message>, Option<MessageMetadata>)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<(Option<Message>, Option<MessageMetadata>)>, CqlError> {
+        if decoder.is_rows() {
+            if let Some(row) = Self::Row::rows_iter(decoder).next() {
+                let row = row.into_inner();
+                Ok(Some((row.0, row.1)))
+            } else {
+                Ok(None)
+            }
+        } else {
+            return Err(decoder.get_error());
+        }
+    }
+}
+
+impl scylla_cql::Row for Row<(Option<Message>, Option<MessageMetadata>)> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let message = rows
+            .column_value::<Option<Cursor<Vec<u8>>>>()
+            .as_mut()
+            .map(|bytes| Message::unpack(bytes).unwrap());
+        let metadata = rows.column_value::<Option<MessageMetadata>>();
+        Row::new((message, metadata))
+    }
+}
+
+impl Select<MessageId, MessageChildren> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id FROM {}.parents WHERE parent_id = ? AND partition_id = ?",
@@ -37,123 +100,32 @@ impl Select<Bee<MessageId>, MessageChildren> for PermanodeKeyspace {
         )
         .into()
     }
-
-    fn get_request(&self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, MessageChildren>
-    where
-        Self: Select<Bee<MessageId>, MessageChildren>,
-    {
-        let mut message_id_bytes = Vec::new();
-        key.pack(&mut message_id_bytes)
-            .expect("Error occurred packing Message ID");
-
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<MessageId>, MessageChildren>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&message_id_bytes.as_slice())
-            .value(&0u16)
-            .build();
-
-        let token = Self::token(key);
-
-        self.create_request(query, token)
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+        builder.value(&message_id.as_ref()).value(&0u16)
     }
 }
 
-impl Select<Bee<MessageId>, Bee<MessageMetadata>> for PermanodeKeyspace {
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!("SELECT metadata from {}.messages WHERE message_id = ?", self.name()).into()
-    }
-
-    fn get_request(&self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, Bee<MessageMetadata>>
-    where
-        Self: Select<Bee<MessageId>, Bee<MessageMetadata>>,
-    {
-        let mut message_id_bytes = Vec::new();
-        key.pack(&mut message_id_bytes)
-            .expect("Error occurred packing Message ID");
-
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<MessageId>, Bee<MessageMetadata>>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&message_id_bytes.as_slice())
-            .build();
-
-        let token = Self::token(key);
-
-        self.create_request(query, token)
-    }
-}
-
-impl Select<Bee<MessageId>, MessageRow> for PermanodeKeyspace {
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT message_id, message, metadata from {}.messages WHERE message_id = ?",
-            self.name()
-        )
-        .into()
-    }
-
-    fn get_request(&self, key: &Bee<MessageId>) -> SelectRequest<Self, Bee<MessageId>, MessageRow>
-    where
-        Self: Select<Bee<MessageId>, MessageRow>,
-    {
-        let mut message_id_bytes = Vec::new();
-        key.pack(&mut message_id_bytes)
-            .expect("Error occurred packing Message ID");
-
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<MessageId>, MessageRow>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&message_id_bytes.as_slice())
-            .build();
-
-        let token = Self::token(key);
-
-        self.create_request(query, token)
-    }
-}
-
-impl RowsDecoder<Bee<MessageId>, MessageRow> for PermanodeKeyspace {
-    fn try_decode(decoder: Decoder) -> Result<Option<MessageRow>, CqlError> {
-        if decoder.is_error() {
-            Err(decoder.get_error())
+impl RowsDecoder<MessageId, MessageChildren> for PermanodeKeyspace {
+    type Row = Row<MessageId>;
+    fn try_decode(decoder: Decoder) -> Result<Option<MessageChildren>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Some(MessageChildren {
+                children: Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
+            }))
         } else {
-            let mut rows = MessageRows::new(decoder);
-            Ok(rows.next())
+            Err(decoder.get_error())
         }
     }
 }
 
-impl Select<Bee<MilestoneIndex>, SingleMilestone> for PermanodeKeyspace {
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT message_id, timestamp from {}.milestones WHERE milestone_index = ?",
-            self.name()
-        )
-        .into()
-    }
-
-    fn get_request(&self, key: &Bee<MilestoneIndex>) -> SelectRequest<Self, Bee<MilestoneIndex>, SingleMilestone>
-    where
-        Self: Select<Bee<MilestoneIndex>, SingleMilestone>,
-    {
-        let mut index_bytes = Vec::new();
-        key.pack(&mut index_bytes)
-            .expect("Error occurred packing Milestone Index");
-
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<MilestoneIndex>, SingleMilestone>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&index_bytes.as_slice())
-            .build();
-
-        let token = Self::token(key);
-
-        self.create_request(query, token)
+impl scylla_cql::Row for Row<MessageId> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        Row::new(MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
     }
 }
 
-impl Select<Bee<HashedIndex>, IndexMessages> for PermanodeKeyspace {
+impl Select<HashedIndex, IndexMessages> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id from {}.indexes WHERE hashed_index = ? AND partition_id = ?",
@@ -161,51 +133,26 @@ impl Select<Bee<HashedIndex>, IndexMessages> for PermanodeKeyspace {
         )
         .into()
     }
-
-    fn get_request(&self, key: &Bee<HashedIndex>) -> SelectRequest<Self, Bee<HashedIndex>, IndexMessages>
-    where
-        Self: Select<Bee<HashedIndex>, IndexMessages>,
-    {
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<HashedIndex>, IndexMessages>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&key.as_ref())
-            .value(&0u16)
-            .build();
-
-        let token = Self::token(key);
-
-        self.create_request(query, token)
+    fn bind_values<T: Values>(builder: T, hashed_index: &HashedIndex) -> T::Return {
+        builder.value(&hashed_index.as_ref()).value(&0u16)
     }
 }
 
-impl Select<Bee<OutputId>, Outputs> for PermanodeKeyspace {
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT message_id, data from {}.transactions WHERE transaction_id = ? AND idx = ? and variant = 'utxoinput'",
-            self.name()
-        )
-        .into()
-    }
-
-    fn get_request(&self, key: &Bee<OutputId>) -> SelectRequest<Self, Bee<OutputId>, Outputs>
-    where
-        Self: Select<Bee<OutputId>, Outputs>,
-    {
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<OutputId>, Outputs>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&key.transaction_id().to_string())
-            .value(&key.index())
-            .build();
-
-        let token = Self::token(key);
-
-        self.create_request(query, token)
+impl RowsDecoder<HashedIndex, IndexMessages> for PermanodeKeyspace {
+    type Row = Row<MessageId>;
+    fn try_decode(decoder: Decoder) -> Result<Option<IndexMessages>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Some(IndexMessages {
+                messages: Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
+            }))
+        } else {
+            Err(decoder.get_error())
+        }
     }
 }
 
-impl Select<Bee<Ed25519Address>, OutputIds> for PermanodeKeyspace {
+impl Select<Ed25519Address, OutputIds> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT transaction_id, idx 
@@ -215,20 +162,102 @@ impl Select<Bee<Ed25519Address>, OutputIds> for PermanodeKeyspace {
         )
         .into()
     }
+    fn bind_values<T: Values>(builder: T, address: &Ed25519Address) -> T::Return {
+        builder.value(&address.as_ref()).value(&0u16)
+    }
+}
 
-    fn get_request(&self, key: &Bee<Ed25519Address>) -> SelectRequest<Self, Bee<Ed25519Address>, OutputIds>
-    where
-        Self: Select<Bee<Ed25519Address>, OutputIds>,
-    {
-        let query = Query::new()
-            .statement(&self.select_statement::<Bee<Ed25519Address>, OutputIds>())
-            .consistency(scylla_cql::Consistency::One)
-            .value(&key.as_ref())
-            .value(&0u16)
-            .build();
+impl RowsDecoder<Ed25519Address, OutputIds> for PermanodeKeyspace {
+    type Row = Row<(TransactionId, u16)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<OutputIds>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Some(OutputIds {
+                ids: Self::Row::rows_iter(decoder)
+                    .map(|row| OutputId::new(row.0, row.1).unwrap())
+                    .collect(),
+            }))
+        } else {
+            Err(decoder.get_error())
+        }
+    }
+}
 
-        let token = Self::token(key);
+impl scylla_cql::Row for Row<(TransactionId, u16)> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let transaction_id = TransactionId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let index = rows.column_value::<u16>();
+        Row::new((transaction_id, index))
+    }
+}
 
-        self.create_request(query, token)
+impl Select<OutputId, Outputs> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT message_id, data from {}.transactions WHERE transaction_id = ? AND idx = ? and variant = 'utxoinput'",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, output_id: &OutputId) -> T::Return {
+        builder
+            .value(&output_id.transaction_id().as_ref())
+            .value(&output_id.index())
+    }
+}
+
+impl RowsDecoder<OutputId, Outputs> for PermanodeKeyspace {
+    type Row = Row<(MessageId, TransactionData)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Outputs>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Some(Outputs {
+                outputs: Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
+            }))
+        } else {
+            Err(decoder.get_error())
+        }
+    }
+}
+
+impl scylla_cql::Row for Row<(MessageId, TransactionData)> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let data = rows.column_value::<TransactionData>();
+        Row::new((message_id, data))
+    }
+}
+
+impl Select<MilestoneIndex, Milestone> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT message_id, timestamp from {}.milestones WHERE milestone_index = ?",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, index: &MilestoneIndex) -> T::Return {
+        builder.value(&index.0)
+    }
+}
+
+impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
+    type Row = Row<(MessageId, u64)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Milestone>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Self::Row::rows_iter(decoder)
+                .next()
+                .map(|row| Milestone::new(row.0, row.1)))
+        } else {
+            Err(decoder.get_error())
+        }
+    }
+}
+
+impl scylla_cql::Row for Row<(MessageId, u64)> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let timestamp = rows.column_value::<u64>();
+        Row::new((message_id, timestamp))
     }
 }

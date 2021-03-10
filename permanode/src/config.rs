@@ -51,6 +51,7 @@ mod test {
     use permanode_storage::{
         DatacenterConfig,
         KeyspaceConfig,
+        ThreadCount,
     };
 
     #[test]
@@ -68,6 +69,10 @@ mod test {
                         },
                     },
                 }],
+                listen_address: "127.0.0.1:8080".to_owned(),
+                thread_count: ThreadCount::CoreMultiple(1),
+                reporter_count: 2,
+                local_datacenter: "datacenter1".to_owned(),
             },
             api_config: ApiConfig {},
             broker_config: BrokerConfig {},

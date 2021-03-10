@@ -1,12 +1,12 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::application::*;
-use crate::collector::*;
-
-use permanode_storage::access::*;
-
+use crate::{
+    application::*,
+    collector::*,
+};
 use lru::LruCache;
+use permanode_storage::access::*;
 use std::ops::{
     Deref,
     DerefMut,

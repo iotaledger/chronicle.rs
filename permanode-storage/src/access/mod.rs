@@ -1,109 +1,68 @@
 pub use crate::keyspaces::PermanodeKeyspace;
 use bee_common::packable::Packable;
-pub use rows::*;
-pub use scylla::{
-    access::*,
-    stage::{
-        ReporterEvent,
-        ReporterHandle,
-    },
-    worker::WorkerError,
-    Worker,
-};
+pub use scylla::access::*;
 use scylla_cql::{
     ColumnDecoder,
-    Metadata,
-    Rows,
+    ColumnEncoder,
+    PreparedStatement,
     RowsDecoder,
-    TryInto,
     VoidDecoder,
 };
-pub use scylla_cql::{
-    CqlError,
-    Decoder,
-    Execute,
-    Frame,
-    Query,
+use serde::{
+    Deserialize,
+    Serialize,
 };
-use std::marker::PhantomData;
+use std::{
+    io::Cursor,
+    ops::Deref,
+};
+
+use bincode::Options;
 pub use types::*;
 
 mod insert;
-#[allow(missing_docs)]
-mod rows;
 mod select;
 mod token;
 mod types;
 
 impl VoidDecoder for PermanodeKeyspace {}
 
-pub(crate) struct BeeRows<Type> {
-    decoder: Decoder,
-    pub rows_count: usize,
-    pub remaining_rows_count: usize,
-    _metadata: Metadata,
-    column_start: usize,
-    _type: PhantomData<Type>,
+use bincode::config::*;
+#[allow(unused)]
+pub(crate) type BincodeOptions =
+    WithOtherTrailing<WithOtherIntEncoding<WithOtherEndian<DefaultOptions, BigEndian>, FixintEncoding>, AllowTrailing>;
+#[allow(unused)]
+pub(crate) fn bincode_config() -> BincodeOptions {
+    bincode::DefaultOptions::new()
+        .with_big_endian()
+        .with_fixint_encoding()
+        .allow_trailing_bytes()
 }
 
-impl<Type> Iterator for BeeRows<Type>
-where
-    Bee<Type>: ColumnDecoder,
-{
-    type Item = Bee<Type>;
+pub struct Row<T> {
+    inner: T,
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining_rows_count > 0 {
-            self.remaining_rows_count -= 1;
+impl<T> Deref for Row<T> {
+    type Target = T;
 
-            let length = i32::from_be_bytes(
-                self.decoder.buffer_as_ref()[self.column_start..][..4]
-                    .try_into()
-                    .unwrap(),
-            );
-            self.column_start += 4; // now it become the column_value start, or next column_start if length < 0
-            if length > 0 {
-                let col_slice = self.decoder.buffer_as_ref()[self.column_start..][..(length as usize)].into();
-                // update the next column_start to start from next column
-                self.column_start += length as usize;
-                Option::<Bee<Type>>::decode(col_slice)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
-impl<Type: Packable> Rows for BeeRows<Type> {
-    fn new(decoder: Decoder) -> Self {
-        let metadata = decoder.metadata();
-        let rows_start = metadata.rows_start();
-        let column_start = rows_start + 4;
-        let rows_count = i32::from_be_bytes(decoder.buffer_as_ref()[rows_start..column_start].try_into().unwrap());
-        Self {
-            decoder,
-            _metadata: metadata,
-            rows_count: rows_count as usize,
-            remaining_rows_count: rows_count as usize,
-            column_start,
-            _type: PhantomData,
-        }
+impl<T> Row<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
     }
-}
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
 
-impl<K, V> RowsDecoder<K, Bee<V>> for PermanodeKeyspace
-where
-    V: Packable,
-    Bee<V>: ColumnDecoder,
-{
-    fn try_decode(decoder: Decoder) -> Result<Option<Bee<V>>, CqlError> {
-        if decoder.is_error() {
-            Err(decoder.get_error())
-        } else {
-            let mut rows = BeeRows::<V>::new(decoder);
-            Ok(rows.next())
-        }
+    pub fn rows_iter(decoder: Decoder) -> scylla::access::Iter<Self>
+    where
+        Self: scylla::access::Row,
+    {
+        scylla::access::Iter::<Self>::new(decoder)
     }
 }
