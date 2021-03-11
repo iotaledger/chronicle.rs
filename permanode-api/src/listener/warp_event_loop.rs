@@ -64,30 +64,7 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<WarpLis
                 .map_err(|_| Need::Abort)?;
         }
 
-        let cors = warp::cors()
-            .allow_any_origin()
-            .allow_methods(vec!["GET", "OPTIONS"])
-            .allow_header("content-type")
-            .allow_credentials(true);
-
-        let options = warp::options().map(warp::reply);
-
-        let api = warp::path("api").and(warp::get());
-
-        let routes = api
-            .and(warp::path("info"))
-            .and_then(info)
-            .or(warp::path!(String / "messages")
-                .and(warp::query::<IndexParam>())
-                .and_then(get_message_by_index)
-                .or(warp::path!(String / "messages" / String).and_then(get_message))
-                .or(warp::path!(String / "messages" / String / "metadata").and_then(get_message_metadata))
-                .or(warp::path!(String / "messages" / String / "children").and_then(get_message_children))
-                .or(warp::path!(String / "output" / String).and_then(get_output))
-                .or(warp::path!(String / "addresses" / "ed25519" / String / "outputs").and_then(get_ed25519_outputs))
-                .or(warp::path!(String / "milestones" / u32).and_then(get_milestone)))
-            .or(options)
-            .with(cors);
+        let routes = construct_routes();
 
         let address = std::env::var("WARP_ADDRESS").unwrap_or("127.0.0.1".to_string());
         let port = std::env::var("WARP_PORT").unwrap_or("7000".to_string());
@@ -97,6 +74,34 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<WarpLis
             .await;
         Ok(())
     }
+}
+
+fn construct_routes() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "OPTIONS"])
+        .allow_header("content-type")
+        .allow_credentials(true);
+
+    let options = warp::options().map(warp::reply);
+
+    let api = warp::path("api").and(warp::get());
+
+    api.and(
+        warp::path("info")
+            .and_then(info)
+            .or(warp::path!(String / "messages")
+                .and(warp::query::<IndexParam>())
+                .and_then(get_message_by_index))
+            .or(warp::path!(String / "messages" / String).and_then(get_message))
+            .or(warp::path!(String / "messages" / String / "metadata").and_then(get_message_metadata))
+            .or(warp::path!(String / "messages" / String / "children").and_then(get_message_children))
+            .or(warp::path!(String / "output" / String).and_then(get_output))
+            .or(warp::path!(String / "addresses" / "ed25519" / String / "outputs").and_then(get_ed25519_outputs))
+            .or(warp::path!(String / "milestones" / u32).and_then(get_milestone)),
+    )
+    .or(options)
+    .with(cors)
 }
 
 #[derive(Deserialize)]
@@ -307,4 +312,121 @@ async fn get_milestone(keyspace: String, index: u32) -> Result<Json, Rejection> 
             }))
         })
         .map_err(|_| EndpointError::from(format!("No milestone found for index {}", index)).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::{
+        header::*,
+        Response,
+        StatusCode,
+    };
+    use rocket::http::hyper::Bytes;
+
+    fn check_cors_headers(res: &Response<Bytes>) {
+        println!("{:?}", res.headers());
+        let mut methods = res.headers()[ACCESS_CONTROL_ALLOW_METHODS]
+            .to_str()
+            .unwrap()
+            .split(",")
+            .map(|s| s.trim())
+            .collect::<Vec<_>>();
+        methods.sort_unstable();
+        assert_eq!(res.headers()[ACCESS_CONTROL_ALLOW_ORIGIN], "warp");
+        assert_eq!(methods.join(", "), "GET, OPTIONS");
+        assert_eq!(res.headers()[ACCESS_CONTROL_ALLOW_HEADERS], "content-type");
+        assert_eq!(res.headers()[ACCESS_CONTROL_ALLOW_CREDENTIALS], "true");
+    }
+
+    #[tokio::test]
+    async fn options() {
+        let routes = construct_routes();
+        let res = warp::test::request()
+            .method("OPTIONS")
+            .header(ORIGIN, "warp")
+            .header(ACCESS_CONTROL_REQUEST_METHOD, "GET")
+            .path("/api/anything")
+            .reply(&routes)
+            .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers().get(CONTENT_TYPE), None);
+        check_cors_headers(&res);
+        assert_eq!(res.body(), "");
+    }
+
+    #[tokio::test]
+    async fn info() {
+        let routes = construct_routes();
+        let res = warp::test::request()
+            .method("OPTIONS")
+            .header(ORIGIN, "warp")
+            .header(ACCESS_CONTROL_REQUEST_METHOD, "GET")
+            .path("/api/info")
+            .reply(&routes)
+            .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        check_cors_headers(&res);
+        let res = warp::test::request()
+            .header(ORIGIN, "warp")
+            .path("/api/info")
+            .reply(&routes)
+            .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[CONTENT_TYPE], "application/json");
+        let _body: InfoResponse = serde_json::from_slice(res.body()).expect("Failed to deserialize Info Response!");
+    }
+
+    #[tokio::test]
+    async fn get_message() {
+        let routes = construct_routes();
+        let res = warp::test::request()
+            .method("OPTIONS")
+            .header(ORIGIN, "warp")
+            .header(ACCESS_CONTROL_REQUEST_METHOD, "GET")
+            .path("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
+            .reply(&routes)
+            .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        check_cors_headers(&res);
+        let res = warp::test::request()
+            .header(ORIGIN, "warp")
+            .path("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
+            .reply(&routes)
+            .await;
+        println!("{:?}", res.headers());
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(res.headers()[CONTENT_TYPE], "text/plain; charset=utf-8");
+        assert_eq!(
+            res.body(),
+            "Unhandled rejection: EndpointError { msg: \"Worker NoRing\" }"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_message_by_index() {
+        let routes = construct_routes();
+        let hex_index = hex::encode("test_index");
+        let res = warp::test::request()
+            .method("OPTIONS")
+            .header(ORIGIN, "warp")
+            .header(ACCESS_CONTROL_REQUEST_METHOD, "GET")
+            .path(&format!("/api/permanode/messages?index={}", hex_index))
+            .reply(&routes)
+            .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        check_cors_headers(&res);
+        let res = warp::test::request()
+            .header(ORIGIN, "warp")
+            .path(&format!("/api/permanode/messages?index={}", hex_index))
+            .reply(&routes)
+            .await;
+        println!("{:?}", res.headers());
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(res.headers()[CONTENT_TYPE], "text/plain; charset=utf-8");
+        assert_eq!(
+            res.body(),
+            "Unhandled rejection: EndpointError { msg: \"Worker NoRing\" }"
+        );
+    }
 }

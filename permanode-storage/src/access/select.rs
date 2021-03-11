@@ -4,7 +4,7 @@ use scylla_cql::Row;
 impl Select<MessageId, Message> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!("SELECT message FROM {}.messages WHERE key = ?", self.name()).into()
+        format!("SELECT message FROM {}.messages WHERE message_id = ?", self.name()).into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
         builder.value(&message_id.as_ref())
@@ -12,26 +12,32 @@ impl Select<MessageId, Message> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
-    type Row = Record<Message>;
+    type Row = Record<Option<Message>>;
     fn try_decode(decoder: Decoder) -> Result<Option<Message>, CqlError> {
         if decoder.is_rows() {
-            Ok(Self::Row::rows_iter(decoder).next().map(|row| row.into_inner()))
+            Ok(Self::Row::rows_iter(decoder)
+                .next()
+                .map(|row| row.into_inner())
+                .flatten())
         } else {
             return Err(decoder.get_error());
         }
     }
 }
 
-impl Row for Record<Message> {
+impl Row for Record<Option<Message>> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Record::new(Message::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
+        Record::new(
+            rows.column_value::<Option<Cursor<Vec<u8>>>>()
+                .and_then(|mut bytes| Message::unpack(&mut bytes).ok()),
+        )
     }
 }
 
 impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!("SELECT metadata FROM {}.messages WHERE key = ?", self.name()).into()
+        format!("SELECT metadata FROM {}.messages WHERE message_id = ?", self.name()).into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
         builder.value(&message_id.as_ref())
@@ -39,19 +45,22 @@ impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
 }
 
 impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
-    type Row = Record<MessageMetadata>;
+    type Row = Record<Option<MessageMetadata>>;
     fn try_decode(decoder: Decoder) -> Result<Option<MessageMetadata>, CqlError> {
         if decoder.is_rows() {
-            Ok(Self::Row::rows_iter(decoder).next().map(|row| row.into_inner()))
+            Ok(Self::Row::rows_iter(decoder)
+                .next()
+                .map(|row| row.into_inner())
+                .flatten())
         } else {
             return Err(decoder.get_error());
         }
     }
 }
 
-impl Row for Record<MessageMetadata> {
+impl Row for Record<Option<MessageMetadata>> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Record::new(rows.column_value::<MessageMetadata>())
+        Record::new(rows.column_value::<Option<MessageMetadata>>())
     }
 }
 
