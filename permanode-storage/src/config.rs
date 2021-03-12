@@ -39,6 +39,10 @@ pub struct StorageConfig {
     pub reporter_count: u8,
     /// The name of the local datacenter
     pub local_datacenter: String,
+    /// The total number of partitions to use
+    pub partition_count: usize,
+    /// The number of sequential milestones to store side-by-side in a partition
+    pub milestone_chunk_size: Option<usize>,
 }
 
 /// Configuration for a scylla keyspace

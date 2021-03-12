@@ -15,6 +15,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
             match event {
                 #[allow(unused_mut)]
                 CollectorEvent::Message(message_id, mut message) => {
+                    // info!("Inserting: {}", message_id.to_string());
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
                         #[cfg(feature = "filter")]

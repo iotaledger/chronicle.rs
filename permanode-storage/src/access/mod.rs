@@ -67,9 +67,19 @@ impl<T> Record<T> {
         scylla::access::Iter::<Self>::new(decoder)
     }
 }
+
+#[derive(Debug, Clone)]
 pub struct Partitioned<T> {
     inner: T,
-    partition_id: u16,
+    partition_id: PartitionId,
+}
+
+impl<T> Deref for Partitioned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl<T> Partitioned<T> {
@@ -79,7 +89,7 @@ impl<T> Partitioned<T> {
     pub fn into_inner(self) -> T {
         self.inner
     }
-    pub fn partition_id(self) -> u16 {
+    pub fn partition_id(&self) -> PartitionId {
         self.partition_id
     }
 }
@@ -201,5 +211,29 @@ impl ColumnEncoder for TransactionVariant {
         }
         buffer.extend(&i32::to_be_bytes(variant.len() as i32));
         buffer.extend(variant.as_bytes());
+    }
+}
+
+#[derive(Clone)]
+pub struct PagingState {
+    page_size: usize,
+    offset: usize,
+}
+
+impl PagingState {
+    pub fn new(page_size: usize, offset: usize) -> Self {
+        Self { page_size, offset }
+    }
+
+    pub fn increment(&mut self, n: usize) {
+        self.offset += n
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn into_bytes(&self) -> Vec<u8> {
+        todo!()
     }
 }

@@ -24,7 +24,7 @@ use tokio::sync::mpsc::UnboundedSender;
 mod init;
 mod rocket_event_loop;
 mod terminating;
-mod warp_event_loop;
+// mod warp_event_loop;
 
 /// A listener implementation using Rocket.rs
 pub struct RocketListener {
@@ -46,6 +46,7 @@ pub struct Listener<T> {
     /// The listener's service
     pub service: Service,
     data: T,
+    pub num_partitions: usize,
 }
 
 /// Trait to be implemented on the API engines (ie Rocket, warp, etc)
@@ -132,7 +133,8 @@ where
 }
 
 builder!(ListenerBuilder<T> {
-    data: T
+    data: T,
+    num_partitions: usize
 });
 
 impl<T: APIEngine> Builder for ListenerBuilder<T> {
@@ -142,6 +144,7 @@ impl<T: APIEngine> Builder for ListenerBuilder<T> {
         Self::State {
             service: Service::new(),
             data: self.data.expect("No listener data was provided!"),
+            num_partitions: self.num_partitions.expect("No partition count was provided!"),
         }
         .set_name()
     }

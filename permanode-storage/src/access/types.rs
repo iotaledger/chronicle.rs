@@ -220,21 +220,8 @@ impl ColumnEncoder for TransactionData {
 }
 
 #[derive(Debug, Clone)]
-pub struct MessageChildren {
-    pub children: Vec<MessageId>,
-}
-
-#[derive(Debug, Clone)]
-pub struct IndexMessages {
-    pub messages: Vec<MessageId>,
-}
-
-#[derive(Debug, Clone)]
-pub struct OutputIds {
-    pub ids: Vec<OutputId>,
-}
-
-#[derive(Debug, Clone)]
 pub struct Outputs {
     pub outputs: Vec<(MessageId, TransactionData)>,
 }
+
+pub type PartitionId = u16;

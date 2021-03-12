@@ -25,15 +25,6 @@ impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
     }
 }
 
-impl Row for Record<Option<Message>> {
-    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Record::new(
-            rows.column_value::<Option<Cursor<Vec<u8>>>>()
-                .and_then(|mut bytes| Message::unpack(&mut bytes).ok()),
-        )
-    }
-}
-
 impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
@@ -55,12 +46,6 @@ impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
         } else {
             return Err(decoder.get_error());
         }
-    }
-}
-
-impl Row for Record<Option<MessageMetadata>> {
-    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Record::new(rows.column_value::<Option<MessageMetadata>>())
     }
 }
 
@@ -94,18 +79,7 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Perm
     }
 }
 
-impl Row for Record<(Option<Message>, Option<MessageMetadata>)> {
-    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        let message = rows
-            .column_value::<Option<Cursor<Vec<u8>>>>()
-            .as_mut()
-            .map(|bytes| Message::unpack(bytes).unwrap());
-        let metadata = rows.column_value::<Option<MessageMetadata>>();
-        Record::new((message, metadata))
-    }
-}
-
-impl Select<MessageId, MessageChildren> for PermanodeKeyspace {
+impl Select<Partitioned<MessageId>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -114,58 +88,42 @@ impl Select<MessageId, MessageChildren> for PermanodeKeyspace {
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+    fn bind_values<T: Values>(builder: T, message_id: &Partitioned<MessageId>) -> T::Return {
         builder.value(&message_id.as_ref()).value(&0u16)
     }
 }
 
-impl RowsDecoder<MessageId, MessageChildren> for PermanodeKeyspace {
-    type Row = Record<MessageId>;
-    fn try_decode(decoder: Decoder) -> Result<Option<MessageChildren>, CqlError> {
-        if decoder.is_rows() {
-            Ok(Some(MessageChildren {
-                children: Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
-            }))
-        } else {
-            Err(decoder.get_error())
-        }
-    }
-}
-
-impl Row for Record<MessageId> {
-    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Record::new(MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
-    }
-}
-
-impl Select<HashedIndex, IndexMessages> for PermanodeKeyspace {
+impl Select<Partitioned<HashedIndex>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id from {}.indexes WHERE hashed_index = ? AND partition_id = ?",
+            "SELECT message_id, milestone_index 
+            FROM {}.indexes 
+            WHERE hashed_index = ? AND partition_id = ?
+            ORDER BY milestone_index DESC",
             self.name()
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, hashed_index: &HashedIndex) -> T::Return {
-        builder.value(&hashed_index.as_ref()).value(&0u16)
+    fn bind_values<T: Values>(builder: T, index: &Partitioned<HashedIndex>) -> T::Return {
+        builder.value(&index.as_ref()).value(&index.partition_id())
     }
 }
 
-impl RowsDecoder<HashedIndex, IndexMessages> for PermanodeKeyspace {
-    type Row = Record<MessageId>;
-    fn try_decode(decoder: Decoder) -> Result<Option<IndexMessages>, CqlError> {
+impl<K> RowsDecoder<Partitioned<K>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
+    type Row = Record<(MessageId, MilestoneIndex)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Vec<(MessageId, MilestoneIndex)>>, CqlError> {
         if decoder.is_rows() {
-            Ok(Some(IndexMessages {
-                messages: Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
-            }))
+            Ok(Some(
+                Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
+            ))
         } else {
             Err(decoder.get_error())
         }
     }
 }
 
-impl Select<Ed25519Address, OutputIds> for PermanodeKeyspace {
+impl Select<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -176,31 +134,23 @@ impl Select<Ed25519Address, OutputIds> for PermanodeKeyspace {
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, address: &Ed25519Address) -> T::Return {
-        builder.value(&address.as_ref()).value(&0u16)
+    fn bind_values<T: Values>(builder: T, address: &Partitioned<Ed25519Address>) -> T::Return {
+        builder.value(&address.as_ref()).value(&address.partition_id())
     }
 }
 
-impl RowsDecoder<Ed25519Address, OutputIds> for PermanodeKeyspace {
-    type Row = Record<(TransactionId, u16)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<OutputIds>, CqlError> {
+impl RowsDecoder<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> for PermanodeKeyspace {
+    type Row = Record<(TransactionId, u16, MilestoneIndex)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Vec<(OutputId, MilestoneIndex)>>, CqlError> {
         if decoder.is_rows() {
-            Ok(Some(OutputIds {
-                ids: Self::Row::rows_iter(decoder)
-                    .map(|row| OutputId::new(row.0, row.1).unwrap())
+            Ok(Some(
+                Self::Row::rows_iter(decoder)
+                    .map(|row| (OutputId::new(row.0, row.1).unwrap(), row.2))
                     .collect(),
-            }))
+            ))
         } else {
             Err(decoder.get_error())
         }
-    }
-}
-
-impl Row for Record<(TransactionId, u16)> {
-    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        let transaction_id = TransactionId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
-        let index = rows.column_value::<u16>();
-        Record::new((transaction_id, index))
     }
 }
 
@@ -208,7 +158,7 @@ impl Select<OutputId, Outputs> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, data from {}.transactions WHERE transaction_id = ? AND idx = ? and variant = 'utxoinput'",
+            "SELECT message_id, data FROM {}.transactions WHERE transaction_id = ? AND idx = ? and variant = 'utxoinput'",
             self.name()
         )
         .into()
@@ -233,19 +183,11 @@ impl RowsDecoder<OutputId, Outputs> for PermanodeKeyspace {
     }
 }
 
-impl Row for Record<(MessageId, TransactionData)> {
-    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
-        let data = rows.column_value::<TransactionData>();
-        Record::new((message_id, data))
-    }
-}
-
 impl Select<MilestoneIndex, Milestone> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, timestamp from {}.milestones WHERE milestone_index = ?",
+            "SELECT message_id, timestamp FROM {}.milestones WHERE milestone_index = ?",
             self.name()
         )
         .into()
@@ -268,10 +210,152 @@ impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
     }
 }
 
+impl Select<HashedIndex, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ?",
+            self.name()
+        )
+        .into()
+    }
+
+    fn bind_values<T: Values>(builder: T, index: &HashedIndex) -> T::Return {
+        builder.value(&index.as_ref()).value(&"index")
+    }
+}
+
+impl Select<Ed25519Address, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ?",
+            self.name()
+        )
+        .into()
+    }
+
+    fn bind_values<T: Values>(builder: T, address: &Ed25519Address) -> T::Return {
+        builder.value(&address.as_ref()).value(&"address")
+    }
+}
+
+impl Select<MessageId, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ?",
+            self.name()
+        )
+        .into()
+    }
+
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+        builder.value(&message_id.as_ref()).value(&"parent")
+    }
+}
+
+impl<K> RowsDecoder<K, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
+    type Row = Record<(u32, u16)>;
+
+    fn try_decode(decoder: Decoder) -> Result<Option<Vec<(MilestoneIndex, PartitionId)>>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Some(
+                Self::Row::rows_iter(decoder)
+                    .map(|row| {
+                        let (index, partition_id) = row.into_inner();
+                        (MilestoneIndex(index), partition_id)
+                    })
+                    .collect(),
+            ))
+        } else {
+            Err(decoder.get_error())
+        }
+    }
+}
+
+// ###############
+// ROW DEFINITIONS
+// ###############
+
+impl Row for Record<Option<Message>> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        Record::new(
+            rows.column_value::<Option<Cursor<Vec<u8>>>>()
+                .and_then(|mut bytes| Message::unpack(&mut bytes).ok()),
+        )
+    }
+}
+
+impl Row for Record<Option<MessageMetadata>> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        Record::new(rows.column_value::<Option<MessageMetadata>>())
+    }
+}
+
+impl Row for Record<(Option<Message>, Option<MessageMetadata>)> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let message = rows
+            .column_value::<Option<Cursor<Vec<u8>>>>()
+            .as_mut()
+            .map(|bytes| Message::unpack(bytes).unwrap());
+        let metadata = rows.column_value::<Option<MessageMetadata>>();
+        Record::new((message, metadata))
+    }
+}
+
+impl Row for Record<MessageId> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        Record::new(MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
+    }
+}
+
+impl Row for Record<(TransactionId, u16)> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let transaction_id = TransactionId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let index = rows.column_value::<u16>();
+        Record::new((transaction_id, index))
+    }
+}
+
+impl Row for Record<(MessageId, TransactionData)> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let data = rows.column_value::<TransactionData>();
+        Record::new((message_id, data))
+    }
+}
+
 impl Row for Record<(MessageId, u64)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
         let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
         let timestamp = rows.column_value::<u64>();
         Record::new((message_id, timestamp))
+    }
+}
+
+impl Row for Record<(u32, u16)> {
+    fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
+        Record::new((rows.column_value::<u32>(), rows.column_value::<u16>()))
+    }
+}
+
+impl Row for Record<(MessageId, MilestoneIndex)> {
+    fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
+        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let index = rows.column_value::<u32>();
+        Record::new((message_id, MilestoneIndex(index)))
+    }
+}
+
+impl Row for Record<(TransactionId, u16, MilestoneIndex)> {
+    fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
+        let transaction_id = TransactionId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let index = rows.column_value::<u16>();
+        let milestone_index = rows.column_value::<u32>();
+        Record::new((transaction_id, index, MilestoneIndex(milestone_index)))
     }
 }

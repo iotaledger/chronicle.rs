@@ -17,6 +17,8 @@
         thread_count: CoreMultiple(1),
         reporter_count: 2,
         local_datacenter: "datacenter1",
+        partition_count: 1000,
+        milestone_chunk_size: Some(1000),
     ),
     api_config: (),
     broker_config: (),

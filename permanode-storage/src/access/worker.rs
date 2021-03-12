@@ -35,7 +35,7 @@ where
     V: 'static + Send + std::fmt::Debug + Clone,
 {
     fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
-        info!("{:?}", giveload);
+        // info!("{:?}", giveload);
     }
 
     fn handle_error(self: Box<Self>, error: WorkerError, reporter: &Option<ReporterHandle>) {
