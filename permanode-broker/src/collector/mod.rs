@@ -91,6 +91,7 @@ pub struct Collector {
     lru_msg: LruCache<MessageId, Message>,
     lru_msg_ref: LruCache<MessageId, MessageReferenced>,
     inbox: CollectorInbox,
+    default_keyspace: PermanodeKeyspace,
     storage_config: Option<StorageConfig>,
 }
 
@@ -101,6 +102,20 @@ impl Builder for CollectorBuilder {
     type State = Collector;
     fn build(self) -> Self::State {
         let lru_cap = self.lru_capacity.unwrap_or(1000);
+        // Get the first keyspace or default to "permanode"
+        // In order to use multiple keyspaces, the user must
+        // use filters to determine where records go
+        let default_keyspace = PermanodeKeyspace::new(
+            self.storage_config
+                .as_ref()
+                .and_then(|config| {
+                    config
+                        .keyspaces
+                        .first()
+                        .and_then(|keyspace| Some(keyspace.name.clone()))
+                })
+                .unwrap_or("permanode".to_owned()),
+        );
         Self::State {
             service: Service::new(),
             lru_msg: LruCache::new(lru_cap),
@@ -108,6 +123,8 @@ impl Builder for CollectorBuilder {
             partition_id: self.partition_id.unwrap(),
             collectors_count: self.collectors_count.unwrap(),
             inbox: self.inbox.unwrap(),
+            default_keyspace,
+
             storage_config: self.storage_config,
         }
         .set_name()

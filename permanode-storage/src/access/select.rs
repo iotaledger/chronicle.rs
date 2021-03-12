@@ -169,8 +169,8 @@ impl Select<Ed25519Address, OutputIds> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT transaction_id, idx 
-            FROM {}.addresses 
+            "SELECT transaction_id, idx
+            FROM {}.addresses
             WHERE address = ? AND address_type = 0 AND partition_id = ?",
             self.name()
         )
@@ -273,5 +273,35 @@ impl Row for Record<(MessageId, u64)> {
         let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
         let timestamp = rows.column_value::<u64>();
         Record::new((message_id, timestamp))
+    }
+}
+
+/// Select Partitions from Hints table for a given Hint<H>
+impl<H: HintVariant> Select<Hint<H>, Vec<Partition>> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ? ",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, hint: &Hint<H>) -> T::Return {
+        builder.value(&hint.get_inner().as_bytes()).value(&H::variant())
+    }
+}
+
+impl<H: HintVariant> RowsDecoder<Hint<H>, Vec<Partition>> for PermanodeKeyspace {
+    type Row = (u16, u32);
+    fn try_decode(decoder: Decoder) -> Result<Option<Vec<Partition>>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Some(
+                Self::Row::rows_iter(decoder)
+                    .map(|row| Partition::new(row.0, row.1))
+                    .collect(),
+            ))
+        } else {
+            Err(decoder.get_error())
+        }
     }
 }
