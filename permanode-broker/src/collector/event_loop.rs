@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use permanode_storage::access::worker::InsertWorker;
+use permanode_storage::worker::InsertWorker;
 
 #[async_trait::async_trait]
 impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
@@ -18,6 +18,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
                         {
+                            // store it
                             self.default_keyspace
                                 .insert(&message_id, &message)
                                 .consistency(Consistency::One)

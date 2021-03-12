@@ -1,7 +1,6 @@
 use super::*;
 use application::*;
 use permanode_storage::access::{
-    worker::PrepareWorker,
     GetSelectRequest,
     GetSelectStatement,
     Message,
@@ -67,7 +66,6 @@ impl APIEngine for WarpListener {
 }
 
 /// A listener event
-#[derive(Debug)]
 pub enum Event {
     /// Response from scylla with a payload
     Response {

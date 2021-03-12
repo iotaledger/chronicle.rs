@@ -154,7 +154,7 @@ where
     let (sender, mut inbox) = unbounded_channel::<Event>();
     let worker = Box::new(DecoderWorker {
         sender,
-        keyspace: keyspace,
+        keyspace,
         key,
         value: PhantomData,
     });

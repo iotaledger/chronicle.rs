@@ -281,7 +281,7 @@ impl<H: HintVariant> Select<Hint<H>, Vec<Partition>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ? ",
+            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ?",
             self.name()
         )
         .into()
