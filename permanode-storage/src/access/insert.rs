@@ -190,3 +190,22 @@ impl Insert<OutputId, TransactionRecord> for PermanodeKeyspace {
         }
     }
 }
+
+/// Insert Hint into Hints table
+impl<H: HintVariant> Insert<Hint<H>, Partition> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.hints (hint, variant, partition_id, milestone_index) VALUES (?, ?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, hint: &Hint<H>, partition: &Partition) -> T::Return {
+        builder
+            .value(&hint.get_inner().as_bytes())
+            .value(&H::variant())
+            .value(partition.id())
+            .value(partition.milestone_index())
+    }
+}

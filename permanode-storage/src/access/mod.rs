@@ -94,6 +94,78 @@ impl<T> Partitioned<T> {
     }
 }
 
+pub const MAX_TTL: u32 = 20 * 365 * 24 * 60 * 60;
+
+pub struct TTL<T> {
+    inner: T,
+    ttl: u32,
+}
+
+impl<T> TTL<T> {
+    fn new(inner: T, ttl: u32) -> Self {
+        Self { inner, ttl }
+    }
+}
+
+pub struct Hint<T: HintVariant> {
+    inner: T,
+}
+pub struct Partition {
+    id: u16,
+    milestone_index: u32,
+}
+
+impl Partition {
+    fn new(id: u16, milestone_index: u32) -> Self {
+        Self { id, milestone_index }
+    }
+    fn id(&self) -> &u16 {
+        &self.id
+    }
+    fn milestone_index(&self) -> &u32 {
+        &self.milestone_index
+    }
+}
+
+impl<T: HintVariant> Hint<T> {
+    fn new(inner: T) -> Self {
+        Self { inner }
+    }
+    fn get_inner(&self) -> &T {
+        &self.inner
+    }
+}
+
+pub trait HintVariant {
+    fn variant() -> &'static str;
+    fn as_bytes(&self) -> &[u8];
+}
+impl HintVariant for Ed25519Address {
+    fn variant() -> &'static str {
+        "address"
+    }
+    fn as_bytes(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+impl HintVariant for MessageId {
+    fn variant() -> &'static str {
+        "parent"
+    }
+    fn as_bytes(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+
+impl HintVariant for HashedIndex {
+    fn variant() -> &'static str {
+        "index"
+    }
+    fn as_bytes(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+
 pub struct AddressRecord {
     transaction_id: TransactionId,
     index: Index,

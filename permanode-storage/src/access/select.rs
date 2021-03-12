@@ -127,8 +127,8 @@ impl Select<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> for Pe
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT transaction_id, idx 
-            FROM {}.addresses 
+            "SELECT transaction_id, idx
+            FROM {}.addresses
             WHERE address = ? AND address_type = 0 AND partition_id = ?",
             self.name()
         )
