@@ -158,9 +158,7 @@ where
 
     while let Some(event) = inbox.recv().await {
         match event {
-            Ok(res) => {
-                res.ok_or("No results returned!".into());
-            }
+            Ok(res) => return res.ok_or("No results returned!".into()),
             Err(worker_error) => return Err(format!("{:?}", worker_error).into()),
         }
     }
