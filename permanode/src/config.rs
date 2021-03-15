@@ -59,7 +59,7 @@ mod test {
         let config = Config {
             storage_config: StorageConfig {
                 keyspaces: vec![KeyspaceConfig {
-                    name: "my_mainnet".to_string(),
+                    name: "permanode".to_string(),
                     data_centers: hashmap! {
                         "USA".to_string() => DatacenterConfig {
                             replication_factor: 2,

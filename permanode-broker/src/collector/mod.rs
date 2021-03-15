@@ -33,8 +33,8 @@ builder!(CollectorBuilder {
 pub enum CollectorEvent {
     /// Newly seen message from feed source(s)
     Message(MessageId, Message),
-    /// Newly seen MessageReferenced from feed source(s)
-    MessageReferenced(MessageReferenced),
+    /// Newly seen MessageMetadata from feed source(s)
+    MessageReferenced(MessageMetadata),
 }
 /// CollectorHandle to be passed to siblings(feed sources) and the supervisor(in order to shutdown)
 #[derive(Clone)]
@@ -88,8 +88,9 @@ pub struct Collector {
     service: Service,
     partition_id: u8,
     collectors_count: u8,
+    est_milestone_index: u32,
     lru_msg: LruCache<MessageId, Message>,
-    lru_msg_ref: LruCache<MessageId, MessageReferenced>,
+    lru_msg_ref: LruCache<MessageId, MessageMetadata>,
     inbox: CollectorInbox,
     default_keyspace: PermanodeKeyspace,
     storage_config: Option<StorageConfig>,
@@ -121,6 +122,7 @@ impl Builder for CollectorBuilder {
             lru_msg: LruCache::new(lru_cap),
             lru_msg_ref: LruCache::new(lru_cap),
             partition_id: self.partition_id.unwrap(),
+            est_milestone_index: 0,
             collectors_count: self.collectors_count.unwrap(),
             inbox: self.inbox.unwrap(),
             default_keyspace,

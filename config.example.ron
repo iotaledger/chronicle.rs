@@ -2,7 +2,7 @@
     storage_config: (
         keyspaces: [
             (
-                name: "my_mainnet",
+                name: "permanode",
                 data_centers: {
                     "Canada": (
                         replication_factor: 1,

@@ -15,6 +15,7 @@ pub(crate) use paho_mqtt::{
     AsyncClient,
     CreateOptionsBuilder,
 };
+pub(crate) use permanode_storage::access::*;
 use permanode_storage::StorageConfig;
 use serde::{
     Deserialize,
@@ -225,34 +226,4 @@ impl<H: PermanodeBrokerScope> Name for PermanodeBroker<H> {
     fn get_name(&self) -> String {
         self.service.get_name()
     }
-}
-
-// TODO move this to -storage crate along with bee-types
-#[derive(Deserialize, Serialize, Debug)]
-pub struct MessageReferenced {
-    #[serde(rename = "messageId")]
-    pub message_id: MessageId,
-    #[serde(rename = "parentMessageIds")]
-    pub parent_message_ids: Vec<MessageId>,
-    #[serde(rename = "isSolid")]
-    pub is_solid: bool,
-    #[serde(rename = "referencedByMilestoneIndex")]
-    pub referenced_by_milestone_index: u64,
-    #[serde(rename = "ledgerInclusionState")]
-    pub ledger_inclusion_state: LedgerInclusionState,
-    #[serde(rename = "shouldPromote")]
-    pub should_promote: Option<bool>,
-    #[serde(rename = "shouldReattach")]
-    pub should_reattach: Option<bool>,
-}
-
-// TODO ask bee team to make this a general type.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum LedgerInclusionState {
-    #[serde(rename = "conflicting")]
-    Conflicting,
-    #[serde(rename = "included")]
-    Included,
-    #[serde(rename = "noTransaction")]
-    NoTransaction,
 }

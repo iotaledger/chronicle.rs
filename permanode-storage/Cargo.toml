@@ -24,3 +24,19 @@ rev = "8baba87"
 features = [
     "serde"
 ]
+
+[dependencies.tokio]
+version = "1.2"
+default-features = false
+features = [
+    "io-std",
+    "fs",
+    "macros",
+    "sync",
+    "net",
+    "io-util",
+    "time",
+    "rt-multi-thread",
+    "signal",
+    "full"
+]

@@ -73,7 +73,7 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 .map_err(|_| Need::Abort)?;
         }
 
-        construct_rocket(self.data.rocket.take().ok_or(Need::Abort)?.manage(self.num_partitions))
+        construct_rocket(self.data.rocket.take().ok_or(Need::Abort)?)
             .launch()
             .await
             .map_err(|_| Need::Abort)
@@ -149,26 +149,17 @@ where
         .paging_state(&paging_state)
         .build();
 
-    let (sender, mut inbox) = unbounded_channel::<Event>();
-    let worker = Box::new(DecoderWorker {
-        sender,
-        keyspace: keyspace,
-        key,
-        value: PhantomData,
-    });
+    let (sender, mut inbox) = unbounded_channel::<Result<Option<V>, WorkerError>>();
+    let worker = ValueWorker::boxed(sender, keyspace, key, PhantomData);
 
-    let decoder = request.send_local(worker);
+    request.send_local(worker);
 
     while let Some(event) = inbox.recv().await {
         match event {
-            Event::Response { giveload } => {
-                let res = decoder.decode(giveload);
-                match res {
-                    Ok(v) => return v.ok_or("No results returned!".into()),
-                    Err(cql_error) => return Err(format!("{:?}", cql_error).into()),
-                }
+            Ok(res) => {
+                return res.ok_or(Cow::from("No results returned!"));
             }
-            Event::Error { kind } => return Err(kind.to_string().into()),
+            Err(worker_error) => return Err(format!("{:?}", worker_error).into()),
         }
     }
 

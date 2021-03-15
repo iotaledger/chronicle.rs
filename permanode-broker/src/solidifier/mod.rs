@@ -27,12 +27,12 @@ builder!(SolidifierBuilder {
 
 pub enum SolidifierEvent {
     /// Pushed or requested messages, that definitely belong to self solidifier
-    Message(Message, MessageReferenced),
+    Message(Message, MessageMetadata),
     /// Close MessageId that doesn't belong at all to Solidifier
     Close(MessageId, u64),
     /// To be determined Message, that might belong to self solidifier
     /// u64 is milestone index which requested the msg, assuming it belongs to it,
-    /// and unfortunately the collector doesn't have the MessageReferenced.
+    /// and unfortunately the collector doesn't have the MessageMetadata.
     /// collector likely will re request it from the network.
     Tbd(u64, MessageId, Message),
     /// Shutdown the solidifier

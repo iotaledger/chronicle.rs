@@ -1,13 +1,7 @@
 pub use crate::keyspaces::PermanodeKeyspace;
 use bee_common::packable::Packable;
 pub use scylla::access::*;
-use scylla_cql::{
-    ColumnDecoder,
-    ColumnEncoder,
-    PreparedStatement,
-    Rows,
-    VoidDecoder,
-};
+
 use serde::{
     Deserialize,
     Serialize,
@@ -24,7 +18,6 @@ mod insert;
 mod select;
 mod token;
 mod types;
-pub mod worker;
 
 impl VoidDecoder for PermanodeKeyspace {}
 
@@ -102,7 +95,7 @@ pub struct TTL<T> {
 }
 
 impl<T> TTL<T> {
-    fn new(inner: T, ttl: u32) -> Self {
+    pub fn new(inner: T, ttl: u32) -> Self {
         Self { inner, ttl }
     }
 }
@@ -116,22 +109,22 @@ pub struct Partition {
 }
 
 impl Partition {
-    fn new(id: u16, milestone_index: u32) -> Self {
+    pub fn new(id: u16, milestone_index: u32) -> Self {
         Self { id, milestone_index }
     }
-    fn id(&self) -> &u16 {
+    pub fn id(&self) -> &u16 {
         &self.id
     }
-    fn milestone_index(&self) -> &u32 {
+    pub fn milestone_index(&self) -> &u32 {
         &self.milestone_index
     }
 }
 
 impl<T: HintVariant> Hint<T> {
-    fn new(inner: T) -> Self {
+    pub fn new(inner: T) -> Self {
         Self { inner }
     }
-    fn get_inner(&self) -> &T {
+    pub fn get_inner(&self) -> &T {
         &self.inner
     }
 }
