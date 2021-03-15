@@ -7,7 +7,5 @@ pub mod access;
 pub mod config;
 /// Defines keyspace implementations
 pub mod keyspaces;
-/// Defines workers structures
-pub mod worker;
 
 pub use config::*;

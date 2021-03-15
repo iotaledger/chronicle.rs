@@ -1,6 +1,7 @@
 use super::*;
 use futures::future::AbortHandle;
 use rocket::Shutdown as RocketShutdown;
+use scylla::access::*;
 use serde::{
     Deserialize,
     Serialize,
