@@ -18,8 +18,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         {
                             // store message
                             self.insert_message(&message_id, &message);
+                            let est_ms = MilestoneIndex(self.est_ms.0 + 1);
                             // add it to the cache in order to not presist it again.
-                            self.lru_msg.put(message_id, (self.est_ms, message));
+                            self.lru_msg.put(message_id, (est_ms, message));
                         }
                     }
                 }
@@ -27,6 +28,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
                     let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
                     let message_id = metadata.message_id;
+                    // update the est_ms to be the most recent ref_ms
                     self.est_ms.0 = *ref_ms;
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg_ref.get(&message_id) {
@@ -70,19 +72,19 @@ impl Collector {
             self.insert(*message_id, message_tuple);
         } else {
             ledger_inclusion_state = None;
+            self.est_ms.0 += 1;
             // store message only
             self.insert(*message_id, message.clone());
         };
         // Insert parents/children
-        let est_milestone_index = MilestoneIndex(self.est_ms.0 + 1);
         self.insert_parents(
             &message_id,
             &message.parents(),
-            est_milestone_index,
+            self.est_ms,
             ledger_inclusion_state.clone(),
         );
         // insert payload (if any)
-        self.insert_payload(&message_id, &message, est_milestone_index, ledger_inclusion_state);
+        self.insert_payload(&message_id, &message, self.est_ms, ledger_inclusion_state);
     }
     fn insert_parents(
         &self,
@@ -110,9 +112,7 @@ impl Collector {
                 Payload::Indexation(indexation) => {
                     self.insert_hashed_index(message_id, indexation.hash(), milestone_index, inclusion_state);
                 }
-                Payload::Transaction(transaction) => {
-                    todo!()
-                }
+                Payload::Transaction(transaction) => self.insert_transaction(message_id, transaction),
                 // remaining payload types
                 _ => {}
             }
@@ -167,6 +167,22 @@ impl Collector {
             metadata.ledger_inclusion_state.clone(),
         );
     }
+    fn insert_transaction(&self, message_id: &MessageId, transaction: &Box<TransactionPayload>) {
+        let transaction_id = transaction.id();
+        let unlock_blocks = transaction.unlock_blocks();
+        if let Essence::Regular(regular) = transaction.essence() {
+            for (index, input) in regular.inputs().iter().enumerate() {
+                match input {
+                    bee_message::input::Input::UTXO(utxo_input) => {}
+                    bee_message::input::Input::Treasury(treasury_input) => {}
+                }
+                let _b = &unlock_blocks[index];
+            }
+            for (index, output) in regular.outputs().iter().enumerate() {}
+            let payload = regular.payload();
+        };
+    }
+
     fn insert<K, V>(&self, key: K, value: V)
     where
         PermanodeKeyspace: Insert<K, V>,
