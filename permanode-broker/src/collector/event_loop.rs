@@ -20,9 +20,8 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         {
                             // store message
                             self.insert_message(&message_id, &message);
-                            let est_ms = MilestoneIndex(self.est_ms.0 + 1);
                             // add it to the cache in order to not presist it again.
-                            self.lru_msg.put(message_id, (est_ms, message));
+                            self.lru_msg.put(message_id, (self.est_ms, message));
                         }
                     }
                 }
