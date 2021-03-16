@@ -17,26 +17,39 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     if let None = self.lru_msg.get(&message_id) {
                         {
                             // store message
-                            self.insert_message(message_id, message);
+                            self.insert_message(&message_id, &message);
+                            // add it to the cache in order to not presist it again.
+                            self.lru_msg.put(message_id, (self.est_ms, message));
                         }
-                    } else {
-                        // add it to the cache in order to not presist it again.
-                        self.lru_msg.put(message_id, message);
                     }
                 }
-                CollectorEvent::MessageReferenced(msg_ref) => {
-                    let ref_ms = msg_ref.referenced_by_milestone_index.as_ref().unwrap();
+                CollectorEvent::MessageReferenced(metadata) => {
+                    let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
                     let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
-
-                    let message_id = msg_ref.message_id;
+                    let message_id = metadata.message_id;
+                    self.est_ms.0 = *ref_ms;
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg_ref.get(&message_id) {
-                        // store it as metadata
-                        self.insert_message_metadata(msg_ref);
                         // check if msg already exist in the cache, if so we push it to solidifier
-                    } else {
+                        let cached_msg;
+                        if let Some((est_ms, message)) = self.lru_msg.get_mut(&message_id) {
+                            // check if est_ms is not identical to ref_ms
+                            if &est_ms.0 != ref_ms {
+                                todo!("delete duplicated rows")
+                            }
+                            cached_msg = Some(message.clone());
+                            // TODO push to solidifer
+                        } else {
+                            cached_msg = None;
+                        }
+                        if let Some(message) = cached_msg {
+                            self.insert_message_with_metadata(&message_id.clone(), &message.clone(), &metadata);
+                        } else {
+                            // store it as metadata
+                            self.insert_message_metadata(metadata.clone());
+                        }
                         // add it to the cache in order to not presist it again.
-                        self.lru_msg_ref.put(message_id, msg_ref);
+                        self.lru_msg_ref.put(message_id, metadata);
                     }
                 }
             }
@@ -46,26 +59,84 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
-    fn insert_message(&mut self, message_id: MessageId, message: Message) {
-        // message without payload
-        self.default_keyspace
-            .insert(&message_id, &message)
-            .consistency(Consistency::One)
-            .build();
-        // todo insert parents/children
-
-        // todo send with the insert right worker
-
-        // insert payload
+    fn insert_message(&mut self, message_id: &MessageId, message: &Message) {
+        // Check if metadata already exist in the cache
+        if let Some(meta) = self.lru_msg_ref.get(message_id) {
+            self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
+            let message_tuple = (message.clone(), meta.clone());
+            // store message and metadata
+            self.insert(*message_id, message_tuple);
+        } else {
+            // store message only
+            self.insert(*message_id, message.clone());
+        };
+        // Insert parents/children
+        self.insert_parents(&message_id, &message.parents(), self.est_ms);
+        // insert payload (if any)
+        self.insert_payload(&message_id, &message, self.est_ms);
+    }
+    fn insert_parents(&self, message_id: &MessageId, parents: &[MessageId], milestone_index: MilestoneIndex) {
+        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        for parent_id in parents {
+            let partitioned = Partitioned::new(*parent_id, partition_id);
+            let parent_record = ParentRecord::new(milestone_index, *message_id);
+            self.insert(partitioned, parent_record);
+        }
+    }
+    fn insert_payload(&self, message_id: &MessageId, message: &Message, milestone_index: MilestoneIndex) {
         if let Some(payload) = &message.payload() {
             match payload {
-                Payload::Indexation(index) => {}
-                Payload::Transaction(transaction) => {}
+                Payload::Indexation(indexation) => {
+                    self.insert_hashed_index(message_id, indexation.hash(), milestone_index);
+                }
+                Payload::Transaction(transaction) => {
+                    todo!()
+                }
                 // remaining payload types
                 _ => {}
             }
-        } else {
         }
     }
-    fn insert_message_metadata(&mut self, msg_ref: MessageMetadataObj) {}
+    fn insert_hashed_index(&self, message_id: &MessageId, hashed_index: HashedIndex, milestone_index: MilestoneIndex) {
+        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let partitioned = Partitioned::new(hashed_index, partition_id);
+        let hashed_index_record = HashedIndexRecord::new(milestone_index, *message_id);
+        self.insert(partitioned, hashed_index_record);
+    }
+    fn insert_message_metadata(&mut self, metadata: MessageMetadataObj) {
+        let message_id = metadata.message_id;
+        // store message and metadata
+        self.insert(message_id, metadata.clone());
+        // Insert parents/children
+        let parents = metadata.parent_message_ids;
+        self.insert_parents(&message_id, &parents.as_slice(), self.est_ms);
+    }
+    fn insert_message_with_metadata(
+        &mut self,
+        message_id: &MessageId,
+        message: &Message,
+        metadata: &MessageMetadataObj,
+    ) {
+        let message_tuple = (message.clone(), metadata.clone());
+        // store message and metadata
+        self.insert(*message_id, message_tuple);
+        // Insert parents/children
+        self.insert_parents(&message_id, &message.parents(), self.est_ms);
+        // insert payload (if any)
+        self.insert_payload(&message_id, &message, self.est_ms);
+    }
+    fn insert<K, V>(&self, key: K, value: V)
+    where
+        PermanodeKeyspace: Insert<K, V>,
+        K: 'static + Send + Clone,
+        V: 'static + Send + Clone,
+    {
+        let insert_req = self
+            .default_keyspace
+            .insert(&key, &value)
+            .consistency(Consistency::One)
+            .build();
+        let worker = InsertWorker::boxed(self.default_keyspace.clone(), key, value);
+        insert_req.send_local(worker);
+    }
 }

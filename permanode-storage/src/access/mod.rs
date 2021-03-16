@@ -60,6 +60,7 @@ impl<T> Record<T> {
         scylla::access::Iter::<Self>::new(decoder)
     }
 }
+#[derive(Clone)]
 pub struct Partitioned<T> {
     inner: T,
     partition_id: u16,
@@ -149,7 +150,9 @@ impl HintVariant for HashedIndex {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct AddressRecord {
+    milestone_index: MilestoneIndex,
     transaction_id: TransactionId,
     index: Index,
     amount: Amount,
@@ -157,8 +160,15 @@ pub struct AddressRecord {
 }
 
 impl AddressRecord {
-    pub fn new(transaction_id: TransactionId, index: Index, amount: Amount, address_type: AddressType) -> Self {
+    pub fn new(
+        milestone_index: MilestoneIndex,
+        transaction_id: TransactionId,
+        index: Index,
+        amount: Amount,
+        address_type: AddressType,
+    ) -> Self {
         Self {
+            milestone_index,
             transaction_id,
             index,
             amount,
@@ -166,12 +176,51 @@ impl AddressRecord {
         }
     }
 }
-impl From<(TransactionId, Index, Amount, AddressType)> for AddressRecord {
-    fn from((transaction_id, index, amount, address_type): (TransactionId, Index, Amount, AddressType)) -> Self {
-        Self::new(transaction_id, index, amount, address_type)
+impl From<(MilestoneIndex, TransactionId, Index, Amount, AddressType)> for AddressRecord {
+    fn from(
+        (milestone_index, transaction_id, index, amount, address_type): (
+            MilestoneIndex,
+            TransactionId,
+            Index,
+            Amount,
+            AddressType,
+        ),
+    ) -> Self {
+        Self::new(milestone_index, transaction_id, index, amount, address_type)
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct HashedIndexRecord {
+    milestone_index: MilestoneIndex,
+    message_id: MessageId,
+}
+
+impl HashedIndexRecord {
+    pub fn new(milestone_index: MilestoneIndex, message_id: MessageId) -> Self {
+        Self {
+            milestone_index,
+            message_id,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct ParentRecord {
+    milestone_index: MilestoneIndex,
+    message_id: MessageId,
+}
+
+impl ParentRecord {
+    pub fn new(milestone_index: MilestoneIndex, message_id: MessageId) -> Self {
+        Self {
+            milestone_index,
+            message_id,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct TransactionRecord {
     transaction_id: TransactionId,
     index: Index,
@@ -239,6 +288,7 @@ impl TransactionRecord {
     }
 }
 #[repr(u8)]
+#[derive(Clone, Copy)]
 pub enum TransactionVariant {
     Input = 0,
     Output = 1,

@@ -27,6 +27,7 @@ builder!(CollectorBuilder {
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     collectors_count: u8,
+    partitioner: Partitioner,
     storage_config: StorageConfig
 });
 
@@ -88,11 +89,12 @@ pub struct Collector {
     service: Service,
     partition_id: u8,
     collectors_count: u8,
-    est_milestone_index: u32,
-    lru_msg: LruCache<MessageId, Message>,
+    est_ms: MilestoneIndex,
+    lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
     lru_msg_ref: LruCache<MessageId, MessageMetadataObj>,
     inbox: CollectorInbox,
     default_keyspace: PermanodeKeyspace,
+    partitioner: Partitioner,
     storage_config: Option<StorageConfig>,
 }
 
@@ -122,11 +124,11 @@ impl Builder for CollectorBuilder {
             lru_msg: LruCache::new(lru_cap),
             lru_msg_ref: LruCache::new(lru_cap),
             partition_id: self.partition_id.unwrap(),
-            est_milestone_index: 0,
+            est_ms: MilestoneIndex(0),
             collectors_count: self.collectors_count.unwrap(),
             inbox: self.inbox.unwrap(),
             default_keyspace,
-
+            partitioner: self.partitioner.unwrap(),
             storage_config: self.storage_config,
         }
         .set_name()

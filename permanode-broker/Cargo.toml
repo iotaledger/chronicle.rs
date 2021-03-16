@@ -46,7 +46,7 @@ features = [
 
 [dependencies.bee-message]
 git = "https://github.com/iotaledger/bee.git"
-rev = "8baba87"
+branch = "chrysalis-pt-2"
 features = [
     "serde"
 ]
