@@ -1,12 +1,12 @@
 use super::*;
-use bee_rest_api::handlers::{
-    info::InfoResponse,
-    message::MessageResponse,
-    message_children::MessageChildrenResponse,
-    messages_find::MessagesForIndexResponse,
-    milestone::MilestoneResponse,
-    output::OutputResponse,
-    outputs_ed25519::OutputsForAddressResponse,
+use bee_rest_api::types::responses::{
+    InfoResponse,
+    MessageChildrenResponse,
+    MessageResponse,
+    MessagesForIndexResponse,
+    MilestoneResponse,
+    OutputResponse,
+    OutputsForAddressResponse,
 };
 use mpsc::unbounded_channel;
 use permanode_storage::{
@@ -130,7 +130,7 @@ async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
         network_id: "network id".into(),
         bech32_hrp: "bech32 hrp".into(),
         latest_milestone_index: 0,
-        solid_milestone_index: 0,
+        confirmed_milestone_index: 0,
         pruning_index: 0,
         features: vec![],
         min_pow_score: 0.0,
@@ -139,9 +139,9 @@ async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
 
 async fn query<V, S, K>(keyspace: S, key: K, paging_state: Option<Vec<u8>>) -> Result<V, Cow<'static, str>>
 where
-    S: 'static + Select<K, V> + std::fmt::Debug,
-    K: 'static + Send + std::fmt::Debug + Clone,
-    V: 'static + Send + std::fmt::Debug + Clone,
+    S: 'static + Select<K, V>,
+    K: 'static + Send + Clone,
+    V: 'static + Send + Clone,
 {
     let request = keyspace
         .select::<V>(&key)
@@ -156,9 +156,7 @@ where
 
     while let Some(event) = inbox.recv().await {
         match event {
-            Ok(res) => {
-                return res.ok_or(Cow::from("No results returned!"));
-            }
+            Ok(res) => return res.ok_or("No results returned!".into()),
             Err(worker_error) => return Err(format!("{:?}", worker_error).into()),
         }
     }
@@ -504,7 +502,7 @@ pub async fn get_milestone(
 #[cfg(test)]
 mod tests {
     use super::construct_rocket;
-    use bee_rest_api::handlers::info::InfoResponse;
+    use bee_rest_api::types::responses::InfoResponse;
     use rocket::{
         http::{
             ContentType,
