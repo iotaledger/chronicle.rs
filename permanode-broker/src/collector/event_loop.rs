@@ -1,6 +1,8 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use bee_message::input::Input;
+
 use super::*;
 #[async_trait::async_trait]
 impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
@@ -173,8 +175,9 @@ impl Collector {
         if let Essence::Regular(regular) = transaction.essence() {
             for (index, input) in regular.inputs().iter().enumerate() {
                 match input {
-                    bee_message::input::Input::UTXO(utxo_input) => {}
-                    bee_message::input::Input::Treasury(treasury_input) => {}
+                    Input::UTXO(utxo_input) => {}
+                    Input::Treasury(treasury_input) => {}
+                    _ => panic!("A new variant was added!"),
                 }
                 let _b = &unlock_blocks[index];
             }

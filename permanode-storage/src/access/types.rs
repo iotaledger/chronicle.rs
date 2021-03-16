@@ -7,12 +7,10 @@ use std::{
 };
 
 use bee_common::packable::Packable;
-pub use bee_ledger::{
-    balance::Balance,
-    model::{
-        OutputDiff,
-        Unspent,
-    },
+pub use bee_ledger::types::{
+    Balance,
+    OutputDiff,
+    Unspent,
 };
 
 pub use bee_message::{

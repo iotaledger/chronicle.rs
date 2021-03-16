@@ -1,12 +1,12 @@
 use super::*;
-use bee_rest_api::handlers::{
-    info::InfoResponse,
-    message::MessageResponse,
-    message_children::MessageChildrenResponse,
-    messages_find::MessagesForIndexResponse,
-    milestone::MilestoneResponse,
-    output::OutputResponse,
-    outputs_ed25519::OutputsForAddressResponse,
+use bee_rest_api::types::responses::{
+    InfoResponse,
+    MessageChildrenResponse,
+    MessageResponse,
+    MessagesForIndexResponse,
+    MilestoneResponse,
+    OutputResponse,
+    OutputsForAddressResponse,
 };
 use mpsc::unbounded_channel;
 use permanode_storage::{
@@ -117,7 +117,7 @@ async fn info() -> Result<Json, Rejection> {
         network_id: "network id".into(),
         bech32_hrp: "bech32 hrp".into(),
         latest_milestone_index: 0,
-        solid_milestone_index: 0,
+        confirmed_milestone_index: 0,
         pruning_index: 0,
         features: vec![],
         min_pow_score: 0.0,
