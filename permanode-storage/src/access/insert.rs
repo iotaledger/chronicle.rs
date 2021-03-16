@@ -158,7 +158,7 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, ref_transaction_id, ref_idx, message_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data) VALUES (?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -172,8 +172,6 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
             .value(&transaction_id.as_ref())
             .value(index)
             .value(&transaction_record.variant)
-            .value(&transaction_id.as_ref())
-            .value(index)
             .value(&transaction_record.message_id.as_ref())
             .value(&transaction_record.data)
     }
