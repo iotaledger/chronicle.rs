@@ -7,5 +7,6 @@ pub mod access;
 pub mod config;
 /// Defines keyspace implementations
 pub mod keyspaces;
-
+pub mod partitioner;
 pub use config::*;
+pub use partitioner::Partitioner;
