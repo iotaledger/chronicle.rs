@@ -254,66 +254,29 @@ impl ParentRecord {
 
 #[derive(Clone)]
 pub struct TransactionRecord {
-    transaction_id: TransactionId,
-    index: Index,
     variant: TransactionVariant,
-    ref_transaction_id: TransactionId,
-    ref_index: Index,
     message_id: MessageId,
     data: TransactionData,
 }
 
 impl TransactionRecord {
-    pub fn input(
-        transaction_id: TransactionId,
-        index: Index,
-        ref_transaction_id: TransactionId,
-        ref_index: Index,
-        message_id: MessageId,
-        data: UTXOInput,
-    ) -> Self {
+    pub fn input(message_id: MessageId, data: Input) -> Self {
         Self {
-            transaction_id,
-            index,
             variant: TransactionVariant::Input,
-            ref_transaction_id,
-            ref_index,
             message_id,
             data: TransactionData::Input(data),
         }
     }
-    pub fn output(
-        transaction_id: TransactionId,
-        index: Index,
-        ref_transaction_id: TransactionId,
-        ref_index: Index,
-        message_id: MessageId,
-        data: Output,
-    ) -> Self {
+    pub fn output(message_id: MessageId, data: Output) -> Self {
         Self {
-            transaction_id,
-            index,
             variant: TransactionVariant::Output,
-            ref_transaction_id,
-            ref_index,
             message_id,
             data: TransactionData::Output(data),
         }
     }
-    pub fn unlock(
-        transaction_id: TransactionId,
-        index: Index,
-        ref_transaction_id: TransactionId,
-        ref_index: Index,
-        message_id: MessageId,
-        data: UnlockBlock,
-    ) -> Self {
+    pub fn unlock(message_id: MessageId, data: UnlockBlock) -> Self {
         Self {
-            transaction_id,
-            index,
             variant: TransactionVariant::Output,
-            ref_transaction_id,
-            ref_index,
             message_id,
             data: TransactionData::Unlock(data),
         }

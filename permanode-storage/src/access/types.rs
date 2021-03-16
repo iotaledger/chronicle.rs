@@ -24,6 +24,7 @@ pub use bee_message::{
         CreatedOutput,
         Ed25519Address,
         HashedIndex,
+        Input,
         MilestoneIndex,
         Output,
         OutputId,
@@ -103,7 +104,7 @@ impl<P: Packable> ColumnDecoder for Bee<P> {
 /// Chrysalis transaction data
 pub enum TransactionData {
     /// An unspent transaction input
-    Input(UTXOInput),
+    Input(Input),
     /// A transaction output
     Output(Output),
     /// A signed block which can be used to unlock an input
@@ -145,7 +146,7 @@ impl Packable for TransactionData {
     {
         match u8::unpack(reader).map_err(|e| Cow::from(e.to_string()))? {
             0 => Ok(TransactionData::Input(
-                UTXOInput::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
+                Input::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
             )),
             1 => Ok(TransactionData::Output(
                 Output::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,

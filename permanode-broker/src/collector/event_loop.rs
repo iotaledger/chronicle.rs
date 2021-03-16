@@ -84,7 +84,9 @@ impl Collector {
             ledger_inclusion_state.clone(),
         );
         // insert payload (if any)
-        self.insert_payload(&message_id, &message, self.est_ms, ledger_inclusion_state);
+        if let Some(payload) = message.payload() {
+            self.insert_payload(&message_id, &payload, self.est_ms, ledger_inclusion_state);
+        }
     }
     fn insert_parents(
         &self,
@@ -103,18 +105,20 @@ impl Collector {
     fn insert_payload(
         &self,
         message_id: &MessageId,
-        message: &Message,
+        payload: &Payload,
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
-        if let Some(payload) = &message.payload() {
-            match payload {
-                Payload::Indexation(indexation) => {
-                    self.insert_hashed_index(message_id, indexation.hash(), milestone_index, inclusion_state);
-                }
-                Payload::Transaction(transaction) => self.insert_transaction(message_id, transaction),
-                // remaining payload types
-                _ => {}
+        match payload {
+            Payload::Indexation(indexation) => {
+                self.insert_hashed_index(message_id, indexation.hash(), milestone_index, inclusion_state);
+            }
+            Payload::Transaction(transaction) => {
+                self.insert_transaction(message_id, transaction, milestone_index, inclusion_state)
+            }
+            // remaining payload types
+            _ => {
+                todo!("impl insert for remaining payloads")
             }
         }
     }
@@ -160,29 +164,73 @@ impl Collector {
             metadata.ledger_inclusion_state.clone(),
         );
         // insert payload (if any)
-        self.insert_payload(
-            &message_id,
-            &message,
-            self.est_ms,
-            metadata.ledger_inclusion_state.clone(),
-        );
+        if let Some(payload) = message.payload() {
+            self.insert_payload(
+                &message_id,
+                &payload,
+                self.est_ms,
+                metadata.ledger_inclusion_state.clone(),
+            );
+        }
     }
-    fn insert_transaction(&self, message_id: &MessageId, transaction: &Box<TransactionPayload>) {
+    fn insert_transaction(
+        &self,
+        message_id: &MessageId,
+        transaction: &Box<TransactionPayload>,
+        milestone_index: MilestoneIndex,
+        ledger_inclusion_state: Option<LedgerInclusionState>,
+    ) {
         let transaction_id = transaction.id();
         let unlock_blocks = transaction.unlock_blocks();
         if let Essence::Regular(regular) = transaction.essence() {
-            for (index, input) in regular.inputs().iter().enumerate() {
-                match input {
-                    bee_message::input::Input::UTXO(utxo_input) => {}
-                    bee_message::input::Input::Treasury(treasury_input) => {}
+            for (input_index, input) in regular.inputs().iter().enumerate() {
+                // insert input row
+                self.insert_input(message_id, &transaction_id, input_index as u16, input);
+                // insert utxoinput row
+                if let Input::UTXO(utxo_input) = input {
+                    // this is the spent_output which the input is spending from
+                    let output_id = utxo_input.output_id();
+                    // therefore we insert row  utxo_input.output_id() -> unlock_block to indicate that this output is
+                    // spent.
+                    let unlock_block = &unlock_blocks[input_index];
+                    self.insert_unlock(&message_id, output_id.transaction_id(), output_id.index(), unlock_block)
+                } else if input.kind() != TreasuryInput::KIND {
+                    error!("A new input variant was added to this type!")
                 }
-                let _b = &unlock_blocks[index];
             }
-            for (index, output) in regular.outputs().iter().enumerate() {}
-            let payload = regular.payload();
+            for (output_index, output) in regular.outputs().iter().enumerate() {
+                // insert output row
+                self.insert_output(message_id, &transaction_id, output_index as u16, output);
+            }
+            if let Some(payload) = regular.payload() {
+                self.insert_payload(message_id, payload, milestone_index, ledger_inclusion_state)
+            }
         };
     }
-
+    fn insert_input(&self, message_id: &MessageId, transaction_id: &TransactionId, index: u16, input: &Input) {
+        /// -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
+        let input_id = (*transaction_id, index);
+        let transaction_record = TransactionRecord::input(*message_id, input.clone());
+        self.insert(input_id, transaction_record)
+    }
+    fn insert_unlock(
+        &self,
+        message_id: &MessageId,
+        utxo_transaction_id: &TransactionId,
+        utxo_index: u16,
+        unlock: &UnlockBlock,
+    ) {
+        /// -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
+        let utxo_id = (*utxo_transaction_id, utxo_index);
+        let transaction_record = TransactionRecord::unlock(*message_id, unlock.clone());
+        self.insert(utxo_id, transaction_record)
+    }
+    fn insert_output(&self, message_id: &MessageId, transaction_id: &TransactionId, index: u16, output: &Output) {
+        /// -output variant: (OutputTransactionId, OutputIndex) -> Output data column
+        let output_id = (*transaction_id, index);
+        let transaction_record = TransactionRecord::output(*message_id, output.clone());
+        self.insert(output_id, transaction_record)
+    }
     fn insert<K, V>(&self, key: K, value: V)
     where
         PermanodeKeyspace: Insert<K, V>,
