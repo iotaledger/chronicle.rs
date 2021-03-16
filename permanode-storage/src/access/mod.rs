@@ -157,6 +157,7 @@ pub struct AddressRecord {
     index: Index,
     amount: Amount,
     address_type: AddressType,
+    ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl AddressRecord {
@@ -166,6 +167,7 @@ impl AddressRecord {
         index: Index,
         amount: Amount,
         address_type: AddressType,
+        ledger_inclusion_state: Option<LedgerInclusionState>,
     ) -> Self {
         Self {
             milestone_index,
@@ -173,20 +175,38 @@ impl AddressRecord {
             index,
             amount,
             address_type,
+            ledger_inclusion_state,
         }
     }
 }
-impl From<(MilestoneIndex, TransactionId, Index, Amount, AddressType)> for AddressRecord {
+impl
+    From<(
+        MilestoneIndex,
+        TransactionId,
+        Index,
+        Amount,
+        AddressType,
+        Option<LedgerInclusionState>,
+    )> for AddressRecord
+{
     fn from(
-        (milestone_index, transaction_id, index, amount, address_type): (
+        (milestone_index, transaction_id, index, amount, address_type, ledger_inclusion_state): (
             MilestoneIndex,
             TransactionId,
             Index,
             Amount,
             AddressType,
+            Option<LedgerInclusionState>,
         ),
     ) -> Self {
-        Self::new(milestone_index, transaction_id, index, amount, address_type)
+        Self::new(
+            milestone_index,
+            transaction_id,
+            index,
+            amount,
+            address_type,
+            ledger_inclusion_state,
+        )
     }
 }
 
@@ -194,13 +214,19 @@ impl From<(MilestoneIndex, TransactionId, Index, Amount, AddressType)> for Addre
 pub struct HashedIndexRecord {
     milestone_index: MilestoneIndex,
     message_id: MessageId,
+    ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl HashedIndexRecord {
-    pub fn new(milestone_index: MilestoneIndex, message_id: MessageId) -> Self {
+    pub fn new(
+        milestone_index: MilestoneIndex,
+        message_id: MessageId,
+        ledger_inclusion_state: Option<LedgerInclusionState>,
+    ) -> Self {
         Self {
             milestone_index,
             message_id,
+            ledger_inclusion_state,
         }
     }
 }
@@ -209,13 +235,19 @@ impl HashedIndexRecord {
 pub struct ParentRecord {
     milestone_index: MilestoneIndex,
     message_id: MessageId,
+    ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl ParentRecord {
-    pub fn new(milestone_index: MilestoneIndex, message_id: MessageId) -> Self {
+    pub fn new(
+        milestone_index: MilestoneIndex,
+        message_id: MessageId,
+        ledger_inclusion_state: Option<LedgerInclusionState>,
+    ) -> Self {
         Self {
             milestone_index,
             message_id,
+            ledger_inclusion_state,
         }
     }
 }

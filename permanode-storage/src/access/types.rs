@@ -209,7 +209,7 @@ pub struct MessageMetadata {
     pub should_reattach: Option<bool>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LedgerInclusionState {
     #[serde(rename = "conflicting")]
     Conflicting,
@@ -217,6 +217,20 @@ pub enum LedgerInclusionState {
     Included,
     #[serde(rename = "noTransaction")]
     NoTransaction,
+}
+
+impl ColumnEncoder for LedgerInclusionState {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        let bytes = bincode_config().serialize(self).unwrap();
+        buffer.extend(&i32::to_be_bytes(bytes.len() as i32));
+        buffer.extend(bytes)
+    }
+}
+
+impl ColumnDecoder for LedgerInclusionState {
+    fn decode(slice: &[u8]) -> Self {
+        bincode_config().deserialize(slice).unwrap()
+    }
 }
 
 impl ColumnEncoder for MessageMetadata {

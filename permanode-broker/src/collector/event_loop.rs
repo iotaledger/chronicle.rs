@@ -61,33 +61,54 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 impl Collector {
     fn insert_message(&mut self, message_id: &MessageId, message: &Message) {
         // Check if metadata already exist in the cache
+        let ledger_inclusion_state;
         if let Some(meta) = self.lru_msg_ref.get(message_id) {
+            ledger_inclusion_state = meta.ledger_inclusion_state.clone();
             self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
             self.insert(*message_id, message_tuple);
         } else {
+            ledger_inclusion_state = None;
             // store message only
             self.insert(*message_id, message.clone());
         };
         // Insert parents/children
-        self.insert_parents(&message_id, &message.parents(), self.est_ms);
+        let est_milestone_index = MilestoneIndex(self.est_ms.0 + 1);
+        self.insert_parents(
+            &message_id,
+            &message.parents(),
+            est_milestone_index,
+            ledger_inclusion_state.clone(),
+        );
         // insert payload (if any)
-        self.insert_payload(&message_id, &message, self.est_ms);
+        self.insert_payload(&message_id, &message, est_milestone_index, ledger_inclusion_state);
     }
-    fn insert_parents(&self, message_id: &MessageId, parents: &[MessageId], milestone_index: MilestoneIndex) {
+    fn insert_parents(
+        &self,
+        message_id: &MessageId,
+        parents: &[MessageId],
+        milestone_index: MilestoneIndex,
+        inclusion_state: Option<LedgerInclusionState>,
+    ) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
         for parent_id in parents {
             let partitioned = Partitioned::new(*parent_id, partition_id);
-            let parent_record = ParentRecord::new(milestone_index, *message_id);
+            let parent_record = ParentRecord::new(milestone_index, *message_id, inclusion_state);
             self.insert(partitioned, parent_record);
         }
     }
-    fn insert_payload(&self, message_id: &MessageId, message: &Message, milestone_index: MilestoneIndex) {
+    fn insert_payload(
+        &self,
+        message_id: &MessageId,
+        message: &Message,
+        milestone_index: MilestoneIndex,
+        inclusion_state: Option<LedgerInclusionState>,
+    ) {
         if let Some(payload) = &message.payload() {
             match payload {
                 Payload::Indexation(indexation) => {
-                    self.insert_hashed_index(message_id, indexation.hash(), milestone_index);
+                    self.insert_hashed_index(message_id, indexation.hash(), milestone_index, inclusion_state);
                 }
                 Payload::Transaction(transaction) => {
                     todo!()
@@ -97,10 +118,16 @@ impl Collector {
             }
         }
     }
-    fn insert_hashed_index(&self, message_id: &MessageId, hashed_index: HashedIndex, milestone_index: MilestoneIndex) {
+    fn insert_hashed_index(
+        &self,
+        message_id: &MessageId,
+        hashed_index: HashedIndex,
+        milestone_index: MilestoneIndex,
+        inclusion_state: Option<LedgerInclusionState>,
+    ) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
         let partitioned = Partitioned::new(hashed_index, partition_id);
-        let hashed_index_record = HashedIndexRecord::new(milestone_index, *message_id);
+        let hashed_index_record = HashedIndexRecord::new(milestone_index, *message_id, inclusion_state);
         self.insert(partitioned, hashed_index_record);
     }
     fn insert_message_metadata(&mut self, metadata: MessageMetadataObj) {
@@ -109,7 +136,12 @@ impl Collector {
         self.insert(message_id, metadata.clone());
         // Insert parents/children
         let parents = metadata.parent_message_ids;
-        self.insert_parents(&message_id, &parents.as_slice(), self.est_ms);
+        self.insert_parents(
+            &message_id,
+            &parents.as_slice(),
+            self.est_ms,
+            metadata.ledger_inclusion_state.clone(),
+        );
     }
     fn insert_message_with_metadata(
         &mut self,
@@ -121,9 +153,19 @@ impl Collector {
         // store message and metadata
         self.insert(*message_id, message_tuple);
         // Insert parents/children
-        self.insert_parents(&message_id, &message.parents(), self.est_ms);
+        self.insert_parents(
+            &message_id,
+            &message.parents(),
+            self.est_ms,
+            metadata.ledger_inclusion_state.clone(),
+        );
         // insert payload (if any)
-        self.insert_payload(&message_id, &message, self.est_ms);
+        self.insert_payload(
+            &message_id,
+            &message,
+            self.est_ms,
+            metadata.ledger_inclusion_state.clone(),
+        );
     }
     fn insert<K, V>(&self, key: K, value: V)
     where
