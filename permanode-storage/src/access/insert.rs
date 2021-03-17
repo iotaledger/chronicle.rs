@@ -99,7 +99,7 @@ impl Insert<Partitioned<HashedIndex>, HashedIndexRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.indexes (hashed_index, partition_id, milestone_index, message_id, ledger_inclusion_state) VALUES (?, ?, ?, ?,?)",
+            "INSERT INTO {}.indexes (hashed_index, partition_id, milestone_index, message_id, inclusion_state) VALUES (?, ?, ?, ?,?)",
             self.name()
         )
         .into()
@@ -127,7 +127,7 @@ impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.parents (parent_id, partition_id, milestone_index, message_id, ledger_inclusion_state) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO {}.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state) VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
         .into()

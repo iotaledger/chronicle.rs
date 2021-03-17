@@ -343,17 +343,26 @@ impl Collector {
         inclusion_state: Option<LedgerInclusionState>,
     ) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
-
+        let address_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
                 let partitioned = Partitioned::new(sls.address().clone(), partition_id);
-                // let address_record = AddressRecord::new(milestone_index, transaction_id, index, amount, address_type,
-                // ledger_inclusion_state) self.insert(key, value)
+                let address_record = AddressRecord::new(
+                    milestone_index,
+                    *transaction_id,
+                    index,
+                    sls.amount(),
+                    address_type,
+                    inclusion_state,
+                );
+                // self.insert(partitioned, address_record);
             }
             Output::SignatureLockedDustAllowance(slda) => {}
-            Output::Treasury(treasury_output) => {}
             e => {
-                error!("Unexpected new output variant {:?}", e);
+                if let Output::Treasury(_) = e {
+                } else {
+                    error!("Unexpected new output variant {:?}", e);
+                }
             }
         }
     }
