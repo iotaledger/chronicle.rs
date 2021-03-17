@@ -158,7 +158,7 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, ref_transaction_id, ref_idx, message_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -168,14 +168,20 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
         (transaction_id, index): &(TransactionId, Index),
         transaction_record: &TransactionRecord,
     ) -> T::Return {
+        let milestone_index;
+        if let Some(ms) = transaction_record.milestone_index {
+            milestone_index = Some(ms.0);
+        } else {
+            milestone_index = None;
+        }
         builder
             .value(&transaction_id.as_ref())
             .value(index)
             .value(&transaction_record.variant)
-            .value(&transaction_id.as_ref())
-            .value(index)
             .value(&transaction_record.message_id.as_ref())
             .value(&transaction_record.data)
+            .value(&transaction_record.inclusion_state)
+            .value(&milestone_index)
     }
 }
 
@@ -184,21 +190,27 @@ impl Insert<OutputId, TransactionRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, ref_transaction_id, ref_idx, message_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
     }
     fn bind_values<T: Values>(builder: T, output_id: &OutputId, transaction_record: &TransactionRecord) -> T::Return {
         if let TransactionData::Output(_) = &transaction_record.data {
+            let milestone_index;
+            if let Some(ms) = transaction_record.milestone_index {
+                milestone_index = Some(ms.0);
+            } else {
+                milestone_index = None;
+            }
             builder
                 .value(&output_id.transaction_id().as_ref())
                 .value(&output_id.index())
                 .value(&transaction_record.variant)
-                .value(&output_id.transaction_id().as_ref())
-                .value(&output_id.index())
                 .value(&transaction_record.message_id.as_ref())
                 .value(&transaction_record.data)
+                .value(&transaction_record.inclusion_state)
+                .value(&milestone_index)
         } else {
             panic!("Provided invalid TransactionData for an output")
         }

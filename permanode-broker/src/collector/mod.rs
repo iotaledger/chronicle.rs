@@ -1,5 +1,20 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
+use bee_message::{
+    input::{
+        Input,
+        TreasuryInput,
+    },
+    output::{
+        Output,
+        TreasuryOutput,
+    },
+    payload::transaction::{
+        Essence,
+        RegularEssence,
+        TransactionPayload,
+    },
+};
 
 use crate::{
     application::*,
