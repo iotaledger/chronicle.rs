@@ -91,9 +91,27 @@ impl<T> TTL<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct Hint<T: HintVariant> {
     inner: T,
 }
+
+impl Hint<Ed25519Address> {
+    pub fn new(address: Ed25519Address) -> Self {
+        Self { inner: address }
+    }
+}
+impl Hint<MessageId> {
+    pub fn new(parent_id: MessageId) -> Self {
+        Self { inner: parent_id }
+    }
+}
+impl Hint<HashedIndex> {
+    pub fn new(hashed_index: HashedIndex) -> Self {
+        Self { inner: hashed_index }
+    }
+}
+#[derive(Clone, Copy)]
 pub struct Partition {
     id: u16,
     milestone_index: u32,
@@ -112,9 +130,6 @@ impl Partition {
 }
 
 impl<T: HintVariant> Hint<T> {
-    pub fn new(inner: T) -> Self {
-        Self { inner }
-    }
     pub fn get_inner(&self) -> &T {
         &self.inner
     }
@@ -257,28 +272,51 @@ pub struct TransactionRecord {
     variant: TransactionVariant,
     message_id: MessageId,
     data: TransactionData,
+    inclusion_state: Option<LedgerInclusionState>,
+    milestone_index: Option<MilestoneIndex>,
 }
 
 impl TransactionRecord {
-    pub fn input(message_id: MessageId, data: Input) -> Self {
+    pub fn input(
+        message_id: MessageId,
+        input_data: InputData,
+        inclusion_state: Option<LedgerInclusionState>,
+        milestone_index: Option<MilestoneIndex>,
+    ) -> Self {
         Self {
             variant: TransactionVariant::Input,
             message_id,
-            data: TransactionData::Input(data),
+            data: TransactionData::Input(input_data),
+            inclusion_state,
+            milestone_index,
         }
     }
-    pub fn output(message_id: MessageId, data: Output) -> Self {
+    pub fn output(
+        message_id: MessageId,
+        data: Output,
+        inclusion_state: Option<LedgerInclusionState>,
+        milestone_index: Option<MilestoneIndex>,
+    ) -> Self {
         Self {
             variant: TransactionVariant::Output,
             message_id,
             data: TransactionData::Output(data),
+            inclusion_state,
+            milestone_index,
         }
     }
-    pub fn unlock(message_id: MessageId, data: UnlockBlock) -> Self {
+    pub fn unlock(
+        message_id: MessageId,
+        data: UnlockData,
+        inclusion_state: Option<LedgerInclusionState>,
+        milestone_index: Option<MilestoneIndex>,
+    ) -> Self {
         Self {
             variant: TransactionVariant::Output,
             message_id,
             data: TransactionData::Unlock(data),
+            inclusion_state,
+            milestone_index,
         }
     }
 }
