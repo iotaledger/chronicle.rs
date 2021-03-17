@@ -11,7 +11,6 @@ use bee_rest_api::types::responses::{
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
-        CreatedOutput,
         Ed25519Address,
         GetSelectRequest,
         HashedIndex,
@@ -19,12 +18,11 @@ use permanode_storage::{
         MessageMetadata,
         Milestone,
         MilestoneIndex,
+        OutputData,
         OutputId,
-        Outputs,
         PagingState,
         PartitionId,
         Partitioned,
-        TransactionData,
         HASHED_INDEX_LENGTH,
     },
     keyspaces::PermanodeKeyspace,
@@ -51,7 +49,10 @@ use scylla_cql::{
 };
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{
+        HashMap,
+        HashSet,
+    },
     path::PathBuf,
     str::FromStr,
 };
@@ -361,35 +362,45 @@ pub async fn get_output(
     output_id: String,
 ) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
     let output_id = OutputId::from_str(&output_id).unwrap();
-    let keyspace = PermanodeKeyspace::new(keyspace);
 
-    let mut outputs = query::<Outputs, _, _>(keyspace, output_id, None).await?.outputs;
-    let (output, is_spent) = {
-        let mut output = None;
+    let output_data = query::<OutputData, _, _>(PermanodeKeyspace::new(keyspace.clone()), output_id, None).await?;
+    let is_spent = if output_data.unlock_blocks.is_empty() {
+        false
+    } else {
         let mut is_spent = false;
-        for (message_id, data) in outputs.drain(..) {
-            match data {
-                TransactionData::Input(_) => {}
-                TransactionData::Output(o) => {
-                    output = Some(CreatedOutput::new(message_id, o));
-                }
-                TransactionData::Unlock(_) => {
-                    is_spent = true;
-                }
+        let mut query_message_ids = HashSet::new();
+        for UnlockRes {
+            message_id,
+            block: _,
+            inclusion_state,
+        } in output_data.unlock_blocks.iter()
+        {
+            if *inclusion_state == Some(LedgerInclusionState::Included) {
+                is_spent = true;
+                break;
+            } else {
+                query_message_ids.insert(message_id);
             }
         }
-        (
-            output.ok_or(Cow::from(format!("No output found for id {}", output_id)))?,
-            is_spent,
-        )
+        if !query_message_ids.is_empty() {
+            let queries = query_message_ids.drain().map(|&message_id| {
+                query::<MessageMetadata, _, _>(PermanodeKeyspace::new(keyspace.clone()), message_id.clone(), None)
+            });
+            is_spent = futures::future::join_all(queries)
+                .await
+                .drain(..)
+                .filter_map(|res| res.ok())
+                .any(|metadata| metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included));
+        }
+        is_spent
     };
     Ok(Json(
         OutputResponse {
-            message_id: output.message_id().to_string(),
+            message_id: output_data.output.message_id().to_string(),
             transaction_id: output_id.transaction_id().to_string(),
             output_index: output_id.index(),
             is_spent,
-            output: output.inner().try_into().map_err(|e| Cow::from(e))?,
+            output: output_data.output.inner().try_into().map_err(|e| Cow::from(e))?,
         }
         .into(),
     ))

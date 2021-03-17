@@ -102,11 +102,11 @@ impl<P: Packable> ColumnDecoder for Bee<P> {
 #[derive(Debug, Clone)]
 pub struct UnlockData {
     /// it holds the transaction_id of the input which created the unlock_block
-    input_tx_id: TransactionId,
+    pub input_tx_id: TransactionId,
     /// it holds the input_index of the input which created the unlock_block
-    input_index: u16,
+    pub input_index: u16,
     /// it's the unlock_block
-    unlock_block: UnlockBlock,
+    pub unlock_block: UnlockBlock,
 }
 impl UnlockData {
     pub fn new(input_tx_id: TransactionId, input_index: u16, unlock_block: UnlockBlock) -> Self {
@@ -354,8 +354,16 @@ impl ColumnEncoder for TransactionData {
 }
 
 #[derive(Debug, Clone)]
-pub struct Outputs {
-    pub outputs: Vec<(MessageId, TransactionData)>,
+pub struct OutputData {
+    pub output: CreatedOutput,
+    pub unlock_blocks: Vec<UnlockRes>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnlockRes {
+    pub message_id: MessageId,
+    pub block: UnlockBlock,
+    pub inclusion_state: Option<LedgerInclusionState>,
 }
 
 pub type PartitionId = u16;

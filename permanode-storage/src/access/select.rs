@@ -154,11 +154,15 @@ impl RowsDecoder<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> f
     }
 }
 
-impl Select<OutputId, Outputs> for PermanodeKeyspace {
+impl Select<OutputId, OutputData> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, data FROM {}.transactions WHERE transaction_id = ? AND idx = ? and variant = 'utxoinput'",
+            "SELECT message_id, data, inclusion_state
+            FROM {}.transactions 
+            WHERE transaction_id = ? 
+            AND idx = ? 
+            AND (variant = 'output' OR variant = 'unlock')",
             self.name()
         )
         .into()
@@ -170,13 +174,26 @@ impl Select<OutputId, Outputs> for PermanodeKeyspace {
     }
 }
 
-impl RowsDecoder<OutputId, Outputs> for PermanodeKeyspace {
-    type Row = Record<(MessageId, TransactionData)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<Outputs>, CqlError> {
+impl RowsDecoder<OutputId, OutputData> for PermanodeKeyspace {
+    type Row = Record<(MessageId, TransactionData, Option<LedgerInclusionState>)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<OutputData>, CqlError> {
         if decoder.is_rows() {
-            Ok(Some(Outputs {
-                outputs: Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
-            }))
+            let mut unlock_blocks = Vec::new();
+            let mut output = None;
+            for (message_id, transaction_data, inclusion_state) in
+                Self::Row::rows_iter(decoder).map(|row| row.into_inner())
+            {
+                match transaction_data {
+                    TransactionData::Output(o) => output = Some(CreatedOutput::new(message_id, o)),
+                    TransactionData::Unlock(u) => unlock_blocks.push(UnlockRes {
+                        message_id,
+                        block: u.unlock_block,
+                        inclusion_state: inclusion_state,
+                    }),
+                    _ => (),
+                }
+            }
+            Ok(output.map(|output| OutputData { output, unlock_blocks }))
         } else {
             Err(decoder.get_error())
         }
@@ -321,11 +338,12 @@ impl Row for Record<(TransactionId, u16)> {
     }
 }
 
-impl Row for Record<(MessageId, TransactionData)> {
+impl Row for Record<(MessageId, TransactionData, Option<LedgerInclusionState>)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
         let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
         let data = rows.column_value::<TransactionData>();
-        Record::new((message_id, data))
+        let inclusion_state = rows.column_value::<Option<LedgerInclusionState>>();
+        Record::new((message_id, data, inclusion_state))
     }
 }
 
