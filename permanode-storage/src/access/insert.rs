@@ -168,12 +168,20 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
         (transaction_id, index): &(TransactionId, Index),
         transaction_record: &TransactionRecord,
     ) -> T::Return {
+        let milestone_index;
+        if let Some(ms) = transaction_record.milestone_index {
+            milestone_index = Some(ms.0);
+        } else {
+            milestone_index = None;
+        }
         builder
             .value(&transaction_id.as_ref())
             .value(index)
             .value(&transaction_record.variant)
             .value(&transaction_record.message_id.as_ref())
             .value(&transaction_record.data)
+            .value(&transaction_record.inclusion_state)
+            .value(&milestone_index)
     }
 }
 
