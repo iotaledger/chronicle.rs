@@ -8,6 +8,10 @@ use bee_rest_api::types::responses::{
     OutputResponse,
     OutputsForAddressResponse,
 };
+use crypto::hashes::{
+    blake2b::Blake2b256,
+    Digest,
+};
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
@@ -283,10 +287,6 @@ pub async fn get_message_by_index(
 
     let paging_state = cookies.get("paging_state").map(|c| c.value());
 
-    let mut bytes_vec = vec![0; HASHED_INDEX_LENGTH];
-    let bytes = hex::decode(index.clone()).map_err(|_| "Invalid Hex character in index!")?;
-    bytes.iter().enumerate().for_each(|(i, &b)| bytes_vec[i] = b);
-
     let new_paging_states = paging_state.map(|h| {
         let map: HashMap<PartitionId, usize> = bincode::deserialize(hex::decode(h).unwrap().as_slice()).unwrap();
         map.iter()
@@ -301,7 +301,7 @@ pub async fn get_message_by_index(
     let mut new_paging_states = new_paging_states.unwrap_or_default();
 
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let hashed_index = HashedIndex::new(bytes_vec.as_slice().try_into().unwrap());
+    let hashed_index = HashedIndex::new(Blake2b256::digest(index.as_bytes()).into());
     let partition_ids = query(keyspace.clone(), hashed_index, None).await?;
     let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {

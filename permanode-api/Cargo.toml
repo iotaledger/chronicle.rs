@@ -27,6 +27,11 @@ hex = "0.4.2"
 futures = "0.3"
 bincode = "1.3.2"
 
+[dependencies.iota-crypto]
+git = "https://github.com/iotaledger/crypto.rs"
+rev = "c3bf565"
+features = ["ed25519", "blake2b"]
+
 [dependencies.rocket_contrib]
 git = "https://github.com/SergioBenitez/Rocket.git"
 rev = "e4c2324"

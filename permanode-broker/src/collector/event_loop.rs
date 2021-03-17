@@ -14,7 +14,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
         while let Some(event) = self.inbox.recv().await {
             match event {
                 CollectorEvent::Message(message_id, mut message) => {
-                    info!("Inserting: {}", message_id.to_string());
+                    // info!("Inserting: {}", message_id.to_string());
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
                         // store message
@@ -144,6 +144,10 @@ impl Collector {
     ) {
         match payload {
             Payload::Indexation(indexation) => {
+                info!(
+                    "Inserting Hashed index: {}",
+                    String::from_utf8_lossy(indexation.index())
+                );
                 self.insert_hashed_index(message_id, indexation.hash(), milestone_index, inclusion_state);
             }
             Payload::Transaction(transaction) => {
@@ -162,10 +166,6 @@ impl Collector {
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
-        info!(
-            "Inserting Hashed index: {}",
-            String::from_utf8_lossy(hashed_index.as_ref())
-        );
         let partition_id = self.partitioner.partition_id(milestone_index.0);
         let partitioned = Partitioned::new(hashed_index, partition_id);
         let hashed_index_record = HashedIndexRecord::new(milestone_index, *message_id, inclusion_state);
