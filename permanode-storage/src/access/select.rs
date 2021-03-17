@@ -188,7 +188,7 @@ impl RowsDecoder<OutputId, OutputData> for PermanodeKeyspace {
                     TransactionData::Unlock(u) => unlock_blocks.push(UnlockRes {
                         message_id,
                         block: u.unlock_block,
-                        inclusion_state: inclusion_state,
+                        inclusion_state,
                     }),
                     _ => (),
                 }
