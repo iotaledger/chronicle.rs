@@ -99,26 +99,6 @@ impl<T> TTL<T> {
     }
 }
 
-#[derive(Clone)]
-pub struct Hint<T: HintVariant> {
-    inner: T,
-}
-
-impl Hint<Ed25519Address> {
-    pub fn new(address: Ed25519Address) -> Self {
-        Self { inner: address }
-    }
-}
-impl Hint<MessageId> {
-    pub fn new(parent_id: MessageId) -> Self {
-        Self { inner: parent_id }
-    }
-}
-impl Hint<HashedIndex> {
-    pub fn new(hashed_index: HashedIndex) -> Self {
-        Self { inner: hashed_index }
-    }
-}
 #[derive(Clone, Copy)]
 pub struct Partition {
     id: u16,
@@ -134,42 +114,6 @@ impl Partition {
     }
     pub fn milestone_index(&self) -> &u32 {
         &self.milestone_index
-    }
-}
-
-impl<T: HintVariant> Hint<T> {
-    pub fn get_inner(&self) -> &T {
-        &self.inner
-    }
-}
-
-pub trait HintVariant {
-    fn variant() -> &'static str;
-    fn as_bytes(&self) -> &[u8];
-}
-impl HintVariant for Ed25519Address {
-    fn variant() -> &'static str {
-        "address"
-    }
-    fn as_bytes(&self) -> &[u8] {
-        self.as_ref()
-    }
-}
-impl HintVariant for MessageId {
-    fn variant() -> &'static str {
-        "parent"
-    }
-    fn as_bytes(&self) -> &[u8] {
-        self.as_ref()
-    }
-}
-
-impl HintVariant for HashedIndex {
-    fn variant() -> &'static str {
-        "index"
-    }
-    fn as_bytes(&self) -> &[u8] {
-        self.as_ref()
     }
 }
 

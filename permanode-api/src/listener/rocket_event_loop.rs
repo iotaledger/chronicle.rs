@@ -8,16 +8,11 @@ use bee_rest_api::types::responses::{
     OutputResponse,
     OutputsForAddressResponse,
 };
-use crypto::hashes::{
-    blake2b::Blake2b256,
-    Digest,
-};
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
         Ed25519Address,
         GetSelectRequest,
-        HashedIndex,
         MessageId,
         MessageMetadata,
         Milestone,
@@ -27,7 +22,6 @@ use permanode_storage::{
         PagingState,
         PartitionId,
         Partitioned,
-        HASHED_INDEX_LENGTH,
     },
     keyspaces::PermanodeKeyspace,
 };
@@ -222,7 +216,9 @@ pub async fn get_message_children(
 
     let keyspace = PermanodeKeyspace::new(keyspace);
     let message_id = MessageId::from_str(&message_id).unwrap();
-    let partition_ids = query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), message_id, None).await?;
+    let mut partition_ids =
+        query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), Hint::parent(message_id.to_string()), None)
+            .await?;
     let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
         query::<Vec<(MessageId, MilestoneIndex)>, _, _>(
@@ -235,19 +231,23 @@ pub async fn get_message_children(
     let mut res = partition_ids.iter().map(|v| v.1).zip(res).collect::<HashMap<_, _>>();
 
     let mut messages = Vec::new();
-    while messages.len() < page_size {
+    while !partition_ids.is_empty() && messages.len() < page_size {
         let partition_id = partition_ids[(messages.len() / milestone_chunk) % partition_ids.len()].1;
         let list = res
             .get_mut(&partition_id)
             .unwrap()
             .as_mut()
             .expect("Failed to retrieve records from a partition!");
+        if list.is_empty() {
+            partition_ids.remove((messages.len() / milestone_chunk) % partition_ids.len());
+            continue;
+        }
         let paging_state = new_paging_states
             .entry(partition_id)
             .or_insert(PagingState::new(page_size, 0));
         while messages.len() < page_size
             && list.first().is_some()
-            && (latest_milestone.0 >= milestone_chunk as u32
+            && (latest_milestone.0 < milestone_chunk as u32
                 || list.first().unwrap().1 .0 > latest_milestone.0 - milestone_chunk as u32)
         {
             messages.push(list.remove(0).0);
@@ -301,13 +301,12 @@ pub async fn get_message_by_index(
     let mut new_paging_states = new_paging_states.unwrap_or_default();
 
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let hashed_index = HashedIndex::new(Blake2b256::digest(index.as_bytes()).into());
-    let partition_ids = query(keyspace.clone(), hashed_index, None).await?;
+    let mut partition_ids = query(keyspace.clone(), Hint::index(index.clone()), None).await?;
     let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
         query::<Vec<(MessageId, MilestoneIndex)>, _, _>(
             keyspace.clone(),
-            Partitioned::new(hashed_index, *partition_id),
+            Partitioned::new(UnhashedIndex(index.clone()), *partition_id),
             paging_states.as_ref().and_then(|map| map.get(partition_id).cloned()),
         )
     }))
@@ -315,19 +314,23 @@ pub async fn get_message_by_index(
     let mut res = partition_ids.iter().map(|v| v.1).zip(res).collect::<HashMap<_, _>>();
 
     let mut messages = Vec::new();
-    while messages.len() < page_size {
+    while !partition_ids.is_empty() && messages.len() < page_size {
         let partition_id = partition_ids[(messages.len() / milestone_chunk) % partition_ids.len()].1;
         let list = res
             .get_mut(&partition_id)
             .unwrap()
             .as_mut()
             .expect("Failed to retrieve records from a partition!");
+        if list.is_empty() {
+            partition_ids.remove((messages.len() / milestone_chunk) % partition_ids.len());
+            continue;
+        }
         let paging_state = new_paging_states
             .entry(partition_id)
             .or_insert(PagingState::new(page_size, 0));
         while messages.len() < page_size
             && list.first().is_some()
-            && (latest_milestone.0 >= milestone_chunk as u32
+            && (latest_milestone.0 < milestone_chunk as u32
                 || list.first().unwrap().1 .0 > latest_milestone.0 - milestone_chunk as u32)
         {
             messages.push(list.remove(0).0);
@@ -433,7 +436,7 @@ pub async fn get_ed25519_outputs(
     let keyspace = PermanodeKeyspace::new(keyspace);
 
     let ed25519_address = Ed25519Address::from_str(&address).unwrap();
-    let partition_ids = query(keyspace.clone(), ed25519_address, None).await?;
+    let mut partition_ids = query(keyspace.clone(), Hint::address(ed25519_address.to_string()), None).await?;
     let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
         query::<Vec<(OutputId, MilestoneIndex)>, _, _>(
@@ -446,19 +449,23 @@ pub async fn get_ed25519_outputs(
     let mut res = partition_ids.iter().map(|v| v.1).zip(res).collect::<HashMap<_, _>>();
 
     let mut outputs = Vec::new();
-    while outputs.len() < page_size {
+    while !partition_ids.is_empty() && outputs.len() < page_size {
         let partition_id = partition_ids[(outputs.len() / milestone_chunk) % partition_ids.len()].1;
         let list = res
             .get_mut(&partition_id)
             .unwrap()
             .as_mut()
             .expect("Failed to retrieve records from a partition!");
+        if list.is_empty() {
+            partition_ids.remove((outputs.len() / milestone_chunk) % partition_ids.len());
+            continue;
+        }
         let paging_state = new_paging_states
             .entry(partition_id)
             .or_insert(PagingState::new(page_size, 0));
         while outputs.len() < page_size
             && list.first().is_some()
-            && (latest_milestone.0 >= milestone_chunk as u32
+            && (latest_milestone.0 < milestone_chunk as u32
                 || list.first().unwrap().1 .0 > latest_milestone.0 - milestone_chunk as u32)
         {
             outputs.push(list.remove(0).0);

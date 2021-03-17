@@ -1,5 +1,6 @@
 use super::*;
 use scylla_cql::Row;
+use std::str::FromStr;
 
 impl Select<MessageId, Message> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
@@ -7,7 +8,7 @@ impl Select<MessageId, Message> for PermanodeKeyspace {
         format!("SELECT message FROM {}.messages WHERE message_id = ?", self.name()).into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
-        builder.value(&message_id.as_ref())
+        builder.value(&message_id.to_string())
     }
 }
 
@@ -31,7 +32,7 @@ impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
         format!("SELECT metadata FROM {}.messages WHERE message_id = ?", self.name()).into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
-        builder.value(&message_id.as_ref())
+        builder.value(&message_id.to_string())
     }
 }
 
@@ -59,7 +60,7 @@ impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for Permanode
         .into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
-        builder.value(&message_id.as_ref())
+        builder.value(&message_id.to_string())
     }
 }
 
@@ -83,17 +84,20 @@ impl Select<Partitioned<MessageId>, Vec<(MessageId, MilestoneIndex)>> for Perman
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id FROM {}.parents WHERE parent_id = ? AND partition_id = ?",
+            "SELECT message_id, milestone_index 
+            FROM {}.parents 
+            WHERE parent_id = ? AND partition_id = ?
+            ORDER BY milestone_index DESC",
             self.name()
         )
         .into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &Partitioned<MessageId>) -> T::Return {
-        builder.value(&message_id.as_ref()).value(&0u16)
+        builder.value(&message_id.to_string()).value(&message_id.partition_id())
     }
 }
 
-impl Select<Partitioned<HashedIndex>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
+impl Select<Partitioned<UnhashedIndex>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -105,8 +109,8 @@ impl Select<Partitioned<HashedIndex>, Vec<(MessageId, MilestoneIndex)>> for Perm
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, index: &Partitioned<HashedIndex>) -> T::Return {
-        builder.value(&index.as_ref()).value(&index.partition_id())
+    fn bind_values<T: Values>(builder: T, index: &Partitioned<UnhashedIndex>) -> T::Return {
+        builder.value(&index.0).value(&index.partition_id())
     }
 }
 
@@ -135,7 +139,7 @@ impl Select<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> for Pe
         .into()
     }
     fn bind_values<T: Values>(builder: T, address: &Partitioned<Ed25519Address>) -> T::Return {
-        builder.value(&address.as_ref()).value(&address.partition_id())
+        builder.value(&address.to_string()).value(&address.partition_id())
     }
 }
 
@@ -169,7 +173,7 @@ impl Select<OutputId, OutputData> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(builder: T, output_id: &OutputId) -> T::Return {
         builder
-            .value(&output_id.transaction_id().as_ref())
+            .value(&output_id.transaction_id().to_string())
             .value(&output_id.index())
     }
 }
@@ -227,51 +231,19 @@ impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
     }
 }
 
-impl Select<HashedIndex, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
+impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
 
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ?",
+            "SELECT milestone_index, partition_id FROM {}.hints WHERE hint = ? AND variant = ?",
             self.name()
         )
         .into()
     }
 
-    fn bind_values<T: Values>(builder: T, index: &HashedIndex) -> T::Return {
-        builder.value(&index.as_ref()).value(&"index")
-    }
-}
-
-impl Select<Ed25519Address, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ?",
-            self.name()
-        )
-        .into()
-    }
-
-    fn bind_values<T: Values>(builder: T, address: &Ed25519Address) -> T::Return {
-        builder.value(&address.as_ref()).value(&"address")
-    }
-}
-
-impl Select<MessageId, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT partition_id, milestone_index FROM {}.hints WHERE hint = ? AND variant = ?",
-            self.name()
-        )
-        .into()
-    }
-
-    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
-        builder.value(&message_id.as_ref()).value(&"parent")
+    fn bind_values<T: Values>(builder: T, hint: &Hint) -> T::Return {
+        builder.value(&hint.hint).value(&hint.variant.to_string())
     }
 }
 
@@ -326,13 +298,13 @@ impl Row for Record<(Option<Message>, Option<MessageMetadata>)> {
 
 impl Row for Record<MessageId> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        Record::new(MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap())
+        Record::new(MessageId::from_str(&rows.column_value::<String>()).unwrap())
     }
 }
 
 impl Row for Record<(TransactionId, u16)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        let transaction_id = TransactionId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let transaction_id = TransactionId::from_str(&rows.column_value::<String>()).unwrap();
         let index = rows.column_value::<u16>();
         Record::new((transaction_id, index))
     }
@@ -340,7 +312,7 @@ impl Row for Record<(TransactionId, u16)> {
 
 impl Row for Record<(MessageId, TransactionData, Option<LedgerInclusionState>)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let message_id = MessageId::from_str(&rows.column_value::<String>()).unwrap();
         let data = rows.column_value::<TransactionData>();
         let inclusion_state = rows.column_value::<Option<LedgerInclusionState>>();
         Record::new((message_id, data, inclusion_state))
@@ -349,7 +321,7 @@ impl Row for Record<(MessageId, TransactionData, Option<LedgerInclusionState>)> 
 
 impl Row for Record<(MessageId, u64)> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
-        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let message_id = MessageId::from_str(&rows.column_value::<String>()).unwrap();
         let timestamp = rows.column_value::<u64>();
         Record::new((message_id, timestamp))
     }
@@ -363,7 +335,7 @@ impl Row for Record<(u32, u16)> {
 
 impl Row for Record<(MessageId, MilestoneIndex)> {
     fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
-        let message_id = MessageId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let message_id = MessageId::from_str(&rows.column_value::<String>()).unwrap();
         let index = rows.column_value::<u32>();
         Record::new((message_id, MilestoneIndex(index)))
     }
@@ -371,7 +343,7 @@ impl Row for Record<(MessageId, MilestoneIndex)> {
 
 impl Row for Record<(TransactionId, u16, MilestoneIndex)> {
     fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
-        let transaction_id = TransactionId::unpack(&mut rows.column_value::<Cursor<Vec<u8>>>()).unwrap();
+        let transaction_id = TransactionId::from_str(&rows.column_value::<String>()).unwrap();
         let index = rows.column_value::<u16>();
         let milestone_index = rows.column_value::<u32>();
         Record::new((transaction_id, index, MilestoneIndex(milestone_index)))

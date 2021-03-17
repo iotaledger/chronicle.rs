@@ -367,3 +367,55 @@ pub struct UnlockRes {
 }
 
 pub type PartitionId = u16;
+
+#[derive(Clone)]
+pub struct UnhashedIndex(pub String);
+
+#[derive(Clone)]
+pub struct Hint {
+    pub hint: String,
+    pub variant: HintVariant,
+}
+
+impl Hint {
+    pub fn index(index: String) -> Self {
+        Self {
+            hint: index,
+            variant: HintVariant::Index,
+        }
+    }
+
+    pub fn address(address: String) -> Self {
+        Self {
+            hint: address,
+            variant: HintVariant::Address,
+        }
+    }
+
+    pub fn parent(parent: String) -> Self {
+        Self {
+            hint: parent,
+            variant: HintVariant::Parent,
+        }
+    }
+}
+#[derive(Clone)]
+pub enum HintVariant {
+    Address,
+    Index,
+    Parent,
+}
+
+impl std::fmt::Display for HintVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                HintVariant::Address => "address",
+                HintVariant::Index => "index",
+                HintVariant::Parent => "parent",
+            }
+        )
+    }
+}

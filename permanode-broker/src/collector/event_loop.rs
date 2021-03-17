@@ -130,7 +130,7 @@ impl Collector {
             let parent_record = ParentRecord::new(milestone_index, *message_id, inclusion_state);
             self.insert(&self.get_keyspace(), partitioned, parent_record);
             // insert hint record
-            let hint = Hint::<MessageId>::new(*parent_id);
+            let hint = Hint::parent(parent_id.to_string());
             let partition = Partition::new(partition_id, *milestone_index);
             self.insert(&self.get_keyspace(), hint, partition)
         }
@@ -144,11 +144,16 @@ impl Collector {
     ) {
         match payload {
             Payload::Indexation(indexation) => {
-                info!(
-                    "Inserting Hashed index: {}",
-                    String::from_utf8_lossy(indexation.index())
+                // info!(
+                //    "Inserting Hashed index: {}",
+                //    String::from_utf8_lossy(indexation.index())
+                //);
+                self.insert_index(
+                    message_id,
+                    UnhashedIndex(String::from_utf8_lossy(indexation.index()).into_owned()),
+                    milestone_index,
+                    inclusion_state,
                 );
-                self.insert_hashed_index(message_id, indexation.hash(), milestone_index, inclusion_state);
             }
             Payload::Transaction(transaction) => {
                 self.insert_transaction(message_id, transaction, inclusion_state, milestone_index)
@@ -159,19 +164,19 @@ impl Collector {
             }
         }
     }
-    fn insert_hashed_index(
+    fn insert_index(
         &self,
         message_id: &MessageId,
-        hashed_index: HashedIndex,
+        index: UnhashedIndex,
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
-        let partitioned = Partitioned::new(hashed_index, partition_id);
+        let partitioned = Partitioned::new(index.clone(), partition_id);
         let hashed_index_record = HashedIndexRecord::new(milestone_index, *message_id, inclusion_state);
         self.insert(&self.get_keyspace(), partitioned, hashed_index_record);
         // insert hint record
-        let hint = Hint::<HashedIndex>::new(hashed_index);
+        let hint = Hint::index(index.0);
         let partition = Partition::new(partition_id, *milestone_index);
         self.insert(&self.get_keyspace(), hint, partition)
     }
