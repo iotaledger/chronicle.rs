@@ -12,8 +12,13 @@ use std::{
 };
 
 use bincode::Options;
+pub use delete::{
+    Ed25519AddressPK,
+    HashedIndexPK,
+    ParentPK,
+};
 pub use types::*;
-
+mod delete;
 mod insert;
 mod select;
 mod token;
@@ -168,28 +173,28 @@ impl HintVariant for HashedIndex {
 #[derive(Clone, Copy)]
 pub struct AddressRecord {
     milestone_index: MilestoneIndex,
+    output_type: u8,
     transaction_id: TransactionId,
     index: Index,
     amount: Amount,
-    address_type: AddressType,
     ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl AddressRecord {
     pub fn new(
         milestone_index: MilestoneIndex,
+        output_type: u8,
         transaction_id: TransactionId,
         index: Index,
         amount: Amount,
-        address_type: AddressType,
         ledger_inclusion_state: Option<LedgerInclusionState>,
     ) -> Self {
         Self {
             milestone_index,
+            output_type,
             transaction_id,
             index,
             amount,
-            address_type,
             ledger_inclusion_state,
         }
     }
@@ -197,29 +202,29 @@ impl AddressRecord {
 impl
     From<(
         MilestoneIndex,
+        OutputType,
         TransactionId,
         Index,
         Amount,
-        AddressType,
         Option<LedgerInclusionState>,
     )> for AddressRecord
 {
     fn from(
-        (milestone_index, transaction_id, index, amount, address_type, ledger_inclusion_state): (
+        (milestone_index, output_type, transaction_id, index, amount, ledger_inclusion_state): (
             MilestoneIndex,
+            OutputType,
             TransactionId,
             Index,
             Amount,
-            AddressType,
             Option<LedgerInclusionState>,
         ),
     ) -> Self {
         Self::new(
             milestone_index,
+            output_type,
             transaction_id,
             index,
             amount,
-            address_type,
             ledger_inclusion_state,
         )
     }

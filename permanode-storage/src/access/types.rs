@@ -26,6 +26,7 @@ pub use bee_message::{
         MilestoneIndex,
         Output,
         OutputId,
+        Parents,
         Payload,
         TransactionId,
         TreasuryInput,
@@ -46,8 +47,8 @@ pub use bee_tangle::{
 pub type Index = u16;
 /// Amount type
 pub type Amount = u64;
-/// Address type
-pub type AddressType = u8;
+/// Output type
+pub type OutputType = u8;
 /// ParentIndex type
 pub type ParentIndex = u16;
 

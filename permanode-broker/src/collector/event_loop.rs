@@ -29,25 +29,51 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
                     let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
                     let message_id = metadata.message_id;
-                    // update the est_ms to be the most recent ref_ms
-                    self.est_ms.0 = *ref_ms;
+                    // set the est_ms to be the most recent ref_ms
+                    self.ref_ms.0 = *ref_ms;
+                    // update the est_ms to be the most recent ref_ms+1
+                    self.est_ms.0 = self.ref_ms.0 + 1;
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg_ref.get(&message_id) {
                         // check if msg already exist in the cache, if so we push it to solidifier
                         let cached_msg;
+                        let wrong_msg_est_ms;
                         if let Some((est_ms, message)) = self.lru_msg.get_mut(&message_id) {
                             // check if est_ms is not identical to ref_ms
                             if &est_ms.0 != ref_ms {
-                                todo!("delete duplicated rows");
+                                wrong_msg_est_ms = Some(*est_ms);
                                 // adjust est_ms to match the actual ref_ms
                                 est_ms.0 = *ref_ms;
+                            } else {
+                                info!("Got the estimation right {}", est_ms);
+                                wrong_msg_est_ms = None;
                             }
                             cached_msg = Some(message.clone());
                             // TODO push to solidifer
                         } else {
                             cached_msg = None;
+                            wrong_msg_est_ms = None;
                         }
                         if let Some(message) = cached_msg {
+                            if let Some(wrong_est_ms) = wrong_msg_est_ms {
+                                warn!("Wrong estimated milestone: {}, correct is: {}", wrong_est_ms, ref_ms);
+                                self.delete_parents(&message_id, message.parents(), wrong_est_ms);
+                                // 
+                                // - delete hashed_index if any
+                                match message.payload() {
+                                    Some(Payload::Indexation(indexation)) => {
+                                        self.delete_hashed_index(&message_id, &indexation.hash(), wrong_est_ms);
+                                    }
+                                    Some(Payload::Transaction(transaction_payload)) => self
+                                        .delete_transaction_partitioned_rows(
+                                            &message_id,
+                                            transaction_payload,
+                                            wrong_est_ms,
+                                        ),
+                                    _ => {}
+                                }
+                            }
+
                             self.insert_message_with_metadata(&message_id.clone(), &message.clone(), &metadata);
                         } else {
                             // store it as metadata
@@ -75,7 +101,6 @@ impl Collector {
             self.insert(*message_id, message_tuple);
         } else {
             ledger_inclusion_state = None;
-            self.est_ms.0 += 1;
             // store message only
             self.insert(*message_id, message.clone());
         };
@@ -123,9 +148,10 @@ impl Collector {
             Payload::Transaction(transaction) => {
                 self.insert_transaction(message_id, transaction, inclusion_state, milestone_index)
             }
+
             // remaining payload types
-            _ => {
-                todo!("impl insert for remaining payloads")
+            e => {
+                error!("impl insert for remaining payloads, {:?}", e)
             }
         }
     }
@@ -154,7 +180,7 @@ impl Collector {
         self.insert_parents(
             &message_id,
             &parents.as_slice(),
-            self.est_ms,
+            self.ref_ms,
             metadata.ledger_inclusion_state.clone(),
         );
     }
@@ -171,7 +197,7 @@ impl Collector {
         self.insert_parents(
             &message_id,
             &message.parents(),
-            self.est_ms,
+            self.ref_ms,
             metadata.ledger_inclusion_state.clone(),
         );
         // insert payload (if any)
@@ -179,7 +205,7 @@ impl Collector {
             self.insert_payload(
                 &message_id,
                 &payload,
-                self.est_ms,
+                self.ref_ms,
                 metadata.ledger_inclusion_state.clone(),
             );
         }
@@ -251,6 +277,14 @@ impl Collector {
                     ledger_inclusion_state,
                     confirmed_milestone_index,
                 );
+                // insert address row
+                self.insert_address(
+                    output,
+                    &transaction_id,
+                    output_index as u16,
+                    milestone_index,
+                    ledger_inclusion_state,
+                )
             }
             if let Some(payload) = regular.payload() {
                 self.insert_payload(message_id, payload, milestone_index, ledger_inclusion_state)
@@ -301,28 +335,55 @@ impl Collector {
     }
     fn insert_address(
         &self,
+        output: &Output,
         transaction_id: &TransactionId,
         index: u16,
-        output: &Output,
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
-        let address_type = output.kind();
+        let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
-                let partitioned = Partitioned::new(sls.address().clone(), partition_id);
-                let address_record = AddressRecord::new(
-                    milestone_index,
-                    *transaction_id,
-                    index,
-                    sls.amount(),
-                    address_type,
-                    inclusion_state,
-                );
-                // self.insert(partitioned, address_record);
+                if let Address::Ed25519(ed_address) = sls.address() {
+                    let partitioned = Partitioned::new(*ed_address, partition_id);
+                    let address_record = AddressRecord::new(
+                        milestone_index,
+                        output_type,
+                        *transaction_id,
+                        index,
+                        sls.amount(),
+                        inclusion_state,
+                    );
+                    self.insert(partitioned, address_record);
+                    // insert hint record
+                    let hint = Hint::<Ed25519Address>::new(*ed_address);
+                    let partition = Partition::new(partition_id, *milestone_index);
+                    self.insert(hint, partition)
+                } else {
+                    error!("Unexpected address variant");
+                }
             }
-            Output::SignatureLockedDustAllowance(slda) => {}
+            Output::SignatureLockedDustAllowance(slda) => {
+                if let Address::Ed25519(ed_address) = slda.address() {
+                    let partitioned = Partitioned::new(*ed_address, partition_id);
+                    let address_record = AddressRecord::new(
+                        milestone_index,
+                        output_type,
+                        *transaction_id,
+                        index,
+                        slda.amount(),
+                        inclusion_state,
+                    );
+                    self.insert(partitioned, address_record);
+                    // insert hint record
+                    let hint = Hint::<Ed25519Address>::new(*ed_address);
+                    let partition = Partition::new(partition_id, *milestone_index);
+                    self.insert(hint, partition)
+                } else {
+                    error!("Unexpected address variant");
+                }
+            }
             e => {
                 if let Output::Treasury(_) = e {
                 } else {
@@ -344,5 +405,91 @@ impl Collector {
             .build();
         let worker = InsertWorker::boxed(self.default_keyspace.clone(), key, value);
         insert_req.send_local(worker);
+    }
+    fn delete_parents(&self, message_id: &MessageId, parents: &Parents, milestone_index: MilestoneIndex) {
+        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        for parent_id in parents.iter() {
+            let parent_pk = ParentPK::new(*parent_id, partition_id, milestone_index, *message_id);
+            self.delete(parent_pk);
+        }
+    }
+    fn delete_hashed_index(&self, message_id: &MessageId, hashed_index: &HashedIndex, milestone_index: MilestoneIndex) {
+        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let hashed_index_pk = HashedIndexPK::new(*hashed_index, partition_id, milestone_index, *message_id);
+        self.delete(hashed_index_pk);
+    }
+    fn delete_transaction_partitioned_rows(
+        &self,
+        message_id: &MessageId,
+        transaction: &Box<TransactionPayload>,
+        milestone_index: MilestoneIndex,
+    ) {
+        let transaction_id = transaction.id();
+        if let Essence::Regular(regular) = transaction.essence() {
+            if let Some(Payload::Indexation(indexation)) = regular.payload() {
+                self.delete_hashed_index(&message_id, &indexation.hash(), milestone_index);
+            }
+            for (output_index, output) in regular.outputs().iter().enumerate() {
+                self.delete_address(output, &transaction_id, output_index as u16, milestone_index);
+            }
+        }
+    }
+    fn delete_address(
+        &self,
+        output: &Output,
+        transaction_id: &TransactionId,
+        index: u16,
+        milestone_index: MilestoneIndex,
+    ) {
+        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let output_type = output.kind();
+        match output {
+            Output::SignatureLockedSingle(sls) => {
+                if let Address::Ed25519(ed_address) = sls.address() {
+                    let address_pk = Ed25519AddressPK::new(
+                        *ed_address,
+                        partition_id,
+                        milestone_index,
+                        output_type,
+                        *transaction_id,
+                        index,
+                    );
+                    self.delete(address_pk);
+                } else {
+                    error!("Unexpected address variant");
+                }
+            }
+            Output::SignatureLockedDustAllowance(slda) => {
+                if let Address::Ed25519(ed_address) = slda.address() {
+                    let address_pk = Ed25519AddressPK::new(
+                        *ed_address,
+                        partition_id,
+                        milestone_index,
+                        output_type,
+                        *transaction_id,
+                        index,
+                    );
+                    self.delete(address_pk);
+                } else {
+                    error!("Unexpected address variant");
+                }
+            }
+            e => {
+                if let Output::Treasury(_) = e {
+                } else {
+                    error!("Unexpected new output variant {:?}", e);
+                }
+            }
+        }
+    }
+    fn delete<K, V>(&self, key: K)
+    where
+        PermanodeKeyspace: Delete<K, V>,
+        K: 'static + Send + Clone,
+        V: 'static + Send + Clone,
+    {
+        let delete_req = self.default_keyspace.delete(&key).consistency(Consistency::One).build();
+        let worker = DeleteWorker::boxed(self.default_keyspace.clone(), key);
+        delete_req.send_local(worker);
     }
 }

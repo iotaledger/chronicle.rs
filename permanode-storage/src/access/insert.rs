@@ -66,7 +66,7 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.addresses (address, partition_id, milestone_index, transaction_id, idx, amount, address_type, ledger_inclusion_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.addresses (address, partition_id, milestone_index, output_type, transaction_id, idx, amount, address_type, inclusion_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -76,20 +76,22 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
         Partitioned { inner, partition_id }: &Partitioned<Ed25519Address>,
         &AddressRecord {
             milestone_index,
+            output_type,
             transaction_id,
             index,
             amount,
-            address_type,
             ledger_inclusion_state,
         }: &AddressRecord,
     ) -> T::Return {
         builder
             .value(&inner.as_ref())
             .value(partition_id)
-            .value(&transaction_id.as_ref())
             .value(&milestone_index.0)
+            .value(&output_type)
+            .value(&transaction_id.as_ref())
+            .value(&index)
             .value(&amount)
-            .value(&address_type)
+            .value(&Ed25519Address::KIND)
             .value(&ledger_inclusion_state)
     }
 }
@@ -158,7 +160,7 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
