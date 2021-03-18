@@ -23,7 +23,10 @@ where
     async fn starter(self, handle: H, _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
         let rocket = rocket::ignite();
         let rocket_listener_handle = rocket.shutdown();
-        let rocket_listener = ListenerBuilder::new().data(RocketListener::new(rocket)).build();
+        let rocket_listener = ListenerBuilder::new()
+            .data(RocketListener::new(rocket))
+            .storage_config(self.storage_config.clone().expect("No storage config provided!"))
+            .build();
 
         // let (warp_listener_handle, warp_abort_registration) = AbortHandle::new_pair();
         // let warp_listener = ListenerBuilder::new().data(WarpListener).build();

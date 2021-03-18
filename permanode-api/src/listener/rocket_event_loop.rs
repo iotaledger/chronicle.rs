@@ -23,6 +23,7 @@ use permanode_storage::{
         Partitioned,
     },
     keyspaces::PermanodeKeyspace,
+    PartitionConfig,
 };
 use rocket::{
     fairing::{
@@ -71,10 +72,16 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 .map_err(|_| Need::Abort)?;
         }
 
-        construct_rocket(self.data.rocket.take().ok_or(Need::Abort)?)
-            .launch()
-            .await
-            .map_err(|_| Need::Abort)
+        construct_rocket(
+            self.data
+                .rocket
+                .take()
+                .ok_or(Need::Abort)?
+                .manage(self.storage_config.partition_config.clone()),
+        )
+        .launch()
+        .await
+        .map_err(|_| Need::Abort)
     }
 }
 
@@ -205,9 +212,9 @@ pub async fn get_message_children(
     message_id: String,
     page_size: usize,
     cookies: &CookieJar<'_>,
+    partition_config: State<'_, PartitionConfig>,
 ) -> Result<Json<SuccessBody<MessageChildrenResponse>>, Cow<'static, str>> {
-    // TODO: Set this in config
-    let milestone_chunk = 1000;
+    let milestone_chunk = partition_config.milestone_chunk_size as usize;
 
     let paging_state = cookies.get("paging_state").map(|c| c.value());
     let mut paging_states = paging_state
@@ -294,12 +301,12 @@ pub async fn get_message_by_index(
     index: String,
     page_size: usize,
     cookies: &CookieJar<'_>,
+    partition_config: State<'_, PartitionConfig>,
 ) -> Result<Json<SuccessBody<MessagesForIndexResponse>>, Cow<'static, str>> {
     if index.len() > 64 {
         return Err("Provided index is too large! (Max 64 characters)".into());
     }
-    // TODO: Set this in config
-    let milestone_chunk = 1000;
+    let milestone_chunk = partition_config.milestone_chunk_size as usize;
 
     let paging_state = cookies.get("paging_state").map(|c| c.value());
     let mut paging_states = paging_state
@@ -430,9 +437,9 @@ pub async fn get_ed25519_outputs(
     address: String,
     page_size: usize,
     cookies: &CookieJar<'_>,
+    partition_config: State<'_, PartitionConfig>,
 ) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, Cow<'static, str>> {
-    // TODO: Set this in config
-    let milestone_chunk = 1000;
+    let milestone_chunk = partition_config.milestone_chunk_size as usize;
 
     let paging_state = cookies.get("paging_state").map(|c| c.value());
     let mut paging_states = paging_state

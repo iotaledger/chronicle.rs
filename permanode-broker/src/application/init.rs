@@ -17,8 +17,7 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
                 let mut collector_builder = CollectorBuilder::new()
                     .collectors_count(self.collectors_count)
                     .inbox(collector_inbox)
-                    .partition_id(partition_id)
-                    .partitioner(self.partitioner.clone());
+                    .partition_id(partition_id);
                 if let Some(ref config) = self.storage_config {
                     collector_builder = collector_builder.storage_config(config.clone());
                 }

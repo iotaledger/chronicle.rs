@@ -1,10 +1,12 @@
 use super::*;
 use application::*;
-use permanode_storage::access::*;
+use permanode_storage::{
+    access::*,
+    StorageConfig,
+};
 use rocket::Rocket;
 use serde::Serialize;
 use std::marker::PhantomData;
-use tokio::sync::mpsc::UnboundedSender;
 
 mod init;
 mod rocket_event_loop;
@@ -31,6 +33,7 @@ pub struct Listener<T> {
     /// The listener's service
     pub service: Service,
     data: T,
+    storage_config: StorageConfig,
 }
 
 /// Trait to be implemented on the API engines (ie Rocket, warp, etc)
@@ -66,7 +69,8 @@ pub enum Event {
 }
 
 builder!(ListenerBuilder<T> {
-    data: T
+    data: T,
+    storage_config: StorageConfig
 });
 
 impl<T: APIEngine> Builder for ListenerBuilder<T> {
@@ -76,6 +80,7 @@ impl<T: APIEngine> Builder for ListenerBuilder<T> {
         Self::State {
             service: Service::new(),
             data: self.data.expect("No listener data was provided!"),
+            storage_config: self.storage_config.expect("No storage config was provided!"),
         }
         .set_name()
     }
