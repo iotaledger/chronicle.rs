@@ -21,7 +21,6 @@ pub use bee_message::{
         ConsumedOutput,
         CreatedOutput,
         Ed25519Address,
-        HashedIndex,
         Input,
         MilestoneIndex,
         Output,
@@ -370,7 +369,7 @@ pub struct UnlockRes {
 pub type PartitionId = u16;
 
 #[derive(Clone)]
-pub struct UnhashedIndex(pub String);
+pub struct Indexation(pub String);
 
 #[derive(Clone)]
 pub struct Hint {

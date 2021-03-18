@@ -14,7 +14,7 @@ use std::{
 use bincode::Options;
 pub use delete::{
     Ed25519AddressPK,
-    HashedIndexPK,
+    IndexationPK,
     ParentPK,
 };
 pub use types::*;
@@ -183,13 +183,13 @@ impl
 }
 
 #[derive(Clone, Copy)]
-pub struct HashedIndexRecord {
+pub struct IndexationRecord {
     milestone_index: MilestoneIndex,
     message_id: MessageId,
     ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
-impl HashedIndexRecord {
+impl IndexationRecord {
     pub fn new(
         milestone_index: MilestoneIndex,
         message_id: MessageId,

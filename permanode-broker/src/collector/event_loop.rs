@@ -56,12 +56,14 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             if let Some(wrong_est_ms) = wrong_msg_est_ms {
                                 warn!("Wrong estimated milestone: {}, correct is: {}", wrong_est_ms, ref_ms);
                                 self.delete_parents(&message_id, message.parents(), wrong_est_ms);
-                                // 
-                                // - delete hashed_index if any
                                 match message.payload() {
+                                    // delete indexation if any
                                     Some(Payload::Indexation(indexation)) => {
-                                        self.delete_hashed_index(&message_id, &indexation.hash(), wrong_est_ms);
+                                        let index_key =
+                                            Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
+                                        self.delete_indexation(&message_id, index_key, wrong_est_ms);
                                     }
+                                    // delete transactiion partitioned rows if any
                                     Some(Payload::Transaction(transaction_payload)) => self
                                         .delete_transaction_partitioned_rows(
                                             &message_id,
@@ -94,20 +96,7 @@ impl Collector {
         PermanodeKeyspace::new(res.keyspace.into_owned())
     }
     fn get_keyspace(&self) -> PermanodeKeyspace {
-        // Get the first keyspace or default to "permanode"
-        // In order to use multiple keyspaces, the user must
-        // use filters to determine where records go
-        PermanodeKeyspace::new(
-            self.storage_config
-                .as_ref()
-                .and_then(|config| {
-                    config
-                        .keyspaces
-                        .first()
-                        .and_then(|keyspace| Some(keyspace.name.clone()))
-                })
-                .unwrap_or("permanode".to_owned()),
-        )
+        self.default_keyspace.clone()
     }
 
     fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) {
@@ -169,13 +158,9 @@ impl Collector {
     ) {
         match payload {
             Payload::Indexation(indexation) => {
-                // info!(
-                //    "Inserting Hashed index: {}",
-                //    String::from_utf8_lossy(indexation.index())
-                //);
                 self.insert_index(
                     message_id,
-                    UnhashedIndex(String::from_utf8_lossy(indexation.index()).into_owned()),
+                    Indexation(String::from_utf8_lossy(indexation.index()).into_owned()),
                     milestone_index,
                     inclusion_state,
                 );
@@ -193,14 +178,14 @@ impl Collector {
     fn insert_index(
         &self,
         message_id: &MessageId,
-        index: UnhashedIndex,
+        index: Indexation,
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
         let partitioned = Partitioned::new(index.clone(), partition_id);
-        let hashed_index_record = HashedIndexRecord::new(milestone_index, *message_id, inclusion_state);
-        self.insert(&self.get_keyspace(), partitioned, hashed_index_record);
+        let index_record = IndexationRecord::new(milestone_index, *message_id, inclusion_state);
+        self.insert(&self.get_keyspace(), partitioned, index_record);
         // insert hint record
         let hint = Hint::index(index.0);
         let partition = Partition::new(partition_id, *milestone_index);
@@ -449,10 +434,10 @@ impl Collector {
             self.delete(parent_pk);
         }
     }
-    fn delete_hashed_index(&self, message_id: &MessageId, hashed_index: &HashedIndex, milestone_index: MilestoneIndex) {
+    fn delete_indexation(&self, message_id: &MessageId, indexation: Indexation, milestone_index: MilestoneIndex) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
-        let hashed_index_pk = HashedIndexPK::new(*hashed_index, partition_id, milestone_index, *message_id);
-        self.delete(hashed_index_pk);
+        let index_pk = IndexationPK::new(indexation, partition_id, milestone_index, *message_id);
+        self.delete(index_pk);
     }
     fn delete_transaction_partitioned_rows(
         &self,
@@ -463,7 +448,8 @@ impl Collector {
         let transaction_id = transaction.id();
         if let Essence::Regular(regular) = transaction.essence() {
             if let Some(Payload::Indexation(indexation)) = regular.payload() {
-                self.delete_hashed_index(&message_id, &indexation.hash(), milestone_index);
+                let index_key = Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
+                self.delete_indexation(&message_id, index_key, milestone_index);
             }
             for (output_index, output) in regular.outputs().iter().enumerate() {
                 self.delete_address(output, &transaction_id, output_index as u16, milestone_index);

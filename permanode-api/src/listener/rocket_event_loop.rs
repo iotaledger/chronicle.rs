@@ -306,7 +306,7 @@ pub async fn get_message_by_index(
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
         query::<Vec<(MessageId, MilestoneIndex)>, _, _>(
             keyspace.clone(),
-            Partitioned::new(UnhashedIndex(index.clone()), *partition_id),
+            Partitioned::new(Indexation(index.clone()), *partition_id),
             paging_states.as_ref().and_then(|map| map.get(partition_id).cloned()),
         )
     }))
