@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bee_message::input::Input;
+use permanode_storage::PartitionConfig;
 
 use super::*;
 #[async_trait::async_trait]
@@ -99,6 +100,14 @@ impl Collector {
         self.default_keyspace.clone()
     }
 
+    fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
+        self.storage_config
+            .as_ref()
+            .map(|config| &config.partition_config)
+            .unwrap_or(&PartitionConfig::default())
+            .partition_id(milestone_index.0)
+    }
+
     fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) {
         // Check if metadata already exist in the cache
         let ledger_inclusion_state;
@@ -138,7 +147,7 @@ impl Collector {
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
-        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let partition_id = self.get_partition_id(milestone_index);
         for parent_id in parents {
             let partitioned = Partitioned::new(*parent_id, partition_id);
             let parent_record = ParentRecord::new(milestone_index, *message_id, inclusion_state);
@@ -182,7 +191,7 @@ impl Collector {
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
-        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let partition_id = self.get_partition_id(milestone_index);
         let partitioned = Partitioned::new(index.clone(), partition_id);
         let index_record = IndexationRecord::new(milestone_index, *message_id, inclusion_state);
         self.insert(&self.get_keyspace(), partitioned, index_record);
@@ -366,7 +375,7 @@ impl Collector {
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
-        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let partition_id = self.get_partition_id(milestone_index);
         let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
@@ -428,14 +437,14 @@ impl Collector {
         insert_req.send_local(worker);
     }
     fn delete_parents(&self, message_id: &MessageId, parents: &Parents, milestone_index: MilestoneIndex) {
-        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let partition_id = self.get_partition_id(milestone_index);
         for parent_id in parents.iter() {
             let parent_pk = ParentPK::new(*parent_id, partition_id, milestone_index, *message_id);
             self.delete(parent_pk);
         }
     }
     fn delete_indexation(&self, message_id: &MessageId, indexation: Indexation, milestone_index: MilestoneIndex) {
-        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let partition_id = self.get_partition_id(milestone_index);
         let index_pk = IndexationPK::new(indexation, partition_id, milestone_index, *message_id);
         self.delete(index_pk);
     }
@@ -463,7 +472,7 @@ impl Collector {
         index: u16,
         milestone_index: MilestoneIndex,
     ) {
-        let partition_id = self.partitioner.partition_id(milestone_index.0);
+        let partition_id = self.get_partition_id(milestone_index);
         let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {

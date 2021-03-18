@@ -39,10 +39,9 @@ pub struct StorageConfig {
     pub reporter_count: u8,
     /// The name of the local datacenter
     pub local_datacenter: String,
-    /// The total number of partitions to use
-    pub partition_count: usize,
-    /// The number of sequential milestones to store side-by-side in a partition
-    pub milestone_chunk_size: Option<usize>,
+    /// The partition config
+    #[serde(default)]
+    pub partition_config: PartitionConfig,
 }
 
 /// Configuration for a scylla keyspace
@@ -59,4 +58,28 @@ pub struct KeyspaceConfig {
 pub struct DatacenterConfig {
     /// The scylla replication factor for this datacenter
     pub replication_factor: usize,
+}
+
+/// The partition config. Defaults to using 1000 partitions and a chunk size of 60480.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+pub struct PartitionConfig {
+    /// The total number of partitions to use
+    pub partition_count: u16,
+    /// The number of sequential milestones to store side-by-side in a partition
+    pub milestone_chunk_size: u32,
+}
+
+impl Default for PartitionConfig {
+    fn default() -> Self {
+        PartitionConfig {
+            partition_count: 1000,
+            milestone_chunk_size: 60480,
+        }
+    }
+}
+
+impl PartitionConfig {
+    pub fn partition_id(&self, milestone_index: u32) -> u16 {
+        ((milestone_index / self.milestone_chunk_size) % (self.partition_count as u32)) as u16
+    }
 }

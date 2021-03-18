@@ -52,12 +52,11 @@ impl Delete<Ed25519AddressPK, AddressRecord> for PermanodeKeyspace {
         }: &Ed25519AddressPK,
     ) -> T::Return {
         builder
-            .value(&address.as_ref())
+            .value(&address.to_string())
             .value(partition_id)
-            .value(&transaction_id.as_ref())
             .value(&milestone_index.0)
             .value(output_type)
-            .value(&transaction_id.as_ref())
+            .value(&transaction_id.to_string())
             .value(index)
     }
 }
@@ -108,7 +107,7 @@ impl Delete<IndexationPK, IndexationRecord> for PermanodeKeyspace {
             .value(&indexation.0)
             .value(partition_id)
             .value(&milestone_index.0)
-            .value(&message_id.as_ref())
+            .value(&message_id.to_string())
     }
 }
 
@@ -155,9 +154,9 @@ impl Delete<ParentPK, ParentRecord> for PermanodeKeyspace {
         }: &ParentPK,
     ) -> T::Return {
         builder
-            .value(&parent_id.as_ref())
+            .value(&parent_id.to_string())
             .value(partition_id)
             .value(&milestone_index.0)
-            .value(&message_id.as_ref())
+            .value(&message_id.to_string())
     }
 }

@@ -42,7 +42,6 @@ builder!(CollectorBuilder {
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     collectors_count: u8,
-    partitioner: Partitioner,
     storage_config: StorageConfig
 });
 
@@ -110,7 +109,6 @@ pub struct Collector {
     lru_msg_ref: LruCache<MessageId, MessageMetadataObj>,
     inbox: CollectorInbox,
     default_keyspace: PermanodeKeyspace,
-    partitioner: Partitioner,
     storage_config: Option<StorageConfig>,
 }
 
@@ -145,7 +143,6 @@ impl Builder for CollectorBuilder {
             collectors_count: self.collectors_count.unwrap(),
             inbox: self.inbox.unwrap(),
             default_keyspace,
-            partitioner: self.partitioner.unwrap(),
             storage_config: self.storage_config,
         }
         .set_name()

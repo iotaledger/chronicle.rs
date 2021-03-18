@@ -80,7 +80,7 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Perm
     }
 }
 
-impl Select<Partitioned<MessageId>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
+impl Select<Partitioned<MessageId>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -97,7 +97,7 @@ impl Select<Partitioned<MessageId>, Vec<(MessageId, MilestoneIndex)>> for Perman
     }
 }
 
-impl Select<Partitioned<Indexation>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
+impl Select<Partitioned<Indexation>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -114,20 +114,21 @@ impl Select<Partitioned<Indexation>, Vec<(MessageId, MilestoneIndex)>> for Perma
     }
 }
 
-impl<K> RowsDecoder<Partitioned<K>, Vec<(MessageId, MilestoneIndex)>> for PermanodeKeyspace {
+impl<K> RowsDecoder<Partitioned<K>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
     type Row = Record<(MessageId, MilestoneIndex)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<Vec<(MessageId, MilestoneIndex)>>, CqlError> {
+    fn try_decode(decoder: Decoder) -> Result<Option<Paged<Vec<(MessageId, MilestoneIndex)>>>, CqlError> {
         if decoder.is_rows() {
-            Ok(Some(
-                Self::Row::rows_iter(decoder).map(|row| row.into_inner()).collect(),
-            ))
+            let mut iter = Self::Row::rows_iter(decoder);
+            let paging_state = iter.take_paging_state();
+            let values = iter.map(|row| row.into_inner()).collect();
+            Ok(Some(Paged::new(values, paging_state)))
         } else {
             Err(decoder.get_error())
         }
     }
 }
 
-impl Select<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> for PermanodeKeyspace {
+impl Select<Partitioned<Ed25519Address>, Paged<Vec<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -143,15 +144,14 @@ impl Select<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> for Pe
     }
 }
 
-impl RowsDecoder<Partitioned<Ed25519Address>, Vec<(OutputId, MilestoneIndex)>> for PermanodeKeyspace {
+impl RowsDecoder<Partitioned<Ed25519Address>, Paged<Vec<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
     type Row = Record<(TransactionId, u16, MilestoneIndex)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<Vec<(OutputId, MilestoneIndex)>>, CqlError> {
+    fn try_decode(decoder: Decoder) -> Result<Option<Paged<Vec<(OutputId, MilestoneIndex)>>>, CqlError> {
         if decoder.is_rows() {
-            Ok(Some(
-                Self::Row::rows_iter(decoder)
-                    .map(|row| (OutputId::new(row.0, row.1).unwrap(), row.2))
-                    .collect(),
-            ))
+            let mut iter = Self::Row::rows_iter(decoder);
+            let paging_state = iter.take_paging_state();
+            let values = iter.map(|row| (OutputId::new(row.0, row.1).unwrap(), row.2)).collect();
+            Ok(Some(Paged::new(values, paging_state)))
         } else {
             Err(decoder.get_error())
         }

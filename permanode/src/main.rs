@@ -24,7 +24,9 @@ impl Builder for AppsBuilder {
 
     fn build(self) -> Self::State {
         let config = Config::load().expect("Failed to deserialize config!");
-        let permanode_api_builder = PermanodeAPIBuilder::new().api_config(config.api_config);
+        let permanode_api_builder = PermanodeAPIBuilder::new()
+            .api_config(config.api_config)
+            .storage_config(config.storage_config.clone());
         let permanode_broker_builder = PermanodeBrokerBuilder::new().storage_config(config.storage_config.clone());
         let scylla_builder = ScyllaBuilder::new()
             .listen_address(config.storage_config.listen_address)

@@ -17,7 +17,6 @@ pub(crate) use paho_mqtt::{
 };
 pub(crate) use permanode_storage::{
     access::*,
-    Partitioner,
     StorageConfig,
 };
 use serde::{
@@ -61,7 +60,6 @@ builder!(
         listen_address: SocketAddr,
         listener_handle: ListenerHandle,
         collectors_count: u8,
-        partitioner: Partitioner,
         storage_config: StorageConfig
 });
 
@@ -98,7 +96,6 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     collectors_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
-    partitioner: Partitioner,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
     storage_config: Option<StorageConfig>,
@@ -165,7 +162,6 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             collectors_count: self.collectors_count.unwrap_or(10),
             collector_handles: HashMap::new(),
             solidifier_handles: HashMap::new(),
-            partitioner: self.partitioner.unwrap_or(Partitioner::default()),
             handle,
             inbox,
             storage_config: self.storage_config,
