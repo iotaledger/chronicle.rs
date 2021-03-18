@@ -94,20 +94,7 @@ impl Collector {
         PermanodeKeyspace::new(res.keyspace.into_owned())
     }
     fn get_keyspace(&self) -> PermanodeKeyspace {
-        // Get the first keyspace or default to "permanode"
-        // In order to use multiple keyspaces, the user must
-        // use filters to determine where records go
-        PermanodeKeyspace::new(
-            self.storage_config
-                .as_ref()
-                .and_then(|config| {
-                    config
-                        .keyspaces
-                        .first()
-                        .and_then(|keyspace| Some(keyspace.name.clone()))
-                })
-                .unwrap_or("permanode".to_owned()),
-        )
+        self.default_keyspace.clone()
     }
 
     fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) {

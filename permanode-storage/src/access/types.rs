@@ -420,3 +420,29 @@ impl std::fmt::Display for HintVariant {
         )
     }
 }
+
+#[derive(Clone)]
+pub struct Paged<T> {
+    inner: T,
+    pub paging_state: Option<Vec<u8>>,
+}
+
+impl<T> Paged<T> {
+    pub fn new(inner: T, paging_state: Option<Vec<u8>>) -> Self {
+        Self { inner, paging_state }
+    }
+}
+
+impl<T> Deref for Paged<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T> DerefMut for Paged<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}

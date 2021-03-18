@@ -19,7 +19,6 @@ use permanode_storage::{
         MilestoneIndex,
         OutputData,
         OutputId,
-        PagingState,
         PartitionId,
         Partitioned,
     },
@@ -198,37 +197,41 @@ pub async fn get_message_children(
     page_size: usize,
     cookies: &CookieJar<'_>,
 ) -> Result<Json<SuccessBody<MessageChildrenResponse>>, Cow<'static, str>> {
+    // TODO: Set this in config
     let milestone_chunk = 1000;
 
     let paging_state = cookies.get("paging_state").map(|c| c.value());
-    let new_paging_states = paging_state.map(|h| {
-        let map: HashMap<PartitionId, usize> = bincode::deserialize(hex::decode(h).unwrap().as_slice()).unwrap();
-        map.iter()
-            .map(|(&partition_id, &offset)| (partition_id, PagingState::new(page_size, offset)))
-            .collect::<HashMap<_, _>>()
-    });
-    let paging_states = new_paging_states.clone().map(|s| {
-        s.iter()
-            .map(|(&partition_id, state)| (partition_id, state.into_bytes()))
-            .collect::<HashMap<_, _>>()
-    });
-    let mut new_paging_states = new_paging_states.unwrap_or_default();
+    let mut paging_states = paging_state
+        .map(|h| bincode::deserialize::<HashMap<PartitionId, Cow<[u8]>>>(hex::decode(h).unwrap().as_slice()).unwrap())
+        .unwrap_or_default();
 
     let keyspace = PermanodeKeyspace::new(keyspace);
     let message_id = MessageId::from_str(&message_id).unwrap();
     let mut partition_ids =
         query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), Hint::parent(message_id.to_string()), None)
             .await?;
+    let max_results = partition_ids.len() * page_size;
     let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
-        query::<Vec<(MessageId, MilestoneIndex)>, _, _>(
+        query::<Paged<Vec<(MessageId, MilestoneIndex)>>, _, _>(
             keyspace.clone(),
             Partitioned::new(message_id, *partition_id),
-            paging_states.as_ref().and_then(|map| map.get(partition_id).cloned()),
+            paging_states.get(partition_id).cloned().map(|state| state.into_owned()),
         )
     }))
     .await;
     let mut res = partition_ids.iter().map(|v| v.1).zip(res).collect::<HashMap<_, _>>();
+    paging_states = res
+        .iter()
+        .filter_map(|(&partition_id, paged)| {
+            paged.as_ref().ok().and_then(|paged| {
+                paged
+                    .paging_state
+                    .as_ref()
+                    .map(|state| (partition_id, Cow::from(state.to_owned())))
+            })
+        })
+        .collect();
 
     let mut messages = Vec::new();
     while !partition_ids.is_empty() && messages.len() < page_size {
@@ -242,33 +245,23 @@ pub async fn get_message_children(
             partition_ids.remove((messages.len() / milestone_chunk) % partition_ids.len());
             continue;
         }
-        let paging_state = new_paging_states
-            .entry(partition_id)
-            .or_insert(PagingState::new(page_size, 0));
         while messages.len() < page_size
             && list.first().is_some()
             && (latest_milestone.0 < milestone_chunk as u32
                 || list.first().unwrap().1 .0 > latest_milestone.0 - milestone_chunk as u32)
         {
             messages.push(list.remove(0).0);
-            paging_state.increment(1);
         }
     }
 
-    let new_paging_states = bincode::serialize(
-        &new_paging_states
-            .iter()
-            .map(|(&partition_id, state)| (partition_id, state.offset()))
-            .collect::<HashMap<_, _>>(),
-    )
-    .unwrap();
+    let new_paging_states = bincode::serialize(&paging_states).unwrap();
 
     cookies.add(Cookie::new("paging_state", hex::encode(new_paging_states)));
 
     Ok(Json(
         MessageChildrenResponse {
             message_id: message_id.to_string(),
-            max_results: page_size,
+            max_results,
             count: messages.len(),
             children_message_ids: messages.iter().map(|id| id.to_string()).collect(),
         }
@@ -283,35 +276,41 @@ pub async fn get_message_by_index(
     page_size: usize,
     cookies: &CookieJar<'_>,
 ) -> Result<Json<SuccessBody<MessagesForIndexResponse>>, Cow<'static, str>> {
+    if index.len() > 64 {
+        return Err("Provided index is too large! (Max 64 characters)".into());
+    }
+    // TODO: Set this in config
     let milestone_chunk = 1000;
 
     let paging_state = cookies.get("paging_state").map(|c| c.value());
-
-    let new_paging_states = paging_state.map(|h| {
-        let map: HashMap<PartitionId, usize> = bincode::deserialize(hex::decode(h).unwrap().as_slice()).unwrap();
-        map.iter()
-            .map(|(&partition_id, &offset)| (partition_id, PagingState::new(page_size, offset)))
-            .collect::<HashMap<_, _>>()
-    });
-    let paging_states = new_paging_states.clone().map(|s| {
-        s.iter()
-            .map(|(&partition_id, state)| (partition_id, state.into_bytes()))
-            .collect::<HashMap<_, _>>()
-    });
-    let mut new_paging_states = new_paging_states.unwrap_or_default();
+    let mut paging_states = paging_state
+        .map(|h| bincode::deserialize::<HashMap<PartitionId, Cow<[u8]>>>(hex::decode(h).unwrap().as_slice()).unwrap())
+        .unwrap_or_default();
 
     let keyspace = PermanodeKeyspace::new(keyspace);
     let mut partition_ids = query(keyspace.clone(), Hint::index(index.clone()), None).await?;
+    let max_results = partition_ids.len() * page_size;
     let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
-        query::<Vec<(MessageId, MilestoneIndex)>, _, _>(
+        query::<Paged<Vec<(MessageId, MilestoneIndex)>>, _, _>(
             keyspace.clone(),
             Partitioned::new(UnhashedIndex(index.clone()), *partition_id),
-            paging_states.as_ref().and_then(|map| map.get(partition_id).cloned()),
+            paging_states.get(partition_id).cloned().map(|state| state.into_owned()),
         )
     }))
     .await;
     let mut res = partition_ids.iter().map(|v| v.1).zip(res).collect::<HashMap<_, _>>();
+    paging_states = res
+        .iter()
+        .filter_map(|(&partition_id, paged)| {
+            paged.as_ref().ok().and_then(|paged| {
+                paged
+                    .paging_state
+                    .as_ref()
+                    .map(|state| (partition_id, Cow::from(state.to_owned())))
+            })
+        })
+        .collect();
 
     let mut messages = Vec::new();
     while !partition_ids.is_empty() && messages.len() < page_size {
@@ -325,33 +324,23 @@ pub async fn get_message_by_index(
             partition_ids.remove((messages.len() / milestone_chunk) % partition_ids.len());
             continue;
         }
-        let paging_state = new_paging_states
-            .entry(partition_id)
-            .or_insert(PagingState::new(page_size, 0));
         while messages.len() < page_size
             && list.first().is_some()
             && (latest_milestone.0 < milestone_chunk as u32
                 || list.first().unwrap().1 .0 > latest_milestone.0 - milestone_chunk as u32)
         {
             messages.push(list.remove(0).0);
-            paging_state.increment(1);
         }
     }
 
-    let new_paging_states = bincode::serialize(
-        &new_paging_states
-            .iter()
-            .map(|(&partition_id, state)| (partition_id, state.offset()))
-            .collect::<HashMap<_, _>>(),
-    )
-    .unwrap();
+    let new_paging_states = bincode::serialize(&paging_states).unwrap();
 
     cookies.add(Cookie::new("paging_state", hex::encode(new_paging_states)));
 
     Ok(Json(
         MessagesForIndexResponse {
             index,
-            max_results: page_size,
+            max_results,
             count: messages.len(),
             message_ids: messages.iter().map(|id| id.to_string()).collect(),
         }
@@ -416,37 +405,40 @@ pub async fn get_ed25519_outputs(
     page_size: usize,
     cookies: &CookieJar<'_>,
 ) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, Cow<'static, str>> {
+    // TODO: Set this in config
     let milestone_chunk = 1000;
 
     let paging_state = cookies.get("paging_state").map(|c| c.value());
-
-    let new_paging_states = paging_state.map(|h| {
-        let map: HashMap<PartitionId, usize> = bincode::deserialize(hex::decode(h).unwrap().as_slice()).unwrap();
-        map.iter()
-            .map(|(&partition_id, &offset)| (partition_id, PagingState::new(page_size, offset)))
-            .collect::<HashMap<_, _>>()
-    });
-    let paging_states = new_paging_states.clone().map(|s| {
-        s.iter()
-            .map(|(&partition_id, state)| (partition_id, state.into_bytes()))
-            .collect::<HashMap<_, _>>()
-    });
-    let mut new_paging_states = new_paging_states.unwrap_or_default();
+    let mut paging_states = paging_state
+        .map(|h| bincode::deserialize::<HashMap<PartitionId, Cow<[u8]>>>(hex::decode(h).unwrap().as_slice()).unwrap())
+        .unwrap_or_default();
 
     let keyspace = PermanodeKeyspace::new(keyspace);
 
     let ed25519_address = Ed25519Address::from_str(&address).unwrap();
     let mut partition_ids = query(keyspace.clone(), Hint::address(ed25519_address.to_string()), None).await?;
+    let max_results = partition_ids.len() * page_size;
     let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
-        query::<Vec<(OutputId, MilestoneIndex)>, _, _>(
+        query::<Paged<Vec<(OutputId, MilestoneIndex)>>, _, _>(
             keyspace.clone(),
             Partitioned::new(ed25519_address, *partition_id),
-            paging_states.as_ref().and_then(|map| map.get(partition_id).cloned()),
+            paging_states.get(partition_id).cloned().map(|state| state.into_owned()),
         )
     }))
     .await;
     let mut res = partition_ids.iter().map(|v| v.1).zip(res).collect::<HashMap<_, _>>();
+    paging_states = res
+        .iter()
+        .filter_map(|(&partition_id, paged)| {
+            paged.as_ref().ok().and_then(|paged| {
+                paged
+                    .paging_state
+                    .as_ref()
+                    .map(|state| (partition_id, Cow::from(state.to_owned())))
+            })
+        })
+        .collect();
 
     let mut outputs = Vec::new();
     while !partition_ids.is_empty() && outputs.len() < page_size {
@@ -460,26 +452,16 @@ pub async fn get_ed25519_outputs(
             partition_ids.remove((outputs.len() / milestone_chunk) % partition_ids.len());
             continue;
         }
-        let paging_state = new_paging_states
-            .entry(partition_id)
-            .or_insert(PagingState::new(page_size, 0));
         while outputs.len() < page_size
             && list.first().is_some()
             && (latest_milestone.0 < milestone_chunk as u32
                 || list.first().unwrap().1 .0 > latest_milestone.0 - milestone_chunk as u32)
         {
             outputs.push(list.remove(0).0);
-            paging_state.increment(1);
         }
     }
 
-    let new_paging_states = bincode::serialize(
-        &new_paging_states
-            .iter()
-            .map(|(&partition_id, state)| (partition_id, state.offset()))
-            .collect::<HashMap<_, _>>(),
-    )
-    .unwrap();
+    let new_paging_states = bincode::serialize(&paging_states).unwrap();
 
     cookies.add(Cookie::new("paging_state", hex::encode(new_paging_states)));
 
@@ -487,7 +469,7 @@ pub async fn get_ed25519_outputs(
         OutputsForAddressResponse {
             address_type: 1,
             address,
-            max_results: page_size,
+            max_results,
             count: outputs.len(),
             output_ids: outputs.iter().map(|id| id.to_string()).collect(),
         }

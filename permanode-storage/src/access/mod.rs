@@ -308,27 +308,3 @@ impl ColumnEncoder for TransactionVariant {
         buffer.extend(variant.as_bytes());
     }
 }
-
-#[derive(Clone)]
-pub struct PagingState {
-    page_size: usize,
-    offset: usize,
-}
-
-impl PagingState {
-    pub fn new(page_size: usize, offset: usize) -> Self {
-        Self { page_size, offset }
-    }
-
-    pub fn increment(&mut self, n: usize) {
-        self.offset += n
-    }
-
-    pub fn offset(&self) -> usize {
-        self.offset
-    }
-
-    pub fn into_bytes(&self) -> Vec<u8> {
-        todo!()
-    }
-}
