@@ -69,6 +69,7 @@ impl<T> Record<T> {
 pub struct Partitioned<T> {
     inner: T,
     partition_id: PartitionId,
+    milestone_index: Option<u32>,
 }
 
 impl<T> Deref for Partitioned<T> {
@@ -81,13 +82,24 @@ impl<T> Deref for Partitioned<T> {
 
 impl<T> Partitioned<T> {
     pub fn new(inner: T, partition_id: u16) -> Self {
-        Self { inner, partition_id }
+        Self {
+            inner,
+            partition_id,
+            milestone_index: None,
+        }
     }
     pub fn into_inner(self) -> T {
         self.inner
     }
     pub fn partition_id(&self) -> PartitionId {
         self.partition_id
+    }
+    pub fn with_milestone_index(mut self, milestone_index: u32) -> Self {
+        self.milestone_index = Some(milestone_index);
+        self
+    }
+    pub fn milestone_index(&self) -> Option<u32> {
+        self.milestone_index
     }
 }
 

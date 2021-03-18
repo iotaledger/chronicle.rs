@@ -73,7 +73,9 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned { inner, partition_id }: &Partitioned<Ed25519Address>,
+        Partitioned {
+            inner, partition_id, ..
+        }: &Partitioned<Ed25519Address>,
         &AddressRecord {
             milestone_index,
             transaction_id,
@@ -108,7 +110,9 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned { inner, partition_id }: &Partitioned<Indexation>,
+        Partitioned {
+            inner, partition_id, ..
+        }: &Partitioned<Indexation>,
         &IndexationRecord {
             milestone_index,
             message_id,
@@ -136,7 +140,9 @@ impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned { inner, partition_id }: &Partitioned<MessageId>,
+        Partitioned {
+            inner, partition_id, ..
+        }: &Partitioned<MessageId>,
         ParentRecord {
             milestone_index,
             message_id,

@@ -86,14 +86,17 @@ impl Select<Partitioned<MessageId>, Paged<Vec<(MessageId, MilestoneIndex)>>> for
         format!(
             "SELECT message_id, milestone_index
             FROM {}.parents
-            WHERE parent_id = ? AND partition_id = ?
+            WHERE parent_id = ? AND partition_id = ? AND milestone_index < ?
             ORDER BY milestone_index DESC",
             self.name()
         )
         .into()
     }
     fn bind_values<T: Values>(builder: T, message_id: &Partitioned<MessageId>) -> T::Return {
-        builder.value(&message_id.to_string()).value(&message_id.partition_id())
+        builder
+            .value(&message_id.to_string())
+            .value(&message_id.partition_id())
+            .value(&message_id.milestone_index().unwrap())
     }
 }
 
@@ -110,7 +113,10 @@ impl Select<Partitioned<Indexation>, Paged<Vec<(MessageId, MilestoneIndex)>>> fo
         .into()
     }
     fn bind_values<T: Values>(builder: T, index: &Partitioned<Indexation>) -> T::Return {
-        builder.value(&index.0).value(&index.partition_id())
+        builder
+            .value(&index.0)
+            .value(&index.partition_id())
+            .value(&index.milestone_index().unwrap())
     }
 }
 
@@ -140,7 +146,10 @@ impl Select<Partitioned<Ed25519Address>, Paged<Vec<(OutputId, MilestoneIndex)>>>
         .into()
     }
     fn bind_values<T: Values>(builder: T, address: &Partitioned<Ed25519Address>) -> T::Return {
-        builder.value(&address.to_string()).value(&address.partition_id())
+        builder
+            .value(&address.to_string())
+            .value(&address.partition_id())
+            .value(&address.milestone_index().unwrap())
     }
 }
 

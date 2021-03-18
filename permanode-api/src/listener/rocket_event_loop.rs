@@ -217,10 +217,14 @@ pub async fn get_message_children(
     let milestone_chunk = partition_config.milestone_chunk_size as usize;
     let page_size = page_size.unwrap_or(100);
 
-    let paging_state = cookies.get("paging_state_children").map(|c| c.value());
-    let mut paging_states = paging_state
-        .map(|h| bincode::deserialize::<HashMap<PartitionId, Cow<[u8]>>>(hex::decode(h).unwrap().as_slice()).unwrap())
-        .unwrap_or_default();
+    let last_partition_id = cookies
+        .get("last_partition_id_children")
+        .map(|c| c.value().parse::<u16>().ok())
+        .flatten();
+    let mut last_milestone_index = cookies
+        .get("last_milestone_index_children")
+        .map(|c| c.value().parse::<u32>().ok())
+        .flatten();
 
     let keyspace = PermanodeKeyspace::new(keyspace);
     let message_id = MessageId::from_str(&message_id).unwrap();
@@ -231,37 +235,58 @@ pub async fn get_message_children(
         None,
     )
     .await?;
-    let max_results = partition_ids.len() * page_size;
-    let latest_milestone = partition_ids.first().ok_or("No records found!")?.0;
+    if let Some(last_partition_id) = last_partition_id {
+        let i = partition_ids
+            .iter()
+            .position(|&(_, partition_id)| last_partition_id == partition_id);
+        if let Some(i) = i {
+            partition_ids = partition_ids[i..]
+                .iter()
+                .chain(partition_ids[..i].iter())
+                .cloned()
+                .collect();
+        }
+    }
+    let max_results = 2 * page_size;
+    let latest_milestone = last_milestone_index.unwrap_or(partition_ids.first().ok_or("No records found!")?.0 .0);
     let res = futures::future::join_all(partition_ids.iter().map(|(_, partition_id)| {
         query::<Paged<Vec<(MessageId, MilestoneIndex)>>, _, _>(
             keyspace.clone(),
-            Partitioned::new(message_id, *partition_id),
+            Partitioned::new(message_id, *partition_id).with_milestone_index(latest_milestone),
             Some(page_size as i32),
-            paging_states.get(partition_id).cloned().map(|state| state.into_owned()),
+            None,
         )
     }))
     .await;
     let mut res = partition_ids.iter().map(|v| v.1).zip(res).collect::<HashMap<_, _>>();
-    paging_states = res
-        .iter()
-        .filter_map(|(&partition_id, paged)| {
-            paged.as_ref().ok().and_then(|paged| {
-                if paged.len() == page_size {
-                    paged
-                        .paging_state
-                        .as_ref()
-                        .map(|state| (partition_id, Cow::from(state.to_owned())))
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
 
     let mut messages = Vec::new();
     while !partition_ids.is_empty() {
         let partition_id = partition_ids[(messages.len() / milestone_chunk) % partition_ids.len()].1;
+        if messages.len() > page_size {
+            cookies.add(
+                Cookie::build("last_partition_id_children", partition_id.to_string())
+                    .path(format!(
+                        "api/{}/messages/{}/children",
+                        keyspace.name(),
+                        message_id.to_string()
+                    ))
+                    .finish(),
+            );
+            cookies.add(
+                Cookie::build(
+                    "last_milestone_index_children",
+                    last_milestone_index.unwrap().to_string(),
+                )
+                .path(format!(
+                    "api/{}/messages/{}/children",
+                    keyspace.name(),
+                    message_id.to_string()
+                ))
+                .finish(),
+            );
+            break;
+        }
         let list = res
             .get_mut(&partition_id)
             .unwrap()
@@ -272,25 +297,13 @@ pub async fn get_message_children(
             continue;
         }
         while list.first().is_some()
-            && (latest_milestone.0 < milestone_chunk as u32
-                || list.first().unwrap().1 .0 > latest_milestone.0 - milestone_chunk as u32)
+            && (latest_milestone < milestone_chunk as u32
+                || list.first().unwrap().1 .0 > latest_milestone - milestone_chunk as u32)
         {
-            messages.push(list.remove(0).0);
+            let (message_id, milestone_index) = list.remove(0);
+            messages.push(message_id);
+            last_milestone_index = Some(milestone_index.0);
         }
-    }
-
-    if !paging_states.is_empty() {
-        let new_paging_states = bincode::serialize(&paging_states).unwrap();
-
-        cookies.add(
-            Cookie::build("paging_state_children", hex::encode(new_paging_states))
-                .path(format!(
-                    "api/{}/messages/{}/children",
-                    keyspace.name(),
-                    message_id.to_string()
-                ))
-                .finish(),
-        );
     }
 
     Ok(Json(
