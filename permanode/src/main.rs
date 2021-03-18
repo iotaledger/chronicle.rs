@@ -53,7 +53,10 @@ async fn main() {
         .await
         .future(|apps| async {
             let ws = format!("ws://{}/", "127.0.0.1:8080");
+            #[cfg(target_os = "windows")]
             let nodes = vec!["127.0.0.1:19042".parse().unwrap()];
+            #[cfg(not(target_os = "windows"))]
+            let nodes = vec!["172.17.0.2:19042".parse().unwrap()];
             add_nodes(&ws, nodes, 1)
                 .await
                 .unwrap_or_else(|e| panic!("Unable to add nodes: {}", e));
