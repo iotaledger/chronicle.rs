@@ -84,8 +84,8 @@ impl Select<Partitioned<MessageId>, Paged<Vec<(MessageId, MilestoneIndex)>>> for
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, milestone_index 
-            FROM {}.parents 
+            "SELECT message_id, milestone_index
+            FROM {}.parents
             WHERE parent_id = ? AND partition_id = ?
             ORDER BY milestone_index DESC",
             self.name()
@@ -97,19 +97,19 @@ impl Select<Partitioned<MessageId>, Paged<Vec<(MessageId, MilestoneIndex)>>> for
     }
 }
 
-impl Select<Partitioned<UnhashedIndex>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl Select<Partitioned<Indexation>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, milestone_index 
-            FROM {}.indexes 
+            "SELECT message_id, milestone_index
+            FROM {}.indexes
             WHERE hashed_index = ? AND partition_id = ?
             ORDER BY milestone_index DESC",
             self.name()
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, index: &Partitioned<UnhashedIndex>) -> T::Return {
+    fn bind_values<T: Values>(builder: T, index: &Partitioned<Indexation>) -> T::Return {
         builder.value(&index.0).value(&index.partition_id())
     }
 }
@@ -163,9 +163,9 @@ impl Select<OutputId, OutputData> for PermanodeKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "SELECT message_id, data, inclusion_state
-            FROM {}.transactions 
-            WHERE transaction_id = ? 
-            AND idx = ? 
+            FROM {}.transactions
+            WHERE transaction_id = ?
+            AND idx = ?
             AND (variant = 'output' OR variant = 'unlock')",
             self.name()
         )

@@ -97,7 +97,7 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
 }
 
 /// Insert Index into Indexes table
-impl Insert<Partitioned<UnhashedIndex>, HashedIndexRecord> for PermanodeKeyspace {
+impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -108,12 +108,12 @@ impl Insert<Partitioned<UnhashedIndex>, HashedIndexRecord> for PermanodeKeyspace
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned { inner, partition_id }: &Partitioned<UnhashedIndex>,
-        &HashedIndexRecord {
+        Partitioned { inner, partition_id }: &Partitioned<Indexation>,
+        &IndexationRecord {
             milestone_index,
             message_id,
             ledger_inclusion_state,
-        }: &HashedIndexRecord,
+        }: &IndexationRecord,
     ) -> T::Return {
         builder
             .value(&inner.0)

@@ -63,21 +63,21 @@ impl Delete<Ed25519AddressPK, AddressRecord> for PermanodeKeyspace {
 }
 
 #[derive(Clone)]
-pub struct HashedIndexPK {
-    hashed_index: HashedIndex,
+pub struct IndexationPK {
+    indexation: Indexation,
     partition_id: u16,
     milestone_index: MilestoneIndex,
     message_id: MessageId,
 }
-impl HashedIndexPK {
+impl IndexationPK {
     pub fn new(
-        hashed_index: HashedIndex,
+        indexation: Indexation,
         partition_id: u16,
         milestone_index: MilestoneIndex,
         message_id: MessageId,
     ) -> Self {
         Self {
-            hashed_index,
+            indexation,
             partition_id,
             milestone_index,
             message_id,
@@ -86,7 +86,7 @@ impl HashedIndexPK {
 }
 
 /// Delete Index record from Indexes table
-impl Delete<HashedIndexPK, HashedIndexRecord> for PermanodeKeyspace {
+impl Delete<IndexationPK, IndexationRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -97,15 +97,15 @@ impl Delete<HashedIndexPK, HashedIndexRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        HashedIndexPK {
-            hashed_index,
+        IndexationPK {
+            indexation,
             partition_id,
             milestone_index,
             message_id,
-        }: &HashedIndexPK,
+        }: &IndexationPK,
     ) -> T::Return {
         builder
-            .value(&hashed_index.as_ref())
+            .value(&indexation.0)
             .value(partition_id)
             .value(&milestone_index.0)
             .value(&message_id.as_ref())
