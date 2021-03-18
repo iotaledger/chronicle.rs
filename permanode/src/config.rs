@@ -59,7 +59,7 @@ mod test {
         let config = Config {
             storage_config: StorageConfig {
                 keyspaces: vec![KeyspaceConfig {
-                    name: "my_mainnet".to_string(),
+                    name: "permanode".to_string(),
                     data_centers: hashmap! {
                         "USA".to_string() => DatacenterConfig {
                             replication_factor: 2,
@@ -73,6 +73,8 @@ mod test {
                 thread_count: ThreadCount::CoreMultiple(1),
                 reporter_count: 2,
                 local_datacenter: "datacenter1".to_owned(),
+                partition_count: 1000,
+                milestone_chunk_size: Some(1000),
             },
             api_config: ApiConfig {},
             broker_config: BrokerConfig {},

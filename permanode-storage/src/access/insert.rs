@@ -14,7 +14,7 @@ impl Insert<MessageId, Message> for PermanodeKeyspace {
         message
             .pack(&mut message_bytes)
             .expect("Error occurred packing Message");
-        builder.value(&message_id.as_ref()).value(&message_bytes.as_slice())
+        builder.value(&message_id.to_string()).value(&message_bytes.as_slice())
     }
 }
 /// Insert Metadata
@@ -30,7 +30,7 @@ impl Insert<MessageId, MessageMetadataObj> for PermanodeKeyspace {
     fn bind_values<T: Values>(builder: T, message_id: &MessageId, meta: &MessageMetadataObj) -> T::Return {
         // Encode metadata using bincode
         let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
-        builder.value(&message_id.as_ref()).value(&encoded.as_slice())
+        builder.value(&message_id.to_string()).value(&encoded.as_slice())
     }
 }
 
@@ -56,7 +56,7 @@ impl Insert<MessageId, (Message, MessageMetadataObj)> for PermanodeKeyspace {
         // Encode metadata using bincode
         let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
         builder
-            .value(&message_id.as_ref())
+            .value(&message_id.to_string())
             .value(&message_bytes.as_slice())
             .value(&encoded.as_slice())
     }
@@ -76,19 +76,19 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
         Partitioned { inner, partition_id }: &Partitioned<Ed25519Address>,
         &AddressRecord {
             milestone_index,
-            output_type,
             transaction_id,
             index,
             amount,
             ledger_inclusion_state,
+            output_type,
         }: &AddressRecord,
     ) -> T::Return {
         builder
-            .value(&inner.as_ref())
+            .value(&inner.to_string())
             .value(partition_id)
             .value(&milestone_index.0)
             .value(&output_type)
-            .value(&transaction_id.as_ref())
+            .value(&transaction_id.to_string())
             .value(&index)
             .value(&amount)
             .value(&Ed25519Address::KIND)
@@ -97,7 +97,7 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
 }
 
 /// Insert Index into Indexes table
-impl Insert<Partitioned<HashedIndex>, HashedIndexRecord> for PermanodeKeyspace {
+impl Insert<Partitioned<UnhashedIndex>, HashedIndexRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -108,7 +108,7 @@ impl Insert<Partitioned<HashedIndex>, HashedIndexRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned { inner, partition_id }: &Partitioned<HashedIndex>,
+        Partitioned { inner, partition_id }: &Partitioned<UnhashedIndex>,
         &HashedIndexRecord {
             milestone_index,
             message_id,
@@ -116,10 +116,10 @@ impl Insert<Partitioned<HashedIndex>, HashedIndexRecord> for PermanodeKeyspace {
         }: &HashedIndexRecord,
     ) -> T::Return {
         builder
-            .value(&inner.as_ref())
+            .value(&inner.0)
             .value(partition_id)
             .value(&milestone_index.0)
-            .value(&message_id.as_ref())
+            .value(&message_id.to_string())
             .value(&ledger_inclusion_state)
     }
 }
@@ -144,10 +144,10 @@ impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
         }: &ParentRecord,
     ) -> T::Return {
         builder
-            .value(&inner.as_ref())
+            .value(&inner.to_string())
             .value(partition_id)
             .value(&milestone_index.0)
-            .value(&message_id.as_ref())
+            .value(&message_id.to_string())
             .value(ledger_inclusion_state)
     }
 }
@@ -177,10 +177,10 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
             milestone_index = None;
         }
         builder
-            .value(&transaction_id.as_ref())
+            .value(&transaction_id.to_string())
             .value(index)
             .value(&transaction_record.variant)
-            .value(&transaction_record.message_id.as_ref())
+            .value(&transaction_record.message_id.to_string())
             .value(&transaction_record.data)
             .value(&transaction_record.inclusion_state)
             .value(&milestone_index)
@@ -206,10 +206,10 @@ impl Insert<OutputId, TransactionRecord> for PermanodeKeyspace {
                 milestone_index = None;
             }
             builder
-                .value(&output_id.transaction_id().as_ref())
+                .value(&output_id.transaction_id().to_string())
                 .value(&output_id.index())
                 .value(&transaction_record.variant)
-                .value(&transaction_record.message_id.as_ref())
+                .value(&transaction_record.message_id.to_string())
                 .value(&transaction_record.data)
                 .value(&transaction_record.inclusion_state)
                 .value(&milestone_index)
@@ -220,7 +220,7 @@ impl Insert<OutputId, TransactionRecord> for PermanodeKeyspace {
 }
 
 /// Insert Hint into Hints table
-impl<H: HintVariant> Insert<Hint<H>, Partition> for PermanodeKeyspace {
+impl Insert<Hint, Partition> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -229,10 +229,10 @@ impl<H: HintVariant> Insert<Hint<H>, Partition> for PermanodeKeyspace {
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, hint: &Hint<H>, partition: &Partition) -> T::Return {
+    fn bind_values<T: Values>(builder: T, hint: &Hint, partition: &Partition) -> T::Return {
         builder
-            .value(&hint.get_inner().as_bytes())
-            .value(&H::variant())
+            .value(&hint.hint)
+            .value(&hint.variant.to_string())
             .value(partition.id())
             .value(partition.milestone_index())
     }

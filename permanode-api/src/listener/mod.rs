@@ -9,7 +9,7 @@ use tokio::sync::mpsc::UnboundedSender;
 mod init;
 mod rocket_event_loop;
 mod terminating;
-mod warp_event_loop;
+// mod warp_event_loop;
 
 /// A listener implementation using Rocket.rs
 pub struct RocketListener {

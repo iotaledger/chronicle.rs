@@ -103,11 +103,11 @@ impl<P: Packable> ColumnDecoder for Bee<P> {
 #[derive(Debug, Clone)]
 pub struct UnlockData {
     /// it holds the transaction_id of the input which created the unlock_block
-    input_tx_id: TransactionId,
+    pub input_tx_id: TransactionId,
     /// it holds the input_index of the input which created the unlock_block
-    input_index: u16,
+    pub input_index: u16,
     /// it's the unlock_block
-    unlock_block: UnlockBlock,
+    pub unlock_block: UnlockBlock,
 }
 impl UnlockData {
     pub fn new(input_tx_id: TransactionId, input_index: u16, unlock_block: UnlockBlock) -> Self {
@@ -355,21 +355,68 @@ impl ColumnEncoder for TransactionData {
 }
 
 #[derive(Debug, Clone)]
-pub struct MessageChildren {
-    pub children: Vec<MessageId>,
+pub struct OutputData {
+    pub output: CreatedOutput,
+    pub unlock_blocks: Vec<UnlockRes>,
 }
 
 #[derive(Debug, Clone)]
-pub struct IndexMessages {
-    pub messages: Vec<MessageId>,
+pub struct UnlockRes {
+    pub message_id: MessageId,
+    pub block: UnlockBlock,
+    pub inclusion_state: Option<LedgerInclusionState>,
 }
 
-#[derive(Debug, Clone)]
-pub struct OutputIds {
-    pub ids: Vec<OutputId>,
+pub type PartitionId = u16;
+
+#[derive(Clone)]
+pub struct UnhashedIndex(pub String);
+
+#[derive(Clone)]
+pub struct Hint {
+    pub hint: String,
+    pub variant: HintVariant,
 }
 
-#[derive(Debug, Clone)]
-pub struct Outputs {
-    pub outputs: Vec<(MessageId, TransactionData)>,
+impl Hint {
+    pub fn index(index: String) -> Self {
+        Self {
+            hint: index,
+            variant: HintVariant::Index,
+        }
+    }
+
+    pub fn address(address: String) -> Self {
+        Self {
+            hint: address,
+            variant: HintVariant::Address,
+        }
+    }
+
+    pub fn parent(parent: String) -> Self {
+        Self {
+            hint: parent,
+            variant: HintVariant::Parent,
+        }
+    }
+}
+#[derive(Clone)]
+pub enum HintVariant {
+    Address,
+    Index,
+    Parent,
+}
+
+impl std::fmt::Display for HintVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                HintVariant::Address => "address",
+                HintVariant::Index => "index",
+                HintVariant::Parent => "parent",
+            }
+        )
+    }
 }

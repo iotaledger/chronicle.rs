@@ -68,7 +68,15 @@ impl<T> Record<T> {
 #[derive(Clone)]
 pub struct Partitioned<T> {
     inner: T,
-    partition_id: u16,
+    partition_id: PartitionId,
+}
+
+impl<T> Deref for Partitioned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl<T> Partitioned<T> {
@@ -78,7 +86,7 @@ impl<T> Partitioned<T> {
     pub fn into_inner(self) -> T {
         self.inner
     }
-    pub fn partition_id(self) -> u16 {
+    pub fn partition_id(&self) -> PartitionId {
         self.partition_id
     }
 }
@@ -96,26 +104,6 @@ impl<T> TTL<T> {
     }
 }
 
-#[derive(Clone)]
-pub struct Hint<T: HintVariant> {
-    inner: T,
-}
-
-impl Hint<Ed25519Address> {
-    pub fn new(address: Ed25519Address) -> Self {
-        Self { inner: address }
-    }
-}
-impl Hint<MessageId> {
-    pub fn new(parent_id: MessageId) -> Self {
-        Self { inner: parent_id }
-    }
-}
-impl Hint<HashedIndex> {
-    pub fn new(hashed_index: HashedIndex) -> Self {
-        Self { inner: hashed_index }
-    }
-}
 #[derive(Clone, Copy)]
 pub struct Partition {
     id: u16,
@@ -131,42 +119,6 @@ impl Partition {
     }
     pub fn milestone_index(&self) -> &u32 {
         &self.milestone_index
-    }
-}
-
-impl<T: HintVariant> Hint<T> {
-    pub fn get_inner(&self) -> &T {
-        &self.inner
-    }
-}
-
-pub trait HintVariant {
-    fn variant() -> &'static str;
-    fn as_bytes(&self) -> &[u8];
-}
-impl HintVariant for Ed25519Address {
-    fn variant() -> &'static str {
-        "address"
-    }
-    fn as_bytes(&self) -> &[u8] {
-        self.as_ref()
-    }
-}
-impl HintVariant for MessageId {
-    fn variant() -> &'static str {
-        "parent"
-    }
-    fn as_bytes(&self) -> &[u8] {
-        self.as_ref()
-    }
-}
-
-impl HintVariant for HashedIndex {
-    fn variant() -> &'static str {
-        "index"
-    }
-    fn as_bytes(&self) -> &[u8] {
-        self.as_ref()
     }
 }
 
@@ -354,5 +306,29 @@ impl ColumnEncoder for TransactionVariant {
         }
         buffer.extend(&i32::to_be_bytes(variant.len() as i32));
         buffer.extend(variant.as_bytes());
+    }
+}
+
+#[derive(Clone)]
+pub struct PagingState {
+    page_size: usize,
+    offset: usize,
+}
+
+impl PagingState {
+    pub fn new(page_size: usize, offset: usize) -> Self {
+        Self { page_size, offset }
+    }
+
+    pub fn increment(&mut self, n: usize) {
+        self.offset += n
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn into_bytes(&self) -> Vec<u8> {
+        todo!()
     }
 }

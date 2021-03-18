@@ -13,16 +13,14 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
     ) -> Result<(), Need> {
         while let Some(event) = self.inbox.recv().await {
             match event {
-                #[allow(unused_mut)]
                 CollectorEvent::Message(message_id, mut message) => {
+                    // info!("Inserting: {}", message_id.to_string());
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
-                        {
-                            // store message
-                            self.insert_message(&message_id, &message);
-                            // add it to the cache in order to not presist it again.
-                            self.lru_msg.put(message_id, (self.est_ms, message));
-                        }
+                        // store message
+                        self.insert_message(&message_id, &mut message);
+                        // add it to the cache in order to not presist it again.
+                        self.lru_msg.put(message_id, (self.est_ms, message));
                     }
                 }
                 CollectorEvent::MessageReferenced(metadata) => {
@@ -74,7 +72,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 }
                             }
 
-                            self.insert_message_with_metadata(&message_id.clone(), &message.clone(), &metadata);
+                            self.insert_message_with_metadata(&message_id.clone(), &mut message.clone(), &metadata);
                         } else {
                             // store it as metadata
                             self.insert_message_metadata(metadata.clone());
@@ -90,19 +88,47 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
-    fn insert_message(&mut self, message_id: &MessageId, message: &Message) {
+    #[cfg(feature = "filter")]
+    fn get_keyspace_for_message(&self, message: &mut Message) -> PermanodeKeyspace {
+        let res = futures::executor::block_on(permanode_filter::filter_messages(message));
+        PermanodeKeyspace::new(res.keyspace.into_owned())
+    }
+    fn get_keyspace(&self) -> PermanodeKeyspace {
+        // Get the first keyspace or default to "permanode"
+        // In order to use multiple keyspaces, the user must
+        // use filters to determine where records go
+        PermanodeKeyspace::new(
+            self.storage_config
+                .as_ref()
+                .and_then(|config| {
+                    config
+                        .keyspaces
+                        .first()
+                        .and_then(|keyspace| Some(keyspace.name.clone()))
+                })
+                .unwrap_or("permanode".to_owned()),
+        )
+    }
+
+    fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) {
         // Check if metadata already exist in the cache
         let ledger_inclusion_state;
+
+        #[cfg(feature = "filter")]
+        let keyspace = self.get_keyspace_for_message(message);
+        #[cfg(not(feature = "filter"))]
+        let keyspace = self.get_keyspace();
+
         if let Some(meta) = self.lru_msg_ref.get(message_id) {
             ledger_inclusion_state = meta.ledger_inclusion_state.clone();
             self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
-            self.insert(*message_id, message_tuple);
+            self.insert(&keyspace, *message_id, message_tuple);
         } else {
             ledger_inclusion_state = None;
             // store message only
-            self.insert(*message_id, message.clone());
+            self.insert(&keyspace, *message_id, message.clone());
         };
         // Insert parents/children
         self.insert_parents(
@@ -127,11 +153,11 @@ impl Collector {
         for parent_id in parents {
             let partitioned = Partitioned::new(*parent_id, partition_id);
             let parent_record = ParentRecord::new(milestone_index, *message_id, inclusion_state);
-            self.insert(partitioned, parent_record);
+            self.insert(&self.get_keyspace(), partitioned, parent_record);
             // insert hint record
-            let hint = Hint::<MessageId>::new(*parent_id);
+            let hint = Hint::parent(parent_id.to_string());
             let partition = Partition::new(partition_id, *milestone_index);
-            self.insert(hint, partition)
+            self.insert(&self.get_keyspace(), hint, partition)
         }
     }
     fn insert_payload(
@@ -143,7 +169,16 @@ impl Collector {
     ) {
         match payload {
             Payload::Indexation(indexation) => {
-                self.insert_hashed_index(message_id, indexation.hash(), milestone_index, inclusion_state);
+                // info!(
+                //    "Inserting Hashed index: {}",
+                //    String::from_utf8_lossy(indexation.index())
+                //);
+                self.insert_index(
+                    message_id,
+                    UnhashedIndex(String::from_utf8_lossy(indexation.index()).into_owned()),
+                    milestone_index,
+                    inclusion_state,
+                );
             }
             Payload::Transaction(transaction) => {
                 self.insert_transaction(message_id, transaction, inclusion_state, milestone_index)
@@ -155,26 +190,26 @@ impl Collector {
             }
         }
     }
-    fn insert_hashed_index(
+    fn insert_index(
         &self,
         message_id: &MessageId,
-        hashed_index: HashedIndex,
+        index: UnhashedIndex,
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
     ) {
         let partition_id = self.partitioner.partition_id(milestone_index.0);
-        let partitioned = Partitioned::new(hashed_index, partition_id);
+        let partitioned = Partitioned::new(index.clone(), partition_id);
         let hashed_index_record = HashedIndexRecord::new(milestone_index, *message_id, inclusion_state);
-        self.insert(partitioned, hashed_index_record);
+        self.insert(&self.get_keyspace(), partitioned, hashed_index_record);
         // insert hint record
-        let hint = Hint::<HashedIndex>::new(hashed_index);
+        let hint = Hint::index(index.0);
         let partition = Partition::new(partition_id, *milestone_index);
-        self.insert(hint, partition)
+        self.insert(&self.get_keyspace(), hint, partition)
     }
     fn insert_message_metadata(&mut self, metadata: MessageMetadataObj) {
         let message_id = metadata.message_id;
         // store message and metadata
-        self.insert(message_id, metadata.clone());
+        self.insert(&self.get_keyspace(), message_id, metadata.clone());
         // Insert parents/children
         let parents = metadata.parent_message_ids;
         self.insert_parents(
@@ -187,12 +222,17 @@ impl Collector {
     fn insert_message_with_metadata(
         &mut self,
         message_id: &MessageId,
-        message: &Message,
+        message: &mut Message,
         metadata: &MessageMetadataObj,
     ) {
+        #[cfg(feature = "filter")]
+        let keyspace = self.get_keyspace_for_message(message);
+        #[cfg(not(feature = "filter"))]
+        let keyspace = self.get_keyspace();
+
         let message_tuple = (message.clone(), metadata.clone());
         // store message and metadata
-        self.insert(*message_id, message_tuple);
+        self.insert(&keyspace, *message_id, message_tuple);
         // Insert parents/children
         self.insert_parents(
             &message_id,
@@ -303,7 +343,7 @@ impl Collector {
         // -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
         let input_id = (*transaction_id, index);
         let transaction_record = TransactionRecord::input(*message_id, input_data, inclusion_state, milestone_index);
-        self.insert(input_id, transaction_record)
+        self.insert(&self.get_keyspace(), input_id, transaction_record)
     }
     fn insert_unlock(
         &self,
@@ -317,7 +357,7 @@ impl Collector {
         // -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
         let utxo_id = (*utxo_transaction_id, utxo_index);
         let transaction_record = TransactionRecord::unlock(*message_id, unlock_data, inclusion_state, milestone_index);
-        self.insert(utxo_id, transaction_record)
+        self.insert(&self.get_keyspace(), utxo_id, transaction_record)
     }
     fn insert_output(
         &self,
@@ -331,7 +371,7 @@ impl Collector {
         // -output variant: (OutputTransactionId, OutputIndex) -> Output data column
         let output_id = (*transaction_id, index);
         let transaction_record = TransactionRecord::output(*message_id, output, inclusion_state, milestone_index);
-        self.insert(output_id, transaction_record)
+        self.insert(&self.get_keyspace(), output_id, transaction_record)
     }
     fn insert_address(
         &self,
@@ -355,11 +395,11 @@ impl Collector {
                         sls.amount(),
                         inclusion_state,
                     );
-                    self.insert(partitioned, address_record);
+                    self.insert(&self.get_keyspace(), partitioned, address_record);
                     // insert hint record
-                    let hint = Hint::<Ed25519Address>::new(*ed_address);
+                    let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
-                    self.insert(hint, partition)
+                    self.insert(&self.get_keyspace(), hint, partition)
                 } else {
                     error!("Unexpected address variant");
                 }
@@ -375,11 +415,11 @@ impl Collector {
                         slda.amount(),
                         inclusion_state,
                     );
-                    self.insert(partitioned, address_record);
+                    self.insert(&self.get_keyspace(), partitioned, address_record);
                     // insert hint record
-                    let hint = Hint::<Ed25519Address>::new(*ed_address);
+                    let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
-                    self.insert(hint, partition)
+                    self.insert(&self.get_keyspace(), hint, partition)
                 } else {
                     error!("Unexpected address variant");
                 }
@@ -392,18 +432,14 @@ impl Collector {
             }
         }
     }
-    fn insert<K, V>(&self, key: K, value: V)
+    fn insert<S, K, V>(&self, keyspace: &S, key: K, value: V)
     where
-        PermanodeKeyspace: Insert<K, V>,
+        S: 'static + Insert<K, V>,
         K: 'static + Send + Clone,
         V: 'static + Send + Clone,
     {
-        let insert_req = self
-            .default_keyspace
-            .insert(&key, &value)
-            .consistency(Consistency::One)
-            .build();
-        let worker = InsertWorker::boxed(self.default_keyspace.clone(), key, value);
+        let insert_req = keyspace.insert(&key, &value).consistency(Consistency::One).build();
+        let worker = InsertWorker::boxed(keyspace.clone(), key, value);
         insert_req.send_local(worker);
     }
     fn delete_parents(&self, message_id: &MessageId, parents: &Parents, milestone_index: MilestoneIndex) {
