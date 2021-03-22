@@ -420,7 +420,7 @@ impl std::fmt::Display for HintVariant {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Paged<T> {
     inner: T,
     pub paging_state: Option<Vec<u8>>,

@@ -86,7 +86,7 @@ impl Select<Partitioned<MessageId>, Paged<Vec<(MessageId, MilestoneIndex)>>> for
         format!(
             "SELECT message_id, milestone_index
             FROM {}.parents
-            WHERE parent_id = ? AND partition_id = ? AND milestone_index < ?
+            WHERE parent_id = ? AND partition_id = ? AND milestone_index <= ?
             ORDER BY milestone_index DESC",
             self.name()
         )
@@ -106,7 +106,7 @@ impl Select<Partitioned<Indexation>, Paged<Vec<(MessageId, MilestoneIndex)>>> fo
         format!(
             "SELECT message_id, milestone_index
             FROM {}.indexes
-            WHERE hashed_index = ? AND partition_id = ?
+            WHERE hashed_index = ? AND partition_id = ? AND milestone_index <= ?
             ORDER BY milestone_index DESC",
             self.name()
         )
@@ -140,7 +140,7 @@ impl Select<Partitioned<Ed25519Address>, Paged<Vec<(OutputId, MilestoneIndex)>>>
         format!(
             "SELECT transaction_id, idx
             FROM {}.addresses
-            WHERE address = ? AND address_type = 0 AND partition_id = ?",
+            WHERE address = ? AND address_type = 0 AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
         .into()
@@ -245,7 +245,10 @@ impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
 
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT milestone_index, partition_id FROM {}.hints WHERE hint = ? AND variant = ?",
+            "SELECT milestone_index, partition_id 
+            FROM {}.hints 
+            WHERE hint = ? AND variant = ? 
+            ORDER BY variant, partition_id",
             self.name()
         )
         .into()
