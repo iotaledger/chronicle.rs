@@ -193,6 +193,8 @@ where
     V: 'static + Send + Clone + std::fmt::Debug + std::fmt::Display,
     PermanodeKeyspace: Select<Partitioned<K>, Paged<Vec<(V, MilestoneIndex)>>>,
 {
+    let total_start_time = std::time::Instant::now();
+    let mut start_time = total_start_time;
     // The milestone chunk, i.e. how many sequential milestones go on a partition at a time
     let milestone_chunk = partition_config.milestone_chunk_size as usize;
 
@@ -216,6 +218,16 @@ where
     // Get the list of partitions which contain records for this request
     let mut partition_ids =
         query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
+
+    if partition_ids.is_empty() {
+        return Err("No results returned!".into());
+    }
+
+    debug!(
+        "Setup time: {} ms",
+        (std::time::Instant::now() - start_time).as_millis()
+    );
+    start_time = std::time::Instant::now();
 
     // Either use the provided partition / milestone index or the first hint record
     let (first_partition_id, latest_milestone) =
@@ -241,6 +253,11 @@ where
             .collect();
     }
 
+    debug!(
+        "Reorder time: {} ms",
+        (std::time::Instant::now() - start_time).as_millis()
+    );
+
     // This will hold lists of results keyed by partition id
     let mut list_map = HashMap::new();
 
@@ -250,8 +267,13 @@ where
     // The resulting list
     let mut results = Vec::new();
     let mut depleted_partitions = HashSet::new();
-    let mut last_milestone_index = last_milestone_index.unwrap_or(latest_milestone);
-    for (partition_ind, (_, partition_id)) in partition_ids.iter().enumerate().cycle() {
+    let mut last_index_map = HashMap::new();
+    last_index_map.insert(partition_ids[0].1, last_milestone_index.unwrap_or(latest_milestone));
+    for (partition_ind, (index, partition_id)) in partition_ids.iter().enumerate().cycle() {
+        if !last_index_map.contains_key(partition_id) {
+            last_index_map.insert(*partition_id, index.0);
+        }
+        debug!("Gathering results from partition {}", partition_id);
         // Make sure we stop iterating if all of our partitions are depleted.
         if depleted_partitions.len() == partition_ids.len() {
             // Remove the cookies so the client knows it's done
@@ -262,17 +284,20 @@ where
         }
         // Skip depleted partitions
         if depleted_partitions.contains(partition_id) {
+            debug!("Skipping partition");
             continue;
         }
+
         // Fetch a chunk of results if we need them to fill the page size
         if !list_map.contains_key(partition_id) {
+            start_time = std::time::Instant::now();
             let fetch_ids = (partition_ind..partition_ind + fetch_size).map(|ind| partition_ids[ind].1);
             let res = futures::future::join_all(fetch_ids.clone().map(|partition_id| {
                 debug!(
                     "Fetching results for partition id: {}, milestone: {}, with paging state: {:?}",
                     partition_id,
                     latest_milestone,
-                    last_partition_id.and_then(|id| if partition_id == id { paging_state.clone() } else { None })
+                    last_partition_id.map(|id| partition_id == id)
                 );
                 query::<Paged<Vec<(V, MilestoneIndex)>>, _, _>(
                     keyspace.clone(),
@@ -282,6 +307,10 @@ where
                 )
             }))
             .await;
+            debug!(
+                "Fetch time: {} ms",
+                (std::time::Instant::now() - start_time).as_millis()
+            );
             for (partition_id, list) in fetch_ids.zip(res) {
                 list_map.insert(partition_id, list);
             }
@@ -291,21 +320,23 @@ where
             Ok(list) => list,
             Err(msg) => return Err(msg.to_owned()),
         };
+
+        let loop_start_time = std::time::Instant::now();
         // Iterate the list, pulling records from the front until we hit
         // a milestone in the next chunk or run out
         loop {
             if !list.is_empty() {
                 // If we're still looking at the same chunk
-                if last_milestone_index < milestone_chunk as u32
-                    || list.first().unwrap().1 .0 > last_milestone_index - milestone_chunk as u32
+                if last_index_map[partition_id] < milestone_chunk as u32
+                    || list.first().unwrap().1 .0 > last_index_map[partition_id] - milestone_chunk as u32
                 {
                     // And we exceeded the page size
                     if results.len() >= page_size {
                         // Add more anyway if the milestone index is the same,
                         // because we won't be able to recover lost records
                         // with a paging state
-                        if last_milestone_index == list.first().unwrap().1 .0 {
-                            debug!("Adding extra records past page_size");
+                        if last_index_map[partition_id] == list.first().unwrap().1 .0 {
+                            // debug!("Adding extra records past page_size");
                             let (message_id, _) = list.remove(0);
                             results.push(message_id);
                         // Otherwise we can stop here and set our cookies
@@ -322,14 +353,22 @@ where
                                     .finish(),
                             );
                             cookies.remove(Cookie::named("paging_state"));
+                            debug!(
+                                "Loop time: {} ms",
+                                (std::time::Instant::now() - loop_start_time).as_millis()
+                            );
+                            debug!(
+                                "Total time: {} ms",
+                                (std::time::Instant::now() - total_start_time).as_millis()
+                            );
                             return Ok(results);
                         }
                     // Otherwise, business as usual
                     } else {
                         let (message_id, milestone_index) = list.remove(0);
-                        debug!("Adding result normally");
+                        // debug!("Adding result normally");
                         results.push(message_id);
-                        last_milestone_index = milestone_index.0;
+                        last_index_map.insert(*partition_id, milestone_index.0);
                     }
                 // We hit a new chunk, so we want to look at the next partition now
                 } else {
@@ -364,11 +403,16 @@ where
                             .path(cookie_path.clone())
                             .finish(),
                     );
+                    debug!(
+                        "Total time: {} ms",
+                        (std::time::Instant::now() - total_start_time).as_millis()
+                    );
                     return Ok(results);
                 } else {
                     debug!("...and we need more results");
                     if list.paging_state.is_some() {
                         debug!("......so we're querying for them");
+                        start_time = std::time::Instant::now();
                         *list = query::<Paged<Vec<(V, MilestoneIndex)>>, _, _>(
                             keyspace.clone(),
                             Partitioned::new(key.clone(), *partition_id).with_milestone_index(latest_milestone),
@@ -377,26 +421,35 @@ where
                         )
                         .await
                         .unwrap();
-                        if let Some(ref paging_state) = list.paging_state {
-                            cookies.add(
-                                Cookie::build("paging_state", hex::encode(paging_state))
-                                    .path(cookie_path.clone())
-                                    .finish(),
-                            );
-                        } else {
-                            cookies.remove(Cookie::named("paging_state"));
-                        }
+                        debug!(
+                            "Re-Query time: {} ms",
+                            (std::time::Instant::now() - start_time).as_millis()
+                        );
                     // Unless it didn't have one, in which case we mark it as a depleted partition and
                     // move on to the next one.
                     } else {
                         debug!("......but there's no paging state");
                         depleted_partitions.insert(*partition_id);
+                        debug!(
+                            "Depleted: {}, Remaining: {}",
+                            depleted_partitions.len(),
+                            partition_ids.len() - depleted_partitions.len()
+                        );
                         break;
                     }
                 }
             }
         }
+        // debug!(
+        //    "Loop time: {} ms",
+        //    (std::time::Instant::now() - loop_start_time).as_millis()
+        //);
     }
+
+    debug!(
+        "Total time: {} ms",
+        (std::time::Instant::now() - total_start_time).as_millis()
+    );
 
     Ok(results)
 }
