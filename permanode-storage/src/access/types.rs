@@ -99,6 +99,8 @@ impl<P: Packable> ColumnDecoder for Bee<P> {
     }
 }
 
+/// A transaction's unlock data, to be stored in a `transactions` row.
+/// Holds a reference to the input which it signs.
 #[derive(Debug, Clone)]
 pub struct UnlockData {
     /// it holds the transaction_id of the input which created the unlock_block
@@ -109,6 +111,7 @@ pub struct UnlockData {
     pub unlock_block: UnlockBlock,
 }
 impl UnlockData {
+    /// Creates a new unlock data
     pub fn new(input_tx_id: TransactionId, input_index: u16, unlock_block: UnlockBlock) -> Self {
         Self {
             input_tx_id,
@@ -140,16 +143,21 @@ impl Packable for UnlockData {
     }
 }
 
+/// A transaction's input data, to be stored in a `transactions` row.
 #[derive(Debug, Clone)]
 pub enum InputData {
+    /// An regular Input which spends a prior Output and its unlock block
     UTXO(UTXOInput, UnlockBlock),
+    /// A special input for migrating funds from another network
     Treasury(TreasuryInput),
 }
 
 impl InputData {
+    /// Creates a regular Input Data
     pub fn utxo(utxo_input: UTXOInput, unlock_block: UnlockBlock) -> Self {
         Self::UTXO(utxo_input, unlock_block)
     }
+    /// Creates a special migration Input Data
     pub fn treasury(treasury_input: TreasuryInput) -> Self {
         Self::Treasury(treasury_input)
     }
@@ -307,12 +315,16 @@ pub struct MessageMetadata {
     pub should_reattach: Option<bool>,
 }
 
+/// A message's ledger inclusion state
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LedgerInclusionState {
+    /// A conflicting message, ex. a double spend
     #[serde(rename = "conflicting")]
     Conflicting,
+    /// A successful, included message
     #[serde(rename = "included")]
     Included,
+    /// A message without a transaction
     #[serde(rename = "noTransaction")]
     NoTransaction,
 }
@@ -353,31 +365,45 @@ impl ColumnEncoder for TransactionData {
     }
 }
 
+/// A result struct which holds a retrieved output as well as all associated unlock blocks
 #[derive(Debug, Clone)]
-pub struct OutputData {
+pub struct OutputRes {
+    /// The output
     pub output: CreatedOutput,
+    /// Zero or more unlock blocks for this output.
+    /// Only one can be valid, which indicates the output `is_spent`.
     pub unlock_blocks: Vec<UnlockRes>,
 }
 
+/// A result struct which holds an unlock row from the `transactions` table
 #[derive(Debug, Clone)]
 pub struct UnlockRes {
+    /// The message ID for the transaction which this unlocks
     pub message_id: MessageId,
+    /// The unlock block
     pub block: UnlockBlock,
+    /// This transaction's ledger inclusion state
     pub inclusion_state: Option<LedgerInclusionState>,
 }
 
+/// A type alias for partition ids
 pub type PartitionId = u16;
 
+/// An index in plain-text, unhashed
 #[derive(Clone)]
 pub struct Indexation(pub String);
 
+/// A hint, used to lookup in the `hints` table
 #[derive(Clone)]
 pub struct Hint {
+    /// The hint string
     pub hint: String,
+    /// The hint variant. Can be 'parent', 'address', or 'index'.
     pub variant: HintVariant,
 }
 
 impl Hint {
+    /// Creates a new index hint
     pub fn index(index: String) -> Self {
         Self {
             hint: index,
@@ -385,6 +411,7 @@ impl Hint {
         }
     }
 
+    /// Creates a new address hint
     pub fn address(address: String) -> Self {
         Self {
             hint: address,
@@ -392,6 +419,7 @@ impl Hint {
         }
     }
 
+    /// Creates a new parent hint
     pub fn parent(parent: String) -> Self {
         Self {
             hint: parent,
@@ -399,10 +427,15 @@ impl Hint {
         }
     }
 }
+
+/// Hint variants
 #[derive(Clone)]
 pub enum HintVariant {
+    /// An address
     Address,
+    /// An unhashed index
     Index,
+    /// A parent message id
     Parent,
 }
 
@@ -420,13 +453,16 @@ impl std::fmt::Display for HintVariant {
     }
 }
 
+/// A marker for a paged result
 #[derive(Clone, Debug)]
 pub struct Paged<T> {
     inner: T,
+    /// The paging state for the query
     pub paging_state: Option<Vec<u8>>,
 }
 
 impl<T> Paged<T> {
+    /// Creates a new paged marker with an inner type and a paging state
     pub fn new(inner: T, paging_state: Option<Vec<u8>>) -> Self {
         Self { inner, paging_state }
     }

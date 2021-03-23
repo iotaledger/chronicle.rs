@@ -99,7 +99,7 @@ impl Select<Partitioned<MessageId>, Paged<VecDeque<(MessageId, MilestoneIndex)>>
         builder
             .value(&message_id.to_string())
             .value(&message_id.partition_id())
-            .value(&message_id.milestone_index().unwrap())
+            .value(&message_id.milestone_index())
     }
 }
 
@@ -119,7 +119,7 @@ impl Select<Partitioned<Indexation>, Paged<VecDeque<(MessageId, MilestoneIndex)>
         builder
             .value(&index.0)
             .value(&index.partition_id())
-            .value(&index.milestone_index().unwrap())
+            .value(&index.milestone_index())
     }
 }
 
@@ -152,7 +152,7 @@ impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<(OutputId, MilestoneInde
         builder
             .value(&address.to_string())
             .value(&address.partition_id())
-            .value(&address.milestone_index().unwrap())
+            .value(&address.milestone_index())
     }
 }
 
@@ -170,7 +170,7 @@ impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<(OutputId, Mileston
     }
 }
 
-impl Select<OutputId, OutputData> for PermanodeKeyspace {
+impl Select<OutputId, OutputRes> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -190,9 +190,9 @@ impl Select<OutputId, OutputData> for PermanodeKeyspace {
     }
 }
 
-impl RowsDecoder<OutputId, OutputData> for PermanodeKeyspace {
+impl RowsDecoder<OutputId, OutputRes> for PermanodeKeyspace {
     type Row = Record<(MessageId, TransactionData, Option<LedgerInclusionState>)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<OutputData>, CqlError> {
+    fn try_decode(decoder: Decoder) -> Result<Option<OutputRes>, CqlError> {
         if decoder.is_rows() {
             let mut unlock_blocks = Vec::new();
             let mut output = None;
@@ -209,7 +209,7 @@ impl RowsDecoder<OutputId, OutputData> for PermanodeKeyspace {
                     _ => (),
                 }
             }
-            Ok(output.map(|output| OutputData { output, unlock_blocks }))
+            Ok(output.map(|output| OutputRes { output, unlock_blocks }))
         } else {
             Err(decoder.get_error())
         }

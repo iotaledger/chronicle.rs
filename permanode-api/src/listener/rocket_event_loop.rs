@@ -17,8 +17,8 @@ use permanode_storage::{
         MessageMetadata,
         Milestone,
         MilestoneIndex,
-        OutputData,
         OutputId,
+        OutputRes,
         PartitionId,
         Partitioned,
     },
@@ -304,7 +304,7 @@ where
                 );
                 query::<Paged<VecDeque<(V, MilestoneIndex)>>, _, _>(
                     keyspace.clone(),
-                    Partitioned::new(key.clone(), partition_id).with_milestone_index(latest_milestone),
+                    Partitioned::new(key.clone(), partition_id, latest_milestone),
                     Some(page_size as i32),
                     last_partition_id.and_then(|id| if partition_id == id { paging_state.clone() } else { None }),
                 )
@@ -437,7 +437,7 @@ where
                         debug!("......so we're querying for them");
                         *list = query::<Paged<VecDeque<(V, MilestoneIndex)>>, _, _>(
                             keyspace.clone(),
-                            Partitioned::new(key.clone(), *partition_id).with_milestone_index(latest_milestone),
+                            Partitioned::new(key.clone(), *partition_id, latest_milestone),
                             Some(page_size as i32),
                             paging_state.clone(),
                         )
@@ -615,8 +615,7 @@ pub async fn get_output(
 ) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
     let output_id = OutputId::from_str(&output_id).unwrap();
 
-    let output_data =
-        query::<OutputData, _, _>(PermanodeKeyspace::new(keyspace.clone()), output_id, None, None).await?;
+    let output_data = query::<OutputRes, _, _>(PermanodeKeyspace::new(keyspace.clone()), output_id, None, None).await?;
     let is_spent = if output_data.unlock_blocks.is_empty() {
         false
     } else {

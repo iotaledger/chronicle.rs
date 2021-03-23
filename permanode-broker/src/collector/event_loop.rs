@@ -149,8 +149,8 @@ impl Collector {
     ) {
         let partition_id = self.get_partition_id(milestone_index);
         for parent_id in parents {
-            let partitioned = Partitioned::new(*parent_id, partition_id);
-            let parent_record = ParentRecord::new(milestone_index, *message_id, inclusion_state);
+            let partitioned = Partitioned::new(*parent_id, partition_id, milestone_index.0);
+            let parent_record = ParentRecord::new(*message_id, inclusion_state);
             self.insert(&self.get_keyspace(), partitioned, parent_record);
             // insert hint record
             let hint = Hint::parent(parent_id.to_string());
@@ -192,8 +192,8 @@ impl Collector {
         inclusion_state: Option<LedgerInclusionState>,
     ) {
         let partition_id = self.get_partition_id(milestone_index);
-        let partitioned = Partitioned::new(index.clone(), partition_id);
-        let index_record = IndexationRecord::new(milestone_index, *message_id, inclusion_state);
+        let partitioned = Partitioned::new(index.clone(), partition_id, milestone_index.0);
+        let index_record = IndexationRecord::new(*message_id, inclusion_state);
         self.insert(&self.get_keyspace(), partitioned, index_record);
         // insert hint record
         let hint = Hint::index(index.0);
@@ -380,15 +380,9 @@ impl Collector {
         match output {
             Output::SignatureLockedSingle(sls) => {
                 if let Address::Ed25519(ed_address) = sls.address() {
-                    let partitioned = Partitioned::new(*ed_address, partition_id);
-                    let address_record = AddressRecord::new(
-                        milestone_index,
-                        output_type,
-                        *transaction_id,
-                        index,
-                        sls.amount(),
-                        inclusion_state,
-                    );
+                    let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
+                    let address_record =
+                        AddressRecord::new(output_type, *transaction_id, index, sls.amount(), inclusion_state);
                     self.insert(&self.get_keyspace(), partitioned, address_record);
                     // insert hint record
                     let hint = Hint::address(ed_address.to_string());
@@ -400,15 +394,9 @@ impl Collector {
             }
             Output::SignatureLockedDustAllowance(slda) => {
                 if let Address::Ed25519(ed_address) = slda.address() {
-                    let partitioned = Partitioned::new(*ed_address, partition_id);
-                    let address_record = AddressRecord::new(
-                        milestone_index,
-                        output_type,
-                        *transaction_id,
-                        index,
-                        slda.amount(),
-                        inclusion_state,
-                    );
+                    let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
+                    let address_record =
+                        AddressRecord::new(output_type, *transaction_id, index, slda.amount(), inclusion_state);
                     self.insert(&self.get_keyspace(), partitioned, address_record);
                     // insert hint record
                     let hint = Hint::address(ed_address.to_string());

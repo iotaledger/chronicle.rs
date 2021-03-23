@@ -73,11 +73,8 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned {
-            inner, partition_id, ..
-        }: &Partitioned<Ed25519Address>,
+        Partitioned { inner, partition }: &Partitioned<Ed25519Address>,
         &AddressRecord {
-            milestone_index,
             transaction_id,
             index,
             amount,
@@ -87,8 +84,8 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
     ) -> T::Return {
         builder
             .value(&inner.to_string())
-            .value(partition_id)
-            .value(&milestone_index.0)
+            .value(partition.id())
+            .value(partition.milestone_index())
             .value(&output_type)
             .value(&transaction_id.to_string())
             .value(&index)
@@ -110,19 +107,16 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned {
-            inner, partition_id, ..
-        }: &Partitioned<Indexation>,
+        Partitioned { inner, partition }: &Partitioned<Indexation>,
         &IndexationRecord {
-            milestone_index,
             message_id,
             ledger_inclusion_state,
         }: &IndexationRecord,
     ) -> T::Return {
         builder
             .value(&inner.0)
-            .value(partition_id)
-            .value(&milestone_index.0)
+            .value(partition.id())
+            .value(partition.milestone_index())
             .value(&message_id.to_string())
             .value(&ledger_inclusion_state)
     }
@@ -140,19 +134,16 @@ impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        Partitioned {
-            inner, partition_id, ..
-        }: &Partitioned<MessageId>,
+        Partitioned { inner, partition }: &Partitioned<MessageId>,
         ParentRecord {
-            milestone_index,
             message_id,
             ledger_inclusion_state,
         }: &ParentRecord,
     ) -> T::Return {
         builder
             .value(&inner.to_string())
-            .value(partition_id)
-            .value(&milestone_index.0)
+            .value(partition.id())
+            .value(partition.milestone_index())
             .value(&message_id.to_string())
             .value(ledger_inclusion_state)
     }

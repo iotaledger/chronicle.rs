@@ -1,31 +1,18 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use bee_message::{
-    input::{
-        Input,
-        TreasuryInput,
-    },
-    output::{
-        Output,
-        TreasuryOutput,
-    },
-    payload::transaction::{
-        Essence,
-        RegularEssence,
-        TransactionPayload,
-    },
-};
-
 use crate::{
     application::*,
     solidifier::*,
 };
-use permanode_storage::{
-    access::*,
-    StorageConfig,
+use bee_message::{
+    output::Output,
+    payload::transaction::{
+        Essence,
+        TransactionPayload,
+    },
 };
-
 use lru::LruCache;
+use permanode_storage::StorageConfig;
 use std::ops::{
     Deref,
     DerefMut,

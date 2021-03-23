@@ -1,5 +1,6 @@
 use super::*;
 
+/// A representation of the primary key for the `addresses` table
 #[derive(Clone)]
 pub struct Ed25519AddressPK {
     address: Ed25519Address,
@@ -11,6 +12,7 @@ pub struct Ed25519AddressPK {
 }
 
 impl Ed25519AddressPK {
+    /// Creates a new address primary key
     pub fn new(
         address: Ed25519Address,
         partition_id: u16,
@@ -61,6 +63,7 @@ impl Delete<Ed25519AddressPK, AddressRecord> for PermanodeKeyspace {
     }
 }
 
+/// A representation of the primary key for the `indexes` table
 #[derive(Clone)]
 pub struct IndexationPK {
     indexation: Indexation,
@@ -69,6 +72,7 @@ pub struct IndexationPK {
     message_id: MessageId,
 }
 impl IndexationPK {
+    /// Creates a new indexes primary key
     pub fn new(
         indexation: Indexation,
         partition_id: u16,
@@ -111,6 +115,7 @@ impl Delete<IndexationPK, IndexationRecord> for PermanodeKeyspace {
     }
 }
 
+/// A representation of the primary key for the `parents` table
 #[derive(Clone)]
 pub struct ParentPK {
     parent_id: MessageId,
@@ -119,6 +124,7 @@ pub struct ParentPK {
     message_id: MessageId,
 }
 impl ParentPK {
+    /// Creates a new parents primary key
     pub fn new(
         parent_id: MessageId,
         partition_id: u16,
