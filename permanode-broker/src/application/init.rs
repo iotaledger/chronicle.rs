@@ -6,6 +6,8 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
         self.service.update_status(ServiceStatus::Initializing);
         if let Some(ref mut supervisor) = supervisor {
             supervisor.status_change(self.service.clone());
+            // create logger_builder
+            let logger_builder = LoggerBuilder::new().dir_path(self.logs_dir_path.clone()).build();
             let mut collector_builders: Vec<CollectorBuilder> = Vec::new();
             let mut solidifier_builders: Vec<SolidifierBuilder> = Vec::new();
             for partition_id in 0..self.collectors_count {

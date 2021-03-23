@@ -243,3 +243,25 @@ impl Insert<Hint, Partition> for PermanodeKeyspace {
             .value(partition.milestone_index())
     }
 }
+
+impl Insert<MilestoneIndex, (Milestone, MilestonePayload)> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.milestones (milestone_index, message_id, timestamp) VALUES (?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        milestone_index: &MilestoneIndex,
+        (milestone, payload): &(Milestone, MilestonePayload),
+    ) -> T::Return {
+        builder
+            .value(&milestone_index.0)
+            .value(&milestone.message_id().to_string())
+            .value(&milestone.timestamp())
+        //.value(&payload.to_string())
+    }
+}

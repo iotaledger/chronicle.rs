@@ -3,6 +3,7 @@
 use crate::{
     collector::*,
     listener::*,
+    logger::*,
     mqtt::*,
     solidifier::*,
     websocket::*,
@@ -31,6 +32,7 @@ pub(crate) use std::{
         Deref,
         DerefMut,
     },
+    path::PathBuf,
 };
 
 pub use tokio::{
@@ -59,6 +61,7 @@ builder!(
     PermanodeBrokerBuilder<H> {
         listen_address: SocketAddr,
         listener_handle: ListenerHandle,
+        logs_dir_path: PathBuf,
         collectors_count: u8,
         storage_config: StorageConfig
 });
@@ -96,6 +99,7 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     collectors_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
+    logs_dir_path: PathBuf,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
     storage_config: Option<StorageConfig>,
@@ -111,6 +115,8 @@ pub enum BrokerChild {
     Collector(Service),
     /// Used by Solidifier(s) to keep Broker up to date with its service
     Solidifier(Service),
+    /// Used by Logger to keep Broker up to date with its service
+    Logger(Service, Result<(), Need>),
     /// Used by Websocket to keep Broker up to date with its service
     Websocket(Service, Option<WsTx>),
 }
@@ -162,6 +168,7 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             collectors_count: self.collectors_count.unwrap_or(10),
             collector_handles: HashMap::new(),
             solidifier_handles: HashMap::new(),
+            logs_dir_path: self.logs_dir_path.expect("Expected logs directory path"),
             handle,
             inbox,
             storage_config: self.storage_config,

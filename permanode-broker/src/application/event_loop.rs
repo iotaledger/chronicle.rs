@@ -16,7 +16,23 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                 if let Some(mqtt) = self.add_mqtt(Messages, url) {
                     tokio::spawn(mqtt.start(self.handle.clone()));
                 }
+                let url = Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap();
+                if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
+                    tokio::spawn(mqtt.start(self.handle.clone()));
+                }
                 let url = Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap();
+                if let Some(mqtt) = self.add_mqtt(Messages, url) {
+                    tokio::spawn(mqtt.start(self.handle.clone()));
+                }
+                let url = Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap();
+                if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
+                    tokio::spawn(mqtt.start(self.handle.clone()));
+                }
+                let url = Url::parse("tcp://api.hornet-2.testnet.chrysalis2.com:1883").unwrap();
+                if let Some(mqtt) = self.add_mqtt(Messages, url) {
+                    tokio::spawn(mqtt.start(self.handle.clone()));
+                }
+                let url = Url::parse("tcp://api.hornet-2.testnet.chrysalis2.com:1883").unwrap();
                 if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
                     tokio::spawn(mqtt.start(self.handle.clone()));
                 }
@@ -94,6 +110,15 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                             BrokerChild::Solidifier(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
+                            BrokerChild::Logger(service, status) => {
+                                // Handle abort
+                                if let Err(Need::Abort) = status {
+                                    if service.is_stopped() {
+                                        //
+                                    }
+                                }
+                                self.service.update_microservice(service.get_name(), service.clone());
+                            }
                             BrokerChild::Mqtt(service, mqtt_handle_opt, mqtt_status) => {
                                 let microservice_name = service.get_name();
                                 self.service.update_microservice(service.get_name(), service.clone());
@@ -122,14 +147,20 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                             let mut name = microservice_name.split("@");
                                             let topic = name.next().unwrap();
                                             let url = Url::parse(name.next().unwrap()).unwrap();
+                                            let restart_after = std::time::Duration::from_secs(5);
+                                            warn!("Restarting Mqtt: {}, after: {:?}", microservice_name, restart_after);
                                             match Topics::try_from(topic).unwrap() {
                                                 Topics::Messages => {
                                                     let new_mqtt = self.add_mqtt(Messages, url).unwrap();
-                                                    tokio::spawn(new_mqtt.start(self.handle.clone()));
+                                                    tokio::spawn(
+                                                        new_mqtt.start_after(restart_after, self.handle.clone()),
+                                                    );
                                                 }
                                                 Topics::MessagesReferenced => {
                                                     let new_mqtt = self.add_mqtt(MessagesReferenced, url).unwrap();
-                                                    tokio::spawn(new_mqtt.start(self.handle.clone()));
+                                                    tokio::spawn(
+                                                        new_mqtt.start_after(restart_after, self.handle.clone()),
+                                                    );
                                                 }
                                             }
                                         } else if asked_to_shutdown && service.is_stopped() {

@@ -50,11 +50,32 @@ pub enum CollectorEvent {
     Message(MessageId, Message),
     /// Newly seen MessageMetadataObj from feed source(s)
     MessageReferenced(MessageMetadataObj),
+    /// Ask requests from solidifier(s)
+    Ask(Ask),
 }
+
+pub enum Ask {
+    /// Solidifier(s) will use this variant, u8 is solidifier_id
+    FullMessage(u8, u32, MessageId),
+    MilestoneMessage(u32),
+}
+
 /// CollectorHandle to be passed to siblings(feed sources) and the supervisor(in order to shutdown)
 #[derive(Clone)]
 pub struct CollectorHandle {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
+}
+pub struct MessageIdPartitioner {
+    count: u8,
+}
+impl MessageIdPartitioner {
+    pub fn new(count: u8) -> Self {
+        Self { count }
+    }
+    pub fn partition_id(&self, message_id: &MessageId) -> u8 {
+        // partitioning based on first byte of the message_id
+        message_id.as_ref()[0] % self.count
+    }
 }
 /// CollectorInbox is used to recv events
 pub struct CollectorInbox {
@@ -108,6 +129,7 @@ pub struct Collector {
     lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
     lru_msg_ref: LruCache<MessageId, MessageMetadataObj>,
     inbox: CollectorInbox,
+    solidifier_handles: HashMap<u8, SolidifierHandle>,
     default_keyspace: PermanodeKeyspace,
     storage_config: Option<StorageConfig>,
 }
@@ -118,7 +140,7 @@ impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder
 impl Builder for CollectorBuilder {
     type State = Collector;
     fn build(self) -> Self::State {
-        let lru_cap = self.lru_capacity.unwrap_or(1000);
+        let lru_cap = self.lru_capacity.unwrap_or(10000);
         // Get the first keyspace or default to "permanode"
         // In order to use multiple keyspaces, the user must
         // use filters to determine where records go
@@ -140,6 +162,7 @@ impl Builder for CollectorBuilder {
             partition_id: self.partition_id.unwrap(),
             est_ms: MilestoneIndex(0),
             ref_ms: MilestoneIndex(0),
+            solidifier_handles: self.solidifier_handles.expect("Collector expected solidifier handles"),
             collectors_count: self.collectors_count.unwrap(),
             inbox: self.inbox.unwrap(),
             default_keyspace,

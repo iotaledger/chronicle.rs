@@ -23,6 +23,7 @@ pub use bee_message::{
         Ed25519Address,
         Input,
         MilestoneIndex,
+        MilestonePayload,
         Output,
         OutputId,
         Parents,
@@ -420,7 +421,7 @@ impl std::fmt::Display for HintVariant {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Paged<T> {
     inner: T,
     pub paging_state: Option<Vec<u8>>,

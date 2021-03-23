@@ -27,7 +27,10 @@ impl Builder for AppsBuilder {
         let permanode_api_builder = PermanodeAPIBuilder::new()
             .api_config(config.api_config)
             .storage_config(config.storage_config.clone());
-        let permanode_broker_builder = PermanodeBrokerBuilder::new().storage_config(config.storage_config.clone());
+        let logs_dir_path = std::path::PathBuf::from("./");
+        let permanode_broker_builder = PermanodeBrokerBuilder::new()
+            .logs_dir_path(logs_dir_path)
+            .storage_config(config.storage_config.clone());
         let scylla_builder = ScyllaBuilder::new()
             .listen_address(config.storage_config.listen_address)
             .thread_count(match config.storage_config.thread_count {
