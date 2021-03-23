@@ -4,6 +4,7 @@
 use crate::{
     application::*,
     collector::*,
+    logger::*,
 };
 use lru::LruCache;
 use permanode_storage::access::*;
@@ -20,6 +21,7 @@ mod terminating;
 builder!(SolidifierBuilder {
     partition_id: u8,
     lru_capacity: usize,
+    logger_handle: LoggerHandle,
     inbox: SolidifierInbox,
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8
@@ -178,6 +180,7 @@ pub struct Solidifier {
     milestones_data: HashMap<u32, MilestoneData>,
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8,
+    logger_handle: LoggerHandle,
     message_id_partitioner: MessageIdPartitioner,
     inbox: SolidifierInbox,
 }
@@ -188,7 +191,6 @@ impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for SolidifierBuilde
 impl Builder for SolidifierBuilder {
     type State = Solidifier;
     fn build(self) -> Self::State {
-        let lru_cap = self.lru_capacity.unwrap_or(1000);
         let collectors_count = self.collectors_count.unwrap();
         Self::State {
             service: Service::new(),
@@ -196,6 +198,7 @@ impl Builder for SolidifierBuilder {
             milestones_data: HashMap::new(),
             collector_handles: self.collector_handles.unwrap(),
             collectors_count,
+            logger_handle: self.logger_handle.unwrap(),
             message_id_partitioner: MessageIdPartitioner::new(collectors_count),
             inbox: self.inbox.unwrap(),
         }

@@ -14,6 +14,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
                 LoggerEvent::MilestoneData(milestone_data) => {
+                    info!("Logger received milestone data for index: {}", milestone_data.milestone_index());
                     let milestone_index = milestone_data.milestone_index();
                     let mut milestone_data_line = serde_json::to_string(&milestone_data).unwrap();
                     milestone_data_line.push('\n');
@@ -41,6 +42,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
                                 Self::finish_log_file(log_file).await?;
                                 // check if the milestone_index already belongs to an existing processed logs
                                 if !self.processed.iter().any(|r| r.contains(&milestone_index)) {
+                                    error!("A Creating new file for {}", milestone_index);
                                     self.creata_and_append(milestone_index, &milestone_data_line).await?;
                                 };
                             }
@@ -49,6 +51,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
                         finished_log_file_i = None;
                         // check if the milestone_index already belongs to an existing processed files/ranges;
                         if !self.processed.iter().any(|r| r.contains(&milestone_index)) {
+                            error!("B Creating new file for {}", milestone_index);
                             self.creata_and_append(milestone_index, &milestone_data_line).await?;
                         };
                     };
@@ -71,6 +74,7 @@ impl Logger {
             return Need::Abort;
         })?;
         Self::append(&mut log_file, milestone_data_line).await?;
+        println!("create and append {} {}", log_file.from_ms_index, log_file.to_ms_index);
         self.logs.push(log_file);
         // Sort logs
         self.logs.sort_by(|a, b| a.from_ms_index.cmp(&b.from_ms_index));

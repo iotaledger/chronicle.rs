@@ -7,7 +7,10 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
         if let Some(ref mut supervisor) = supervisor {
             supervisor.status_change(self.service.clone());
             // create logger_builder
-            let logger_builder = LoggerBuilder::new().dir_path(self.logs_dir_path.clone()).build();
+            let mut logger = LoggerBuilder::new().dir_path(self.logs_dir_path.clone()).build();
+            let logger_handle = logger.take_handle();
+            // start logger
+            tokio::spawn(logger.start(self.handle.clone()));
             let mut collector_builders: Vec<CollectorBuilder> = Vec::new();
             let mut solidifier_builders: Vec<SolidifierBuilder> = Vec::new();
             for partition_id in 0..self.collectors_count {
@@ -31,6 +34,7 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
                 self.solidifier_handles.insert(partition_id, solidifier_handle);
                 let solidifier_builder = SolidifierBuilder::new()
                     .collectors_count(self.collectors_count)
+                    .logger_handle(logger_handle.clone().unwrap())
                     .inbox(solidifier_inbox)
                     .partition_id(partition_id);
                 solidifier_builders.push(solidifier_builder);

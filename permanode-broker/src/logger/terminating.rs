@@ -13,6 +13,14 @@ impl<H: PermanodeBrokerScope> Terminating<BrokerHandle<H>> for Logger {
         self.service.update_status(ServiceStatus::Stopping);
         let event = BrokerEvent::Children(BrokerChild::Logger(self.service.clone(), _status));
         let _ = _supervisor.as_mut().unwrap().send(event);
+        // finialize in progress logs
+        for log in self.logs.iter_mut() {
+            if let Err(e) = log.finish().await {
+                info!("Unable to finish in progress log file: {}, error: {}", log.filename, e);
+            } else {
+                info!("Finished in progress log file: {}", log.filename);
+            };
+        }
         _status
     }
 }

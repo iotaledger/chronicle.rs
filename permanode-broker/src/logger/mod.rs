@@ -45,6 +45,19 @@ pub struct LoggerHandle {
 pub struct LoggerInbox {
     pub(crate) rx: tokio::sync::mpsc::UnboundedReceiver<LoggerEvent>,
 }
+impl Deref for LoggerHandle {
+    type Target = tokio::sync::mpsc::UnboundedSender<LoggerEvent>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tx
+    }
+}
+
+impl DerefMut for LoggerHandle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tx
+    }
+}
 
 impl Shutdown for LoggerHandle {
     fn shutdown(self) -> Option<Self>
@@ -86,7 +99,7 @@ impl LogFile {
             len: 0,
             filename,
             from_ms_index: milestone_index,
-            to_ms_index: milestone_index + 1,
+            to_ms_index: milestone_index,
             upper_ms_limit: u32::MAX,
             file,
             maybe_corrupted: false,
@@ -134,7 +147,11 @@ pub struct Logger {
     handle: Option<LoggerHandle>,
     inbox: LoggerInbox,
 }
-
+impl Logger {
+    pub fn take_handle(&mut self) -> Option<LoggerHandle> {
+        self.handle.take()
+    }
+}
 impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for LoggerBuilder {}
 
 /// implementation of builder
@@ -145,11 +162,6 @@ impl Builder for LoggerBuilder {
         let handle = Some(LoggerHandle { tx });
         let inbox = LoggerInbox { rx };
         let dir_path = self.dir_path.expect("Expected log dictionary path");
-        if dir_path.is_file() {
-            panic!("Expected log dictionary path and not a file path.")
-        } else {
-            assert!(dir_path.is_dir())
-        }
         Self::State {
             service: Service::new(),
             dir_path,

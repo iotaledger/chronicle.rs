@@ -27,7 +27,7 @@ impl Builder for AppsBuilder {
         let permanode_api_builder = PermanodeAPIBuilder::new()
             .api_config(config.api_config)
             .storage_config(config.storage_config.clone());
-        let logs_dir_path = std::path::PathBuf::from("./");
+        let logs_dir_path = std::path::PathBuf::from("permanode/logs/");
         let permanode_broker_builder = PermanodeBrokerBuilder::new()
             .logs_dir_path(logs_dir_path)
             .storage_config(config.storage_config.clone());

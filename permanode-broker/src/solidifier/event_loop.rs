@@ -39,7 +39,13 @@ impl Solidifier {
             .expect("Not existing MilestoneData");
         // remove it from pending
         milestone_data.remove_from_pending(message_id);
-        Self::check_if_completed(milestone_data);
+        if Self::check_if_completed(milestone_data) {
+            info!("Solidifier is pushing the milestone data for index: {}, to Logger", milestone_index);
+            // Remove milestoneData from self state and pass it to logger
+            let ms_data = self.milestones_data.remove(&milestone_index).unwrap();
+            let logger_event = LoggerEvent::MilestoneData(ms_data);
+            let _ = self.logger_handle.send(logger_event);
+        };
     }
     fn handle_milestone_msg(&mut self, milestone_message: MilestoneMessage) {
         let milestone_payload = milestone_message.1;
@@ -70,16 +76,22 @@ impl Solidifier {
                 info!("Got Full Milestone {}", ms_index);
                 milestone_data.set_milestone(milestone_payload);
                 milestone_data.add_full_message(FullMessage::new(message, metadata));
-                Self::check_if_completed(milestone_data);
+                if Self::check_if_completed(milestone_data) {
+                    info!("Solidifier is pushing the milestone data for index: {}, to Logger", ms_index);
+                    // Remove milestoneData from self state and pass it to logger
+                    let ms_data = self.milestones_data.remove(&ms_index).unwrap();
+                    let logger_event = LoggerEvent::MilestoneData(ms_data);
+                    let _ = self.logger_handle.send(logger_event);
+                };
             }
         }
     }
     fn handle_new_msg(&mut self, full_message: FullMessage) {
         // check what milestone_index referenced this message
-        let ref_ms = full_message.ref_ms();
+        let ms_index = full_message.ref_ms();
         let message_id = full_message.message_id();
         // check if we already have active milestonedata for the ref_ms
-        if let Some(milestone_data) = self.milestones_data.get_mut(&ref_ms) {
+        if let Some(milestone_data) = self.milestones_data.get_mut(&ms_index) {
             // Ensure all parents exist in milestone_data
             // Note: Some or all parents might belong to older milestone,
             // and it's the job of the collector to tell us when to close message_id
@@ -95,7 +107,7 @@ impl Solidifier {
                     // Request it from collector
                     let collector_id = partitioner.partition_id(parent_id);
                     if let Some(collector_handle) = collector_handles.get(&collector_id) {
-                        let ask_event = CollectorEvent::Ask(Ask::FullMessage(solidifier_id, ref_ms, *parent_id));
+                        let ask_event = CollectorEvent::Ask(Ask::FullMessage(solidifier_id, ms_index, *parent_id));
                         let _ = collector_handle.send(ask_event);
                     }
                     // Add it to pending
@@ -106,16 +118,22 @@ impl Solidifier {
             milestone_data.remove_from_pending(message_id);
             // Add full message
             milestone_data.add_full_message(full_message);
-            Self::check_if_completed(milestone_data);
+            if Self::check_if_completed(milestone_data) {
+                info!("Solidifier is pushing the milestone data for index: {}, to Logger", ms_index);
+                // Remove milestoneData from self state and pass it to logger
+                let ms_data = self.milestones_data.remove(&ms_index).unwrap();
+                let logger_event = LoggerEvent::MilestoneData(ms_data);
+                let _ = self.logger_handle.send(logger_event);
+            };
         } else {
             // create new milestone_data
-            let mut milestone_data = MilestoneData::new(ref_ms);
+            let mut milestone_data = MilestoneData::new(ms_index);
             // Add all parents to pending map
             full_message.metadata().parent_message_ids.iter().for_each(|parent_id| {
                 // Request it from the right collector
                 let collector_id = self.message_id_partitioner.partition_id(parent_id);
                 if let Some(collector_handle) = self.collector_handles.get(&collector_id) {
-                    let ask_event = CollectorEvent::Ask(Ask::FullMessage(self.partition_id, ref_ms, *parent_id));
+                    let ask_event = CollectorEvent::Ask(Ask::FullMessage(self.partition_id, ms_index, *parent_id));
                     let _ = collector_handle.send(ask_event);
                 }
                 // Add it to pending
@@ -124,14 +142,17 @@ impl Solidifier {
             // Add full message
             milestone_data.add_full_message(full_message);
             // Insert new milestonedata
-            info!("Solidifier with id {}, solidifying milestone: {}", self.partition_id, ref_ms);
-            self.milestones_data.insert(ref_ms, milestone_data);
+            info!(
+                "Solidifier with id {}, solidifying milestone: {}",
+                self.partition_id, ms_index
+            );
+            self.milestones_data.insert(ms_index, milestone_data);
         };
     }
 }
 
 impl Solidifier {
-    fn check_if_completed(milestone_data: &mut MilestoneData) {
+    fn check_if_completed(milestone_data: &mut MilestoneData) -> bool {
         // Check if there are no pending at all to set complete to true
         let index = milestone_data.milestone_index();
         let no_pending_left = milestone_data.pending().is_empty();
@@ -141,9 +162,11 @@ impl Solidifier {
             milestone_data.set_completed();
             info!("{} is solid", index);
             // TODO push to write ahead logger
+            return true;
         } else if no_pending_left {
             warn!("Milestone: {}, doesn't exist yet", index);
             // TODO request milestone from collector
         }
+        false
     }
 }
