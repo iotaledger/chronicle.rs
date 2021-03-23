@@ -35,7 +35,7 @@ builder!(MqttBuilder<T> {
 /// MqttHandle to be passed to the supervisor in order to shutdown
 #[derive(Clone)]
 pub struct MqttHandle {
-    client: AsyncClient,
+    client: std::sync::Arc<AsyncClient>,
 }
 /// MqttInbox is used to recv events from topic
 pub struct MqttInbox {
@@ -59,6 +59,7 @@ pub struct Mqtt<T> {
     collectors_count: u8,
     collectors_handles: HashMap<u8, CollectorHandle>,
     partitioner: MessageIdPartitioner,
+    handle: Option<MqttHandle>,
     inbox: Option<MqttInbox>,
     topic: T,
 }
@@ -144,6 +145,7 @@ impl<T: Topic> Builder for MqttBuilder<T> {
             collectors_handles,
             partitioner: MessageIdPartitioner::new(collectors_count),
             stream_capacity: self.stream_capacity.unwrap_or(10000),
+            handle: None,
             inbox: None,
             topic: self.topic.unwrap(),
         }
