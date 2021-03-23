@@ -40,7 +40,10 @@ impl Solidifier {
         // remove it from pending
         milestone_data.remove_from_pending(message_id);
         if Self::check_if_completed(milestone_data) {
-            info!("Solidifier is pushing the milestone data for index: {}, to Logger", milestone_index);
+            info!(
+                "Solidifier is pushing the milestone data for index: {}, to Logger",
+                milestone_index
+            );
             // Remove milestoneData from self state and pass it to logger
             let ms_data = self.milestones_data.remove(&milestone_index).unwrap();
             let logger_event = LoggerEvent::MilestoneData(ms_data);
@@ -77,7 +80,10 @@ impl Solidifier {
                 milestone_data.set_milestone(milestone_payload);
                 milestone_data.add_full_message(FullMessage::new(message, metadata));
                 if Self::check_if_completed(milestone_data) {
-                    info!("Solidifier is pushing the milestone data for index: {}, to Logger", ms_index);
+                    info!(
+                        "Solidifier is pushing the milestone data for index: {}, to Logger",
+                        ms_index
+                    );
                     // Remove milestoneData from self state and pass it to logger
                     let ms_data = self.milestones_data.remove(&ms_index).unwrap();
                     let logger_event = LoggerEvent::MilestoneData(ms_data);
@@ -119,7 +125,10 @@ impl Solidifier {
             // Add full message
             milestone_data.add_full_message(full_message);
             if Self::check_if_completed(milestone_data) {
-                info!("Solidifier is pushing the milestone data for index: {}, to Logger", ms_index);
+                info!(
+                    "Solidifier is pushing the milestone data for index: {}, to Logger",
+                    ms_index
+                );
                 // Remove milestoneData from self state and pass it to logger
                 let ms_data = self.milestones_data.remove(&ms_index).unwrap();
                 let logger_event = LoggerEvent::MilestoneData(ms_data);

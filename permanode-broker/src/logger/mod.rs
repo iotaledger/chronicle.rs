@@ -72,6 +72,7 @@ pub enum LoggerEvent {
     MilestoneData(MilestoneData),
 }
 
+#[derive(Debug)]
 pub struct LogFile {
     len: u32,
     filename: String,
