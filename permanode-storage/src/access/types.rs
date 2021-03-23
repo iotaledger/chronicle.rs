@@ -23,6 +23,7 @@ pub use bee_message::{
         Ed25519Address,
         Input,
         MilestoneIndex,
+        MilestonePayload,
         Output,
         OutputId,
         Parents,

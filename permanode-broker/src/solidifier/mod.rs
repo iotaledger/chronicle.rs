@@ -25,16 +25,101 @@ builder!(SolidifierBuilder {
     collectors_count: u8
 });
 
+pub struct MilestoneMessage(MessageId, Box<MilestonePayload>, Message, Option<MessageMetadataObj>);
+impl MilestoneMessage {
+    pub fn new(
+        message_id: MessageId,
+        milestone_payload: Box<MilestonePayload>,
+        message: Message,
+        metadata: Option<MessageMetadataObj>,
+    ) -> Self {
+        Self(message_id, milestone_payload, message, metadata)
+    }
+}
+#[derive(Debug, serde::Serialize)]
+pub struct FullMessage(Message, MessageMetadataObj);
+
+impl FullMessage {
+    pub fn new(message: Message, metadata: MessageMetadataObj) -> Self {
+        Self(message, metadata)
+    }
+    pub fn message_id(&self) -> &MessageId {
+        &self.1.message_id
+    }
+    pub fn metadata(&self) -> &MessageMetadataObj {
+        &self.1
+    }
+    pub fn message(&self) -> &Message {
+        &self.0
+    }
+    pub fn ref_ms(&self) -> u32 {
+        self.1.referenced_by_milestone_index.unwrap()
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct MilestoneData {
+    milestone_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    milestone: Option<Box<MilestonePayload>>,
+    messages: HashMap<MessageId, FullMessage>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pending: HashMap<MessageId, Option<Message>>,
+    #[serde(skip_serializing)]
+    complete: bool,
+}
+
+impl MilestoneData {
+    fn new(milestone_index: u32) -> Self {
+        Self {
+            milestone_index,
+            milestone: None,
+            messages: HashMap::new(),
+            pending: HashMap::new(),
+            complete: false,
+        }
+    }
+    pub fn milestone_index(&self) -> u32 {
+        self.milestone_index
+    }
+    fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
+        self.milestone.replace(boxed_milestone_payload);
+    }
+    fn milestone_exist(&self) -> bool {
+        self.milestone.is_some()
+    }
+    fn add_full_message(&mut self, full_message: FullMessage) {
+        self.messages.insert(*full_message.message_id(), full_message);
+    }
+    fn remove_from_pending(&mut self, message_id: &MessageId) {
+        self.pending.remove(message_id);
+    }
+    fn messages(&self) -> &HashMap<MessageId, FullMessage> {
+        &self.messages
+    }
+    fn pending(&self) -> &HashMap<MessageId, Option<Message>> {
+        &self.pending
+    }
+    fn set_completed(&mut self) {
+        self.complete = true;
+    }
+    fn is_complete(&self) -> bool {
+        self.complete
+    }
+}
+
 pub enum SolidifierEvent {
+    // Milestone fullmessage;
+    Milestone(MilestoneMessage),
     /// Pushed or requested messages, that definitely belong to self solidifier
-    Message(Message, MessageMetadata),
-    /// Close MessageId that doesn't belong at all to Solidifier
-    Close(MessageId, u64),
+    Message(FullMessage),
+    /// Close MessageId that doesn't belong at all to Solidifier of milestone u32
+    Close(MessageId, u32),
     /// To be determined Message, that might belong to self solidifier
-    /// u64 is milestone index which requested the msg, assuming it belongs to it,
-    /// and unfortunately the collector doesn't have the MessageMetadata.
+    /// u32 is milestone index which requested the msg, assuming it belongs to it,
+    /// but unfortunately the collector doesn't have the MessageMetadata.
     /// collector likely will re request it from the network.
-    Tbd(u64, MessageId, Message),
+    Tbd(u32, MessageId, Message),
     /// Shutdown the solidifier
     Shutdown,
 }
@@ -90,6 +175,10 @@ impl Shutdown for SolidifierHandle {
 pub struct Solidifier {
     service: Service,
     partition_id: u8,
+    milestones_data: HashMap<u32, MilestoneData>,
+    collector_handles: HashMap<u8, CollectorHandle>,
+    collectors_count: u8,
+    message_id_partitioner: MessageIdPartitioner,
     inbox: SolidifierInbox,
 }
 
@@ -100,9 +189,14 @@ impl Builder for SolidifierBuilder {
     type State = Solidifier;
     fn build(self) -> Self::State {
         let lru_cap = self.lru_capacity.unwrap_or(1000);
+        let collectors_count = self.collectors_count.unwrap();
         Self::State {
             service: Service::new(),
             partition_id: self.partition_id.unwrap(),
+            milestones_data: HashMap::new(),
+            collector_handles: self.collector_handles.unwrap(),
+            collectors_count,
+            message_id_partitioner: MessageIdPartitioner::new(collectors_count),
             inbox: self.inbox.unwrap(),
         }
         .set_name()

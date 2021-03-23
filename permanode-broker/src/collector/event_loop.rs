@@ -15,7 +15,6 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
         while let Some(event) = self.inbox.recv().await {
             match event {
                 CollectorEvent::Message(message_id, mut message) => {
-                    // info!("Inserting: {}", message_id.to_string());
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
                         // store message
@@ -25,15 +24,24 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     }
                 }
                 CollectorEvent::MessageReferenced(metadata) => {
+                    if metadata.referenced_by_milestone_index.is_none() {
+                        // metadata is not referenced yet, so we discard it.
+                        continue;
+                    }
                     let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
                     let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
                     let message_id = metadata.message_id;
                     // set the est_ms to be the most recent ref_ms
                     self.ref_ms.0 = *ref_ms;
                     // update the est_ms to be the most recent ref_ms+1
-                    self.est_ms.0 = self.ref_ms.0 + 1;
+                    let new_ms = self.ref_ms.0 + 1;
+                    if self.est_ms.0 < new_ms {
+                        self.est_ms.0 = new_ms;
+                    }
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg_ref.get(&message_id) {
+                        // add it to the cache in order to not presist it again.
+                        self.lru_msg_ref.put(message_id, metadata.clone());
                         // check if msg already exist in the cache, if so we push it to solidifier
                         let cached_msg;
                         let wrong_msg_est_ms;
@@ -44,18 +52,21 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 // adjust est_ms to match the actual ref_ms
                                 est_ms.0 = *ref_ms;
                             } else {
-                                info!("Got the estimation right {}", est_ms);
                                 wrong_msg_est_ms = None;
                             }
                             cached_msg = Some(message.clone());
-                            // TODO push to solidifer
+                            // push to solidifer
+                            if let Some(solidifier_handle) = self.solidifier_handles.get(&_partition_id) {
+                                let full_message = FullMessage::new(message.clone(), metadata.clone());
+                                let full_msg_event = SolidifierEvent::Message(full_message);
+                                let _ = solidifier_handle.send(full_msg_event);
+                            };
                         } else {
                             cached_msg = None;
                             wrong_msg_est_ms = None;
                         }
                         if let Some(message) = cached_msg {
                             if let Some(wrong_est_ms) = wrong_msg_est_ms {
-                                warn!("Wrong estimated milestone: {}, correct is: {}", wrong_est_ms, ref_ms);
                                 self.delete_parents(&message_id, message.parents(), wrong_est_ms);
                                 match message.payload() {
                                     // delete indexation if any
@@ -74,14 +85,42 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     _ => {}
                                 }
                             }
-
                             self.insert_message_with_metadata(&message_id.clone(), &mut message.clone(), &metadata);
                         } else {
                             // store it as metadata
                             self.insert_message_metadata(metadata.clone());
                         }
-                        // add it to the cache in order to not presist it again.
-                        self.lru_msg_ref.put(message_id, metadata);
+                    }
+                }
+                CollectorEvent::Ask(ask) => {
+                    match ask {
+                        Ask::FullMessage(solidifier_id, try_ms_index, message_id) => {
+                            if let Some((_, message)) = self.lru_msg.get(&message_id) {
+                                if let Some(metadata) = self.lru_msg_ref.get(&message_id) {
+                                    // metadata exist means we already pushed the full message to the solidifier,
+                                    // or the message doesn't belong to the solidifier
+                                    if !metadata.referenced_by_milestone_index.unwrap().eq(&try_ms_index) {
+                                        if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
+                                            let event = SolidifierEvent::Close(message_id, try_ms_index);
+                                            let _ = solidifier_handle.send(event);
+                                        }
+                                    }
+                                } else {
+                                    // send only the message and TODO request metadata from network
+                                    if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
+                                        let event = SolidifierEvent::Tbd(try_ms_index, message_id, message.clone());
+                                        let _ = solidifier_handle.send(event);
+                                    }
+                                }
+                            } else {
+                                // TODO request it from network (likely requester layer or using future)
+                                // error!("TODO request msg {} from network, s_id {}, ms {}", message_id, solidifier_id,
+                                // try_ms_index);
+                            }
+                        }
+                        Ask::MilestoneMessage(ms) => {
+                            // TODO request it from network
+                        }
                     }
                 }
             }
@@ -116,14 +155,16 @@ impl Collector {
         let keyspace = self.get_keyspace_for_message(message);
         #[cfg(not(feature = "filter"))]
         let keyspace = self.get_keyspace();
-
+        let metadata;
         if let Some(meta) = self.lru_msg_ref.get(message_id) {
+            metadata = Some(meta.clone());
             ledger_inclusion_state = meta.ledger_inclusion_state.clone();
             self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
             self.insert(&keyspace, *message_id, message_tuple);
         } else {
+            metadata = None;
             ledger_inclusion_state = None;
             // store message only
             self.insert(&keyspace, *message_id, message.clone());
@@ -137,7 +178,14 @@ impl Collector {
         );
         // insert payload (if any)
         if let Some(payload) = message.payload() {
-            self.insert_payload(&message_id, &payload, self.est_ms, ledger_inclusion_state);
+            self.insert_payload(
+                &message_id,
+                &message,
+                &payload,
+                self.est_ms,
+                ledger_inclusion_state,
+                metadata,
+            );
         }
     }
     fn insert_parents(
@@ -159,11 +207,13 @@ impl Collector {
         }
     }
     fn insert_payload(
-        &self,
+        &mut self,
         message_id: &MessageId,
+        message: &Message,
         payload: &Payload,
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
+        metadata: Option<MessageMetadataObj>,
     ) {
         match payload {
             Payload::Indexation(indexation) => {
@@ -174,10 +224,34 @@ impl Collector {
                     inclusion_state,
                 );
             }
-            Payload::Transaction(transaction) => {
-                self.insert_transaction(message_id, transaction, inclusion_state, milestone_index)
-            }
+            Payload::Transaction(transaction) => self.insert_transaction(
+                message_id,
+                message,
+                transaction,
+                inclusion_state,
+                milestone_index,
+                metadata,
+            ),
+            Payload::Milestone(milestone) => {
+                let ms_index = milestone.essence().index();
+                let parents_check = message.parents().eq(milestone.essence().parents());
+                // todo!("validate milestone through KeyMananger and ensure parents are equal")
+                if true {
+                    // push to the right solidifier
+                    let solidifier_id = (ms_index % (self.collectors_count as u32)) as u8;
+                    if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
+                        let ms_message =
+                            MilestoneMessage::new(*message_id, milestone.clone(), message.clone(), metadata);
+                        let _ = solidifier_handle.send(SolidifierEvent::Milestone(ms_message));
+                    };
+                }
+                if parents_check {
+                    // insert milestone
 
+                    // let milestone = Milestone::new(message_id.clone(), timestamp);
+                    // self.insert(&self.get_keyspace(), milestone_index, **milestone)
+                }
+            }
             // remaining payload types
             e => {
                 error!("impl insert for remaining payloads, {:?}", e)
@@ -238,18 +312,22 @@ impl Collector {
         if let Some(payload) = message.payload() {
             self.insert_payload(
                 &message_id,
+                &message,
                 &payload,
                 self.ref_ms,
                 metadata.ledger_inclusion_state.clone(),
+                Some(metadata.clone()),
             );
         }
     }
     fn insert_transaction(
-        &self,
+        &mut self,
         message_id: &MessageId,
+        message: &Message,
         transaction: &Box<TransactionPayload>,
         ledger_inclusion_state: Option<LedgerInclusionState>,
         milestone_index: MilestoneIndex,
+        metadata: Option<MessageMetadataObj>,
     ) {
         let transaction_id = transaction.id();
         let unlock_blocks = transaction.unlock_blocks();
@@ -321,7 +399,14 @@ impl Collector {
                 )
             }
             if let Some(payload) = regular.payload() {
-                self.insert_payload(message_id, payload, milestone_index, ledger_inclusion_state)
+                self.insert_payload(
+                    message_id,
+                    message,
+                    payload,
+                    milestone_index,
+                    ledger_inclusion_state,
+                    metadata,
+                )
             }
         };
     }
