@@ -79,6 +79,13 @@ impl Default for PartitionConfig {
 }
 
 impl PartitionConfig {
+    /// Calculate partition id from a milestone index.
+    /// The formula is:<br>
+    ///    `(I / C) % P`<br>
+    ///    where:<br>
+    ///          `I` = milestone index<br>
+    ///          `C` = configured milestone chunk size<br>
+    ///          `P` = configured partition count<br>
     pub fn partition_id(&self, milestone_index: u32) -> u16 {
         ((milestone_index / self.milestone_chunk_size) % (self.partition_count as u32)) as u16
     }
