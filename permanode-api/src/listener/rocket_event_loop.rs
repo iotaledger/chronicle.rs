@@ -293,7 +293,8 @@ where
         // Fetch a chunk of results if we need them to fill the page size
         if !list_map.contains_key(partition_id) {
             start_time = std::time::Instant::now();
-            let fetch_ids = (partition_ind..partition_ind + fetch_size).map(|ind| partition_ids[ind].1);
+            let fetch_ids =
+                (partition_ind..partition_ind + fetch_size).filter_map(|ind| partition_ids.get(ind).map(|v| v.1));
             let res = futures::future::join_all(fetch_ids.clone().map(|partition_id| {
                 debug!(
                     "Fetching results for partition id: {}, milestone: {}, with paging state: {:?}",
