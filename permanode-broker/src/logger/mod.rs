@@ -105,9 +105,11 @@ impl LogFile {
             maybe_corrupted: false,
         })
     }
-    pub async fn finish(&mut self) -> Result<(), std::io::Error> {
+    pub async fn finish(&mut self, dir_path: &PathBuf) -> Result<(), std::io::Error> {
         let new_file_name = format!("{}to{}.log", self.from_ms_index, self.to_ms_index);
-        if let Err(e) = tokio::fs::rename(self.filename.clone(), new_file_name).await {
+        let new_file_path = dir_path.join(&new_file_name);
+        let old_file_path = dir_path.join(&self.filename);
+        if let Err(e) = tokio::fs::rename(old_file_path, new_file_path).await {
             self.maybe_corrupted = true;
             return Err(e);
         };

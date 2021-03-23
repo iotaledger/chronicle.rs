@@ -29,7 +29,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
                         // discard if the log_file reached an upper limit
                         if log_file.upper_ms_limit == milestone_index {
                             finished_log_file_i = Some(i);
-                            Self::finish_log_file(log_file).await?;
+                            Self::finish_log_file(log_file, &self.dir_path).await?;
                         } else {
                             // append milestone data to the log file if the file_size still less than max limit
                             if (milestone_data_line.len() as u32) + log_file.len() < MAX_LOG_SIZE {
@@ -39,7 +39,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
                             } else {
                                 // Finish it ;
                                 finished_log_file_i = Some(i);
-                                Self::finish_log_file(log_file).await?;
+                                Self::finish_log_file(log_file, &self.dir_path).await?;
                                 // check if the milestone_index already belongs to an existing processed logs
                                 if !self.processed.iter().any(|r| r.contains(&milestone_index)) {
                                     error!("A Creating new file for {}", milestone_index);
@@ -74,7 +74,6 @@ impl Logger {
             return Need::Abort;
         })?;
         Self::append(&mut log_file, milestone_data_line).await?;
-        println!("create and append {} {}", log_file.from_ms_index, log_file.to_ms_index);
         self.logs.push(log_file);
         // Sort logs
         self.logs.sort_by(|a, b| a.from_ms_index.cmp(&b.from_ms_index));
@@ -95,8 +94,8 @@ impl Logger {
         })?;
         Ok(())
     }
-    async fn finish_log_file(log_file: &mut LogFile) -> Result<(), Need> {
-        log_file.finish().await.map_err(|e| {
+    async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> Result<(), Need> {
+        log_file.finish(dir_path).await.map_err(|e| {
             error!("{}", e);
             return Need::Abort;
         })?;
