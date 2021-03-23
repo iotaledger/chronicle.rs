@@ -269,6 +269,7 @@ where
     let mut depleted_partitions = HashSet::new();
     let mut last_index_map = HashMap::new();
     last_index_map.insert(partition_ids[0].1, last_milestone_index.unwrap_or(latest_milestone));
+    let mut loop_timings = HashMap::new();
     for (partition_ind, (index, partition_id)) in partition_ids.iter().enumerate().cycle() {
         if !last_index_map.contains_key(partition_id) {
             last_index_map.insert(*partition_id, index.0);
@@ -321,24 +322,28 @@ where
             Err(msg) => return Err(msg.to_owned()),
         };
 
-        let loop_start_time = std::time::Instant::now();
+        let mut iter = list.iter().peekable();
+
         // Iterate the list, pulling records from the front until we hit
         // a milestone in the next chunk or run out
         loop {
-            if !list.is_empty() {
+            let loop_start_time = std::time::Instant::now();
+            if iter.len() != 0 {
                 // If we're still looking at the same chunk
                 if last_index_map[partition_id] < milestone_chunk as u32
-                    || list.first().unwrap().1 .0 > last_index_map[partition_id] - milestone_chunk as u32
+                    || iter.peek().unwrap().1 .0 > last_index_map[partition_id] - milestone_chunk as u32
                 {
                     // And we exceeded the page size
                     if results.len() >= page_size {
                         // Add more anyway if the milestone index is the same,
                         // because we won't be able to recover lost records
                         // with a paging state
-                        if last_index_map[partition_id] == list.first().unwrap().1 .0 {
+                        if last_index_map[partition_id] == iter.peek().unwrap().1 .0 {
                             // debug!("Adding extra records past page_size");
-                            let (message_id, _) = list.remove(0);
-                            results.push(message_id);
+                            let (message_id, _) = iter.next().unwrap();
+                            results.push(message_id.clone());
+                            *loop_timings.entry("Adding additional").or_insert(0) +=
+                                (std::time::Instant::now() - loop_start_time).as_nanos();
                         // Otherwise we can stop here and set our cookies
                         } else {
                             debug!("Finished a milestone");
@@ -348,14 +353,19 @@ where
                                     .finish(),
                             );
                             cookies.add(
-                                Cookie::build("last_milestone_index", list.first().unwrap().1 .0.to_string())
+                                Cookie::build("last_milestone_index", iter.peek().unwrap().1 .0.to_string())
                                     .path(cookie_path.clone())
                                     .finish(),
                             );
                             cookies.remove(Cookie::named("paging_state"));
+                            *loop_timings.entry("Finish Adding Additional").or_insert(0) +=
+                                (std::time::Instant::now() - loop_start_time).as_nanos();
                             debug!(
-                                "Loop time: {} ms",
-                                (std::time::Instant::now() - loop_start_time).as_millis()
+                                "{:#?}",
+                                loop_timings
+                                    .iter()
+                                    .map(|(k, v)| (k, format!("{} ms", *v as f32 / 1000000.0)))
+                                    .collect::<HashMap<_, _>>()
                             );
                             debug!(
                                 "Total time: {} ms",
@@ -365,16 +375,22 @@ where
                         }
                     // Otherwise, business as usual
                     } else {
-                        let (message_id, milestone_index) = list.remove(0);
+                        let (message_id, milestone_index) = iter.next().unwrap();
                         // debug!("Adding result normally");
-                        results.push(message_id);
+                        results.push(message_id.clone());
                         last_index_map.insert(*partition_id, milestone_index.0);
+                        *loop_timings.entry("Adding normally").or_insert(0) +=
+                            (std::time::Instant::now() - loop_start_time).as_nanos();
                     }
                 // We hit a new chunk, so we want to look at the next partition now
                 } else {
                     debug!("Hit a chunk boundary");
                     // Remove our paging state because it's useless now
                     cookies.remove(Cookie::named("paging_state"));
+                    // Keep the remainder of the list
+                    **list = iter.cloned().collect();
+                    *loop_timings.entry("Chunk Boundary").or_insert(0) +=
+                        (std::time::Instant::now() - loop_start_time).as_nanos();
                     break;
                 }
             // The list is empty, but that doesn't necessarily mean there aren't more valid records on this partition.
@@ -403,6 +419,15 @@ where
                             .path(cookie_path.clone())
                             .finish(),
                     );
+                    *loop_timings.entry("Returning page_state").or_insert(0) +=
+                        (std::time::Instant::now() - loop_start_time).as_nanos();
+                    debug!(
+                        "{:#?}",
+                        loop_timings
+                            .iter()
+                            .map(|(k, v)| (k, format!("{} ms", *v as f32 / 1000000.0)))
+                            .collect::<HashMap<_, _>>()
+                    );
                     debug!(
                         "Total time: {} ms",
                         (std::time::Instant::now() - total_start_time).as_millis()
@@ -412,39 +437,40 @@ where
                     debug!("...and we need more results");
                     if list.paging_state.is_some() {
                         debug!("......so we're querying for them");
-                        start_time = std::time::Instant::now();
                         *list = query::<Paged<Vec<(V, MilestoneIndex)>>, _, _>(
                             keyspace.clone(),
                             Partitioned::new(key.clone(), *partition_id).with_milestone_index(latest_milestone),
                             Some(page_size as i32),
-                            list.paging_state.clone(),
+                            paging_state.clone(),
                         )
                         .await
                         .unwrap();
-                        debug!(
-                            "Re-Query time: {} ms",
-                            (std::time::Instant::now() - start_time).as_millis()
-                        );
+                        iter = list.iter().peekable();
+                        *loop_timings.entry("Requery").or_insert(0) +=
+                            (std::time::Instant::now() - loop_start_time).as_nanos();
                     // Unless it didn't have one, in which case we mark it as a depleted partition and
                     // move on to the next one.
                     } else {
                         debug!("......but there's no paging state");
                         depleted_partitions.insert(*partition_id);
-                        debug!(
-                            "Depleted: {}, Remaining: {}",
-                            depleted_partitions.len(),
-                            partition_ids.len() - depleted_partitions.len()
-                        );
+                        // Clear the iter's source list
+                        list.clear();
+                        *loop_timings.entry("Depleted partition").or_insert(0) +=
+                            (std::time::Instant::now() - loop_start_time).as_nanos();
                         break;
                     }
                 }
             }
         }
-        // debug!(
-        //    "Loop time: {} ms",
-        //    (std::time::Instant::now() - loop_start_time).as_millis()
-        //);
     }
+
+    debug!(
+        "{:#?}",
+        loop_timings
+            .iter()
+            .map(|(k, v)| (k, format!("{} ms", *v as f32 / 1000000.0)))
+            .collect::<HashMap<_, _>>()
+    );
 
     debug!(
         "Total time: {} ms",
