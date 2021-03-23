@@ -53,6 +53,7 @@ use std::{
     collections::{
         HashMap,
         HashSet,
+        VecDeque,
     },
     path::PathBuf,
     str::FromStr,
@@ -191,7 +192,7 @@ async fn page<K, V>(
 where
     K: 'static + Send + Clone,
     V: 'static + Send + Clone + std::fmt::Debug + std::fmt::Display,
-    PermanodeKeyspace: Select<Partitioned<K>, Paged<Vec<(V, MilestoneIndex)>>>,
+    PermanodeKeyspace: Select<Partitioned<K>, Paged<VecDeque<(V, MilestoneIndex)>>>,
 {
     let total_start_time = std::time::Instant::now();
     let mut start_time = total_start_time;
@@ -300,7 +301,7 @@ where
                     latest_milestone,
                     last_partition_id.map(|id| partition_id == id)
                 );
-                query::<Paged<Vec<(V, MilestoneIndex)>>, _, _>(
+                query::<Paged<VecDeque<(V, MilestoneIndex)>>, _, _>(
                     keyspace.clone(),
                     Partitioned::new(key.clone(), partition_id).with_milestone_index(latest_milestone),
                     Some(page_size as i32),
@@ -322,25 +323,23 @@ where
             Err(msg) => return Err(msg.to_owned()),
         };
 
-        let mut iter = list.iter().peekable();
-
         // Iterate the list, pulling records from the front until we hit
         // a milestone in the next chunk or run out
         loop {
             let loop_start_time = std::time::Instant::now();
-            if iter.len() != 0 {
+            if !list.is_empty() {
                 // If we're still looking at the same chunk
                 if last_index_map[partition_id] < milestone_chunk as u32
-                    || iter.peek().unwrap().1 .0 > last_index_map[partition_id] - milestone_chunk as u32
+                    || list[0].1 .0 > last_index_map[partition_id] - milestone_chunk as u32
                 {
                     // And we exceeded the page size
                     if results.len() >= page_size {
                         // Add more anyway if the milestone index is the same,
                         // because we won't be able to recover lost records
                         // with a paging state
-                        if last_index_map[partition_id] == iter.peek().unwrap().1 .0 {
+                        if last_index_map[partition_id] == list[0].1 .0 {
                             // debug!("Adding extra records past page_size");
-                            let (message_id, _) = iter.next().unwrap();
+                            let (message_id, _) = list.pop_front().unwrap();
                             results.push(message_id.clone());
                             *loop_timings.entry("Adding additional").or_insert(0) +=
                                 (std::time::Instant::now() - loop_start_time).as_nanos();
@@ -353,7 +352,7 @@ where
                                     .finish(),
                             );
                             cookies.add(
-                                Cookie::build("last_milestone_index", iter.peek().unwrap().1 .0.to_string())
+                                Cookie::build("last_milestone_index", list[0].1 .0.to_string())
                                     .path(cookie_path.clone())
                                     .finish(),
                             );
@@ -375,7 +374,7 @@ where
                         }
                     // Otherwise, business as usual
                     } else {
-                        let (message_id, milestone_index) = iter.next().unwrap();
+                        let (message_id, milestone_index) = list.pop_front().unwrap();
                         // debug!("Adding result normally");
                         results.push(message_id.clone());
                         last_index_map.insert(*partition_id, milestone_index.0);
@@ -387,8 +386,6 @@ where
                     debug!("Hit a chunk boundary");
                     // Remove our paging state because it's useless now
                     cookies.remove(Cookie::named("paging_state"));
-                    // Keep the remainder of the list
-                    **list = iter.cloned().collect();
                     *loop_timings.entry("Chunk Boundary").or_insert(0) +=
                         (std::time::Instant::now() - loop_start_time).as_nanos();
                     break;
@@ -437,7 +434,7 @@ where
                     debug!("...and we need more results");
                     if list.paging_state.is_some() {
                         debug!("......so we're querying for them");
-                        *list = query::<Paged<Vec<(V, MilestoneIndex)>>, _, _>(
+                        *list = query::<Paged<VecDeque<(V, MilestoneIndex)>>, _, _>(
                             keyspace.clone(),
                             Partitioned::new(key.clone(), *partition_id).with_milestone_index(latest_milestone),
                             Some(page_size as i32),
@@ -445,7 +442,6 @@ where
                         )
                         .await
                         .unwrap();
-                        iter = list.iter().peekable();
                         *loop_timings.entry("Requery").or_insert(0) +=
                             (std::time::Instant::now() - loop_start_time).as_nanos();
                     // Unless it didn't have one, in which case we mark it as a depleted partition and
@@ -453,8 +449,6 @@ where
                     } else {
                         debug!("......but there's no paging state");
                         depleted_partitions.insert(*partition_id);
-                        // Clear the iter's source list
-                        list.clear();
                         *loop_timings.entry("Depleted partition").or_insert(0) +=
                             (std::time::Instant::now() - loop_start_time).as_nanos();
                         break;

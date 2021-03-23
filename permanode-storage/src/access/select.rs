@@ -1,6 +1,9 @@
 use super::*;
 use scylla_cql::Row;
-use std::str::FromStr;
+use std::{
+    collections::VecDeque,
+    str::FromStr,
+};
 
 impl Select<MessageId, Message> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
@@ -80,7 +83,7 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Perm
     }
 }
 
-impl Select<Partitioned<MessageId>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl Select<Partitioned<MessageId>, Paged<VecDeque<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -100,7 +103,7 @@ impl Select<Partitioned<MessageId>, Paged<Vec<(MessageId, MilestoneIndex)>>> for
     }
 }
 
-impl Select<Partitioned<Indexation>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl Select<Partitioned<Indexation>, Paged<VecDeque<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -120,9 +123,9 @@ impl Select<Partitioned<Indexation>, Paged<Vec<(MessageId, MilestoneIndex)>>> fo
     }
 }
 
-impl<K> RowsDecoder<Partitioned<K>, Paged<Vec<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
     type Row = Record<(MessageId, MilestoneIndex)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<Paged<Vec<(MessageId, MilestoneIndex)>>>, CqlError> {
+    fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<(MessageId, MilestoneIndex)>>>, CqlError> {
         if decoder.is_rows() {
             let mut iter = Self::Row::rows_iter(decoder);
             let paging_state = iter.take_paging_state();
@@ -134,7 +137,7 @@ impl<K> RowsDecoder<Partitioned<K>, Paged<Vec<(MessageId, MilestoneIndex)>>> for
     }
 }
 
-impl Select<Partitioned<Ed25519Address>, Paged<Vec<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -153,9 +156,9 @@ impl Select<Partitioned<Ed25519Address>, Paged<Vec<(OutputId, MilestoneIndex)>>>
     }
 }
 
-impl RowsDecoder<Partitioned<Ed25519Address>, Paged<Vec<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
     type Row = Record<(TransactionId, u16, MilestoneIndex)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<Paged<Vec<(OutputId, MilestoneIndex)>>>, CqlError> {
+    fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<(OutputId, MilestoneIndex)>>>, CqlError> {
         if decoder.is_rows() {
             let mut iter = Self::Row::rows_iter(decoder);
             let paging_state = iter.take_paging_state();
