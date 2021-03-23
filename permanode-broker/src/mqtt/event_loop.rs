@@ -17,7 +17,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
                 if let Ok(msg) = Message::unpack(&mut msg.payload()) {
                     let (message_id, _) = msg.id();
                     // partitioning based on first byte of the message_id
-                    let collector_partition_id = message_id.as_ref()[0] % self.collectors_count;
+                    let collector_partition_id = self.partitioner.partition_id(&message_id);
                     if let Some(collector_handle) = self.collectors_handles.get(&collector_partition_id) {
                         let _ = collector_handle.send(CollectorEvent::Message(message_id, msg));
                     }
@@ -44,7 +44,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<MessagesRefere
             if let Some(msg_ref) = msg_ref_opt {
                 if let Ok(msg_ref) = serde_json::from_str::<MessageMetadataObj>(&msg_ref.payload_str()) {
                     // partitioning based on first byte of the message_id
-                    let collector_partition_id = msg_ref.message_id.as_ref()[0] % self.collectors_count;
+                    let collector_partition_id = self.partitioner.partition_id(&msg_ref.message_id);
                     if let Some(collector_handle) = self.collectors_handles.get(&collector_partition_id) {
                         let _ = collector_handle.send(CollectorEvent::MessageReferenced(msg_ref));
                     }

@@ -58,6 +58,7 @@ pub struct Mqtt<T> {
     stream_capacity: usize,
     collectors_count: u8,
     collectors_handles: HashMap<u8, CollectorHandle>,
+    partitioner: MessageIdPartitioner,
     inbox: Option<MqttInbox>,
     topic: T,
 }
@@ -115,6 +116,18 @@ impl Topic for MessagesReferenced {
     }
 }
 
+/// Mqtt "milestones/latest" topic
+pub(crate) struct LatestMilestone;
+
+impl Topic for LatestMilestone {
+    fn name() -> &'static str {
+        "milestones/latest"
+    }
+    fn qos() -> i32 {
+        0
+    }
+}
+
 impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
 impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<MessagesReferenced> {}
 
@@ -123,12 +136,13 @@ impl<T: Topic> Builder for MqttBuilder<T> {
     type State = Mqtt<T>;
     fn build(self) -> Self::State {
         let collectors_handles = self.collectors_handles.expect("Expected collectors handles");
-
+        let collectors_count = collectors_handles.len() as u8;
         Self::State {
             service: Service::new(),
             url: self.url.unwrap(),
-            collectors_count: collectors_handles.len() as u8,
+            collectors_count,
             collectors_handles,
+            partitioner: MessageIdPartitioner::new(collectors_count),
             stream_capacity: self.stream_capacity.unwrap_or(10000),
             inbox: None,
             topic: self.topic.unwrap(),
