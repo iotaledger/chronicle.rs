@@ -29,7 +29,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         continue;
                     }
                     let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
-                    let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
+                    let partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
                     let message_id = metadata.message_id;
                     // set the est_ms to be the most recent ref_ms
                     self.ref_ms.0 = *ref_ms;
@@ -56,7 +56,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             }
                             cached_msg = Some(message.clone());
                             // push to solidifer
-                            if let Some(solidifier_handle) = self.solidifier_handles.get(&_partition_id) {
+                            if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
                                 let full_message = FullMessage::new(message.clone(), metadata.clone());
                                 let full_msg_event = SolidifierEvent::Message(full_message);
                                 let _ = solidifier_handle.send(full_msg_event);

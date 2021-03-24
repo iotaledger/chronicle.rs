@@ -61,7 +61,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
                                         "Creating new log file starting from milestone index: {}",
                                         milestone_index
                                     );
-                                    self.creata_and_append(milestone_index, &milestone_data_line).await?;
+                                    self.create_and_append(milestone_index, &milestone_data_line).await?;
                                     // adjust i as we just created and pushed new file to logs;
                                     finished_log_file_i = Some(i);
                                 }
@@ -75,7 +75,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
                                 "Creating new log file starting from milestone index: {}",
                                 milestone_index
                             );
-                            self.creata_and_append(milestone_index, &milestone_data_line).await?;
+                            self.create_and_append(milestone_index, &milestone_data_line).await?;
                             self.logs.sort_by(|a, b| a.from_ms_index.cmp(&b.from_ms_index));
                         };
                     };
@@ -93,7 +93,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
 }
 
 impl Logger {
-    async fn creata_and_append(&mut self, milestone_index: u32, milestone_data_line: &str) -> Result<(), Need> {
+    async fn create_and_append(&mut self, milestone_index: u32, milestone_data_line: &str) -> Result<(), Need> {
         let mut log_file = LogFile::create(&self.dir_path, milestone_index).await.map_err(|e| {
             error!("{}", e);
             return Need::Abort;
