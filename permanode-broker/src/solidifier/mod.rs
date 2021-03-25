@@ -117,11 +117,6 @@ pub enum SolidifierEvent {
     Message(FullMessage),
     /// Close MessageId that doesn't belong at all to Solidifier of milestone u32
     Close(MessageId, u32),
-    /// To be determined Message, that might belong to self solidifier
-    /// u32 is milestone index which requested the msg, assuming it belongs to it,
-    /// but unfortunately the collector doesn't have the MessageMetadata.
-    /// collector likely will re request it from the network.
-    Tbd(u32, MessageId, Message),
     /// Shutdown the solidifier
     Shutdown,
 }

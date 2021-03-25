@@ -43,8 +43,8 @@ builder!(CollectorBuilder {
 });
 
 pub enum CollectorEvent {
-    /// Requested Message and Metadata,
-    MessageAndMeta(RequesterId, Option<FullMessage>),
+    /// Requested Message and Metadata, u32 is the milestoneindex
+    MessageAndMeta(RequesterId, u32, MessageId, Option<FullMessage>),
     /// Newly seen message from feed source(s)
     Message(MessageId, Message),
     /// Newly seen MessageMetadataObj from feed source(s)

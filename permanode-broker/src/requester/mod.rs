@@ -29,13 +29,15 @@ builder!(RequesterBuilder {
 });
 pub type RequesterId = u8;
 pub enum RequesterEvent {
-    RequestFullMessage(MessageId),
+    // Requesting MessageId in order to solidifiy u32 MilestoneIndex
+    RequestFullMessage(MessageId, u32),
 }
 
 #[derive(Clone)]
 pub struct RequesterHandle {
     pub(crate) id: RequesterId,
     pub(crate) processed_count: u64,
+    pub(crate) abort_handle: futures::future::AbortHandle,
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<RequesterEvent>,
 }
 
@@ -92,6 +94,7 @@ impl Shutdown for RequesterHandle {
     where
         Self: Sized,
     {
+        self.abort_handle.abort();
         None
     }
 }

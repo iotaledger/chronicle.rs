@@ -13,20 +13,15 @@ impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Collector {
             self.default_keyspace.name()
         );
         self.spawn_requester();
+
         status
     }
 }
-
+use futures::future::AbortHandle;
 impl Collector {
     fn spawn_requester(&mut self) {
         for id in 0..self.requester_count {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            let handle = RequesterHandle {
-                id,
-                tx,
-                processed_count: 0,
-            };
-            self.requester_handles.push(handle);
             let inbox = RequesterInbox { rx };
             let reqwest_client = self.reqwest_client.clone();
             let requester = RequesterBuilder::new()
@@ -35,7 +30,15 @@ impl Collector {
                 .api_endpoints(self.api_endpoints.clone())
                 .reqwest_client(reqwest_client)
                 .build();
-            tokio::spawn(requester.start(self.handle.clone()));
+            let (abort_handle, abort_registration) = futures::future::AbortHandle::new_pair();
+            let handle = RequesterHandle {
+                id,
+                tx,
+                abort_handle,
+                processed_count: 0,
+            };
+            self.requester_handles.push(handle);
+            tokio::spawn(requester.start_abortable(abort_registration, self.handle.clone()));
         }
     }
 }

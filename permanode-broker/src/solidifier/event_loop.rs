@@ -18,9 +18,6 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                 SolidifierEvent::Close(message_id, milestone_index) => {
                     self.close_message_id(milestone_index, &message_id);
                 }
-                SolidifierEvent::Tbd(ms, message_id, message) => {
-                    // info!("got tbd {:?}", message);
-                }
                 SolidifierEvent::Milestone(milestone_message) => {
                     self.handle_milestone_msg(milestone_message);
                 }
@@ -46,6 +43,8 @@ impl Solidifier {
                 let logger_event = LoggerEvent::MilestoneData(ms_data);
                 let _ = self.logger_handle.send(logger_event);
             };
+        } else {
+            panic!("Not supposed to get close response on non-existing")
         }
     }
     fn handle_milestone_msg(
@@ -56,6 +55,7 @@ impl Solidifier {
         let partitioner = &self.message_id_partitioner;
         let collector_handles = &self.collector_handles;
         let solidifier_id = self.partition_id;
+        let ms_count = self.milestones_data.len();
         if let Some(milestone_data) = self.milestones_data.get_mut(&ms_index) {
             message.parents().iter().for_each(|parent_id| {
                 let in_messages = milestone_data.messages().contains_key(&parent_id);
@@ -74,8 +74,12 @@ impl Solidifier {
             });
             // insert milestone to milestone_data
             if let Some(metadata) = metadata {
-                info!("Got Full Milestone {}", ms_index);
+                info!(
+                    "SolidifierId: {}, got Full Milestone {}, left: {}",
+                    self.partition_id, ms_index, ms_count
+                );
                 milestone_data.set_milestone(milestone_payload);
+                milestone_data.remove_from_pending(&metadata.message_id);
                 milestone_data.add_full_message(FullMessage::new(message, metadata));
                 if Self::check_if_completed(milestone_data) {
                     info!(
@@ -88,6 +92,9 @@ impl Solidifier {
                     let _ = self.logger_handle.send(logger_event);
                 };
             }
+        } else {
+            // TODO sync
+            info!("{} got milestone {}", solidifier_id, ms_index);
         }
     }
     fn handle_new_msg(&mut self, full_message: FullMessage) {

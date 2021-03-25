@@ -14,16 +14,21 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
     ) -> Result<(), Need> {
         while let Some(event) = self.inbox.recv().await {
             match event {
-                CollectorEvent::MessageAndMeta(requester_id, opt_full_msg) => {
+                CollectorEvent::MessageAndMeta(requester_id, try_ms_index, message_id, opt_full_msg) => {
                     self.adjust_heap(requester_id);
                     if let Some(FullMessage(message, metadata)) = opt_full_msg {
-                        let message_id = metadata.message_id;
+                        let partition_id = (try_ms_index % (self.collectors_count as u32)) as u8;
                         let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
-                        let partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
-                        // set the ref_ms to be the most recent ref_ms
+                        // set the ref_ms to be the current requested message ref_ms
                         self.ref_ms.0 = *ref_ms;
-                        // push full message to solidifier;
-                        self.push_fullmsg_to_solidifier(partition_id, message.clone(), metadata.clone());
+                        // check if the requested message actually belongs to the expected milestone_index
+                        if ref_ms.eq(&try_ms_index) {
+                            // push full message to solidifier;
+                            self.push_fullmsg_to_solidifier(partition_id, message.clone(), metadata.clone());
+                        } else {
+                            // close the request
+                            self.push_close_to_solidifier(partition_id, message_id, try_ms_index);
+                        }
                         // check if msg already in lru cache(if so then it's already presisted)
                         let wrong_msg_est_ms;
                         if let Some((est_ms, _)) = self.lru_msg.get_mut(&message_id) {
@@ -40,10 +45,14 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             self.lru_msg.put(message_id, (self.ref_ms, message.clone()));
                             wrong_msg_est_ms = None;
                         }
+                        // Cache metadata.
+                        self.lru_msg_ref.put(message_id, metadata.clone());
                         if let Some(wrong_est_ms) = wrong_msg_est_ms {
                             self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms);
                         }
                         self.insert_message_with_metadata(message_id, message, metadata);
+                    } else {
+                        error!("{} , unable to fetch message from network", self.get_name())
                     }
                 }
                 CollectorEvent::Message(message_id, mut message) => {
@@ -67,6 +76,8 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     self.ref_ms.0 = *ref_ms;
                     // update the est_ms to be the most recent ref_ms+1
                     let new_ms = self.ref_ms.0 + 1;
+                    // TODO likely we should remove this check,as the MessageReferenced supposed to be used for fresh
+                    // data
                     if self.est_ms.0 < new_ms {
                         self.est_ms.0 = new_ms;
                     }
@@ -120,16 +131,18 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                             let event = SolidifierEvent::Close(message_id, try_ms_index);
                                             let _ = solidifier_handle.send(event);
                                         }
+                                    } else {
+                                        if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
+                                            let full_message = FullMessage::new(message.clone(), metadata.clone());
+                                            let full_msg_event = SolidifierEvent::Message(full_message);
+                                            let _ = solidifier_handle.send(full_msg_event);
+                                        }
                                     }
                                 } else {
-                                    // send only the message and TODO request metadata from network
-                                    if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
-                                        let event = SolidifierEvent::Tbd(try_ms_index, message_id, message.clone());
-                                        let _ = solidifier_handle.send(event);
-                                    }
+                                    self.request_full_message(message_id, try_ms_index);
                                 }
                             } else {
-                                self.request_full_message(message_id);
+                                self.request_full_message(message_id, try_ms_index);
                             }
                         }
                         Ask::MilestoneMessage(ms) => {
@@ -150,11 +163,11 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
-    fn request_full_message(&mut self, message_id: MessageId) {
+    fn request_full_message(&mut self, message_id: MessageId, try_ms_index: u32) {
         let remote_url = self.api_endpoints.pop_back().unwrap();
         self.api_endpoints.push_front(remote_url.clone());
         if let Some(mut requester_handle) = self.requester_handles.peek_mut() {
-            requester_handle.send_event(RequesterEvent::RequestFullMessage(message_id))
+            requester_handle.send_event(RequesterEvent::RequestFullMessage(message_id, try_ms_index))
         }; // else collector is shutting down
     }
     fn adjust_heap(&mut self, requester_id: RequesterId) {
@@ -190,10 +203,15 @@ impl Collector {
         }
     }
     fn push_fullmsg_to_solidifier(&self, partition_id: u8, message: Message, metadata: MessageMetadata) {
-        // push to solidifer
         if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
             let full_message = FullMessage::new(message, metadata);
             let full_msg_event = SolidifierEvent::Message(full_message);
+            let _ = solidifier_handle.send(full_msg_event);
+        };
+    }
+    fn push_close_to_solidifier(&self, partition_id: u8, message_id: MessageId, try_ms_index: u32) {
+        if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
+            let full_msg_event = SolidifierEvent::Close(message_id, try_ms_index);
             let _ = solidifier_handle.send(full_msg_event);
         };
     }
@@ -303,7 +321,7 @@ impl Collector {
                 let ms_index = milestone.essence().index();
                 let parents_check = message.parents().eq(milestone.essence().parents());
                 // todo!("validate milestone through KeyMananger and ensure parents are equal")
-                if true {
+                if metadata.is_some() {
                     // push to the right solidifier
                     let solidifier_id = (ms_index % (self.collectors_count as u32)) as u8;
                     if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
