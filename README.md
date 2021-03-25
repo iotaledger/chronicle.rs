@@ -1,31 +1,31 @@
 <h1 align="center">
   <br>
-  <a href="https://docs.iota.org/docs/chronicle/1.1/overview"><img src=".github/Chronicle.png"></a>
+  <a href="https://docs.iota.org/docs/permanode/1.1/overview"><img src=".github/Chronicle.png"></a>
 </h1>
 
-<h2 align="center">A framework for building IOTA permanodes</h2>
+<h2 align="center">A Permanent IOTA Message Storage Solution</h2>
 
 <p align="center">
     <a href="https://docs.iota.org/docs/chronicle/1.1/overview" style="text-decoration:none;">
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
-    <a href="https://github.com/iotaledger/chronicle.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/chronicle.rs/workflows/Build/badge.svg"></a>
-    <a href="https://github.com/iotaledger/chronicle.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/chronicle.rs/workflows/Test/badge.svg"></a>
+    <a href="https://github.com/iotaledger/permanode.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/permanode.rs/workflows/Build/badge.svg"></a>
+    <a href="https://github.com/iotaledger/permanode.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/permanode.rs/workflows/Test/badge.svg"></a>
     <a href="https://discord.iota.org/" style="text-decoration:none;"><img src="https://img.shields.io/badge/Discord-9cf.svg?logo=discord" alt="Discord"></a>
     <a href="https://iota.stackexchange.com/" style="text-decoration:none;"><img src="https://img.shields.io/badge/StackExchange-9cf.svg?logo=stackexchange" alt="StackExchange"></a>
-    <a href="https://github.com/iotaledger/chronicle.rs/blob/master/LICENSE" style="text-decoration:none;"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="Apache 2.0 license"></a>
-    <a href="https://dependabot.com" style="text-decoration:none;"><img src="https://api.dependabot.com/badges/status?host=github&repo=iotaledger/chronicle.rs" alt=""></a>
+    <a href="https://github.com/iotaledger/permanode.rs/blob/master/LICENSE" style="text-decoration:none;"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="Apache 2.0 license"></a>
+    <a href="https://dependabot.com" style="text-decoration:none;"><img src="https://api.dependabot.com/badges/status?host=github&repo=iotaledger/permanode.rs" alt=""></a>
 </p>
 
 <p align="center">
   <a href="#about">About</a> ◈
   <a href="#prerequisites">Prerequisites</a> ◈
-  <a href="#getting-started">Getting started</a> ◈
-  <a href="#api-reference">API reference</a> ◈
+  <a href="#api-reference">API Reference</a> ◈
+  <a href="#config-reference">Config Reference</a> ◈
   <a href="#supporting-the-project">Supporting the project</a> ◈
   <a href="#joining-the-discussion">Joining the discussion</a> ◈
-  <a href="#future-work">Future work</a>
+  <a href="#future-work">Future work</a> ◈
   <a href="#LICENSE">LICENSE</a>
 </p>
 
@@ -33,21 +33,22 @@
 
 ## About
 
-Chronicle provides tools for building permanode solutions on an efficent runtime based on [tokio](https://docs.rs/crate/tokio). With Chronicle, you can:
+Chronicle provides tools for managing and accessing permanode solutions using the IOTA actor framework [backstage](#). With Chronicle, you can:
 
-- Store IOTA transactions in real time, using one or more [Scylla](https://www.scylladb.com/) clusters
-- Search for all stored transactions, using an HTTP API
-- Extend your own application with custom crates and configurations
+- Store IOTA messages in real time, using one or more [Scylla](https://www.scylladb.com/) clusters
+- Explore stored messages using an HTTP API
+- Store the data you want by modifying incoming messages
+- Filter data to store it how and where you want
 
-Chronicle includes the following crates that you can use as tools for building your own permanode and extending its functionality:
+Chronicle includes the following crates:
 
-- **[API](chronicle-api/README.md):** API app that allows you to access the database
-- **[Broker](chronicle-broker/README.md):** ZMQ broker app for subscribing to new and confirmed transactions on an IOTA node
-- **[Common](chronicle-common/README.md):** Runtime code that handles the loading and shutting down of apps
-- **[CQL](chronicle-cql/README.md):** Code for decoding and encoding Cassandra Query Language (CQL) commands for interacting with a Scylla node
-- **[Storage](chronicle-storage/README.md):** Storage app for connecting to a Scylla node, storing transactions on it, and searching for them
+- **[Chronicle](permanode/README.md)** The entry point for the Chronicle application
+- **[API](permanode-api/README.md):** API that allows you to access stored messages
+- **[Broker](permanode-broker/README.md):** Allows subscribing to incoming messages from IOTA nodes
+- **[Storage](permanode-storage/README.md):** Implements storage related functionality from [scylla.rs](https://github.com/iotaledger/scylla.rs)
+- **[Filter](permanode-filter/README.md):** A simple container for user modified code
 
-**Note:** This is alpha software, so there may be performance and stability issues. Please report any issues in our [issue tracker](https://github.com/iotaledger/chronicle.rs/issues/new).
+**Note:** This is alpha software, so there may be performance and stability issues. Please report any issues in our [issue tracker](https://github.com/iotaledger/permanode.rs/issues/new).
 
 ## Prerequisites
 
@@ -98,23 +99,9 @@ rustup update stable
 
 ## Installation
 
-To build your own permanode, you need to add the crates as dependancies in your `Cargo.toml` file.
+Either download the provided executable (you should only do this if you do not wish to use the filtering functionality), or build it yourself.
 
-Because these crates are not available on crates.io, you need to use the Git repository either remotely or locally.
-
-**Remote**
-
-Add the following to your `Cargo.toml` file:
-
-```bash
-[dependencies]
-chronicle-common = { git = "https://github.com/iotaledger/chronicle.rs" }
-chronicle-api = { git = "https://github.com/iotaledger/chronicle.rs" }
-chronicle-broker = { git = "https://github.com/iotaledger/chronicle.rs" }
-chronicle-storage = { git = "https://github.com/iotaledger/chronicle.rs" }
-```
-
-**Local**
+### Building Chronicle
 
 Clone this repository:
 
@@ -122,41 +109,59 @@ Clone this repository:
 git clone https://github.com/iotaledger/chronicle.rs
 ```
 
-Add the following to your `Cargo.toml` file:
+If you wish to use the filter functionality, enable the `filter` feature in [chronicle](chronicle/Cargo.toml)
 
 ```bash
-[dependencies]
-chronicle-common = { path = "../chronicle.rs" }
-chronicle-api = { path = "../chronicle.rs" }
-chronicle-broker = { path = "../chronicle.rs" }
-chronicle-storage = { path = "../chronicle.rs" }
+cargo build --release --features filter
 ```
 
-## Getting started
+### Configuring Chronicle
 
-For examples of building your own permanode, see the [`examples`](examples/) directory.
+Chronicle uses a [RON](https://github.com/ron-rs/ron) file to store configuration parameters, called `config.ron`. An example is provided as [config.example.ron](config.example.ron) with default values. See <a href="#config-reference">Config Reference</a> for more details about the config file.
 
-To get a permanode up and running as quickly as possible, run the CLI application by doing the following:
-
-1. Clone and build Chronicle
-
-  ```bash
-  git clone https://github.com/iotaledger/chronicle.rs.git
-  cd chronicle.rs
-  ```
-
-2. Run the `permanode` example. Replace the `$CONFIG` placeholder with the path to your `config.toml` file
-
-- Supported features: one of `"mainnet"`, `"devnet"`, `"comnet"`.
-```bash
-cargo run --release --features "mainnet" --example permanode $CONFIG/config.toml
-```
-
-For a complete tutorial on the permanode CLI, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.1/tutorials/run-a-permanode).
-
-## API reference
+## API Reference
 
 For an API reference, see the [documentation portal](https://docs.iota.org/docs/chronicle/1.1/references/chronicle-api-reference).
+
+## Config Reference
+
+### `storage_config`
+
+#### `keyspaces: Vec<KeyspaceConfig>`
+See [KeyspaceConfig](permanode-storage/src/config.rs#KeyspaceConfig)
+
+Multiple keyspaces can be configured in order to filter incoming messages. If the `filter` feature is not used, *only the first configured keyspace will be considered* or the default (`chronicle`) if none is provided.
+
+In addition to the keyspace name, each requires a map of datacenters (name -> replication factor). See [here](https://university.scylladb.com/courses/scylla-essentials-overview/lessons/architecture/topic/datacenter/) for more information about datacenters in ScyllaDB.
+
+#### `listen_address: String`
+The scylla.rs dashboard listen address, where it accepts requests to manage the Scylla cluster.
+
+#### `thread_count: Enum`
+The number of threads Scylla will use. Can be one of `Count(usize)` (a simple scalar count) or `CoreMultiple(usize)` (a multiple of the number of cores the system has).
+
+#### `reporter_count: u8`
+The number of reporters Scylla will spawn.
+
+#### `local_datacenter: String`
+The Scylla local datacenter.
+
+#### `partition_config`
+See [PartitionConfig](permanode-storage/src/config.rs#PartitionConfig)
+
+Specifies the number of partitions to use in the database, as well as the number of milestones to use as chunks.
+
+### `api_config`
+
+TODO
+
+### `broker_config`
+
+#### `mqtt_brokers: Vec<Url>`
+TODO
+
+#### `endpoints: Vec<Url>`
+TODO
 
 ## Supporting the project
 
@@ -182,6 +187,6 @@ If you want to get involved in the community, need help with getting set up, hav
 
 ## LICENSE
 
-(c) 2019 - IOTA Stiftung
+(c) 2021 - IOTA Stiftung
 
 IOTA Chronicle is distributed under the Apache License (Version 2.0).
