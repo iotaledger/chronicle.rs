@@ -271,16 +271,23 @@ impl ColumnDecoder for TransactionData {
 /// MessageMetadata storage object
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MessageMetadata {
+    #[serde(rename = "messageId")]
     pub message_id: MessageId,
+    #[serde(rename = "parentMessageIds")]
     pub parent_message_ids: Vec<MessageId>,
+    #[serde(rename = "isSolid")]
     pub is_solid: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "referencedByMilestoneIndex")]
     pub referenced_by_milestone_index: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "ledgerInclusionState")]
     pub ledger_inclusion_state: Option<LedgerInclusionState>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "shouldPromote")]
     pub should_promote: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "shouldReattach")]
     pub should_reattach: Option<bool>,
 }
 
