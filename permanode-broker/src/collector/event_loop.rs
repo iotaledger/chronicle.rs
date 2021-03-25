@@ -14,6 +14,35 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
     ) -> Result<(), Need> {
         while let Some(event) = self.inbox.recv().await {
             match event {
+                CollectorEvent::MessageAndMeta(message, metadata) => {
+                    let message_id = metadata.message_id;
+                    let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
+                    let partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
+                    // set the ref_ms to be the most recent ref_ms
+                    self.ref_ms.0 = *ref_ms;
+                    // push full message to solidifier;
+                    self.push_fullmsg_to_solidifier(partition_id, message.clone(), metadata.clone());
+                    // check if msg already in lru cache(if so then it's already presisted)
+                    let wrong_msg_est_ms;
+                    if let Some((est_ms, _)) = self.lru_msg.get_mut(&message_id) {
+                        // check if est_ms is not identical to ref_ms
+                        if &est_ms.0 != ref_ms {
+                            wrong_msg_est_ms = Some(*est_ms);
+                            // adjust est_ms to match the actual ref_ms
+                            est_ms.0 = *ref_ms;
+                        } else {
+                            wrong_msg_est_ms = None;
+                        }
+                    } else {
+                        // add it to the cache in order to not presist it again.
+                        self.lru_msg.put(message_id, (self.ref_ms, message.clone()));
+                        wrong_msg_est_ms = None;
+                    }
+                    if let Some(wrong_est_ms) = wrong_msg_est_ms {
+                        self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms);
+                    }
+                    self.insert_message_with_metadata(message_id, message, metadata);
+                }
                 CollectorEvent::Message(message_id, mut message) => {
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
@@ -29,9 +58,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         continue;
                     }
                     let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
-                    let partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
+                    let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
                     let message_id = metadata.message_id;
-                    // set the est_ms to be the most recent ref_ms
+                    // set the ref_ms to be the most recent ref_ms
                     self.ref_ms.0 = *ref_ms;
                     // update the est_ms to be the most recent ref_ms+1
                     let new_ms = self.ref_ms.0 + 1;
@@ -55,8 +84,8 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 wrong_msg_est_ms = None;
                             }
                             cached_msg = Some(message.clone());
-                            // push to solidifer
-                            if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
+                            // push to solidifier
+                            if let Some(solidifier_handle) = self.solidifier_handles.get(&_partition_id) {
                                 let full_message = FullMessage::new(message.clone(), metadata.clone());
                                 let full_msg_event = SolidifierEvent::Message(full_message);
                                 let _ = solidifier_handle.send(full_msg_event);
@@ -67,25 +96,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         }
                         if let Some(message) = cached_msg {
                             if let Some(wrong_est_ms) = wrong_msg_est_ms {
-                                self.delete_parents(&message_id, message.parents(), wrong_est_ms);
-                                match message.payload() {
-                                    // delete indexation if any
-                                    Some(Payload::Indexation(indexation)) => {
-                                        let index_key =
-                                            Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
-                                        self.delete_indexation(&message_id, index_key, wrong_est_ms);
-                                    }
-                                    // delete transactiion partitioned rows if any
-                                    Some(Payload::Transaction(transaction_payload)) => self
-                                        .delete_transaction_partitioned_rows(
-                                            &message_id,
-                                            transaction_payload,
-                                            wrong_est_ms,
-                                        ),
-                                    _ => {}
-                                }
+                                self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms);
                             }
-                            self.insert_message_with_metadata(&message_id.clone(), &mut message.clone(), &metadata);
+                            self.insert_message_with_metadata(message_id, message, metadata);
                         } else {
                             // store it as metadata
                             self.insert_message_metadata(metadata.clone());
@@ -113,9 +126,14 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     }
                                 }
                             } else {
-                                // TODO request it from network (likely requester layer or using future)
-                                // error!("TODO request msg {} from network, s_id {}, ms {}", message_id, solidifier_id,
-                                // try_ms_index);
+                                let remote_url = self.api_endpoints.pop_back().unwrap();
+                                self.api_endpoints.push_front(remote_url.clone());
+                                // tokio::spawn(request_message_and_metadata(
+                                // self.reqwest_client.clone(),
+                                // self.handle.clone().unwrap(),
+                                // remote_url,
+                                // message_id,
+                                // ));
                             }
                         }
                         Ask::MilestoneMessage(ms) => {
@@ -123,13 +141,68 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         }
                     }
                 }
+                CollectorEvent::Shutdown => {
+                    // To shutdown the collector we simply drop the handle
+                    self.handle.take();
+                }
             }
         }
         Ok(())
     }
 }
+pub use bee_rest_api::types::dtos::MessageDto;
+use std::convert::TryFrom;
+
+async fn request_message_and_metadata(
+    client: Client,
+    collector_handle: CollectorHandle,
+    remote_url: Url,
+    message_id: MessageId,
+) {
+    let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
+    let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
+    let message = client.get(get_message_url).send().await;
+    let metadata = client.get(get_metadata_url).send().await;
+    if let (Ok(message), Ok(metadata)) = (message, metadata) {
+        let message = message.text().await;
+        let metadata = metadata.text().await;
+        if let (Ok(message), Ok(metadata)) = (message, metadata) {
+            let message = serde_json::from_str::<JsonData<MessageDto>>(&message);
+            let metadata = serde_json::from_str::<JsonData<MessageMetadata>>(&metadata);
+            if let (Ok(message), Ok(metadata)) = (message, metadata) {
+                let message_dto = message.into_data();
+                let message = Message::try_from(&message_dto).unwrap();
+                let collector_event = CollectorEvent::MessageAndMeta(message, metadata.into_data());
+                let _ = collector_handle.send(collector_event);
+            }
+        }
+    }
+}
 
 impl Collector {
+    fn clean_up_wrong_est_msg(&mut self, message_id: &MessageId, message: &Message, wrong_est_ms: MilestoneIndex) {
+        self.delete_parents(message_id, message.parents(), wrong_est_ms);
+        match message.payload() {
+            // delete indexation if any
+            Some(Payload::Indexation(indexation)) => {
+                let index_key = Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
+                self.delete_indexation(&message_id, index_key, wrong_est_ms);
+            }
+            // delete transactiion partitioned rows if any
+            Some(Payload::Transaction(transaction_payload)) => {
+                self.delete_transaction_partitioned_rows(message_id, transaction_payload, wrong_est_ms)
+            }
+            _ => {}
+        }
+    }
+    fn push_fullmsg_to_solidifier(&self, partition_id: u8, message: Message, metadata: MessageMetadata) {
+        // push to solidifer
+        if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
+            let full_message = FullMessage::new(message, metadata);
+            let full_msg_event = SolidifierEvent::Message(full_message);
+            let _ = solidifier_handle.send(full_msg_event);
+        };
+    }
     #[cfg(feature = "filter")]
     fn get_keyspace_for_message(&self, message: &mut Message) -> PermanodeKeyspace {
         let res = futures::executor::block_on(permanode_filter::filter_messages(message));
@@ -287,20 +360,11 @@ impl Collector {
             metadata.ledger_inclusion_state.clone(),
         );
     }
-    fn insert_message_with_metadata(
-        &mut self,
-        message_id: &MessageId,
-        message: &mut Message,
-        metadata: &MessageMetadata,
-    ) {
+    fn insert_message_with_metadata(&mut self, message_id: MessageId, mut message: Message, metadata: MessageMetadata) {
         #[cfg(feature = "filter")]
-        let keyspace = self.get_keyspace_for_message(message);
+        let keyspace = self.get_keyspace_for_message(&mut message);
         #[cfg(not(feature = "filter"))]
         let keyspace = self.get_keyspace();
-
-        let message_tuple = (message.clone(), metadata.clone());
-        // store message and metadata
-        self.insert(&keyspace, *message_id, message_tuple);
         // Insert parents/children
         self.insert_parents(
             &message_id,
@@ -319,6 +383,9 @@ impl Collector {
                 Some(metadata.clone()),
             );
         }
+        let message_tuple = (message, metadata);
+        // store message and metadata
+        self.insert(&keyspace, message_id, message_tuple);
     }
     fn insert_transaction(
         &mut self,

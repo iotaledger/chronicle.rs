@@ -4,6 +4,8 @@ use crate::{
     application::*,
     solidifier::*,
 };
+use std::collections::VecDeque;
+
 use bee_message::{
     output::Output,
     payload::transaction::{
@@ -11,6 +13,7 @@ use bee_message::{
         TransactionPayload,
     },
 };
+
 use lru::LruCache;
 use permanode_storage::StorageConfig;
 use std::ops::{
@@ -21,24 +24,32 @@ use std::ops::{
 mod event_loop;
 mod init;
 mod terminating;
-
+use reqwest::Client;
+use url::Url;
 // Collector builder
 builder!(CollectorBuilder {
     partition_id: u8,
     lru_capacity: usize,
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
+    reqwest_client: Client,
+    api_endpoints: VecDeque<Url>,
     collectors_count: u8,
+    handle: CollectorHandle,
     storage_config: StorageConfig
 });
 
 pub enum CollectorEvent {
+    /// Requested Message and Metadata
+    MessageAndMeta(Message, MessageMetadata),
     /// Newly seen message from feed source(s)
     Message(MessageId, Message),
     /// Newly seen MessageMetadataObj from feed source(s)
     MessageReferenced(MessageMetadata),
     /// Ask requests from solidifier(s)
     Ask(Ask),
+    /// Shutdown the collector
+    Shutdown,
 }
 
 pub enum Ask {
@@ -101,7 +112,8 @@ impl Shutdown for CollectorHandle {
     where
         Self: Sized,
     {
-        // to shutdown te collector, we simply drop the collectorhandle
+        let shutdown_event = CollectorEvent::Shutdown;
+        self.send(shutdown_event);
         None
     }
 }
@@ -115,8 +127,11 @@ pub struct Collector {
     ref_ms: MilestoneIndex,
     lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
     lru_msg_ref: LruCache<MessageId, MessageMetadata>,
+    handle: Option<CollectorHandle>,
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
+    api_endpoints: VecDeque<Url>,
+    reqwest_client: Client,
     default_keyspace: PermanodeKeyspace,
     storage_config: Option<StorageConfig>,
 }
@@ -151,7 +166,10 @@ impl Builder for CollectorBuilder {
             ref_ms: MilestoneIndex(0),
             solidifier_handles: self.solidifier_handles.expect("Collector expected solidifier handles"),
             collectors_count: self.collectors_count.unwrap(),
+            handle: self.handle,
             inbox: self.inbox.unwrap(),
+            api_endpoints: self.api_endpoints.unwrap(),
+            reqwest_client: self.reqwest_client.unwrap(),
             default_keyspace,
             storage_config: self.storage_config,
         }

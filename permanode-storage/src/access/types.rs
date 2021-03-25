@@ -457,3 +457,13 @@ impl<T> DerefMut for Paged<T> {
         &mut self.inner
     }
 }
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct JsonData<T> {
+    data: T,
+}
+impl<T> JsonData<T> {
+    pub fn into_data(self) -> T {
+        self.data
+    }
+}

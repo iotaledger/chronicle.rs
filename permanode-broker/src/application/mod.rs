@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     collector::*,
+    config::BrokerConfig,
     listener::*,
     logger::*,
     mqtt::*,
@@ -63,6 +64,7 @@ builder!(
         listener_handle: ListenerHandle,
         logs_dir_path: PathBuf,
         collectors_count: u8,
+        broker_config: BrokerConfig,
         storage_config: StorageConfig
 });
 
@@ -102,6 +104,7 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     logs_dir_path: PathBuf,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
+    broker_config: BrokerConfig,
     storage_config: Option<StorageConfig>,
 }
 
@@ -171,6 +174,7 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             logs_dir_path: self.logs_dir_path.expect("Expected logs directory path"),
             handle,
             inbox,
+            broker_config: self.broker_config.unwrap(),
             storage_config: self.storage_config,
         }
         .set_name()

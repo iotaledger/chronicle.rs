@@ -30,6 +30,7 @@ impl Builder for AppsBuilder {
         let logs_dir_path = std::path::PathBuf::from("permanode/logs/");
         let permanode_broker_builder = PermanodeBrokerBuilder::new()
             .logs_dir_path(logs_dir_path)
+            .broker_config(config.broker_config.clone())
             .storage_config(config.storage_config.clone());
         let scylla_builder = ScyllaBuilder::new()
             .listen_address(config.storage_config.listen_address)
