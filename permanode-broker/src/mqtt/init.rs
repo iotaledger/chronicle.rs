@@ -8,9 +8,10 @@ impl<T: Topic, H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         // create async client
+        let random_id: u64 = rand::random();
         let create_opts = CreateOptionsBuilder::new()
             .server_uri(&self.url.as_str()[..])
-            .client_id(&format!("{}_random", self.get_name()))
+            .client_id(&format!("{}|{}", self.get_name(), random_id))
             .persistence(None)
             .finalize();
         let client = AsyncClient::new(create_opts).map_err(|e| {
