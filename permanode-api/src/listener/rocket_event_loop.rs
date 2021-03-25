@@ -322,8 +322,8 @@ where
             let loop_start_time = std::time::Instant::now();
             if !list.is_empty() {
                 // If we're still looking at the same chunk
-                if last_index_map[partition_id] < milestone_chunk as u32
-                    || list[0].milestone_index() > last_index_map[partition_id] - milestone_chunk as u32
+                if list[0].milestone_index() / milestone_chunk as u32
+                    == last_index_map[partition_id] / milestone_chunk as u32
                 {
                     // And we exceeded the page size
                     if results.len() >= page_size {
@@ -376,6 +376,7 @@ where
                 // We hit a new chunk, so we want to look at the next partition now
                 } else {
                     debug!("Hit a chunk boundary");
+                    last_index_map.insert(*partition_id, list[0].milestone_index());
                     // Remove our paging state because it's useless now
                     cookies.remove(Cookie::named("paging_state"));
                     *loop_timings.entry("Chunk Boundary").or_insert(0) +=
