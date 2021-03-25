@@ -1,18 +1,10 @@
-use std::{
-    borrow::Cow,
-    ops::{
-        Deref,
-        DerefMut,
-    },
-};
-
+use super::*;
 use bee_common::packable::Packable;
 pub use bee_ledger::types::{
     Balance,
     OutputDiff,
     Unspent,
 };
-
 pub use bee_message::{
     ledger_index::LedgerIndex,
     milestone::Milestone,
@@ -43,6 +35,15 @@ pub use bee_tangle::{
     flags::Flags,
     unconfirmed_message::UnconfirmedMessage,
 };
+use std::{
+    borrow::Cow,
+    io::Cursor,
+    ops::{
+        Deref,
+        DerefMut,
+    },
+};
+
 /// Index type
 pub type Index = u16;
 /// Amount type
@@ -51,9 +52,6 @@ pub type Amount = u64;
 pub type OutputType = u8;
 /// ParentIndex type
 pub type ParentIndex = u16;
-
-use super::*;
-use std::io::Cursor;
 
 /// A `bee` type wrapper which is used to apply the `ColumnEncoder`
 /// functionality over predefined types which are `Packable`.
@@ -272,47 +270,17 @@ impl ColumnDecoder for TransactionData {
 }
 /// MessageMetadata storage object
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessageMetadataObj {
-    #[serde(rename = "messageId")]
-    pub message_id: MessageId,
-    #[serde(rename = "parentMessageIds")]
-    pub parent_message_ids: Vec<MessageId>,
-    #[serde(rename = "isSolid")]
-    pub is_solid: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "referencedByMilestoneIndex")]
-    pub referenced_by_milestone_index: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "ledgerInclusionState")]
-    pub ledger_inclusion_state: Option<LedgerInclusionState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "shouldPromote")]
-    pub should_promote: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "shouldReattach")]
-    pub should_reattach: Option<bool>,
-}
-
-/// Response of GET /api/v1/messages/{message_id}/metadata
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MessageMetadata {
-    #[serde(rename = "messageId")]
-    pub message_id: String,
-    #[serde(rename = "parentMessageIds")]
-    pub parent_message_ids: Vec<String>,
-    #[serde(rename = "isSolid")]
+    pub message_id: MessageId,
+    pub parent_message_ids: Vec<MessageId>,
     pub is_solid: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "referencedByMilestoneIndex")]
     pub referenced_by_milestone_index: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "ledgerInclusionState")]
     pub ledger_inclusion_state: Option<LedgerInclusionState>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "shouldPromote")]
     pub should_promote: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "shouldReattach")]
     pub should_reattach: Option<bool>,
 }
 

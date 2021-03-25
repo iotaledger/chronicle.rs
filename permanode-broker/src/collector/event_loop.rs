@@ -213,7 +213,7 @@ impl Collector {
         payload: &Payload,
         milestone_index: MilestoneIndex,
         inclusion_state: Option<LedgerInclusionState>,
-        metadata: Option<MessageMetadataObj>,
+        metadata: Option<MessageMetadata>,
     ) {
         match payload {
             Payload::Indexation(indexation) => {
@@ -274,7 +274,7 @@ impl Collector {
         let partition = Partition::new(partition_id, *milestone_index);
         self.insert(&self.get_keyspace(), hint, partition)
     }
-    fn insert_message_metadata(&mut self, metadata: MessageMetadataObj) {
+    fn insert_message_metadata(&mut self, metadata: MessageMetadata) {
         let message_id = metadata.message_id;
         // store message and metadata
         self.insert(&self.get_keyspace(), message_id, metadata.clone());
@@ -291,7 +291,7 @@ impl Collector {
         &mut self,
         message_id: &MessageId,
         message: &mut Message,
-        metadata: &MessageMetadataObj,
+        metadata: &MessageMetadata,
     ) {
         #[cfg(feature = "filter")]
         let keyspace = self.get_keyspace_for_message(message);
@@ -327,7 +327,7 @@ impl Collector {
         transaction: &Box<TransactionPayload>,
         ledger_inclusion_state: Option<LedgerInclusionState>,
         milestone_index: MilestoneIndex,
-        metadata: Option<MessageMetadataObj>,
+        metadata: Option<MessageMetadata>,
     ) {
         let transaction_id = transaction.id();
         let unlock_blocks = transaction.unlock_blocks();

@@ -6,14 +6,14 @@
 //! dashboard to explore Permanode stored tangle data.
 //!
 //! ### HTTP Endpoints
-//! - `/<network>`
+//! - `/api/<keyspace>`
 //!     - `/messages`
-//!         - `?<index>`
+//!         - `?<index>[&<page_size>]`
 //!         - `/<message_id>`
 //!         - `/<message_id>/metadata`
-//!         - `/<message_id>/children`
+//!         - `/<message_id>/children[?<page_size>]`
 //!     - `/outputs/<output_id>`
-//!     - `/addresses/ed25519/<address>/outputs`
+//!     - `/addresses/ed25519/<address>/outputs[?<page_size>]`
 //!     - `/milestones/<index>`
 
 /// The main actor for the API
@@ -24,6 +24,8 @@ pub mod config;
 pub mod listener;
 /// The websocket actor
 pub mod websocket;
+/// API response structs
+pub mod responses;
 
 #[macro_use]
 extern crate rocket;

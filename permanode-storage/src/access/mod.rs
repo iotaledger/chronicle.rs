@@ -1,7 +1,12 @@
 pub use crate::keyspaces::PermanodeKeyspace;
 use bee_common::packable::Packable;
+use bincode::Options;
+pub use delete::{
+    Ed25519AddressPK,
+    IndexationPK,
+    ParentPK,
+};
 pub use scylla::access::*;
-
 use serde::{
     Deserialize,
     Serialize,
@@ -10,14 +15,8 @@ use std::{
     io::Cursor,
     ops::Deref,
 };
-
-use bincode::Options;
-pub use delete::{
-    Ed25519AddressPK,
-    IndexationPK,
-    ParentPK,
-};
 pub use types::*;
+
 mod delete;
 mod insert;
 mod select;
@@ -149,13 +148,13 @@ impl Partition {
 }
 
 /// An `addresses` table row
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct AddressRecord {
-    output_type: u8,
-    transaction_id: TransactionId,
-    index: Index,
-    amount: Amount,
-    ledger_inclusion_state: Option<LedgerInclusionState>,
+    pub output_type: OutputType,
+    pub transaction_id: TransactionId,
+    pub index: Index,
+    pub amount: Amount,
+    pub ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl AddressRecord {
@@ -191,10 +190,10 @@ impl From<(OutputType, TransactionId, Index, Amount, Option<LedgerInclusionState
 }
 
 /// An `indexes` table row
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct IndexationRecord {
-    message_id: MessageId,
-    ledger_inclusion_state: Option<LedgerInclusionState>,
+    pub message_id: MessageId,
+    pub ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl IndexationRecord {
@@ -208,10 +207,10 @@ impl IndexationRecord {
 }
 
 /// A `parents` table row
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ParentRecord {
-    message_id: MessageId,
-    ledger_inclusion_state: Option<LedgerInclusionState>,
+    pub message_id: MessageId,
+    pub ledger_inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl ParentRecord {

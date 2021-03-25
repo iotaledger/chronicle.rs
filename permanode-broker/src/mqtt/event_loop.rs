@@ -42,7 +42,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<MessagesRefere
         let inbox = self.inbox.as_mut().unwrap();
         while let Some(msg_ref_opt) = inbox.stream.next().await {
             if let Some(msg_ref) = msg_ref_opt {
-                if let Ok(msg_ref) = serde_json::from_str::<MessageMetadataObj>(&msg_ref.payload_str()) {
+                if let Ok(msg_ref) = serde_json::from_str::<MessageMetadata>(&msg_ref.payload_str()) {
                     // partitioning based on first byte of the message_id
                     let collector_partition_id = self.partitioner.partition_id(&msg_ref.message_id);
                     if let Some(collector_handle) = self.collectors_handles.get(&collector_partition_id) {

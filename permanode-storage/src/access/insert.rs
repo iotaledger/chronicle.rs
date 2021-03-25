@@ -18,7 +18,7 @@ impl Insert<MessageId, Message> for PermanodeKeyspace {
     }
 }
 /// Insert Metadata
-impl Insert<MessageId, MessageMetadataObj> for PermanodeKeyspace {
+impl Insert<MessageId, MessageMetadata> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -27,14 +27,14 @@ impl Insert<MessageId, MessageMetadataObj> for PermanodeKeyspace {
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, message_id: &MessageId, meta: &MessageMetadataObj) -> T::Return {
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId, meta: &MessageMetadata) -> T::Return {
         // Encode metadata using bincode
         let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
         builder.value(&message_id.to_string()).value(&encoded.as_slice())
     }
 }
 
-impl Insert<MessageId, (Message, MessageMetadataObj)> for PermanodeKeyspace {
+impl Insert<MessageId, (Message, MessageMetadata)> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -46,7 +46,7 @@ impl Insert<MessageId, (Message, MessageMetadataObj)> for PermanodeKeyspace {
     fn bind_values<T: Values>(
         builder: T,
         message_id: &MessageId,
-        (message, meta): &(Message, MessageMetadataObj),
+        (message, meta): &(Message, MessageMetadata),
     ) -> T::Return {
         // Encode the message bytes as
         let mut message_bytes = Vec::new();
@@ -66,7 +66,8 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.addresses (address, partition_id, milestone_index, output_type, transaction_id, idx, amount, address_type, inclusion_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.addresses (address, partition_id, milestone_index, output_type, transaction_id, idx, amount, address_type, inclusion_state) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -74,7 +75,7 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
     fn bind_values<T: Values>(
         builder: T,
         Partitioned { inner, partition }: &Partitioned<Ed25519Address>,
-        &AddressRecord {
+        AddressRecord {
             transaction_id,
             index,
             amount,
@@ -86,12 +87,12 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
             .value(&inner.to_string())
             .value(partition.id())
             .value(partition.milestone_index())
-            .value(&output_type)
+            .value(output_type)
             .value(&transaction_id.to_string())
-            .value(&index)
-            .value(&amount)
+            .value(index)
+            .value(amount)
             .value(&Ed25519Address::KIND)
-            .value(&ledger_inclusion_state)
+            .value(ledger_inclusion_state)
     }
 }
 
@@ -100,7 +101,8 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.indexes (hashed_index, partition_id, milestone_index, message_id, inclusion_state) VALUES (?, ?, ?, ?,?)",
+            "INSERT INTO {}.indexes (indexation, partition_id, milestone_index, message_id, inclusion_state) 
+            VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -108,7 +110,7 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
     fn bind_values<T: Values>(
         builder: T,
         Partitioned { inner, partition }: &Partitioned<Indexation>,
-        &IndexationRecord {
+        IndexationRecord {
             message_id,
             ledger_inclusion_state,
         }: &IndexationRecord,
@@ -118,7 +120,7 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
             .value(partition.id())
             .value(partition.milestone_index())
             .value(&message_id.to_string())
-            .value(&ledger_inclusion_state)
+            .value(ledger_inclusion_state)
     }
 }
 
@@ -127,7 +129,8 @@ impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO {}.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state) 
+            VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -157,7 +160,8 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()

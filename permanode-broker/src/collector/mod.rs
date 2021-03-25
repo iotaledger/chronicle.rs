@@ -36,7 +36,7 @@ pub enum CollectorEvent {
     /// Newly seen message from feed source(s)
     Message(MessageId, Message),
     /// Newly seen MessageMetadataObj from feed source(s)
-    MessageReferenced(MessageMetadataObj),
+    MessageReferenced(MessageMetadata),
     /// Ask requests from solidifier(s)
     Ask(Ask),
 }
@@ -114,7 +114,7 @@ pub struct Collector {
     est_ms: MilestoneIndex,
     ref_ms: MilestoneIndex,
     lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
-    lru_msg_ref: LruCache<MessageId, MessageMetadataObj>,
+    lru_msg_ref: LruCache<MessageId, MessageMetadata>,
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     default_keyspace: PermanodeKeyspace,

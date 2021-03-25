@@ -27,28 +27,28 @@ builder!(SolidifierBuilder {
     collectors_count: u8
 });
 
-pub struct MilestoneMessage(MessageId, Box<MilestonePayload>, Message, Option<MessageMetadataObj>);
+pub struct MilestoneMessage(MessageId, Box<MilestonePayload>, Message, Option<MessageMetadata>);
 impl MilestoneMessage {
     pub fn new(
         message_id: MessageId,
         milestone_payload: Box<MilestonePayload>,
         message: Message,
-        metadata: Option<MessageMetadataObj>,
+        metadata: Option<MessageMetadata>,
     ) -> Self {
         Self(message_id, milestone_payload, message, metadata)
     }
 }
 #[derive(Debug, serde::Serialize)]
-pub struct FullMessage(Message, MessageMetadataObj);
+pub struct FullMessage(Message, MessageMetadata);
 
 impl FullMessage {
-    pub fn new(message: Message, metadata: MessageMetadataObj) -> Self {
+    pub fn new(message: Message, metadata: MessageMetadata) -> Self {
         Self(message, metadata)
     }
     pub fn message_id(&self) -> &MessageId {
         &self.1.message_id
     }
-    pub fn metadata(&self) -> &MessageMetadataObj {
+    pub fn metadata(&self) -> &MessageMetadata {
         &self.1
     }
     pub fn message(&self) -> &Message {

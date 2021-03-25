@@ -1,13 +1,5 @@
 use super::*;
-use bee_rest_api::types::responses::{
-    InfoResponse,
-    MessageChildrenResponse,
-    MessageResponse,
-    MessagesForIndexResponse,
-    MilestoneResponse,
-    OutputResponse,
-    OutputsForAddressResponse,
-};
+use crate::responses::*;
 use mpsc::unbounded_channel;
 use permanode_storage::{
     access::{
@@ -188,11 +180,11 @@ async fn page<K, V>(
     cookie_path: String,
     partition_config: &PartitionConfig,
     key: K,
-) -> Result<Vec<V>, Cow<'static, str>>
+) -> Result<Vec<Partitioned<V>>, Cow<'static, str>>
 where
     K: 'static + Send + Clone,
-    V: 'static + Send + Clone + std::fmt::Debug + std::fmt::Display,
-    PermanodeKeyspace: Select<Partitioned<K>, Paged<VecDeque<(V, MilestoneIndex)>>>,
+    V: 'static + Send + Clone,
+    PermanodeKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
 {
     let total_start_time = std::time::Instant::now();
     let mut start_time = total_start_time;
@@ -302,7 +294,7 @@ where
                     latest_milestone,
                     last_partition_id.map(|id| partition_id == id)
                 );
-                query::<Paged<VecDeque<(V, MilestoneIndex)>>, _, _>(
+                query::<Paged<VecDeque<Partitioned<V>>>, _, _>(
                     keyspace.clone(),
                     Partitioned::new(key.clone(), partition_id, latest_milestone),
                     Some(page_size as i32),
@@ -331,17 +323,16 @@ where
             if !list.is_empty() {
                 // If we're still looking at the same chunk
                 if last_index_map[partition_id] < milestone_chunk as u32
-                    || list[0].1 .0 > last_index_map[partition_id] - milestone_chunk as u32
+                    || list[0].milestone_index() > last_index_map[partition_id] - milestone_chunk as u32
                 {
                     // And we exceeded the page size
                     if results.len() >= page_size {
                         // Add more anyway if the milestone index is the same,
                         // because we won't be able to recover lost records
                         // with a paging state
-                        if last_index_map[partition_id] == list[0].1 .0 {
+                        if last_index_map[partition_id] == list[0].milestone_index() {
                             // debug!("Adding extra records past page_size");
-                            let (message_id, _) = list.pop_front().unwrap();
-                            results.push(message_id.clone());
+                            results.push(list.pop_front().unwrap());
                             *loop_timings.entry("Adding additional").or_insert(0) +=
                                 (std::time::Instant::now() - loop_start_time).as_nanos();
                         // Otherwise we can stop here and set our cookies
@@ -353,7 +344,7 @@ where
                                     .finish(),
                             );
                             cookies.add(
-                                Cookie::build("last_milestone_index", list[0].1 .0.to_string())
+                                Cookie::build("last_milestone_index", list[0].milestone_index().to_string())
                                     .path(cookie_path.clone())
                                     .finish(),
                             );
@@ -375,10 +366,10 @@ where
                         }
                     // Otherwise, business as usual
                     } else {
-                        let (message_id, milestone_index) = list.pop_front().unwrap();
+                        let partitioned_value = list.pop_front().unwrap();
                         // debug!("Adding result normally");
-                        results.push(message_id.clone());
-                        last_index_map.insert(*partition_id, milestone_index.0);
+                        last_index_map.insert(*partition_id, partitioned_value.milestone_index());
+                        results.push(partitioned_value);
                         *loop_timings.entry("Adding normally").or_insert(0) +=
                             (std::time::Instant::now() - loop_start_time).as_nanos();
                     }
@@ -435,7 +426,7 @@ where
                     debug!("...and we need more results");
                     if list.paging_state.is_some() {
                         debug!("......so we're querying for them");
-                        *list = query::<Paged<VecDeque<(V, MilestoneIndex)>>, _, _>(
+                        *list = query::<Paged<VecDeque<Partitioned<V>>>, _, _>(
                             keyspace.clone(),
                             Partitioned::new(key.clone(), *partition_id, latest_milestone),
                             Some(page_size as i32),
@@ -483,10 +474,10 @@ pub async fn get_message(
     let keyspace = PermanodeKeyspace::new(keyspace);
     query::<Message, _, _>(keyspace, MessageId::from_str(&message_id).unwrap(), None, None)
         .await
-        .and_then(|ref message| {
+        .and_then(|message| {
             message
                 .try_into()
-                .map(|dto| Json(MessageResponse(dto).into()))
+                .map(|res: MessageResponse| Json(res.into()))
                 .map_err(|e| e.into())
         })
 }
@@ -516,7 +507,7 @@ pub async fn get_message_children(
     let message_id = MessageId::from_str(&message_id).unwrap();
     let page_size = page_size.unwrap_or(100);
 
-    let messages = page(
+    let mut messages = page(
         keyspace.clone(),
         Hint::parent(message_id.to_string()),
         page_size,
@@ -532,7 +523,7 @@ pub async fn get_message_children(
             message_id: message_id.to_string(),
             max_results: 2 * page_size,
             count: messages.len(),
-            children_message_ids: messages.iter().map(|id| id.to_string()).collect(),
+            children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
         }
         .into(),
     ))
@@ -552,7 +543,7 @@ pub async fn get_message_by_index(
     let indexation = Indexation(index.clone());
     let page_size = page_size.unwrap_or(1000);
 
-    let messages = page(
+    let mut messages = page(
         keyspace.clone(),
         Hint::index(index.clone()),
         page_size,
@@ -568,7 +559,7 @@ pub async fn get_message_by_index(
             index,
             max_results: 2 * page_size,
             count: messages.len(),
-            message_ids: messages.iter().map(|id| id.to_string()).collect(),
+            message_ids: messages.drain(..).map(|record| record.into()).collect(),
         }
         .into(),
     ))
@@ -585,7 +576,7 @@ pub async fn get_ed25519_outputs(
     let ed25519_address = Ed25519Address::from_str(&address).unwrap();
     let page_size = page_size.unwrap_or(100);
 
-    let outputs = page(
+    let mut outputs = page(
         keyspace.clone(),
         Hint::address(ed25519_address.to_string()),
         page_size,
@@ -602,7 +593,7 @@ pub async fn get_ed25519_outputs(
             address,
             max_results: 2 * page_size,
             count: outputs.len(),
-            output_ids: outputs.iter().map(|id| id.to_string()).collect(),
+            output_ids: outputs.drain(..).map(|record| record.into()).collect(),
         }
         .into(),
     ))

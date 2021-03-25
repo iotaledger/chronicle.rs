@@ -83,14 +83,13 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Perm
     }
 }
 
-impl Select<Partitioned<MessageId>, Paged<VecDeque<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, milestone_index
+            "SELECT partition_id, milestone_index, message_id, inclusion_state
             FROM {}.parents
-            WHERE parent_id = ? AND partition_id = ? AND milestone_index <= ?
-            ORDER BY milestone_index DESC",
+            WHERE parent_id = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
         .into()
@@ -103,14 +102,36 @@ impl Select<Partitioned<MessageId>, Paged<VecDeque<(MessageId, MilestoneIndex)>>
     }
 }
 
-impl Select<Partitioned<Indexation>, Paged<VecDeque<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<ParentRecord>>>> for PermanodeKeyspace {
+    type Row = Record<(PartitionId, MilestoneIndex, MessageId, Option<LedgerInclusionState>)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<Partitioned<ParentRecord>>>>, CqlError> {
+        if decoder.is_rows() {
+            let mut iter = Self::Row::rows_iter(decoder);
+            let paging_state = iter.take_paging_state();
+            let values = iter
+                .map(|row| {
+                    let (partition_id, milestone_index, message_id, inclusion_state) = row.into_inner();
+                    Partitioned::new(
+                        ParentRecord::new(message_id, inclusion_state),
+                        partition_id,
+                        milestone_index.0,
+                    )
+                })
+                .collect();
+            Ok(Some(Paged::new(values, paging_state)))
+        } else {
+            Err(decoder.get_error())
+        }
+    }
+}
+
+impl Select<Partitioned<Indexation>, Paged<VecDeque<Partitioned<IndexationRecord>>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id, milestone_index
+            "SELECT partition_id, milestone_index, message_id, inclusion_state
             FROM {}.indexes
-            WHERE hashed_index = ? AND partition_id = ? AND milestone_index <= ?
-            ORDER BY milestone_index DESC",
+            WHERE indexation = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
         .into()
@@ -123,13 +144,22 @@ impl Select<Partitioned<Indexation>, Paged<VecDeque<(MessageId, MilestoneIndex)>
     }
 }
 
-impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<(MessageId, MilestoneIndex)>>> for PermanodeKeyspace {
-    type Row = Record<(MessageId, MilestoneIndex)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<(MessageId, MilestoneIndex)>>>, CqlError> {
+impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<IndexationRecord>>>> for PermanodeKeyspace {
+    type Row = Record<(PartitionId, MilestoneIndex, MessageId, Option<LedgerInclusionState>)>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<Partitioned<IndexationRecord>>>>, CqlError> {
         if decoder.is_rows() {
             let mut iter = Self::Row::rows_iter(decoder);
             let paging_state = iter.take_paging_state();
-            let values = iter.map(|row| row.into_inner()).collect();
+            let values = iter
+                .map(|row| {
+                    let (partition_id, milestone_index, message_id, inclusion_state) = row.into_inner();
+                    Partitioned::new(
+                        IndexationRecord::new(message_id, inclusion_state),
+                        partition_id,
+                        milestone_index.0,
+                    )
+                })
+                .collect();
             Ok(Some(Paged::new(values, paging_state)))
         } else {
             Err(decoder.get_error())
@@ -137,11 +167,11 @@ impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<(MessageId, MilestoneIndex)>>
     }
 }
 
-impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
+impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecord>>>> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT transaction_id, idx
+            "SELECT partition_id, milestone_index, output_type, transaction_id, idx, amount, inclusion_state
             FROM {}.addresses
             WHERE address = ? AND address_type = 0 AND partition_id = ? AND milestone_index <= ?",
             self.name()
@@ -156,13 +186,31 @@ impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<(OutputId, MilestoneInde
     }
 }
 
-impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<(OutputId, MilestoneIndex)>>> for PermanodeKeyspace {
-    type Row = Record<(TransactionId, u16, MilestoneIndex)>;
-    fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<(OutputId, MilestoneIndex)>>>, CqlError> {
+impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecord>>>> for PermanodeKeyspace {
+    type Row = Record<(
+        PartitionId,
+        MilestoneIndex,
+        OutputType,
+        TransactionId,
+        Index,
+        Amount,
+        Option<LedgerInclusionState>,
+    )>;
+    fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<Partitioned<AddressRecord>>>>, CqlError> {
         if decoder.is_rows() {
             let mut iter = Self::Row::rows_iter(decoder);
             let paging_state = iter.take_paging_state();
-            let values = iter.map(|row| (OutputId::new(row.0, row.1).unwrap(), row.2)).collect();
+            let values = iter
+                .map(|row| {
+                    let (partition_id, milestone_index, output_type, transaction_id, index, amount, inclusion_state) =
+                        row.into_inner();
+                    Partitioned::new(
+                        AddressRecord::new(output_type, transaction_id, index, amount, inclusion_state),
+                        partition_id,
+                        milestone_index.0,
+                    )
+                })
+                .collect();
             Ok(Some(Paged::new(values, paging_state)))
         } else {
             Err(decoder.get_error())
@@ -250,8 +298,7 @@ impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
         format!(
             "SELECT milestone_index, partition_id 
             FROM {}.hints 
-            WHERE hint = ? AND variant = ? 
-            ORDER BY variant, partition_id",
+            WHERE hint = ? AND variant = ?",
             self.name()
         )
         .into()
@@ -348,19 +395,48 @@ impl Row for Record<(u32, u16)> {
     }
 }
 
-impl Row for Record<(MessageId, MilestoneIndex)> {
+impl Row for Record<(PartitionId, MilestoneIndex, MessageId, Option<LedgerInclusionState>)> {
     fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
+        let partition_id = rows.column_value::<PartitionId>();
+        let milestone_index = rows.column_value::<u32>();
         let message_id = MessageId::from_str(&rows.column_value::<String>()).unwrap();
-        let index = rows.column_value::<u32>();
-        Record::new((message_id, MilestoneIndex(index)))
+        let inclusion_state = rows.column_value::<Option<LedgerInclusionState>>();
+        Record::new((
+            partition_id,
+            MilestoneIndex(milestone_index),
+            message_id,
+            inclusion_state,
+        ))
     }
 }
 
-impl Row for Record<(TransactionId, u16, MilestoneIndex)> {
+impl Row
+    for Record<(
+        PartitionId,
+        MilestoneIndex,
+        OutputType,
+        TransactionId,
+        Index,
+        Amount,
+        Option<LedgerInclusionState>,
+    )>
+{
     fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
+        let partition_id = rows.column_value::<PartitionId>();
+        let milestone_index = rows.column_value::<u32>();
+        let output_type = rows.column_value::<OutputType>();
         let transaction_id = TransactionId::from_str(&rows.column_value::<String>()).unwrap();
         let index = rows.column_value::<u16>();
-        let milestone_index = rows.column_value::<u32>();
-        Record::new((transaction_id, index, MilestoneIndex(milestone_index)))
+        let amount = rows.column_value::<Amount>();
+        let inclusion_state = rows.column_value::<Option<LedgerInclusionState>>();
+        Record::new((
+            partition_id,
+            MilestoneIndex(milestone_index),
+            output_type,
+            transaction_id,
+            index,
+            amount,
+            inclusion_state,
+        ))
     }
 }

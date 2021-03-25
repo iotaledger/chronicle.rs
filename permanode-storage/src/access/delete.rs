@@ -93,7 +93,7 @@ impl Delete<IndexationPK, IndexationRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "DELETE FROM {}.indexes WHERE hashed_index = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
+            "DELETE FROM {}.indexes WHERE indexation = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
             self.name()
         )
         .into()
