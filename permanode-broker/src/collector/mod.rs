@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     application::*,
+    requester::*,
     solidifier::*,
 };
 use std::collections::VecDeque;
@@ -13,6 +14,7 @@ use bee_message::{
         TransactionPayload,
     },
 };
+use std::collections::BinaryHeap;
 
 use lru::LruCache;
 use permanode_storage::StorageConfig;
@@ -35,13 +37,14 @@ builder!(CollectorBuilder {
     reqwest_client: Client,
     api_endpoints: VecDeque<Url>,
     collectors_count: u8,
+    requester_count: u8,
     handle: CollectorHandle,
     storage_config: StorageConfig
 });
 
 pub enum CollectorEvent {
-    /// Requested Message and Metadata
-    MessageAndMeta(Message, MessageMetadata),
+    /// Requested Message and Metadata,
+    MessageAndMeta(RequesterId, Option<FullMessage>),
     /// Newly seen message from feed source(s)
     Message(MessageId, Message),
     /// Newly seen MessageMetadataObj from feed source(s)
@@ -123,6 +126,8 @@ pub struct Collector {
     service: Service,
     partition_id: u8,
     collectors_count: u8,
+    requester_count: u8,
+    requester_handles: BinaryHeap<RequesterHandle>,
     est_ms: MilestoneIndex,
     ref_ms: MilestoneIndex,
     lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
@@ -162,10 +167,12 @@ impl Builder for CollectorBuilder {
             lru_msg: LruCache::new(lru_cap),
             lru_msg_ref: LruCache::new(lru_cap),
             partition_id: self.partition_id.unwrap(),
+            requester_handles: BinaryHeap::new(),
             est_ms: MilestoneIndex(0),
             ref_ms: MilestoneIndex(0),
             solidifier_handles: self.solidifier_handles.expect("Collector expected solidifier handles"),
             collectors_count: self.collectors_count.unwrap(),
+            requester_count: self.requester_count.unwrap_or(10),
             handle: self.handle,
             inbox: self.inbox.unwrap(),
             api_endpoints: self.api_endpoints.unwrap(),

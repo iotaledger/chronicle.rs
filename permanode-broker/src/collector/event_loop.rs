@@ -14,34 +14,37 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
     ) -> Result<(), Need> {
         while let Some(event) = self.inbox.recv().await {
             match event {
-                CollectorEvent::MessageAndMeta(message, metadata) => {
-                    let message_id = metadata.message_id;
-                    let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
-                    let partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
-                    // set the ref_ms to be the most recent ref_ms
-                    self.ref_ms.0 = *ref_ms;
-                    // push full message to solidifier;
-                    self.push_fullmsg_to_solidifier(partition_id, message.clone(), metadata.clone());
-                    // check if msg already in lru cache(if so then it's already presisted)
-                    let wrong_msg_est_ms;
-                    if let Some((est_ms, _)) = self.lru_msg.get_mut(&message_id) {
-                        // check if est_ms is not identical to ref_ms
-                        if &est_ms.0 != ref_ms {
-                            wrong_msg_est_ms = Some(*est_ms);
-                            // adjust est_ms to match the actual ref_ms
-                            est_ms.0 = *ref_ms;
+                CollectorEvent::MessageAndMeta(requester_id, opt_full_msg) => {
+                    self.adjust_heap(requester_id);
+                    if let Some(FullMessage(message, metadata)) = opt_full_msg {
+                        let message_id = metadata.message_id;
+                        let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
+                        let partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
+                        // set the ref_ms to be the most recent ref_ms
+                        self.ref_ms.0 = *ref_ms;
+                        // push full message to solidifier;
+                        self.push_fullmsg_to_solidifier(partition_id, message.clone(), metadata.clone());
+                        // check if msg already in lru cache(if so then it's already presisted)
+                        let wrong_msg_est_ms;
+                        if let Some((est_ms, _)) = self.lru_msg.get_mut(&message_id) {
+                            // check if est_ms is not identical to ref_ms
+                            if &est_ms.0 != ref_ms {
+                                wrong_msg_est_ms = Some(*est_ms);
+                                // adjust est_ms to match the actual ref_ms
+                                est_ms.0 = *ref_ms;
+                            } else {
+                                wrong_msg_est_ms = None;
+                            }
                         } else {
+                            // add it to the cache in order to not presist it again.
+                            self.lru_msg.put(message_id, (self.ref_ms, message.clone()));
                             wrong_msg_est_ms = None;
                         }
-                    } else {
-                        // add it to the cache in order to not presist it again.
-                        self.lru_msg.put(message_id, (self.ref_ms, message.clone()));
-                        wrong_msg_est_ms = None;
+                        if let Some(wrong_est_ms) = wrong_msg_est_ms {
+                            self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms);
+                        }
+                        self.insert_message_with_metadata(message_id, message, metadata);
                     }
-                    if let Some(wrong_est_ms) = wrong_msg_est_ms {
-                        self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms);
-                    }
-                    self.insert_message_with_metadata(message_id, message, metadata);
                 }
                 CollectorEvent::Message(message_id, mut message) => {
                     // check if msg already in lru cache(if so then it's already presisted)
@@ -126,14 +129,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     }
                                 }
                             } else {
-                                let remote_url = self.api_endpoints.pop_back().unwrap();
-                                self.api_endpoints.push_front(remote_url.clone());
-                                // tokio::spawn(request_message_and_metadata(
-                                // self.reqwest_client.clone(),
-                                // self.handle.clone().unwrap(),
-                                // remote_url,
-                                // message_id,
-                                // ));
+                                self.request_full_message(message_id);
                             }
                         }
                         Ask::MilestoneMessage(ms) => {
@@ -144,38 +140,36 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                 CollectorEvent::Shutdown => {
                     // To shutdown the collector we simply drop the handle
                     self.handle.take();
+                    // drop heap
+                    self.requester_handles.drain().map(|h| h.shutdown());
                 }
             }
         }
         Ok(())
     }
 }
-pub use bee_rest_api::types::dtos::MessageDto;
-use std::convert::TryFrom;
 
-async fn request_message_and_metadata(
-    client: Client,
-    collector_handle: CollectorHandle,
-    remote_url: Url,
-    message_id: MessageId,
-) {
-    let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
-    let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
-    let message = client.get(get_message_url).send().await;
-    let metadata = client.get(get_metadata_url).send().await;
-    if let (Ok(message), Ok(metadata)) = (message, metadata) {
-        let message = message.text().await;
-        let metadata = metadata.text().await;
-        if let (Ok(message), Ok(metadata)) = (message, metadata) {
-            let message = serde_json::from_str::<JsonData<MessageDto>>(&message);
-            let metadata = serde_json::from_str::<JsonData<MessageMetadata>>(&metadata);
-            if let (Ok(message), Ok(metadata)) = (message, metadata) {
-                let message_dto = message.into_data();
-                let message = Message::try_from(&message_dto).unwrap();
-                let collector_event = CollectorEvent::MessageAndMeta(message, metadata.into_data());
-                let _ = collector_handle.send(collector_event);
-            }
-        }
+impl Collector {
+    fn request_full_message(&mut self, message_id: MessageId) {
+        let remote_url = self.api_endpoints.pop_back().unwrap();
+        self.api_endpoints.push_front(remote_url.clone());
+        if let Some(mut requester_handle) = self.requester_handles.peek_mut() {
+            requester_handle.send_event(RequesterEvent::RequestFullMessage(message_id))
+        }; // else collector is shutting down
+    }
+    fn adjust_heap(&mut self, requester_id: RequesterId) {
+        self.requester_handles = self
+            .requester_handles
+            .drain()
+            .map(|mut requester_handle| {
+                if requester_handle.id == requester_id {
+                    requester_handle.decrement();
+                    requester_handle
+                } else {
+                    requester_handle
+                }
+            })
+            .collect();
     }
 }
 

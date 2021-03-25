@@ -39,7 +39,7 @@ impl MilestoneMessage {
     }
 }
 #[derive(Debug, serde::Serialize)]
-pub struct FullMessage(Message, MessageMetadata);
+pub struct FullMessage(pub Message, pub MessageMetadata);
 
 impl FullMessage {
     pub fn new(message: Message, metadata: MessageMetadata) -> Self {

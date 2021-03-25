@@ -5,6 +5,7 @@ pub mod config;
 pub mod listener;
 pub mod logger;
 pub mod mqtt;
+pub mod requester;
 pub mod solidifier;
 pub mod websocket;
 
