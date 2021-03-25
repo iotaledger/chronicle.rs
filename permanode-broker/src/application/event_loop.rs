@@ -10,33 +10,6 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
     ) -> Result<(), chronicle::Need> {
         if let Some(ref mut supervisor) = supervisor {
             self.service.update_status(ServiceStatus::Running);
-            // TODO remove this testing block
-            {
-                let url = Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap();
-                if let Some(mqtt) = self.add_mqtt(Messages, url) {
-                    tokio::spawn(mqtt.start(self.handle.clone()));
-                }
-                let url = Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap();
-                if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
-                    tokio::spawn(mqtt.start(self.handle.clone()));
-                }
-                let url = Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap();
-                if let Some(mqtt) = self.add_mqtt(Messages, url) {
-                    tokio::spawn(mqtt.start(self.handle.clone()));
-                }
-                let url = Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap();
-                if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
-                    tokio::spawn(mqtt.start(self.handle.clone()));
-                }
-                let url = Url::parse("tcp://api.hornet-2.testnet.chrysalis2.com:1883").unwrap();
-                if let Some(mqtt) = self.add_mqtt(Messages, url) {
-                    tokio::spawn(mqtt.start(self.handle.clone()));
-                }
-                let url = Url::parse("tcp://api.hornet-2.testnet.chrysalis2.com:1883").unwrap();
-                if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
-                    tokio::spawn(mqtt.start(self.handle.clone()));
-                }
-            }
             while let Some(event) = self.inbox.recv().await {
                 match event {
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
@@ -203,7 +176,7 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
 }
 
 impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
-    fn remove_mqtt<T: Topic>(&mut self, url: Url) {
+    pub(crate) fn remove_mqtt<T: Topic>(&mut self, url: Url) {
         let microservice_name = format!("{}@{}", T::name(), url.as_str());
         if let Some(service) = self.service.microservices.get(&microservice_name) {
             // add it to asked_to_shutdown hashmap
@@ -228,7 +201,7 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
             // Maybe TODO response with something?;
         };
     }
-    fn add_mqtt<T: Topic>(&mut self, topic: T, url: Url) -> Option<Mqtt<T>> {
+    pub(crate) fn add_mqtt<T: Topic>(&mut self, topic: T, url: Url) -> Option<Mqtt<T>> {
         let mqtt = MqttBuilder::new()
             .collectors_handles(self.collector_handles.clone())
             .topic(topic)
@@ -249,7 +222,7 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
             None
         }
     }
-    async fn response_to_sockets<T: Serialize>(&mut self, msg: &SocketMsg<T>) {
+    pub(crate) async fn response_to_sockets<T: Serialize>(&mut self, msg: &SocketMsg<T>) {
         for socket in self.websockets.values_mut() {
             let j = serde_json::to_string(&msg).unwrap();
             let m = crate::websocket::Message::text(j);

@@ -10,7 +10,7 @@ impl<T: Topic, H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Mqtt<T> {
         // create async client
         let create_opts = CreateOptionsBuilder::new()
             .server_uri(&self.url.as_str()[..])
-            .client_id(&self.get_name()[..])
+            .client_id(&format!("{}_random", self.get_name()))
             .persistence(None)
             .finalize();
         let client = AsyncClient::new(create_opts).map_err(|e| {

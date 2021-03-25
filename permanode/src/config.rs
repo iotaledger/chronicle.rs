@@ -57,6 +57,8 @@ mod test {
 
     #[test]
     pub fn example_config() {
+        let mut api_endpoints = std::collections::VecDeque::new();
+        api_endpoints.push_front(url::Url::parse("https://api.hornet-0.testnet.chrysalis2.com/api/v1").unwrap());
         let config = Config {
             storage_config: StorageConfig {
                 keyspaces: vec![KeyspaceConfig {
@@ -77,7 +79,10 @@ mod test {
                 partition_config: PartitionConfig::default(),
             },
             api_config: ApiConfig {},
-            broker_config: BrokerConfig {},
+            broker_config: BrokerConfig {
+                mqtt_brokers: vec![url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap()],
+                api_endpoints,
+            },
         };
 
         std::env::set_var("CONFIG_PATH", "../config.example.ron");
