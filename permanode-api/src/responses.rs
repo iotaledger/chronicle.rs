@@ -25,7 +25,7 @@ use serde::{
 
 /// Response of GET /info
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InfoResponse {
+pub(crate) struct InfoResponse {
     pub name: String,
     pub version: String,
     #[serde(rename = "isHealthy")]
@@ -47,7 +47,7 @@ pub struct InfoResponse {
 
 /// Response of GET /api/<keyspace>/messages/<message_id>
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessageResponse {
+pub(crate) struct MessageResponse {
     #[serde(rename = "networkId")]
     pub network_id: String,
     #[serde(rename = "parentMessageIds")]
@@ -71,7 +71,7 @@ impl TryFrom<Message> for MessageResponse {
 
 /// Response of GET /api/<keyspace>/messages/<message_id>/metadata
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessageMetadataResponse {
+pub(crate) struct MessageMetadataResponse {
     #[serde(rename = "messageId")]
     pub message_id: String,
     #[serde(rename = "parentMessageIds")]
@@ -94,7 +94,7 @@ pub struct MessageMetadataResponse {
 
 /// Response of GET /api/<keyspace>/messages/<message_id>/children
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessageChildrenResponse {
+pub(crate) struct MessageChildrenResponse {
     #[serde(rename = "messageId")]
     pub message_id: String,
     #[serde(rename = "maxResults")]
@@ -106,7 +106,7 @@ pub struct MessageChildrenResponse {
 
 /// Response of GET /api/<keyspace>/messages?<index>
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessagesForIndexResponse {
+pub(crate) struct MessagesForIndexResponse {
     pub index: String,
     #[serde(rename = "maxResults")]
     pub max_results: usize,
@@ -117,7 +117,7 @@ pub struct MessagesForIndexResponse {
 
 /// Response of GET /api/<keyspace>/addresses/<address>/outputs
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OutputsForAddressResponse {
+pub(crate) struct OutputsForAddressResponse {
     // The type of the address (1=Ed25519).
     #[serde(rename = "addressType")]
     pub address_type: u8,
@@ -131,7 +131,7 @@ pub struct OutputsForAddressResponse {
 
 /// Response of GET /api/<keyspace>/outputs/<output_id>
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OutputResponse {
+pub(crate) struct OutputResponse {
     #[serde(rename = "messageId")]
     pub message_id: String,
     #[serde(rename = "transactionId")]
@@ -145,7 +145,7 @@ pub struct OutputResponse {
 
 /// Response of GET /api/<keyspace>/milestone/<index>
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MilestoneResponse {
+pub(crate) struct MilestoneResponse {
     #[serde(rename = "index")]
     pub milestone_index: u32,
     #[serde(rename = "messageId")]
@@ -154,7 +154,7 @@ pub struct MilestoneResponse {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Record {
+pub(crate) struct Record {
     pub id: String,
     pub inclusion_state: Option<LedgerInclusionState>,
     pub milestone_index: u32,

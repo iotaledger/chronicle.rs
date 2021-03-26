@@ -468,7 +468,7 @@ where
 }
 
 #[get("/<keyspace>/messages/<message_id>")]
-pub async fn get_message(
+async fn get_message(
     keyspace: String,
     message_id: String,
 ) -> Result<Json<SuccessBody<MessageResponse>>, Cow<'static, str>> {
@@ -498,7 +498,7 @@ pub async fn get_message_metadata(
 }
 
 #[get("/<keyspace>/messages/<message_id>/children?<page_size>")]
-pub async fn get_message_children(
+async fn get_message_children(
     keyspace: String,
     message_id: String,
     page_size: Option<usize>,
@@ -531,7 +531,7 @@ pub async fn get_message_children(
 }
 
 #[get("/<keyspace>/messages?<index>&<page_size>")]
-pub async fn get_message_by_index(
+async fn get_message_by_index(
     keyspace: String,
     index: String,
     page_size: Option<usize>,
@@ -567,7 +567,7 @@ pub async fn get_message_by_index(
 }
 
 #[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>")]
-pub async fn get_ed25519_outputs(
+async fn get_ed25519_outputs(
     keyspace: String,
     address: String,
     page_size: Option<usize>,
@@ -601,7 +601,7 @@ pub async fn get_ed25519_outputs(
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
-pub async fn get_output(
+async fn get_output(
     keyspace: String,
     output_id: String,
 ) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
@@ -651,7 +651,7 @@ pub async fn get_output(
 }
 
 #[get("/<keyspace>/milestones/<index>")]
-pub async fn get_milestone(
+async fn get_milestone(
     keyspace: String,
     index: u32,
 ) -> Result<Json<SuccessBody<MilestoneResponse>>, Cow<'static, str>> {
