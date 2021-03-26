@@ -2,7 +2,11 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::collections::HashMap;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    net::SocketAddr,
+};
 
 /// Type alias for datacenter names
 pub type DatacenterName = String;
@@ -42,6 +46,20 @@ pub struct StorageConfig {
     /// The partition config
     #[serde(default)]
     pub partition_config: PartitionConfig,
+}
+
+impl StorageConfig {
+    /// Verify that the storage config is valid
+    pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
+        if self.listen_address.is_empty() {
+            return Err("No listen address provided!".into());
+        } else {
+            self.listen_address
+                .parse::<SocketAddr>()
+                .map_err(|e| format!("Error parsing listen address {}: {}", self.listen_address, e))?;
+        }
+        Ok(())
+    }
 }
 
 /// Configuration for a scylla keyspace

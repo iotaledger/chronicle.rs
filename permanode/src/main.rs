@@ -2,6 +2,7 @@
 //! # Permanode
 
 use config::*;
+use futures::executor::block_on;
 use permanode_api::application::*;
 use permanode_broker::application::*;
 use scylla::application::*;
@@ -23,7 +24,11 @@ impl Builder for AppsBuilder {
     type State = Apps;
 
     fn build(self) -> Self::State {
-        let config = Config::load().expect("Failed to deserialize config!");
+        let mut config = Config::load().expect("Failed to deserialize config!");
+        if let Err(e) = block_on(config.verify()) {
+            panic!("{}", e)
+        }
+        config.save().unwrap();
         let permanode_api_builder = PermanodeAPIBuilder::new()
             .api_config(config.api_config)
             .storage_config(config.storage_config.clone());
@@ -60,7 +65,7 @@ async fn main() {
         .future(|apps| async {
             let ws = format!("ws://{}/", "127.0.0.1:8080");
             #[cfg(target_os = "windows")]
-            let nodes = vec!["127.0.0.1:19042".parse().unwrap()];
+            let nodes = vec!["127.0.0.1:9042".parse().unwrap()];
             #[cfg(not(target_os = "windows"))]
             let nodes = vec!["172.17.0.2:19042".parse().unwrap()];
             add_nodes(&ws, nodes, 1)

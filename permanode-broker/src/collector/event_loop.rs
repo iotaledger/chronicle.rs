@@ -154,7 +154,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     // To shutdown the collector we simply drop the handle
                     self.handle.take();
                     // drop heap
-                    self.requester_handles.drain().map(|h| h.shutdown());
+                    self.requester_handles.drain().for_each(|h| {
+                        h.shutdown();
+                    });
                 }
             }
         }

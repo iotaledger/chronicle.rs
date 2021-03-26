@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use serde::{
     Deserialize,
     Serialize,
@@ -5,3 +7,11 @@ use serde::{
 /// Configuration for the Permanode API
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct ApiConfig {}
+
+impl ApiConfig {
+    /// Verify that the api config is valid
+    pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
+        // TODO
+        Ok(())
+    }
+}

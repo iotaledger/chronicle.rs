@@ -13,7 +13,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4.14"
 tokio-tungstenite = "0.13.0"
-reqwest = "0.11.2"
+reqwest = { version = "0.11", features = ["json"] }
 futures = "0.3"
 async-trait = "*"
 lru = "0.6.5"

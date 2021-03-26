@@ -42,6 +42,13 @@ impl Config {
         let f = std::fs::File::create(path).map_err(|e| Cow::from(e.to_string()))?;
         ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| e.to_string().into())
     }
+
+    pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
+        self.storage_config.verify().await?;
+        self.api_config.verify().await?;
+        self.broker_config.verify().await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

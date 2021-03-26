@@ -1,6 +1,8 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use serde_json::Value;
+
 use super::*;
 #[async_trait::async_trait]
 impl EventLoop<CollectorHandle> for Requester {
@@ -33,14 +35,28 @@ impl Requester {
         self.api_endpoints.push_front(remote_url.clone());
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
-        let message = self.reqwest_client.get(get_message_url).send().await;
-        let metadata = self.reqwest_client.get(get_metadata_url).send().await;
-        if let (Ok(message), Ok(metadata)) = (message, metadata) {
-            let message = message.text().await;
-            let metadata = metadata.text().await;
-            if let (Ok(message), Ok(metadata)) = (message, metadata) {
-                let message = serde_json::from_str::<JsonData<MessageDto>>(&message);
-                let metadata = serde_json::from_str::<JsonData<MessageMetadata>>(&metadata);
+        let message_response = self
+            .reqwest_client
+            .get(get_message_url)
+            .send()
+            .await
+            .map_err(|e| error!("Error sending request for message: {}", e));
+        let metadata_response = self
+            .reqwest_client
+            .get(get_metadata_url)
+            .send()
+            .await
+            .map_err(|e| error!("Error sending request for metadata: {}", e));
+        if let (Ok(message_response), Ok(metadata_response)) = (message_response, metadata_response) {
+            if message_response.status().is_success() && metadata_response.status().is_success() {
+                let message = message_response
+                    .json::<JsonData<MessageDto>>()
+                    .await
+                    .map_err(|e| error!("Error deserializing message: {}", e));
+                let metadata = metadata_response
+                    .json::<JsonData<MessageMetadata>>()
+                    .await
+                    .map_err(|e| error!("Error deserializing metadata: {}", e));
                 if let (Ok(message), Ok(metadata)) = (message, metadata) {
                     let message_dto = message.into_data();
                     let message = Message::try_from(&message_dto).unwrap();
@@ -56,6 +72,17 @@ impl Requester {
                         let _ = collector_handle.send(collector_event);
                         return ();
                     }
+                }
+            } else {
+                if !message_response.status().is_success() {
+                    let url = message_response.url().clone();
+                    let err = message_response.json::<Value>().await;
+                    error!("Received error requesting message from {}:\n {:#?}", url, err);
+                }
+                if !metadata_response.status().is_success() {
+                    let url = metadata_response.url().clone();
+                    let err = metadata_response.json::<Value>().await;
+                    error!("Received error requesting metadata from {}:\n {:#?}", url, err);
                 }
             }
         }
