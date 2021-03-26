@@ -6,8 +6,6 @@ use crate::{
     collector::*,
     logger::*,
 };
-use lru::LruCache;
-use permanode_storage::access::*;
 use std::ops::{
     Deref,
     DerefMut,

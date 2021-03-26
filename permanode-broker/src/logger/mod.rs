@@ -1,22 +1,16 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::application::*;
-
-use crate::solidifier::*;
-
+use crate::{
+    application::*,
+    solidifier::*,
+};
 use std::{
-    collections::HashMap,
-    net::SocketAddr,
     ops::{
         Deref,
         DerefMut,
     },
-    path::{
-        Path,
-        PathBuf,
-    },
-    time::Duration,
+    path::PathBuf,
 };
 use tokio::{
     fs::{

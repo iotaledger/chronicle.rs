@@ -22,10 +22,10 @@ pub mod application;
 pub mod config;
 /// The http endpoint listener
 pub mod listener;
-/// The websocket actor
-pub mod websocket;
 /// API response structs
 pub mod responses;
+/// The websocket actor
+pub mod websocket;
 
 #[macro_use]
 extern crate rocket;

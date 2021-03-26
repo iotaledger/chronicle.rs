@@ -1,25 +1,17 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::application::*;
-
-use crate::collector::*;
-
-use futures::stream::{
-    Stream,
-    StreamExt,
+use crate::{
+    application::*,
+    collector::*,
 };
-
+use futures::stream::StreamExt;
 use std::{
     collections::HashMap,
-    net::SocketAddr,
-    ops::{
-        Deref,
-        DerefMut,
-    },
     time::Duration,
 };
 pub(crate) use url::Url;
+
 mod event_loop;
 mod init;
 mod terminating;
