@@ -43,4 +43,7 @@ features = [
 maplit = "1.0.2"
 
 [features]
+default = ["rocket", "warp"]
 filter = ["permanode-broker/filter"]
+rocket = ["permanode-api/rocket_listener"]
+warp = ["permanode-api/warp_listener"]

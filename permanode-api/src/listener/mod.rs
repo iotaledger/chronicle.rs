@@ -7,11 +7,14 @@ use permanode_storage::{
 use rocket::Rocket;
 use serde::Serialize;
 use std::marker::PhantomData;
+use tokio::sync::oneshot;
 
 mod init;
+#[cfg(feature = "rocket_listener")]
 mod rocket_event_loop;
 mod terminating;
-// mod warp_event_loop;
+#[cfg(feature = "warp_listener")]
+mod warp_event_loop;
 
 /// A listener implementation using Rocket.rs
 pub struct RocketListener {
@@ -26,7 +29,17 @@ impl RocketListener {
 }
 
 /// A listener implementation using Warp
-pub struct WarpListener;
+pub struct WarpListener {
+    abort_handle: Option<oneshot::Receiver<()>>,
+}
+
+impl WarpListener {
+    pub fn new(abort_handle: oneshot::Receiver<()>) -> Self {
+        Self {
+            abort_handle: Some(abort_handle),
+        }
+    }
+}
 
 /// A listener. Can use Rocket or Warp depending on data provided
 pub struct Listener<T> {
