@@ -4,5 +4,6 @@ members = [
     "permanode-api",
     "permanode-broker",
     "permanode-storage",
-    "permanode-filter"
+    "permanode-filter",
+    "permanode-cli"
 ]
