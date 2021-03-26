@@ -116,7 +116,7 @@ impl Shutdown for CollectorHandle {
         Self: Sized,
     {
         let shutdown_event = CollectorEvent::Shutdown;
-        self.send(shutdown_event);
+        self.send(shutdown_event).ok();
         None
     }
 }

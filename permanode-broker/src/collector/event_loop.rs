@@ -374,6 +374,7 @@ impl Collector {
             metadata.ledger_inclusion_state.clone(),
         );
     }
+    #[allow(unused_mut)]
     fn insert_message_with_metadata(&mut self, message_id: MessageId, mut message: Message, metadata: MessageMetadata) {
         #[cfg(feature = "filter")]
         let keyspace = self.get_keyspace_for_message(&mut message);

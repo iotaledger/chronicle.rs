@@ -99,7 +99,7 @@ impl<T: APIEngine> Name for Listener<T> {
 
 #[async_trait::async_trait]
 impl<T: APIEngine, H: PermanodeAPIScope> AknShutdown<Listener<T>> for PermanodeAPISender<H> {
-    async fn aknowledge_shutdown(self, mut state: Listener<T>, status: Result<(), Need>) {
+    async fn aknowledge_shutdown(self, mut state: Listener<T>, _status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
     }
 }

@@ -5,7 +5,7 @@ use super::*;
 
 #[async_trait::async_trait]
 impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Collector {
-    async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
+    async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         // Get the first keyspace or default to "permanode"
         info!(
             "{} is Initializing, with permanode keyspace: {}",
@@ -17,7 +17,7 @@ impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Collector {
         status
     }
 }
-use futures::future::AbortHandle;
+
 impl Collector {
     fn spawn_requester(&mut self) {
         for id in 0..self.requester_count {

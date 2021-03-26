@@ -13,7 +13,6 @@ use futures::{
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 pub(crate) use tokio_tungstenite::{
-    connect_async,
     tungstenite::Message,
     WebSocketStream,
 };

@@ -2,7 +2,6 @@ use super::*;
 use futures::future::AbortHandle;
 use permanode_storage::StorageConfig;
 use rocket::Shutdown as RocketShutdown;
-use scylla::access::*;
 use serde::{
     Deserialize,
     Serialize,
@@ -29,8 +28,6 @@ where
     H: PermanodeAPIScope,
 {
     service: Service,
-    api_config: ApiConfig,
-    storage_config: StorageConfig,
     inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
     sender: Option<PermanodeAPISender<H>>,
     rocket_listener: Option<RocketShutdown>,
@@ -109,8 +106,6 @@ where
         }
         Self::State {
             service: Service::new(),
-            api_config: self.api_config.expect("No API config was provided!"),
-            storage_config: self.storage_config.expect("No Storage config was provided!"),
             inbox,
             sender,
             rocket_listener: self.rocket_listener_handle,

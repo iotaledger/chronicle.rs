@@ -5,7 +5,7 @@ use super::*;
 
 #[async_trait::async_trait]
 impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Logger {
-    async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
+    async fn init(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         // create directory first
         if let Err(e) = tokio::fs::create_dir(self.dir_path.clone().into_boxed_path()).await {

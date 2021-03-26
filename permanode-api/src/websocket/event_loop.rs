@@ -169,8 +169,8 @@ async fn node_status(tx: Arc<Mutex<SplitSink<WebSocket, Message>>>) {
 async fn send_ws_response(event: event::WsEvent, tx: &Arc<Mutex<SplitSink<WebSocket, Message>>>) {
     match serde_json::to_string(&event) {
         Ok(s) => {
-            tx.lock().await.send(Message::text(s)).await;
+            tx.lock().await.send(Message::text(s)).await.ok();
         }
-        Err(e) => (),
+        Err(_) => (),
     }
 }
