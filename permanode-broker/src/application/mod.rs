@@ -7,8 +7,10 @@ use crate::{
     logger::*,
     mqtt::*,
     solidifier::*,
+    syncer::*,
     websocket::*,
 };
+use std::ops::Range;
 
 use async_trait::async_trait;
 pub use chronicle::*;
@@ -104,6 +106,9 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     logs_dir_path: PathBuf,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
+    default_keyspace: PermanodeKeyspace,
+    sync_range: SyncRange,
+    sync_data: SyncData,
     broker_config: BrokerConfig,
     storage_config: Option<StorageConfig>,
 }
@@ -146,7 +151,40 @@ pub enum Topology {
 pub enum SocketMsg<T> {
     PermanodeBroker(T),
 }
+#[derive(Debug, Clone)]
+pub struct SyncData {
+    /// The completed(synced and logged) milestones data
+    pub(crate) completed: Vec<Range<u32>>,
+    /// Synced milestones data but unlogged
+    pub(crate) synced_but_unlogged: Vec<Range<u32>>,
+    /// Gaps/missings milestones data
+    pub(crate) gaps: Vec<Range<u32>>,
+}
 
+impl SyncData {
+    pub fn take_lowest_gap(&mut self) -> Option<Range<u32>> {
+        self.gaps.pop()
+    }
+    pub fn take_lowest_unlogged(&mut self) -> Option<Range<u32>> {
+        self.synced_but_unlogged.pop()
+    }
+    pub fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
+        let lowest_gap = self.gaps.last();
+        let lowest_unlogged = self.synced_but_unlogged.last();
+        match (lowest_gap, lowest_unlogged) {
+            (Some(gap), Some(unlogged)) => {
+                if gap.start < unlogged.start {
+                    self.gaps.pop()
+                } else {
+                    self.synced_but_unlogged.pop()
+                }
+            }
+            (Some(_), None) => self.gaps.pop(),
+            (None, Some(_)) => self.synced_but_unlogged.pop(),
+            _ => None,
+        }
+    }
+}
 /// implementation of the AppBuilder
 impl<H: PermanodeBrokerScope> AppBuilder<H> for PermanodeBrokerBuilder<H> {}
 
@@ -162,6 +200,27 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let handle = Some(BrokerHandle { tx });
         let inbox = BrokerInbox { rx };
+        let default_keyspace = PermanodeKeyspace::new(
+            self.storage_config
+                .as_ref()
+                .and_then(|config| {
+                    config
+                        .keyspaces
+                        .first()
+                        .and_then(|keyspace| Some(keyspace.name.clone()))
+                })
+                .unwrap_or("permanode".to_owned()),
+        );
+        let sync_range = self
+            .broker_config
+            .as_ref()
+            .and_then(|config| config.sync_range.and_then(|range| Some(range)))
+            .unwrap_or(SyncRange::default());
+        let sync_data = SyncData {
+            completed: Vec::new(),
+            synced_but_unlogged: Vec::new(),
+            gaps: Vec::new(),
+        };
         PermanodeBroker::<H> {
             service: Service::new(),
             websockets: HashMap::new(),
@@ -174,6 +233,9 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             logs_dir_path: self.logs_dir_path.expect("Expected logs directory path"),
             handle,
             inbox,
+            default_keyspace,
+            sync_range,
+            sync_data,
             broker_config: self.broker_config.unwrap(),
             storage_config: self.storage_config,
         }
