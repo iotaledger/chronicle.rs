@@ -296,8 +296,8 @@ impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
 
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT milestone_index, partition_id 
-            FROM {}.hints 
+            "SELECT milestone_index, partition_id
+            FROM {}.hints
             WHERE hint = ? AND variant = ?",
             self.name()
         )
@@ -322,6 +322,40 @@ impl<K> RowsDecoder<K, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace
                     })
                     .collect(),
             ))
+        } else {
+            Err(decoder.get_error())
+        }
+    }
+}
+
+impl Select<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT milestone_index, synced_by, logged_by FROM {}.sync WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, sync_range: &SyncRange) -> T::Return {
+        builder
+            .value(&"permanode")
+            .value(&sync_range.from)
+            .value(&sync_range.to)
+    }
+}
+
+impl RowsDecoder<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
+    type Row = SyncRecord;
+    fn try_decode(decoder: Decoder) -> Result<Option<Iter<SyncRecord>>, CqlError> {
+        if decoder.is_rows() {
+            let mut rows_iter = Self::Row::rows_iter(decoder);
+            if rows_iter.is_empty() {
+                println!("lol {:?}", rows_iter.next());
+                Ok(None)
+            } else {
+                Ok(Some(rows_iter))
+            }
         } else {
             Err(decoder.get_error())
         }
@@ -438,5 +472,14 @@ impl Row
             amount,
             inclusion_state,
         ))
+    }
+}
+
+impl Row for SyncRecord {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        let milestone_index = MilestoneIndex(rows.column_value::<u32>());
+        let synced_by = rows.column_value::<Option<u8>>();
+        let logged_by = rows.column_value::<Option<u8>>();
+        SyncRecord::new(milestone_index, synced_by, logged_by)
     }
 }
