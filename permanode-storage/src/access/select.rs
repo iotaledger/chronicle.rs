@@ -1,4 +1,5 @@
 use super::*;
+use permanode_common::SyncRange;
 use scylla_cql::Row;
 use std::{
     collections::VecDeque,

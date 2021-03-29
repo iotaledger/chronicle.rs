@@ -1,14 +1,16 @@
-use permanode_api::ApiConfig;
-use permanode_broker::BrokerConfig;
-use permanode_storage::StorageConfig;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use super::*;
+pub use api::*;
+pub use broker::*;
 use std::{
     borrow::Cow,
+    collections::HashMap,
     path::Path,
 };
+pub use storage::*;
+
+mod api;
+mod broker;
+mod storage;
 
 pub const CONFIG_PATH: &str = "./config.ron";
 
@@ -55,13 +57,6 @@ impl Config {
 mod test {
     use super::*;
     use maplit::hashmap;
-    use permanode_storage::{
-        access::SyncRange,
-        DatacenterConfig,
-        KeyspaceConfig,
-        PartitionConfig,
-        ThreadCount,
-    };
 
     #[test]
     pub fn example_config() {

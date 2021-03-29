@@ -109,19 +109,6 @@ impl<T> Partitioned<T> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
-pub struct SyncRange {
-    pub from: u32,
-    pub to: u32,
-}
-impl Default for SyncRange {
-    fn default() -> Self {
-        Self {
-            from: 1,
-            to: i32::MAX as u32,
-        }
-    }
-}
 /// Defines the max time-to-live for permanode records: 20 years
 pub const MAX_TTL: u32 = 20 * 365 * 24 * 60 * 60;
 

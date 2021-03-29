@@ -8,3 +8,6 @@ members = [
     "permanode-cli",
     "permanode-common"
 ]
+default-members = [
+    "permanode",
+]

@@ -1,3 +1,5 @@
+use permanode_common::SyncRange;
+
 use super::*;
 
 impl Insert<MessageId, Message> for PermanodeKeyspace {
