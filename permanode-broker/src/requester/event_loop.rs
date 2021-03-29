@@ -15,22 +15,79 @@ impl EventLoop<CollectorHandle> for Requester {
         while let Some(event) = self.inbox.recv().await {
             match event {
                 RequesterEvent::RequestFullMessage(message_id, try_ms_index) => {
-                    self.request_message_and_metadata(collector_handle, message_id, try_ms_index)
-                        .await
+                    if let Ok(full_message) = self.request_message_and_metadata(message_id).await {
+                        self.response_to_collector(
+                            collector_handle,
+                            try_ms_index,
+                            Some(message_id),
+                            Some(full_message),
+                        );
+                    } else {
+                        self.response_to_collector(collector_handle, try_ms_index, Some(message_id), None);
+                    }
+                }
+                RequesterEvent::RequestMilestone(milestone_index) => {
+                    if let Ok(full_message) = self.request_milestone_message(milestone_index).await {
+                        self.response_to_collector(
+                            collector_handle,
+                            milestone_index,
+                            Some(full_message.metadata().message_id),
+                            Some(full_message),
+                        );
+                    } else {
+                        self.response_to_collector(collector_handle, milestone_index, None, None);
+                    }
                 }
             }
         }
         Ok(())
     }
 }
-
+use std::str::FromStr;
 impl Requester {
-    async fn request_message_and_metadata(
-        &mut self,
+    fn response_to_collector(
+        &self,
         collector_handle: &CollectorHandle,
-        message_id: MessageId,
-        try_ms_index: u32,
+        ms_index: u32,
+        opt_message_id: Option<MessageId>,
+        opt_full_message: Option<FullMessage>,
     ) {
+        let collector_event =
+            CollectorEvent::MessageAndMeta(self.requester_id, ms_index, opt_message_id, opt_full_message);
+        let _ = collector_handle.send(collector_event);
+    }
+    async fn request_milestone_message(&mut self, milestone_index: u32) -> Result<FullMessage, ()> {
+        let remote_url = self.api_endpoints.pop_back().unwrap();
+        self.api_endpoints.push_front(remote_url.clone());
+        let get_milestone_url = remote_url.join(&format!("milestones/{}", milestone_index)).unwrap();
+        let milestone_response = self
+            .reqwest_client
+            .get(get_milestone_url)
+            .send()
+            .await
+            .map_err(|e| error!("Error sending request for milestone: {}", e));
+        if let Ok(milestone_response) = milestone_response {
+            if milestone_response.status().is_success() {
+                let milestone = milestone_response
+                    .json::<JsonData<MilestoneResponse>>()
+                    .await
+                    .map_err(|e| error!("Error deserializing milestone: {}", e));
+                if let Ok(milestone) = milestone {
+                    let milestone = milestone.into_data();
+                    let message_id = MessageId::from_str(&milestone.message_id).expect("Expected message_id as string");
+                    return self.request_message_and_metadata(message_id).await;
+                }
+            } else {
+                if !milestone_response.status().is_success() {
+                    let url = milestone_response.url().clone();
+                    let err = milestone_response.json::<Value>().await;
+                    error!("Received error requesting milestone from {}:\n {:#?}", url, err);
+                }
+            }
+        }
+        Err(())
+    }
+    async fn request_message_and_metadata(&mut self, message_id: MessageId) -> Result<FullMessage, ()> {
         let remote_url = self.api_endpoints.pop_back().unwrap();
         self.api_endpoints.push_front(remote_url.clone());
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
@@ -63,14 +120,7 @@ impl Requester {
                     let metadata = metadata.into_data();
                     if metadata.referenced_by_milestone_index.is_some() {
                         let full_message = FullMessage::new(message, metadata);
-                        let collector_event = CollectorEvent::MessageAndMeta(
-                            self.requester_id,
-                            try_ms_index,
-                            message_id,
-                            Some(full_message),
-                        );
-                        let _ = collector_handle.send(collector_event);
-                        return ();
+                        return Ok(full_message);
                     }
                 }
             } else {
@@ -86,7 +136,6 @@ impl Requester {
                 }
             }
         }
-        let collector_event = CollectorEvent::MessageAndMeta(self.requester_id, try_ms_index, message_id, None);
-        let _ = collector_handle.send(collector_event);
+        Err(())
     }
 }

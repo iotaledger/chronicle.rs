@@ -44,18 +44,18 @@ builder!(CollectorBuilder {
 
 pub enum CollectorEvent {
     /// Requested Message and Metadata, u32 is the milestoneindex
-    MessageAndMeta(RequesterId, u32, MessageId, Option<FullMessage>),
+    MessageAndMeta(RequesterId, u32, Option<MessageId>, Option<FullMessage>),
     /// Newly seen message from feed source(s)
     Message(MessageId, Message),
     /// Newly seen MessageMetadataObj from feed source(s)
     MessageReferenced(MessageMetadata),
     /// Ask requests from solidifier(s)
-    Ask(Ask),
+    Ask(AskCollector),
     /// Shutdown the collector
     Shutdown,
 }
 
-pub enum Ask {
+pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
     FullMessage(u8, u32, MessageId),
     MilestoneMessage(u32),

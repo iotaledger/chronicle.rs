@@ -109,6 +109,19 @@ impl<T> Partitioned<T> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+pub struct SyncRange {
+    pub from: u32,
+    pub to: u32,
+}
+impl Default for SyncRange {
+    fn default() -> Self {
+        Self {
+            from: 1,
+            to: i32::MAX as u32,
+        }
+    }
+}
 /// Defines the max time-to-live for permanode records: 20 years
 pub const MAX_TTL: u32 = 20 * 365 * 24 * 60 * 60;
 
@@ -146,7 +159,24 @@ impl Partition {
         &self.milestone_index
     }
 }
+/// An 'sync' table row
+#[derive(Clone, Copy, Debug)]
+pub struct SyncRecord {
+    pub milestone_index: MilestoneIndex,
+    pub synced_by: Option<SyncedBy>,
+    pub logged_by: Option<LoggedBy>,
+}
 
+impl SyncRecord {
+    /// Creates a new sync row
+    pub fn new(milestone_index: MilestoneIndex, synced_by: Option<SyncedBy>, logged_by: Option<LoggedBy>) -> Self {
+        Self {
+            milestone_index,
+            synced_by,
+            logged_by,
+        }
+    }
+}
 /// An `addresses` table row
 #[derive(Clone, Copy, Debug)]
 pub struct AddressRecord {

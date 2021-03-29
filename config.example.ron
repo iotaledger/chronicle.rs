@@ -4,11 +4,11 @@
             (
                 name: "permanode",
                 data_centers: {
-                    "Canada": (
-                        replication_factor: 1,
-                    ),
                     "USA": (
                         replication_factor: 2,
+                    ),
+                    "Canada": (
+                        replication_factor: 1,
                     ),
                 },
             ),
@@ -32,5 +32,9 @@
             "https://api.hornet-0.testnet.chrysalis2.com/api/v1",
             "https://api.hornet-1.testnet.chrysalis2.com/api/v1",
         ],
+        sync_range: Some((
+            from: 1,
+            to: 2147483647,
+        )),
     ),
 )

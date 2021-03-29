@@ -27,33 +27,33 @@ mod terminating;
 /// The maximum bytes size for a given log file;
 pub const MAX_LOG_SIZE: u32 = u32::MAX;
 
-// Logger builder
-builder!(LoggerBuilder { dir_path: PathBuf });
+// Archiver builder
+builder!(ArchiverBuilder { dir_path: PathBuf });
 
-/// LoggerHandle to be passed to the supervisor and solidifers
+/// ArchiverHandle to be passed to the supervisor and solidifers
 #[derive(Clone)]
-pub struct LoggerHandle {
-    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<LoggerEvent>,
+pub struct ArchiverHandle {
+    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<ArchiverEvent>,
 }
-/// LoggerInbox is used to recv events from solidifier(s)
-pub struct LoggerInbox {
-    pub(crate) rx: tokio::sync::mpsc::UnboundedReceiver<LoggerEvent>,
+/// ArchiverInbox is used to recv events from solidifier(s)
+pub struct ArchiverInbox {
+    pub(crate) rx: tokio::sync::mpsc::UnboundedReceiver<ArchiverEvent>,
 }
-impl Deref for LoggerHandle {
-    type Target = tokio::sync::mpsc::UnboundedSender<LoggerEvent>;
+impl Deref for ArchiverHandle {
+    type Target = tokio::sync::mpsc::UnboundedSender<ArchiverEvent>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx
     }
 }
 
-impl DerefMut for LoggerHandle {
+impl DerefMut for ArchiverHandle {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.tx
     }
 }
 
-impl Shutdown for LoggerHandle {
+impl Shutdown for ArchiverHandle {
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized,
@@ -62,7 +62,7 @@ impl Shutdown for LoggerHandle {
     }
 }
 
-pub enum LoggerEvent {
+pub enum ArchiverEvent {
     MilestoneData(MilestoneData),
 }
 
@@ -135,29 +135,29 @@ impl LogFile {
         self.to_ms_index - self.from_ms_index
     }
 }
-// Logger state
-pub struct Logger {
+// Archiver state
+pub struct Archiver {
     service: Service,
     dir_path: PathBuf,
     logs: Vec<LogFile>,
     processed: Vec<std::ops::Range<u32>>,
-    handle: Option<LoggerHandle>,
-    inbox: LoggerInbox,
+    handle: Option<ArchiverHandle>,
+    inbox: ArchiverInbox,
 }
-impl Logger {
-    pub fn take_handle(&mut self) -> Option<LoggerHandle> {
+impl Archiver {
+    pub fn take_handle(&mut self) -> Option<ArchiverHandle> {
         self.handle.take()
     }
 }
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for LoggerBuilder {}
+impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for ArchiverBuilder {}
 
 /// implementation of builder
-impl Builder for LoggerBuilder {
-    type State = Logger;
+impl Builder for ArchiverBuilder {
+    type State = Archiver;
     fn build(self) -> Self::State {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let handle = Some(LoggerHandle { tx });
-        let inbox = LoggerInbox { rx };
+        let handle = Some(ArchiverHandle { tx });
+        let inbox = ArchiverInbox { rx };
         let dir_path = self.dir_path.expect("Expected log dictionary path");
         Self::State {
             service: Service::new(),
@@ -171,10 +171,10 @@ impl Builder for LoggerBuilder {
     }
 }
 
-/// impl name of the Logger
-impl Name for Logger {
+/// impl name of the Archiver
+impl Name for Archiver {
     fn set_name(mut self) -> Self {
-        self.service.update_name("logger".to_string());
+        self.service.update_name("Archiver".to_string());
         self
     }
     fn get_name(&self) -> String {
@@ -183,10 +183,10 @@ impl Name for Logger {
 }
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> AknShutdown<Logger> for BrokerHandle<H> {
-    async fn aknowledge_shutdown(self, mut _state: Logger, status: Result<(), Need>) {
+impl<H: PermanodeBrokerScope> AknShutdown<Archiver> for BrokerHandle<H> {
+    async fn aknowledge_shutdown(self, mut _state: Archiver, status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Logger(_state.service.clone(), status));
+        let event = BrokerEvent::Children(BrokerChild::Archiver(_state.service.clone(), status));
         let _ = self.send(event);
     }
 }

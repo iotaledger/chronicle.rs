@@ -17,6 +17,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                 CollectorEvent::MessageAndMeta(requester_id, try_ms_index, message_id, opt_full_msg) => {
                     self.adjust_heap(requester_id);
                     if let Some(FullMessage(message, metadata)) = opt_full_msg {
+                        let message_id = message_id.expect("Expected message_id in requester response");
                         let partition_id = (try_ms_index % (self.collectors_count as u32)) as u8;
                         let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
                         // set the ref_ms to be the current requested message ref_ms
@@ -121,7 +122,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                 }
                 CollectorEvent::Ask(ask) => {
                     match ask {
-                        Ask::FullMessage(solidifier_id, try_ms_index, message_id) => {
+                        AskCollector::FullMessage(solidifier_id, try_ms_index, message_id) => {
                             if let Some((_, message)) = self.lru_msg.get(&message_id) {
                                 if let Some(metadata) = self.lru_msg_ref.get(&message_id) {
                                     // metadata exist means we already pushed the full message to the solidifier,
@@ -145,8 +146,10 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 self.request_full_message(message_id, try_ms_index);
                             }
                         }
-                        Ask::MilestoneMessage(ms) => {
-                            // TODO request it from network
+                        AskCollector::MilestoneMessage(milestone_index) => {
+                            // Request it from network
+                            self.request_milestone_message(milestone_index);
+                            info!("Id: {} is asking for milestone {}", self.partition_id, milestone_index);
                         }
                     }
                 }
@@ -165,6 +168,13 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
+    fn request_milestone_message(&mut self, milestone_index: u32) {
+        let remote_url = self.api_endpoints.pop_back().unwrap();
+        self.api_endpoints.push_front(remote_url.clone());
+        if let Some(mut requester_handle) = self.requester_handles.peek_mut() {
+            requester_handle.send_event(RequesterEvent::RequestMilestone(milestone_index))
+        }; // else collector is shutting down
+    }
     fn request_full_message(&mut self, message_id: MessageId, try_ms_index: u32) {
         let remote_url = self.api_endpoints.pop_back().unwrap();
         self.api_endpoints.push_front(remote_url.clone());
@@ -293,6 +303,7 @@ impl Collector {
             self.insert(&self.get_keyspace(), hint, partition)
         }
     }
+    // NOT complete, TODO finish it.
     fn insert_payload(
         &mut self,
         message_id: &MessageId,

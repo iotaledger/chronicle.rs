@@ -3,6 +3,7 @@ use paho_mqtt::{
     AsyncClient,
     CreateOptionsBuilder,
 };
+use permanode_storage::access::SyncRange;
 use reqwest::Client;
 use serde::{
     Deserialize,
@@ -14,11 +15,11 @@ use std::{
     collections::VecDeque,
 };
 use url::Url;
-
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {
     pub mqtt_brokers: Vec<Url>,
     pub api_endpoints: VecDeque<Url>,
+    pub sync_range: Option<SyncRange>,
 }
 
 impl BrokerConfig {
@@ -67,6 +68,12 @@ impl BrokerConfig {
                 )
                 .into());
             }
+        }
+        let sync_range = self.sync_range.get_or_insert_with(|| SyncRange::default());
+        if sync_range.from == 0 || sync_range.to == 0 {
+            return Err("Error verifying sync from/to, zero provided!\nPlease provide non-zero milestone index".into());
+        } else if sync_range.from >= sync_range.to {
+            return Err("Error verifying sync from/to, greater or equal provided!\nPlease provide lower \"Sync range from\" milestone index".into());
         }
         Ok(())
     }

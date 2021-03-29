@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
+impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
     async fn event_loop(
         &mut self,
         status: Result<(), Need>,
@@ -13,9 +13,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
         status?;
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
-                LoggerEvent::MilestoneData(milestone_data) => {
+                ArchiverEvent::MilestoneData(milestone_data) => {
                     info!(
-                        "Logger received milestone data for index: {}",
+                        "Archiver received milestone data for index: {}",
                         milestone_data.milestone_index()
                     );
                     let milestone_index = milestone_data.milestone_index();
@@ -92,7 +92,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Logger {
     }
 }
 
-impl Logger {
+impl Archiver {
     async fn create_and_append(&mut self, milestone_index: u32, milestone_data_line: &str) -> Result<(), Need> {
         let mut log_file = LogFile::create(&self.dir_path, milestone_index).await.map_err(|e| {
             error!("{}", e);

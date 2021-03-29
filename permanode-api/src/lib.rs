@@ -25,7 +25,7 @@ pub mod listener;
 /// API response structs
 pub mod responses;
 /// The websocket actor
-pub mod websocket;
+// pub mod websocket;
 
 #[macro_use]
 extern crate rocket;

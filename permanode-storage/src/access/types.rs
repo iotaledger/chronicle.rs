@@ -52,6 +52,11 @@ pub type Amount = u64;
 pub type OutputType = u8;
 /// ParentIndex type
 pub type ParentIndex = u16;
+/// Identify theoretical nodeid which updated/set the synced_by column in sync table
+pub type SyncedBy = u8;
+/// Identify theoretical nodeid which updated/set the logged_by column in sync table.
+/// This enables the admin to locate the generated logs across cluster of permanodes
+pub type LoggedBy = u8;
 
 /// A `bee` type wrapper which is used to apply the `ColumnEncoder`
 /// functionality over predefined types which are `Packable`.
@@ -277,16 +282,12 @@ pub struct MessageMetadata {
     pub parent_message_ids: Vec<MessageId>,
     #[serde(rename = "isSolid")]
     pub is_solid: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "referencedByMilestoneIndex")]
     pub referenced_by_milestone_index: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ledgerInclusionState")]
     pub ledger_inclusion_state: Option<LedgerInclusionState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "shouldPromote")]
     pub should_promote: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "shouldReattach")]
     pub should_reattach: Option<bool>,
 }

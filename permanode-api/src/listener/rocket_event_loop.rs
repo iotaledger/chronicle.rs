@@ -138,7 +138,7 @@ async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
     }))
 }
 
-async fn query<V, S, K>(
+pub(crate) async fn query<V, S, K>(
     keyspace: S,
     key: K,
     page_size: Option<i32>,
@@ -172,7 +172,7 @@ where
     Err("Failed to receive response!".into())
 }
 
-async fn page<K, V>(
+pub(crate) async fn page<K, V>(
     keyspace: String,
     hint: Hint,
     page_size: usize,
@@ -744,6 +744,6 @@ mod tests {
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::Plain));
         check_cors_headers(&res);
-        assert_eq!(res.into_string().await, Some("Worker NoRing".to_owned()));
+        assert_eq!(res.into_string().await, Some("NoRing".to_owned()));
     }
 }

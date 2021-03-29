@@ -29,8 +29,7 @@ impl Insert<MessageId, MessageMetadata> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId, meta: &MessageMetadata) -> T::Return {
         // Encode metadata using bincode
-        let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
-        builder.value(&message_id.to_string()).value(&encoded.as_slice())
+        builder.value(&message_id.to_string()).value(meta)
     }
 }
 
@@ -53,12 +52,10 @@ impl Insert<MessageId, (Message, MessageMetadata)> for PermanodeKeyspace {
         message
             .pack(&mut message_bytes)
             .expect("Error occurred packing Message");
-        // Encode metadata using bincode
-        let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
         builder
             .value(&message_id.to_string())
             .value(&message_bytes.as_slice())
-            .value(&encoded.as_slice())
+            .value(meta)
     }
 }
 /// Insert Address into addresses table
@@ -66,7 +63,7 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.addresses (address, partition_id, milestone_index, output_type, transaction_id, idx, amount, address_type, inclusion_state) 
+            "INSERT INTO {}.addresses (address, partition_id, milestone_index, output_type, transaction_id, idx, amount, address_type, inclusion_state)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
@@ -101,7 +98,7 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.indexes (indexation, partition_id, milestone_index, message_id, inclusion_state) 
+            "INSERT INTO {}.indexes (indexation, partition_id, milestone_index, message_id, inclusion_state)
             VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
@@ -129,7 +126,7 @@ impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state) 
+            "INSERT INTO {}.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state)
             VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
@@ -160,7 +157,7 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) 
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index)
             VALUES (?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
@@ -239,6 +236,7 @@ impl Insert<Hint, Partition> for PermanodeKeyspace {
     }
 }
 
+// TODO finalize
 impl Insert<MilestoneIndex, (Milestone, MilestonePayload)> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
@@ -258,5 +256,31 @@ impl Insert<MilestoneIndex, (Milestone, MilestonePayload)> for PermanodeKeyspace
             .value(&milestone.message_id().to_string())
             .value(&milestone.timestamp())
         //.value(&payload.to_string())
+    }
+}
+
+impl Insert<SyncRange, SyncRecord> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.sync (key, milestone_index, synced_by, logged_by) VALUES (?, ?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        sync_range: &SyncRange,
+        SyncRecord {
+            milestone_index,
+            synced_by,
+            logged_by,
+        }: &SyncRecord,
+    ) -> T::Return {
+        builder
+            .value(&"permanode")
+            .value(&milestone_index.0)
+            .value(synced_by)
+            .value(logged_by)
     }
 }

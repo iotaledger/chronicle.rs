@@ -1,5 +1,4 @@
 use super::*;
-use futures::future::AbortHandle;
 use permanode_storage::StorageConfig;
 use rocket::Shutdown as RocketShutdown;
 use serde::{
@@ -7,9 +6,12 @@ use serde::{
     Serialize,
 };
 use std::ops::Deref;
-use tokio::sync::mpsc::{
-    UnboundedReceiver,
-    UnboundedSender,
+use tokio::sync::{
+    mpsc::{
+        UnboundedReceiver,
+        UnboundedSender,
+    },
+    oneshot::Sender,
 };
 
 mod event_loop;
@@ -31,8 +33,8 @@ where
     inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
     sender: Option<PermanodeAPISender<H>>,
     rocket_listener: Option<RocketShutdown>,
-    warp_listener: Option<AbortHandle>,
-    websocket: AbortHandle,
+    warp_listener: Option<Sender<()>>,
+    // websocket: AbortHandle,
 }
 
 /// A wrapper type for the sender end of the Permanode API event channel
@@ -78,15 +80,26 @@ impl<H: PermanodeAPIScope> Shutdown for PermanodeAPISender<H> {
 }
 
 builder!(
-    #[derive(Clone)]
     PermanodeAPIBuilder<H> {
         api_config: ApiConfig,
         storage_config: StorageConfig,
         rocket_listener_handle: RocketShutdown,
-        warp_listener_handle: AbortHandle,
-        websocket_handle: AbortHandle
+        warp_listener_handle: Sender<()>
     }
 );
+
+impl<H: PermanodeAPIScope> Clone for PermanodeAPIBuilder<H> {
+    fn clone(&self) -> Self {
+        Self {
+            api_config: self.api_config.clone(),
+            storage_config: self.storage_config.clone(),
+            rocket_listener_handle: self.rocket_listener_handle.clone(),
+            warp_listener_handle: None,
+            // websocket_handle: self.websocket_handle.clone(),
+            _phantom: self._phantom.clone(),
+        }
+    }
+}
 
 impl<H: PermanodeAPIScope> ThroughType for PermanodeAPIBuilder<H> {
     type Through = PermanodeAPIThrough;
@@ -110,7 +123,7 @@ where
             sender,
             rocket_listener: self.rocket_listener_handle,
             warp_listener: self.warp_listener_handle,
-            websocket: self.websocket_handle.expect("No websocket handle was provided!"),
+            // websocket: self.websocket_handle.expect("No websocket handle was provided!"),
         }
         .set_name()
     }

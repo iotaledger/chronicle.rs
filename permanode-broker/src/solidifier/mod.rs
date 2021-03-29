@@ -3,8 +3,12 @@
 
 use crate::{
     application::*,
+    archiver::*,
     collector::*,
-    logger::*,
+    syncer::{
+        SyncerEvent,
+        SyncerHandle,
+    },
 };
 use std::ops::{
     Deref,
@@ -19,8 +23,10 @@ mod terminating;
 builder!(SolidifierBuilder {
     partition_id: u8,
     lru_capacity: usize,
-    logger_handle: LoggerHandle,
+    syncer_handle: SyncerHandle,
+    archiver_handle: ArchiverHandle,
     inbox: SolidifierInbox,
+    gap_start: u32,
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8
 });
@@ -67,16 +73,30 @@ pub struct MilestoneData {
     pending: HashMap<MessageId, Option<Message>>,
     #[serde(skip_serializing)]
     complete: bool,
+    #[serde(skip_serializing)]
+    created_by: CreatedBy,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CreatedBy {
+    /// Created by the new incoming messages from the network
+    Incoming = 0,
+    /// Created by the new expected messages from the network
+    Expected = 1,
+    /// Created by solidifiy/sync request from syncer
+    Syncer = 2,
 }
 
 impl MilestoneData {
-    fn new(milestone_index: u32) -> Self {
+    fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
             milestone_index,
             milestone: None,
             messages: HashMap::new(),
             pending: HashMap::new(),
             complete: false,
+            created_by,
         }
     }
     pub fn milestone_index(&self) -> u32 {
@@ -115,6 +135,9 @@ pub enum SolidifierEvent {
     Message(FullMessage),
     /// Close MessageId that doesn't belong at all to Solidifier of milestone u32
     Close(MessageId, u32),
+    /// Solidifiy request from Syncer.
+    /// Solidifier should collect milestonedata and pass it to Syncer(not logger)
+    Solidify(u32),
     /// Shutdown the solidifier
     Shutdown,
 }
@@ -173,8 +196,12 @@ pub struct Solidifier {
     milestones_data: HashMap<u32, MilestoneData>,
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8,
-    logger_handle: LoggerHandle,
+    syncer_handle: SyncerHandle,
+    archiver_handle: ArchiverHandle,
     message_id_partitioner: MessageIdPartitioner,
+    first: Option<u32>,
+    gap_start: u32,
+    expected: u32,
     inbox: SolidifierInbox,
 }
 
@@ -191,8 +218,12 @@ impl Builder for SolidifierBuilder {
             milestones_data: HashMap::new(),
             collector_handles: self.collector_handles.unwrap(),
             collectors_count,
-            logger_handle: self.logger_handle.unwrap(),
+            syncer_handle: self.syncer_handle.unwrap(),
+            archiver_handle: self.archiver_handle.unwrap(),
             message_id_partitioner: MessageIdPartitioner::new(collectors_count),
+            first: None,
+            gap_start: 0, // TODO get it
+            expected: 0,
             inbox: self.inbox.unwrap(),
         }
         .set_name()

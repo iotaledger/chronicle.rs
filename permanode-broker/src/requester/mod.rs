@@ -7,7 +7,10 @@ use crate::{
 };
 use std::collections::VecDeque;
 
-use bee_rest_api::types::dtos::MessageDto;
+use bee_rest_api::types::{
+    dtos::MessageDto,
+    responses::MilestoneResponse,
+};
 use std::convert::TryFrom;
 
 use std::ops::{
@@ -29,8 +32,10 @@ builder!(RequesterBuilder {
 });
 pub type RequesterId = u8;
 pub enum RequesterEvent {
-    // Requesting MessageId in order to solidifiy u32 MilestoneIndex
+    /// Requesting MessageId in order to solidifiy u32 MilestoneIndex
     RequestFullMessage(MessageId, u32),
+    /// Requesting Milestone for u32 milestone index;
+    RequestMilestone(u32),
 }
 
 #[derive(Clone)]

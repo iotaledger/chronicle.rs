@@ -18,8 +18,8 @@ impl<H: PermanodeAPIScope> EventLoop<H> for PermanodeAPI<H> {
                                     supervisor.shutdown_app(&self.get_name());
                                     // shutdown children
                                     self.rocket_listener.take().map(|handle| handle.shutdown());
-                                    self.warp_listener.take().map(|handle| handle.abort());
-                                    self.websocket.abort();
+                                    self.warp_listener.take().map(|handle| handle.send(()));
+                                    // self.websocket.abort();
                                     // make sure to drop self handler
                                     self.sender.take();
                                 }
