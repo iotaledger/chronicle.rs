@@ -147,7 +147,11 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                     Ok(())
                 }
             }
-            Err(_) => Err(Need::Abort),
+            Err(e) => {
+                error!("Unable to query sync table: {}", e);
+                let reschedule_after = Need::RescheduleAfter(std::time::Duration::from_secs(5));
+                return Err(reschedule_after);
+            }
         }
     }
 
