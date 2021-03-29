@@ -1,10 +1,10 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
+    archiver::*,
     collector::*,
     config::BrokerConfig,
     listener::*,
-    logger::*,
     mqtt::*,
     solidifier::*,
     syncer::*,
@@ -123,8 +123,8 @@ pub enum BrokerChild {
     Collector(Service),
     /// Used by Solidifier(s) to keep Broker up to date with its service
     Solidifier(Service),
-    /// Used by Logger to keep Broker up to date with its service
-    Logger(Service, Result<(), Need>),
+    /// Used by Archiver to keep Broker up to date with its service
+    Archiver(Service, Result<(), Need>),
     /// Used by Websocket to keep Broker up to date with its service
     Websocket(Service, Option<WsTx>),
 }

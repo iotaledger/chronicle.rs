@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     application::*,
+    archiver::ArchiverHandle,
     collector::*,
-    logger::LoggerHandle,
     solidifier::{
         FullMessage,
         MilestoneData,
@@ -29,7 +29,7 @@ use url::Url;
 builder!(SyncerBuilder {
     sync_data: SyncData,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
-    logger_handle: LoggerHandle,
+    archiver_handle: ArchiverHandle,
     inbox: SyncerInbox
 });
 
@@ -105,7 +105,7 @@ pub struct Syncer {
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     solidifier_count: u8,
     active: Option<Active>,
-    logger_handle: LoggerHandle,
+    archiver_handle: ArchiverHandle,
     inbox: SyncerInbox,
 }
 
@@ -125,7 +125,7 @@ impl Builder for SyncerBuilder {
             solidifier_handles,
             solidifier_count,
             active: None,
-            logger_handle: self.logger_handle.unwrap(),
+            archiver_handle: self.archiver_handle.unwrap(),
             inbox: self.inbox.unwrap(),
         }
         .set_name()

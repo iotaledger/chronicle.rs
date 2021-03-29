@@ -49,7 +49,7 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                             BrokerChild::Solidifier(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
-                            BrokerChild::Logger(service, status) => {
+                            BrokerChild::Archiver(service, status) => {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {
                                     if service.is_stopped() {

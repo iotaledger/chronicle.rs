@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Logger {
+impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Archiver {
     async fn init(&mut self, _status: Result<(), Need>, _supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         // create directory first

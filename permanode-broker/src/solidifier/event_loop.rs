@@ -72,10 +72,10 @@ impl Solidifier {
             "solidifier_id: {}, is  pushing the milestone data for index: {}, to Logger",
             self.partition_id, milestone_index
         );
-        // Remove milestoneData from self state and pass it to logger
+        // Remove milestoneData from self state and pass it to archiver
         let ms_data = self.milestones_data.remove(&milestone_index).unwrap();
-        let logger_event = LoggerEvent::MilestoneData(ms_data);
-        let _ = self.logger_handle.send(logger_event);
+        let archiver_event = ArchiverEvent::MilestoneData(ms_data);
+        let _ = self.archiver_handle.send(archiver_event);
     }
     fn push_to_syncer(&mut self, milestone_index: u32) {
         info!(
