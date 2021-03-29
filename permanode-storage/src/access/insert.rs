@@ -29,8 +29,7 @@ impl Insert<MessageId, MessageMetadata> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(builder: T, message_id: &MessageId, meta: &MessageMetadata) -> T::Return {
         // Encode metadata using bincode
-        let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
-        builder.value(&message_id.to_string()).value(&encoded.as_slice())
+        builder.value(&message_id.to_string()).value(meta)
     }
 }
 
@@ -53,12 +52,10 @@ impl Insert<MessageId, (Message, MessageMetadata)> for PermanodeKeyspace {
         message
             .pack(&mut message_bytes)
             .expect("Error occurred packing Message");
-        // Encode metadata using bincode
-        let encoded: Vec<u8> = bincode_config().serialize(&meta).unwrap();
         builder
             .value(&message_id.to_string())
             .value(&message_bytes.as_slice())
-            .value(&encoded.as_slice())
+            .value(meta)
     }
 }
 /// Insert Address into addresses table
