@@ -3,8 +3,8 @@
 
 use crate::{
     application::*,
+    archiver::*,
     collector::*,
-    logger::*,
     syncer::{
         SyncerEvent,
         SyncerHandle,
@@ -24,7 +24,7 @@ builder!(SolidifierBuilder {
     partition_id: u8,
     lru_capacity: usize,
     syncer_handle: SyncerHandle,
-    logger_handle: LoggerHandle,
+    archiver_handle: ArchiverHandle,
     inbox: SolidifierInbox,
     gap_start: u32,
     collector_handles: HashMap<u8, CollectorHandle>,
@@ -197,7 +197,7 @@ pub struct Solidifier {
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8,
     syncer_handle: SyncerHandle,
-    logger_handle: LoggerHandle,
+    archiver_handle: ArchiverHandle,
     message_id_partitioner: MessageIdPartitioner,
     first: Option<u32>,
     gap_start: u32,
@@ -219,7 +219,7 @@ impl Builder for SolidifierBuilder {
             collector_handles: self.collector_handles.unwrap(),
             collectors_count,
             syncer_handle: self.syncer_handle.unwrap(),
-            logger_handle: self.logger_handle.unwrap(),
+            archiver_handle: self.archiver_handle.unwrap(),
             message_id_partitioner: MessageIdPartitioner::new(collectors_count),
             first: None,
             gap_start: 0, // TODO get it

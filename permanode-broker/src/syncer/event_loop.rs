@@ -38,7 +38,6 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
                 SyncerEvent::MilestoneData(milestone_data) => {
                     // TODO force order of milestones_data
                     // and push them to logger
-                    
                 }
             }
         }

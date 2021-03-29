@@ -18,11 +18,11 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
             let syncer_builder = SyncerBuilder::new()
                 .sync_data(self.sync_data.clone())
                 .inbox(syncer_inbox);
-            // create logger_builder
-            let mut logger = LoggerBuilder::new().dir_path(self.logs_dir_path.clone()).build();
-            let logger_handle = logger.take_handle();
-            // start logger
-            tokio::spawn(logger.start(self.handle.clone()));
+            // create archiver_builder
+            let mut archiver = ArchiverBuilder::new().dir_path(self.logs_dir_path.clone()).build();
+            let archiver_handle = archiver.take_handle();
+            // start archiver
+            tokio::spawn(archiver.start(self.handle.clone()));
             let mut collector_builders: Vec<CollectorBuilder> = Vec::new();
             let mut solidifier_builders: Vec<SolidifierBuilder> = Vec::new();
             let reqwest_client = reqwest::Client::new();
@@ -51,7 +51,7 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
                 let solidifier_builder = SolidifierBuilder::new()
                     .collectors_count(self.collectors_count)
                     .syncer_handle(syncer_handle.clone())
-                    .logger_handle(logger_handle.clone().unwrap())
+                    .archiver_handle(archiver_handle.clone().unwrap())
                     .gap_start(gap_start)
                     .inbox(solidifier_inbox)
                     .partition_id(partition_id);
@@ -60,7 +60,7 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
             // Finalize and Spawn Syncer
             let syncer = syncer_builder
                 .solidifier_handles(self.solidifier_handles.clone())
-                .logger_handle(logger_handle.unwrap())
+                .archiver_handle(archiver_handle.unwrap())
                 .build();
             tokio::spawn(syncer.start(self.handle.clone()));
             // Spawn mqtt brokers
