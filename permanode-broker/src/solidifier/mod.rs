@@ -137,7 +137,7 @@ pub enum SolidifierEvent {
     Close(MessageId, u32),
     /// Solidifiy request from Syncer.
     /// Solidifier should collect milestonedata and pass it to Syncer(not logger)
-    Solidifiy(u32),
+    Solidify(u32),
     /// Shutdown the solidifier
     Shutdown,
 }

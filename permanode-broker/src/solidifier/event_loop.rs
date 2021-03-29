@@ -21,7 +21,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                 SolidifierEvent::Milestone(milestone_message) => {
                     self.handle_milestone_msg(milestone_message);
                 }
-                SolidifierEvent::Solidifiy(milestone_index) => self.handle_solidifiy(milestone_index),
+                SolidifierEvent::Solidify(milestone_index) => self.handle_solidify(milestone_index),
                 SolidifierEvent::Shutdown => break,
             }
         }
@@ -30,7 +30,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
 }
 
 impl Solidifier {
-    fn handle_solidifiy(&mut self, milestone_index: u32) {
+    fn handle_solidify(&mut self, milestone_index: u32) {
         // this is request from syncer in order for solidifier to collect,
         // the milestone data for the provided milestone index.
         if let None = self.milestones_data.get_mut(&milestone_index) {
@@ -221,7 +221,10 @@ impl Solidifier {
                 // Set it as static bound.
                 self.first.replace(milestone_index);
                 // TODO Tell syncer about this bound.
-                info!("solidifier id: {:?}, observed its first is: {}",solidifier_id, milestone_index);
+                info!(
+                    "solidifier id: {:?}, observed its first is: {}",
+                    solidifier_id, milestone_index
+                );
                 // For safety reasons, we ask collector for this milestone,
                 // as it's the first observed message/milestone which we want to ensure it's solid.
 
