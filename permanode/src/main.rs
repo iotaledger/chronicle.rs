@@ -1,13 +1,11 @@
 #![warn(missing_docs)]
 //! # Permanode
 
-use config::*;
 use futures::executor::block_on;
 use permanode_api::application::*;
 use permanode_broker::application::*;
+use permanode_common::config::*;
 use scylla::application::*;
-
-mod config;
 
 launcher!
 (

@@ -1,0 +1,91 @@
+name: chronicli
+version: "0.1"
+author: IOTA Stiftung
+about: Provides commands and metrics to interact with a Chronicle instance.
+args:
+  - start:
+    help: Start a new Chronicle instance
+  - stop:
+    help: Stop a running Chronicle instance
+  - rebuild:
+    help: Rebuild the RING
+subcommands:
+  - node:
+    about: Manage scylla nodes
+    subcommands:
+      - add:
+        short: a
+        about: Add a scylla node for the scylla instance with the given command websocket address and scylla DB address
+        args:
+          - command-address:
+            short: c
+            takes_value: true
+            value_name: COMMAND_ADDRESS
+            required: true
+            help: The command address and port which will be used to issue commands to this instance
+          - scylladb-address:
+            short: s
+            takes_value: true
+            value_name: SCYLLA_DB_ADDRESS
+            required: true
+            help: The exposed ScyllaDB address and port
+      - remove:
+        short: r
+        about: Remove the scylla node with the given id
+        args:
+          - id:
+            takes_value: true
+            value_name: ID
+            required: true
+            help: The unique ID of the scylla node
+      - list:
+        short: l
+        about: List the running scylla nodes
+  - brokers:
+    about: Manage Chronicle brokers
+    subcommands:
+      - add:
+        short: a
+        about: Add a broker instance to process network messages
+        args:
+          - mqtt-address:
+            short: mq
+            takes_value: true
+            value_name: MQTT_ADDRESS
+            required: true
+            help: The MQTT address and port which will be subscribed to receive messages
+          - endpoint-address:
+            short: e
+            takes_value: true
+            value_name: ENDPOINT_ADDRESS
+            required: true
+            help: The TCP endpoint address and port which will be used to fetch missing messages
+      - remove:
+        short: r
+        about: Remove the broker instance with the given id
+        args:
+          - id:
+            takes_value: true
+            value_name: ID
+            required: true
+            help: The unique ID of the broker
+      - list:
+        short: l
+        about: List the running brokers
+  - archive:
+    about: Manage archived milestones
+    subcommands:
+      - import:
+        short: i
+        about: Import a range of milestones from archive files
+        args:
+          - directory:
+            short: d
+            takes_value: true
+            value_name: DIR
+            help: The directory containing archive files to import. Defaults to the configured output directory.
+          - range:
+            short: r
+            takes_value: true
+            value_name: RANGE
+            help: The range of milestone indexes to import. Defaults to the configured range.
