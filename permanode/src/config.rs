@@ -56,6 +56,7 @@ mod test {
     use super::*;
     use maplit::hashmap;
     use permanode_storage::{
+        access::SyncRange,
         DatacenterConfig,
         KeyspaceConfig,
         PartitionConfig,
@@ -94,6 +95,7 @@ mod test {
                     url::Url::parse("https://api.hornet-1.testnet.chrysalis2.com/api/v1").unwrap(),
                 ]
                 .into(),
+                sync_range: Some(SyncRange::default()),
             },
         };
 

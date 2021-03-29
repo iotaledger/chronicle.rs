@@ -8,48 +8,14 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
         _status: Result<(), chronicle::Need>,
         supervisor: &mut Option<H>,
     ) -> Result<(), chronicle::Need> {
+        _status?;
         if let Some(ref mut supervisor) = supervisor {
             self.service.update_status(ServiceStatus::Running);
             while let Some(event) = self.inbox.recv().await {
                 match event {
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
                         Ok(my_event) => match my_event {
-                            PermanodeBrokerThrough::Shutdown => {
-                                if !self.service.is_stopping() {
-                                    // update service to be stopping, to prevent admins from changing the topology
-                                    self.service.update_status(ServiceStatus::Stopping);
-                                    // Ask launcher to shutdown broker application,
-                                    // this is usefull in case the shutdown event sent by the websocket
-                                    // client or being pass it from other application
-                                    supervisor.shutdown_app(&self.get_name());
-                                    // shutdown children
-                                    // shutdown listener if provided
-                                    if let Some(listener) = self.listener_handle.take() {
-                                        listener.shutdown();
-                                    }
-                                    // shutdown mqtts
-                                    for (mqtt_name, mqtt_handle) in self.mqtt_handles.drain() {
-                                        info!("Shutting down Mqtt: {}", mqtt_name);
-                                        mqtt_handle.shutdown();
-                                    }
-                                    // shutdown collectors
-                                    for (collector_name, collector_handle) in self.collector_handles.drain() {
-                                        info!("Shutting down Collector: {}", collector_name);
-                                        collector_handle.shutdown();
-                                    }
-                                    // shutdown solidifiers
-                                    for (solidifier_name, solidifier_handle) in self.solidifier_handles.drain() {
-                                        info!("Shutting down Solidifier: {}", solidifier_name);
-                                        solidifier_handle.shutdown();
-                                    }
-                                    // Shutdown the websockets
-                                    for (_, ws) in &mut self.websockets {
-                                        let _ = ws.close().await;
-                                    }
-                                    // drop self handler
-                                    self.handle.take();
-                                }
-                            }
+                            PermanodeBrokerThrough::Shutdown => self.shutdown(supervisor).await,
                             PermanodeBrokerThrough::Topology(topology) => match topology {
                                 Topology::AddMqttMessages(url) => {
                                     if let Some(mqtt) = self.add_mqtt(Messages, url) {
@@ -98,7 +64,12 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 match mqtt_status {
                                     Ok(()) => {
                                         if let Some(mqtt_handle) = mqtt_handle_opt {
-                                            self.mqtt_handles.insert(service.get_name(), mqtt_handle);
+                                            if !self.service.is_stopping() {
+                                                self.mqtt_handles.insert(service.get_name(), mqtt_handle);
+                                            } else {
+                                                info!("Shutting down Mqtt: {}", service.get_name());
+                                                mqtt_handle.shutdown();
+                                            }
                                         }
                                     }
                                     Err(Need::Abort) => {
@@ -227,6 +198,42 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
             let j = serde_json::to_string(&msg).unwrap();
             let m = crate::websocket::Message::text(j);
             let _ = socket.send(m).await;
+        }
+    }
+    pub(crate) async fn shutdown(&mut self, supervisor: &mut H) {
+        if !self.service.is_stopping() {
+            // update service to be stopping, to prevent admins from changing the topology
+            self.service.update_status(ServiceStatus::Stopping);
+            // Ask launcher to shutdown broker application,
+            // this is usefull in case the shutdown event sent by the websocket
+            // client or being pass it from other application
+            supervisor.shutdown_app(&self.get_name());
+            // shutdown children
+            // shutdown listener if provided
+            if let Some(listener) = self.listener_handle.take() {
+                listener.shutdown();
+            }
+            // shutdown mqtts
+            for (mqtt_name, mqtt_handle) in self.mqtt_handles.drain() {
+                info!("Shutting down Mqtt: {}", mqtt_name);
+                mqtt_handle.shutdown();
+            }
+            // shutdown collectors
+            for (collector_name, collector_handle) in self.collector_handles.drain() {
+                info!("Shutting down Collector: {}", collector_name);
+                collector_handle.shutdown();
+            }
+            // shutdown solidifiers
+            for (solidifier_name, solidifier_handle) in self.solidifier_handles.drain() {
+                info!("Shutting down Solidifier: {}", solidifier_name);
+                solidifier_handle.shutdown();
+            }
+            // Shutdown the websockets
+            for (_, ws) in &mut self.websockets {
+                let _ = ws.close().await;
+            }
+            // drop self handler
+            self.handle.take();
         }
     }
 }

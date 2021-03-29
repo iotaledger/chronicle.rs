@@ -52,6 +52,11 @@ pub type Amount = u64;
 pub type OutputType = u8;
 /// ParentIndex type
 pub type ParentIndex = u16;
+/// Identify theoretical nodeid which updated/set the synced_by column in sync table
+pub type SyncedBy = u8;
+/// Identify theoretical nodeid which updated/set the logged_by column in sync table.
+/// This enables the admin to locate the generated logs across cluster of permanodes
+pub type LoggedBy = u8;
 
 /// A `bee` type wrapper which is used to apply the `ColumnEncoder`
 /// functionality over predefined types which are `Packable`.
