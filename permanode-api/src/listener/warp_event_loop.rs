@@ -22,6 +22,7 @@ use permanode_storage::{
 };
 use rocket::http::{
     private::cookie::Key,
+    Cookie,
     CookieJar,
 };
 use serde::Deserialize;
@@ -33,11 +34,11 @@ use std::{
     str::FromStr,
 };
 use warp::{
-    filters::reply::WithHeaders,
     reject::Reject,
     reply::{
         json,
         Json,
+        Response,
     },
     Filter,
     Rejection,
@@ -227,18 +228,18 @@ async fn get_message_children(
     mut cookies: CookieJar<'_>,
     partition_config: PartitionConfig,
     PageParam { page_size }: PageParam,
-) -> Result<Json, Rejection> {
+) -> Result<Response, Rejection> {
     let message_id = MessageId::from_str(&message_id).unwrap();
     let page_size = page_size.unwrap_or(100);
 
     if let Some(last_milestone_cookie) = last_milestone_cookie {
-        cookies.add_original(last_milestone_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("last_milestone_index", last_milestone_cookie));
     }
     if let Some(last_partition_cookie) = last_partition_cookie {
-        cookies.add_original(last_partition_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("last_partition_id", last_partition_cookie));
     }
     if let Some(paging_state_cookie) = paging_state_cookie {
-        cookies.add_original(paging_state_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("paging_state", paging_state_cookie));
     }
 
     let mut messages = page(
@@ -253,12 +254,40 @@ async fn get_message_children(
     .await
     .map_err(|e| warp::reject::custom(ErrorBody::from(e)))?;
 
-    Ok(json(&SuccessBody::new(MessageChildrenResponse {
+    let mut headers = HeaderMap::new();
+
+    if let Some(last_milestone_cookie) = cookies.get_pending("last_milestone_index") {
+        headers.append(
+            http::header::SET_COOKIE,
+            last_milestone_cookie.to_string().parse().unwrap(),
+        );
+    }
+
+    if let Some(last_partition_cookie) = cookies.get_pending("last_partition_id") {
+        headers.append(
+            http::header::SET_COOKIE,
+            last_partition_cookie.to_string().parse().unwrap(),
+        );
+    }
+
+    if let Some(paging_state_cookie) = cookies.get_pending("paging_state") {
+        headers.append(
+            http::header::SET_COOKIE,
+            paging_state_cookie.to_string().parse().unwrap(),
+        );
+    }
+
+    let mut res = json(&SuccessBody::new(MessageChildrenResponse {
         message_id: message_id.to_string(),
         max_results: 2 * page_size,
         count: messages.len(),
         children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
-    })))
+    }))
+    .into_response();
+
+    res.headers_mut().extend(headers);
+
+    Ok(res)
 }
 
 async fn get_message_by_index(
@@ -269,7 +298,7 @@ async fn get_message_by_index(
     mut cookies: CookieJar<'_>,
     partition_config: PartitionConfig,
     IndexParams { index, page_size }: IndexParams,
-) -> Result<impl Reply, Rejection> {
+) -> Result<Response, Rejection> {
     if index.len() > 64 {
         return Err(ErrorBody::from("Provided index is too large! (Max 64 characters)").into());
     }
@@ -277,13 +306,13 @@ async fn get_message_by_index(
     let page_size = page_size.unwrap_or(1000);
 
     if let Some(last_milestone_cookie) = last_milestone_cookie {
-        cookies.add_original(last_milestone_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("last_milestone_index", last_milestone_cookie));
     }
     if let Some(last_partition_cookie) = last_partition_cookie {
-        cookies.add_original(last_partition_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("last_partition_id", last_partition_cookie));
     }
     if let Some(paging_state_cookie) = paging_state_cookie {
-        cookies.add_original(paging_state_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("paging_state", paging_state_cookie));
     }
 
     let mut messages = page(
@@ -301,21 +330,21 @@ async fn get_message_by_index(
     let mut headers = HeaderMap::new();
 
     if let Some(last_milestone_cookie) = cookies.get_pending("last_milestone_index") {
-        headers.insert(
+        headers.append(
             http::header::SET_COOKIE,
             last_milestone_cookie.to_string().parse().unwrap(),
         );
     }
 
     if let Some(last_partition_cookie) = cookies.get_pending("last_partition_id") {
-        headers.insert(
+        headers.append(
             http::header::SET_COOKIE,
             last_partition_cookie.to_string().parse().unwrap(),
         );
     }
 
     if let Some(paging_state_cookie) = cookies.get_pending("paging_state") {
-        headers.insert(
+        headers.append(
             http::header::SET_COOKIE,
             paging_state_cookie.to_string().parse().unwrap(),
         );
@@ -342,18 +371,18 @@ async fn get_ed25519_outputs(
     mut cookies: CookieJar<'_>,
     partition_config: PartitionConfig,
     PageParam { page_size }: PageParam,
-) -> Result<Json, Rejection> {
+) -> Result<Response, Rejection> {
     let ed25519_address = Ed25519Address::from_str(&address).unwrap();
     let page_size = page_size.unwrap_or(100);
 
     if let Some(last_milestone_cookie) = last_milestone_cookie {
-        cookies.add_original(last_milestone_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("last_milestone_index", last_milestone_cookie));
     }
     if let Some(last_partition_cookie) = last_partition_cookie {
-        cookies.add_original(last_partition_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("last_partition_id", last_partition_cookie));
     }
     if let Some(paging_state_cookie) = paging_state_cookie {
-        cookies.add_original(paging_state_cookie.parse().unwrap());
+        cookies.add_original(Cookie::new("paging_state", paging_state_cookie));
     }
 
     let mut outputs = page(
@@ -368,13 +397,41 @@ async fn get_ed25519_outputs(
     .await
     .map_err(|e| warp::reject::custom(ErrorBody::from(e)))?;
 
-    Ok(json(&SuccessBody::new(OutputsForAddressResponse {
+    let mut headers = HeaderMap::new();
+
+    if let Some(last_milestone_cookie) = cookies.get_pending("last_milestone_index") {
+        headers.append(
+            http::header::SET_COOKIE,
+            last_milestone_cookie.to_string().parse().unwrap(),
+        );
+    }
+
+    if let Some(last_partition_cookie) = cookies.get_pending("last_partition_id") {
+        headers.append(
+            http::header::SET_COOKIE,
+            last_partition_cookie.to_string().parse().unwrap(),
+        );
+    }
+
+    if let Some(paging_state_cookie) = cookies.get_pending("paging_state") {
+        headers.append(
+            http::header::SET_COOKIE,
+            paging_state_cookie.to_string().parse().unwrap(),
+        );
+    }
+
+    let mut res = json(&SuccessBody::new(OutputsForAddressResponse {
         address_type: 1,
         address,
         max_results: 2 * page_size,
         count: outputs.len(),
         output_ids: outputs.drain(..).map(|record| record.into()).collect(),
-    })))
+    }))
+    .into_response();
+
+    res.headers_mut().extend(headers);
+
+    Ok(res)
 }
 
 async fn get_output(keyspace: String, output_id: String) -> Result<Json, Rejection> {
