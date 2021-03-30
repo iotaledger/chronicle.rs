@@ -23,7 +23,11 @@ async fn main() {
         // Assume the permanode exe is in the same location as this one
         let current_exe = std::env::current_exe().unwrap();
         let parent_dir = current_exe.parent().unwrap();
-        let permanode_exe = parent_dir.join("permanode.exe");
+        let permanode_exe = if cfg!(target_os = "windows") {
+            parent_dir.join("permanode.exe")
+        } else {
+            parent_dir.join("permanode")
+        };
         if permanode_exe.exists() {
             if cfg!(target_os = "windows") {
                 if matches.is_present("start-debug") {
@@ -38,7 +42,7 @@ async fn main() {
                         .expect("failed to execute process")
                 }
             } else {
-                Command::new("bash")
+                Command::new("sh")
                     .arg(permanode_exe.to_str().unwrap())
                     .spawn()
                     .expect("failed to execute process")
