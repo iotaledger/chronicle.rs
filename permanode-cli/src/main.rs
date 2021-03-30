@@ -98,30 +98,38 @@ async fn main() {
 
 async fn node<'a>(matches: &ArgMatches<'a>) {
     let mut config = Config::load().expect("No config file found for Chronicle!");
-    let (mut stream, _) =
-        connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap())
-            .await
-            .unwrap();
-    if matches.is_present("list") {
-        todo!("Print list of nodes");
+    let add_address = matches
+        .value_of("add")
+        .map(|address| address.parse().expect("Invalid address provided!"));
+    let rem_address = matches
+        .value_of("remove")
+        .map(|address| address.parse().expect("Invalid address provided!"));
+    if let Ok((mut stream, _)) =
+        connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap()).await
+    {
+        if matches.is_present("list") {
+            todo!("Print list of nodes");
+        }
+        if let Some(address) = add_address {
+            let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
+                scylla::application::Topology::AddNode(address),
+            ));
+            let message = Message::text(serde_json::to_string(&message).unwrap());
+            stream.send(message).await.unwrap();
+        }
+        if let Some(address) = rem_address {
+            let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
+                scylla::application::Topology::RemoveNode(address),
+            ));
+            let message = Message::text(serde_json::to_string(&message).unwrap());
+            stream.send(message).await.unwrap();
+        }
     }
-    if let Some(address) = matches.value_of("add") {
-        let address = address.parse().expect("Invalid address provided!");
-        let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
-            scylla::application::Topology::AddNode(address),
-        ));
-        let message = Message::text(serde_json::to_string(&message).unwrap());
-        stream.send(message).await.unwrap();
+    if let Some(address) = add_address {
         config.storage_config.nodes.push(address);
         config.save().expect("Failed to save config!");
     }
-    if let Some(address) = matches.value_of("remove") {
-        let address = address.parse().expect("Invalid address provided!");
-        let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
-            scylla::application::Topology::RemoveNode(address),
-        ));
-        let message = Message::text(serde_json::to_string(&message).unwrap());
-        stream.send(message).await.unwrap();
+    if let Some(address) = rem_address {
         let idx = config.storage_config.nodes.iter().position(|a| a == &address);
         if let Some(idx) = idx {
             config.storage_config.nodes.remove(idx);
@@ -140,10 +148,6 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) {
                 .map(|mqtt_address| Url::parse(mqtt_address).unwrap());
             let endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
-            let (mut stream, _) =
-                connect_async(Url::parse(&format!("ws://{}/", config.broker_config.websocket_address)).unwrap())
-                    .await
-                    .unwrap();
             let mut messages = mqtt_addresses.clone().fold(Vec::new(), |mut list, mqtt_address| {
                 list.push(Message::text(
                     serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
@@ -163,8 +167,12 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) {
                 ));
                 list
             });
-            for message in messages.drain(..) {
-                stream.send(message).await.unwrap();
+            if let Ok((mut stream, _)) =
+                connect_async(Url::parse(&format!("ws://{}/", config.broker_config.websocket_address)).unwrap()).await
+            {
+                for message in messages.drain(..) {
+                    stream.send(message).await.unwrap();
+                }
             }
             config.broker_config.mqtt_brokers.extend(mqtt_addresses);
             config.save().expect("Failed to save config!");
