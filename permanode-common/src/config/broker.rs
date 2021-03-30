@@ -22,10 +22,10 @@ pub struct BrokerConfig {
 impl Default for BrokerConfig {
     fn default() -> Self {
         Self {
-            websocket_address: "127.0.0.1:9000".parse().unwrap(),
-            mqtt_brokers: Vec::new(),
-            api_endpoints: VecDeque::default(),
-            sync_range: None,
+            websocket_address: ([127, 0, 0, 1], 9000).into(),
+            mqtt_brokers: Default::default(),
+            api_endpoints: Default::default(),
+            sync_range: Default::default(),
         }
     }
 }

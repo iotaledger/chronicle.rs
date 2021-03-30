@@ -23,34 +23,43 @@ impl Default for ThreadCount {
 
 /// Scylla storage configuration. Defines data which can be used
 /// to construct and access the scylla cluster.
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct StorageConfig {
     /// Keyspace definition for this cluster, keyed by the network
     /// they will pull data from
     pub keyspaces: Vec<KeyspaceConfig>,
     /// The Scylla listen address
-    pub listen_address: String,
+    pub listen_address: SocketAddr,
     /// The Scylla thread count
     pub thread_count: ThreadCount,
     /// The Scylla reporter count
     pub reporter_count: u8,
     /// The name of the local datacenter
     pub local_datacenter: String,
+    /// Nodes to initialize in the cluster
+    pub nodes: Vec<SocketAddr>,
     /// The partition config
     #[serde(default)]
     pub partition_config: PartitionConfig,
 }
 
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            keyspaces: Default::default(),
+            listen_address: ([127, 0, 0, 1], 8080).into(),
+            thread_count: Default::default(),
+            reporter_count: Default::default(),
+            local_datacenter: Default::default(),
+            nodes: Default::default(),
+            partition_config: Default::default(),
+        }
+    }
+}
+
 impl StorageConfig {
     /// Verify that the storage config is valid
     pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
-        if self.listen_address.is_empty() {
-            return Err("No listen address provided!".into());
-        } else {
-            self.listen_address
-                .parse::<SocketAddr>()
-                .map_err(|e| format!("Error parsing listen address {}: {}", self.listen_address, e))?;
-        }
         Ok(())
     }
 }

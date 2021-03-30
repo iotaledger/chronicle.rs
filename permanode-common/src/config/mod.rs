@@ -73,15 +73,16 @@ mod test {
                         },
                     },
                 }],
-                listen_address: "127.0.0.1:8080".to_owned(),
+                listen_address: ([127, 0, 0, 1], 8080).into(),
                 thread_count: ThreadCount::CoreMultiple(1),
                 reporter_count: 2,
                 local_datacenter: "datacenter1".to_owned(),
+                nodes: vec![([127, 0, 0, 1], 9042).into()],
                 partition_config: PartitionConfig::default(),
             },
             api_config: ApiConfig {},
             broker_config: BrokerConfig {
-                websocket_address: "127.0.0.1:9000".parse().unwrap(),
+                websocket_address: ([127, 0, 0, 1], 9000).into(),
                 mqtt_brokers: vec![
                     url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap(),
                     url::Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap(),

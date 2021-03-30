@@ -12,6 +12,15 @@ args:
       long: start
       help: Start a new Chronicle instance
       conflicts_with:
+        - start-debug
+        - stop
+        - rebuild
+  - start-debug:
+      short: d
+      long: start-debug
+      help: Start a new Chronicle instance and do not exit
+      conflicts_with:
+        - start
         - stop
         - rebuild
   - stop:
@@ -20,6 +29,7 @@ args:
       help: Stop a running Chronicle instance
       conflicts_with:
         - start
+        - start-debug
         - rebuild
   - rebuild:
       short: r
@@ -28,6 +38,7 @@ args:
       conflicts_with:
         - stop
         - start
+        - start-debug
 subcommands:
   - nodes:
       about: Manage scylla nodes

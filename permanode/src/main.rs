@@ -15,20 +15,16 @@ launcher!
         [] -> PermanodeAPI<Sender>: PermanodeAPIBuilder<Sender>,
         [PermanodeBroker, PermanodeAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
     },
-    state: Apps {}
+    state: Apps {config: Config}
 );
 
 impl Builder for AppsBuilder {
     type State = Apps;
 
     fn build(self) -> Self::State {
-        let mut config = Config::load().expect("Failed to deserialize config!");
-        if let Err(e) = block_on(config.verify()) {
-            panic!("{}", e)
-        }
-        config.save().unwrap();
+        let config = self.config.as_ref().expect("No config provided!");
         let permanode_api_builder = PermanodeAPIBuilder::new()
-            .api_config(config.api_config)
+            .api_config(config.api_config.clone())
             .storage_config(config.storage_config.clone());
         let logs_dir_path = std::path::PathBuf::from("permanode/logs/");
         let permanode_broker_builder = PermanodeBrokerBuilder::new()
@@ -37,7 +33,7 @@ impl Builder for AppsBuilder {
             .broker_config(config.broker_config.clone())
             .storage_config(config.storage_config.clone());
         let scylla_builder = ScyllaBuilder::new()
-            .listen_address(config.storage_config.listen_address)
+            .listen_address(config.storage_config.listen_address.to_string())
             .thread_count(match config.storage_config.thread_count {
                 ThreadCount::Count(c) => c,
                 ThreadCount::CoreMultiple(c) => num_cpus::get() * c,
@@ -57,9 +53,24 @@ async fn main() {
     dotenv::dotenv().unwrap();
     env_logger::init();
 
-    let apps = AppsBuilder::new().build();
+    let mut config = Config::load().expect("Failed to deserialize config!");
+    if let Err(e) = block_on(config.verify()) {
+        panic!("{}", e)
+    }
+    config.save().unwrap();
+    let nodes = config.storage_config.nodes.clone();
+
+    let apps = AppsBuilder::new().config(config).build();
 
     apps.Scylla()
+        .await
+        .future(|apps| async {
+            let ws = format!("ws://{}/", "127.0.0.1:8080");
+            add_nodes(&ws, nodes.clone(), 1)
+                .await
+                .unwrap_or_else(|e| panic!("Unable to add nodes: {}", e));
+            apps
+        })
         .await
         .PermanodeAPI()
         .await
