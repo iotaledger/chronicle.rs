@@ -2,55 +2,68 @@ name: chronicli
 version: "0.1"
 author: IOTA Stiftung
 about: Provides commands and metrics to interact with a Chronicle instance.
+settings:
+  - VersionlessSubcommands
+  - ArgRequiredElseHelp
+  - ArgsNegateSubcommands
 args:
   - start:
+      short: s
       long: start
       help: Start a new Chronicle instance
       conflicts_with:
         - stop
         - rebuild
   - stop:
+      short: x
       long: stop
       help: Stop a running Chronicle instance
       conflicts_with:
         - start
         - rebuild
   - rebuild:
+      short: r
       long: rebuild
       help: Rebuild the RING
       conflicts_with:
         - stop
         - start
 subcommands:
-  - node:
+  - nodes:
       about: Manage scylla nodes
-      subcommands:
+      settings:
+        - ArgRequiredElseHelp
+      args:
         - add:
-            about: Add a scylla node for the scylla instance with the given scylla DB address
-            args:
-              - address:
-                  short: a
-                  takes_value: true
-                  value_name: SCYLLA_DB_ADDRESS
-                  required: true
-                  help: The exposed ScyllaDB address and port
+            long: add
+            short: a
+            takes_value: true
+            value_name: SCYLLA_DB_ADDRESS
+            conflicts_with:
+              - remove
+            help: Add a scylla node for the given address
         - remove:
-            about: Remove the scylla node with the given id
-            args:
-              - id:
-                  takes_value: true
-                  value_name: ID
-                  required: true
-                  help: The unique ID of the scylla node
+            long: rem
+            short: r
+            takes_value: true
+            value_name: SCYLLA_DB_ADDRESS
+            conflicts_with:
+              - add
+            help: Remove the scylla node for the given address
         - list:
+            long: list
             short: l
-            about: List the running scylla nodes
+            help: List the running scylla nodes
   - brokers:
       about: Manage Chronicle brokers
+      settings:
+        - ArgRequiredElseHelp
       subcommands:
         - add:
             short: a
             about: Add a broker instance to process network messages
+            settings:
+              - ArgRequiredElseHelp
             args:
               - mqtt-address:
                   short: mq
@@ -69,6 +82,8 @@ subcommands:
         - remove:
             short: r
             about: Remove the broker instance with the given id
+            settings:
+              - ArgRequiredElseHelp
             args:
               - id:
                   takes_value: true
@@ -80,6 +95,8 @@ subcommands:
             about: List the running brokers
   - archive:
       about: Manage archived milestones
+      settings:
+        - ArgRequiredElseHelp
       subcommands:
         - import:
             short: i
