@@ -81,6 +81,7 @@ mod test {
             },
             api_config: ApiConfig {},
             broker_config: BrokerConfig {
+                websocket_address: "127.0.0.1:9000".parse().unwrap(),
                 mqtt_brokers: vec![
                     url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap(),
                     url::Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap(),

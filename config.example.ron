@@ -4,11 +4,11 @@
             (
                 name: "permanode",
                 data_centers: {
-                    "USA": (
-                        replication_factor: 2,
-                    ),
                     "Canada": (
                         replication_factor: 1,
+                    ),
+                    "USA": (
+                        replication_factor: 2,
                     ),
                 },
             ),
@@ -24,6 +24,7 @@
     ),
     api_config: (),
     broker_config: (
+        websocket_address: "127.0.0.1:9000",
         mqtt_brokers: [
             "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
             "tcp://api.hornet-1.testnet.chrysalis2.com:1883",

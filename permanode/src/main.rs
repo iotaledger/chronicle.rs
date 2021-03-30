@@ -32,14 +32,15 @@ impl Builder for AppsBuilder {
             .storage_config(config.storage_config.clone());
         let logs_dir_path = std::path::PathBuf::from("permanode/logs/");
         let permanode_broker_builder = PermanodeBrokerBuilder::new()
+            .listen_address(config.broker_config.websocket_address)
             .logs_dir_path(logs_dir_path)
             .broker_config(config.broker_config.clone())
             .storage_config(config.storage_config.clone());
         let scylla_builder = ScyllaBuilder::new()
             .listen_address(config.storage_config.listen_address)
             .thread_count(match config.storage_config.thread_count {
-                permanode_storage::ThreadCount::Count(c) => c,
-                permanode_storage::ThreadCount::CoreMultiple(c) => num_cpus::get() * c,
+                ThreadCount::Count(c) => c,
+                ThreadCount::CoreMultiple(c) => num_cpus::get() * c,
             })
             .reporter_count(config.storage_config.reporter_count)
             .local_dc(config.storage_config.local_datacenter.clone());

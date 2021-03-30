@@ -4,16 +4,19 @@ author: IOTA Stiftung
 about: Provides commands and metrics to interact with a Chronicle instance.
 args:
   - start:
+      long: start
       help: Start a new Chronicle instance
       conflicts_with:
         - stop
         - rebuild
   - stop:
+      long: stop
       help: Stop a running Chronicle instance
       conflicts_with:
         - start
         - rebuild
   - rebuild:
+      long: rebuild
       help: Rebuild the RING
       conflicts_with:
         - stop
@@ -23,23 +26,15 @@ subcommands:
       about: Manage scylla nodes
       subcommands:
         - add:
-            short: a
-            about: Add a scylla node for the scylla instance with the given command websocket address and scylla DB address
+            about: Add a scylla node for the scylla instance with the given scylla DB address
             args:
-              - command-address:
-                  short: c
-                  takes_value: true
-                  value_name: COMMAND_ADDRESS
-                  required: true
-                  help: The command address and port which will be used to issue commands to this instance
-              - scylladb-address:
-                  short: s
+              - address:
+                  short: a
                   takes_value: true
                   value_name: SCYLLA_DB_ADDRESS
                   required: true
                   help: The exposed ScyllaDB address and port
         - remove:
-            short: r
             about: Remove the scylla node with the given id
             args:
               - id:
@@ -60,15 +55,17 @@ subcommands:
               - mqtt-address:
                   short: mq
                   takes_value: true
-                  value_name: MQTT_ADDRESS
+                  value_name: MQTT_ADDRESSES
                   required: true
-                  help: The MQTT address and port which will be subscribed to receive messages
+                  multiple: true
+                  help: The MQTT addresses which will be subscribed to receive messages (ex. tcp://api.hornet-0.testnet.chrysalis2.com:1883)
               - endpoint-address:
                   short: e
                   takes_value: true
-                  value_name: ENDPOINT_ADDRESS
-                  required: true
-                  help: The TCP endpoint address and port which will be used to fetch missing messages
+                  value_name: ENDPOINT_ADDRESSES
+                  required: false
+                  multiple: true
+                  help: The TCP endpoint addresses and port which will be used to fetch missing messages (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
         - remove:
             short: r
             about: Remove the broker instance with the given id

@@ -6,13 +6,28 @@ use paho_mqtt::{
 };
 use reqwest::Client;
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    net::SocketAddr,
+};
 use url::Url;
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {
+    pub websocket_address: SocketAddr,
     pub mqtt_brokers: Vec<Url>,
     pub api_endpoints: VecDeque<Url>,
     pub sync_range: Option<SyncRange>,
+}
+
+impl Default for BrokerConfig {
+    fn default() -> Self {
+        Self {
+            websocket_address: "127.0.0.1:9000".parse().unwrap(),
+            mqtt_brokers: Vec::new(),
+            api_endpoints: VecDeque::default(),
+            sync_range: None,
+        }
+    }
 }
 
 impl BrokerConfig {

@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 permanode-common = { path = "../permanode-common" }
+permanode-storage = { path = "../permanode-storage" }
 chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
