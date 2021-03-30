@@ -19,41 +19,50 @@ async fn main() {
     let yaml = load_yaml!("../cli.yaml");
     let matches = App::from_yaml(yaml).get_matches();
 
-    if matches.is_present("start") || matches.is_present("start-debug") {
-        // Assume the permanode exe is in the same location as this one
-        let current_exe = std::env::current_exe().unwrap();
-        let parent_dir = current_exe.parent().unwrap();
-        let permanode_exe = if cfg!(target_os = "windows") {
-            parent_dir.join("permanode.exe")
-        } else {
-            parent_dir.join("permanode")
-        };
-        if permanode_exe.exists() {
-            if cfg!(target_os = "windows") {
-                if matches.is_present("start-debug") {
-                    Command::new("cmd")
-                        .args(&["/c", "start", "powershell", "-noexit", permanode_exe.to_str().unwrap()])
+    match matches.subcommand() {
+        ("start", Some(matches)) => {
+            // Assume the permanode exe is in the same location as this one
+            let current_exe = std::env::current_exe().unwrap();
+            let parent_dir = current_exe.parent().unwrap();
+            let permanode_exe = if cfg!(target_os = "windows") {
+                parent_dir.join("permanode.exe")
+            } else {
+                parent_dir.join("permanode")
+            };
+            if permanode_exe.exists() {
+                if cfg!(target_os = "windows") {
+                    let mut command = Command::new("cmd");
+                    command.args(&["/c", "start"]);
+                    if matches.is_present("service") {
+                        command.arg("/B");
+                    }
+                    command.arg("powershell");
+                    if matches.is_present("noexit") {
+                        command.arg("-noexit");
+                    }
+                    command
+                        .arg(permanode_exe.to_str().unwrap())
                         .spawn()
                         .expect("failed to execute process")
                 } else {
-                    Command::new("cmd")
-                        .args(&["/c", "start", "powershell", permanode_exe.to_str().unwrap()])
-                        .spawn()
-                        .expect("failed to execute process")
-                }
+                    if matches.is_present("service") {
+                        Command::new(permanode_exe.to_str().unwrap())
+                            .arg("&")
+                            .spawn()
+                            .expect("failed to execute process")
+                    } else {
+                        Command::new("sh")
+                            .arg(permanode_exe.to_str().unwrap())
+                            .spawn()
+                            .expect("failed to execute process")
+                    }
+                };
             } else {
-                Command::new("sh")
-                    .arg(permanode_exe.to_str().unwrap())
-                    .spawn()
-                    .expect("failed to execute process")
-            };
-        } else {
-            panic!("No chronicle exe in the current directory: {}", parent_dir.display());
+                panic!("No chronicle exe in the current directory: {}", parent_dir.display());
+            }
         }
-    } else {
-        let config = Config::load().expect("No config file found for Chronicle!");
-
-        if matches.is_present("stop") {
+        ("stop", Some(matches)) => {
+            let config = Config::load().expect("No config file found for Chronicle!");
             let (mut stream, _) =
                 connect_async(Url::parse(&format!("ws://{}/", config.broker_config.websocket_address)).unwrap())
                     .await
@@ -65,7 +74,9 @@ async fn main() {
                 .unwrap(),
             );
             stream.send(message).await.unwrap();
-        } else if matches.is_present("rebuild") {
+        }
+        ("rebuild", Some(matches)) => {
+            let config = Config::load().expect("No config file found for Chronicle!");
             let (mut stream, _) =
                 connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap())
                     .await
@@ -77,18 +88,16 @@ async fn main() {
                 .unwrap(),
             );
             stream.send(message).await.unwrap();
-        } else {
-            match matches.subcommand() {
-                ("nodes", Some(subcommand)) => node(subcommand, config).await,
-                ("brokers", Some(subcommand)) => brokers(subcommand, config).await,
-                ("archive", Some(subcommand)) => archive(subcommand, config).await,
-                _ => (),
-            }
         }
+        ("nodes", Some(matches)) => node(matches).await,
+        ("brokers", Some(matches)) => brokers(matches).await,
+        ("archive", Some(matches)) => archive(matches).await,
+        _ => (),
     }
 }
 
-async fn node<'a>(matches: &ArgMatches<'a>, mut config: Config) {
+async fn node<'a>(matches: &ArgMatches<'a>) {
+    let mut config = Config::load().expect("No config file found for Chronicle!");
     let (mut stream, _) =
         connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap())
             .await
@@ -121,7 +130,8 @@ async fn node<'a>(matches: &ArgMatches<'a>, mut config: Config) {
     }
 }
 
-async fn brokers<'a>(matches: &ArgMatches<'a>, mut config: Config) {
+async fn brokers<'a>(matches: &ArgMatches<'a>) {
+    let mut config = Config::load().expect("No config file found for Chronicle!");
     match matches.subcommand() {
         ("add", Some(subcommand)) => {
             let mqtt_addresses = subcommand
@@ -170,7 +180,8 @@ async fn brokers<'a>(matches: &ArgMatches<'a>, mut config: Config) {
     }
 }
 
-async fn archive<'a>(matches: &ArgMatches<'a>, mut config: Config) {
+async fn archive<'a>(matches: &ArgMatches<'a>) {
+    let mut config = Config::load().expect("No config file found for Chronicle!");
     match matches.subcommand() {
         ("import", Some(subcommand)) => {
             let dir = subcommand.value_of("directory");

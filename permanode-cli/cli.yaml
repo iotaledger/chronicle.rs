@@ -6,40 +6,26 @@ settings:
   - VersionlessSubcommands
   - ArgRequiredElseHelp
   - ArgsNegateSubcommands
-args:
-  - start:
-      short: s
-      long: start
-      help: Start a new Chronicle instance
-      conflicts_with:
-        - start-debug
-        - stop
-        - rebuild
-  - start-debug:
-      short: d
-      long: start-debug
-      help: Start a new Chronicle instance and do not exit
-      conflicts_with:
-        - start
-        - stop
-        - rebuild
-  - stop:
-      short: x
-      long: stop
-      help: Stop a running Chronicle instance
-      conflicts_with:
-        - start
-        - start-debug
-        - rebuild
-  - rebuild:
-      short: r
-      long: rebuild
-      help: Rebuild the RING
-      conflicts_with:
-        - stop
-        - start
-        - start-debug
 subcommands:
+  - start:
+      about: Start a new Chronicle instance
+      args:
+        - noexit:
+            short: n
+            long: noexit
+            help: Start the instance and force no exit in the shell
+            conflicts_with:
+              - service
+        - service:
+            short: s
+            long: service
+            help: Start the instance as a background service
+            conflicts_with:
+              - noexit
+  - stop:
+      about: Stop a running Chronicle instance
+  - rebuild:
+      about: Rebuild the RING
   - nodes:
       about: Manage scylla nodes
       settings:
