@@ -5,7 +5,6 @@ about: Provides commands and metrics to interact with a Chronicle instance.
 settings:
   - VersionlessSubcommands
   - ArgRequiredElseHelp
-  - ArgsNegateSubcommands
 subcommands:
   - start:
       about: Start a new Chronicle instance
@@ -51,6 +50,12 @@ subcommands:
             long: list
             short: l
             help: List the running scylla nodes
+        - skip-connection:
+            short: n
+            long: noconnect
+            help: Skip trying to connect to the running service and just update the config
+            conflicts_with:
+              - list
   - brokers:
       about: Manage Chronicle brokers
       settings:
@@ -63,7 +68,7 @@ subcommands:
               - ArgRequiredElseHelp
             args:
               - mqtt-address:
-                  short: mq
+                  short: m
                   takes_value: true
                   value_name: MQTT_ADDRESSES
                   required: true
@@ -76,6 +81,10 @@ subcommands:
                   required: false
                   multiple: true
                   help: The TCP endpoint addresses and port which will be used to fetch missing messages (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
+              - skip-connection:
+                  short: n
+                  long: noconnect
+                  help: Skip trying to connect to the running service and just update the config
         - remove:
             short: r
             about: Remove the broker instance with the given id
@@ -87,6 +96,10 @@ subcommands:
                   value_name: ID
                   required: true
                   help: The unique ID of the broker
+              - skip-connection:
+                  short: n
+                  long: noconnect
+                  help: Skip trying to connect to the running service and just update the config
         - list:
             short: l
             about: List the running brokers

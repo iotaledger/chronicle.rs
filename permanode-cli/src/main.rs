@@ -104,25 +104,27 @@ async fn node<'a>(matches: &ArgMatches<'a>) {
     let rem_address = matches
         .value_of("remove")
         .map(|address| address.parse().expect("Invalid address provided!"));
-    if let Ok((mut stream, _)) =
-        connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap()).await
-    {
-        if matches.is_present("list") {
-            todo!("Print list of nodes");
-        }
-        if let Some(address) = add_address {
-            let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
-                scylla::application::Topology::AddNode(address),
-            ));
-            let message = Message::text(serde_json::to_string(&message).unwrap());
-            stream.send(message).await.unwrap();
-        }
-        if let Some(address) = rem_address {
-            let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
-                scylla::application::Topology::RemoveNode(address),
-            ));
-            let message = Message::text(serde_json::to_string(&message).unwrap());
-            stream.send(message).await.unwrap();
+    if !matches.is_present("skip-connection") {
+        if let Ok((mut stream, _)) =
+            connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap()).await
+        {
+            if matches.is_present("list") {
+                todo!("Print list of nodes");
+            }
+            if let Some(address) = add_address {
+                let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
+                    scylla::application::Topology::AddNode(address),
+                ));
+                let message = Message::text(serde_json::to_string(&message).unwrap());
+                stream.send(message).await.unwrap();
+            }
+            if let Some(address) = rem_address {
+                let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
+                    scylla::application::Topology::RemoveNode(address),
+                ));
+                let message = Message::text(serde_json::to_string(&message).unwrap());
+                stream.send(message).await.unwrap();
+            }
         }
     }
     if let Some(address) = add_address {
@@ -148,30 +150,34 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) {
                 .map(|mqtt_address| Url::parse(mqtt_address).unwrap());
             let endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
-            let mut messages = mqtt_addresses.clone().fold(Vec::new(), |mut list, mqtt_address| {
-                list.push(Message::text(
-                    serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
-                        PermanodeBrokerThrough::Topology(permanode_broker::application::Topology::AddMqttMessages(
-                            mqtt_address.clone(),
-                        )),
-                    ))
-                    .unwrap(),
-                ));
-                list.push(Message::text(
-                    serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
-                        PermanodeBrokerThrough::Topology(
-                            permanode_broker::application::Topology::AddMqttMessagesReferenced(mqtt_address),
-                        ),
-                    ))
-                    .unwrap(),
-                ));
-                list
-            });
-            if let Ok((mut stream, _)) =
-                connect_async(Url::parse(&format!("ws://{}/", config.broker_config.websocket_address)).unwrap()).await
-            {
-                for message in messages.drain(..) {
-                    stream.send(message).await.unwrap();
+
+            if !matches.is_present("skip-connection") {
+                let mut messages = mqtt_addresses.clone().fold(Vec::new(), |mut list, mqtt_address| {
+                    list.push(Message::text(
+                        serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
+                            PermanodeBrokerThrough::Topology(permanode_broker::application::Topology::AddMqttMessages(
+                                mqtt_address.clone(),
+                            )),
+                        ))
+                        .unwrap(),
+                    ));
+                    list.push(Message::text(
+                        serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
+                            PermanodeBrokerThrough::Topology(
+                                permanode_broker::application::Topology::AddMqttMessagesReferenced(mqtt_address),
+                            ),
+                        ))
+                        .unwrap(),
+                    ));
+                    list
+                });
+                if let Ok((mut stream, _)) =
+                    connect_async(Url::parse(&format!("ws://{}/", config.broker_config.websocket_address)).unwrap())
+                        .await
+                {
+                    for message in messages.drain(..) {
+                        stream.send(message).await.unwrap();
+                    }
                 }
             }
             config.broker_config.mqtt_brokers.extend(mqtt_addresses);
