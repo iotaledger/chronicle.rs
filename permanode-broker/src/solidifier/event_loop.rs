@@ -15,6 +15,56 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                 SolidifierEvent::Message(full_message) => {
                     self.handle_new_msg(full_message);
                 }
+                SolidifierEvent::CqlResult(result) => {
+                    match result {
+                        Ok(cql_result) => {
+                            match cql_result {
+                                CqlResult::PersistedMsg(message_id, milestone_index) => {
+                                    // ensure we have entry for the following milestone_index
+                                    if let Some(in_database) = self.in_database.get_mut(&milestone_index) {
+                                        in_database.add_message_id(message_id);
+                                        // check_if_in_database
+                                        if in_database.check_if_all_in_database() {
+                                            // Insert record into sync table
+                                            self.handle_in_database(milestone_index);
+                                        }
+                                    } else {
+                                        // in rare condition there is a chance that collector will reinsert the same
+                                        // message twice, therefore we ensure to
+                                        // only insert new entry if the milestone_index is not already in
+                                        // lru_in_database cache
+                                        if self.lru_in_database.get(&milestone_index).is_none() {
+                                            let mut in_database = InDatabase::new(milestone_index);
+                                            in_database.add_message_id(message_id);
+                                            self.in_database.insert(milestone_index, in_database);
+                                        }
+                                    }
+                                }
+                                CqlResult::SyncedMilestone(milestone_index) => {
+                                    // TODO Inform syncer (maybe it wants to update the dashboard or something)
+                                    info!("Synced this milestone {}", milestone_index);
+                                }
+                            }
+                        }
+                        Err(cql_result) => {
+                            match cql_result {
+                                CqlResult::PersistedMsg(message_id, milestone_index) => {
+                                    error!(
+                                        "Unable to persist message with id: {}, referenced by milestone index: {}",
+                                        message_id, milestone_index
+                                    );
+                                }
+                                CqlResult::SyncedMilestone(milestone_index) => {
+                                    error!("Unable to update sync table for milestone index: {}", milestone_index,);
+                                }
+                            }
+                            error!("Scylla cluster is likely having a complete outage, so we are shutting down broker for meantime.");
+                            // TODO abort solidifier in order to let broker app reschedule itself after few mins
+
+                            // with reasonable retries, it means our cluster is likely in outage.
+                        }
+                    }
+                }
                 SolidifierEvent::Close(message_id, milestone_index) => {
                     self.close_message_id(milestone_index, &message_id);
                 }
@@ -31,6 +81,10 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
 
 impl Solidifier {
     fn handle_solidify(&mut self, milestone_index: u32) {
+        info!(
+            "Solidifier id: {}. got solidifiy request for milestone_index: {}",
+            self.partition_id, milestone_index
+        );
         // this is request from syncer in order for solidifier to collect,
         // the milestone data for the provided milestone index.
         if let None = self.milestones_data.get_mut(&milestone_index) {
@@ -59,7 +113,6 @@ impl Solidifier {
             let created_by = milestone_data.created_by;
             if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
                 self.push_to_logger(milestone_index);
-                // TODO inform syncer
             } else if check_if_completed {
                 self.push_to_syncer(milestone_index);
             };
@@ -73,8 +126,18 @@ impl Solidifier {
             self.partition_id, milestone_index
         );
         // Remove milestoneData from self state and pass it to archiver
-        let ms_data = self.milestones_data.remove(&milestone_index).unwrap();
-        let archiver_event = ArchiverEvent::MilestoneData(ms_data);
+        let milestone_data = self.milestones_data.remove(&milestone_index).unwrap();
+        // Update in_database
+        let in_database = self
+            .in_database
+            .entry(milestone_index)
+            .or_insert_with(|| InDatabase::from(&milestone_data));
+        in_database.set_messages_len(milestone_data.messages().len());
+        if in_database.check_if_all_in_database() {
+            // Insert record into sync table
+            self.handle_in_database(milestone_index);
+        }
+        let archiver_event = ArchiverEvent::MilestoneData(milestone_data);
         let _ = self.archiver_handle.send(archiver_event);
     }
     fn push_to_syncer(&mut self, milestone_index: u32) {
@@ -83,9 +146,40 @@ impl Solidifier {
             milestone_index
         );
         // Remove milestoneData from self state and pass it to syncer
-        let ms_data = self.milestones_data.remove(&milestone_index).unwrap();
-        let syncer_event = SyncerEvent::MilestoneData(ms_data);
+        let milestone_data = self.milestones_data.remove(&milestone_index).unwrap();
+        // Update in_database
+        let in_database = self
+            .in_database
+            .entry(milestone_index)
+            .or_insert_with(|| InDatabase::from(&milestone_data));
+        in_database.set_messages_len(milestone_data.messages().len());
+        if in_database.check_if_all_in_database() {
+            // Insert record into sync table
+            self.handle_in_database(milestone_index);
+        }
+        let syncer_event = SyncerEvent::MilestoneData(milestone_data);
         let _ = self.syncer_handle.send(syncer_event);
+    }
+    fn handle_in_database(&mut self, milestone_index: u32) {
+        self.in_database.remove(&milestone_index);
+        self.lru_in_database.put(milestone_index, ());
+        let sync_key = Synckey;
+        let synced_by = Some(self.permanode_id);
+        let synced_record = SyncRecord::new(MilestoneIndex(milestone_index), synced_by, None);
+        let request = self
+            .keyspace
+            .insert(&sync_key, &synced_record)
+            .consistency(Consistency::One)
+            .build();
+        let worker = SolidifierWorker::boxed(
+            self.handle.clone(),
+            milestone_index,
+            self.keyspace.clone(),
+            sync_key,
+            synced_record,
+            self.retries,
+        );
+        request.send_local(worker);
     }
     fn handle_milestone_msg(
         &mut self,
@@ -155,7 +249,7 @@ impl Solidifier {
                     *parent_id,
                 );
                 // Add it to pending
-                milestone_data.pending.insert(*parent_id, None);
+                milestone_data.pending.insert(*parent_id, ());
             };
         });
     }
@@ -274,8 +368,8 @@ impl Solidifier {
                         .entry(expected)
                         .or_insert_with(|| MilestoneData::new(expected, CreatedBy::Expected));
                     if !milestone_data.milestone_exist() {
-                        // For safety reasons, we ask collector for expected milestone, as
-                        Self::request_milestone_message(collector_handles, solidifier_id, milestone_index)
+                        // For safety reasons, we ask collector for expected milestone
+                        Self::request_milestone_message(collector_handles, solidifier_id, expected)
                     }
                 }
             }
@@ -319,4 +413,5 @@ impl Solidifier {
         }
         false
     }
+    // fn check_if_in_database()
 }

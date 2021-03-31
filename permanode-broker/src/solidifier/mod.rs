@@ -10,23 +10,32 @@ use crate::{
         SyncerHandle,
     },
 };
-use std::ops::{
-    Deref,
-    DerefMut,
+use std::{
+    ops::{
+        Deref,
+        DerefMut,
+    },
+    sync::atomic::{
+        AtomicBool,
+        Ordering,
+    },
 };
-
 mod event_loop;
 mod init;
 mod terminating;
 
 // Solidifier builder
 builder!(SolidifierBuilder {
+    permanode_id: u8,
+    keyspace: PermanodeKeyspace,
     partition_id: u8,
     lru_capacity: usize,
     syncer_handle: SyncerHandle,
     archiver_handle: ArchiverHandle,
+    handle: SolidifierHandle,
     inbox: SolidifierInbox,
     gap_start: u32,
+    retries: u16,
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8
 });
@@ -62,15 +71,53 @@ impl FullMessage {
         self.1.referenced_by_milestone_index.unwrap()
     }
 }
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MessageStatus {
+    in_messages: bool,
+    in_database: bool,
+}
 
-#[derive(Debug, serde::Serialize)]
+pub struct InDatabase {
+    milestone_index: u32,
+    messages_len: usize,
+    in_database: HashMap<MessageId, ()>,
+}
+
+impl InDatabase {
+    fn new(milestone_index: u32) -> Self {
+        Self {
+            milestone_index,
+            messages_len: usize::MAX,
+            in_database: HashMap::new(),
+        }
+    }
+    fn set_messages_len(&mut self, message_len: usize) {
+        self.messages_len = message_len
+    }
+    fn add_message_id(&mut self, message_id: MessageId) {
+        self.in_database.insert(message_id, ());
+    }
+    fn check_if_all_in_database(&self) -> bool {
+        self.messages_len == self.in_database.len()
+    }
+}
+
+impl From<&MilestoneData> for InDatabase {
+    fn from(milestone_data: &MilestoneData) -> Self {
+        let mut in_database = Self::new(milestone_data.milestone_index);
+        in_database.set_messages_len(milestone_data.messages().len());
+        in_database
+    }
+}
+
+#[derive(serde::Serialize)]
 pub struct MilestoneData {
     milestone_index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     milestone: Option<Box<MilestonePayload>>,
     messages: HashMap<MessageId, FullMessage>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pending: HashMap<MessageId, Option<Message>>,
+    pending: HashMap<MessageId, ()>,
     #[serde(skip_serializing)]
     complete: bool,
     #[serde(skip_serializing)]
@@ -117,7 +164,7 @@ impl MilestoneData {
     fn messages(&self) -> &HashMap<MessageId, FullMessage> {
         &self.messages
     }
-    fn pending(&self) -> &HashMap<MessageId, Option<Message>> {
+    fn pending(&self) -> &HashMap<MessageId, ()> {
         &self.pending
     }
     fn set_completed(&mut self) {
@@ -127,7 +174,6 @@ impl MilestoneData {
         self.complete
     }
 }
-
 pub enum SolidifierEvent {
     // Milestone fullmessage;
     Milestone(MilestoneMessage),
@@ -136,10 +182,15 @@ pub enum SolidifierEvent {
     /// Close MessageId that doesn't belong at all to Solidifier of milestone u32
     Close(MessageId, u32),
     /// Solidifiy request from Syncer.
-    /// Solidifier should collect milestonedata and pass it to Syncer(not logger)
+    /// Solidifier should collect milestonedata and pass it to Syncer(not archiver)
     Solidify(u32),
+    CqlResult(Result<CqlResult, CqlResult>),
     /// Shutdown the solidifier
     Shutdown,
+}
+pub enum CqlResult {
+    PersistedMsg(MessageId, u32),
+    SyncedMilestone(u32),
 }
 
 /// SolidifierHandle
@@ -192,8 +243,13 @@ impl Shutdown for SolidifierHandle {
 // Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier {
     service: Service,
+    /// It's the permanode id.
+    permanode_id: u8,
+    keyspace: PermanodeKeyspace,
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneData>,
+    in_database: HashMap<u32, InDatabase>,
+    lru_in_database: lru::LruCache<u32, ()>,
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8,
     syncer_handle: SyncerHandle,
@@ -202,6 +258,8 @@ pub struct Solidifier {
     first: Option<u32>,
     gap_start: u32,
     expected: u32,
+    retries: u16,
+    handle: SolidifierHandle,
     inbox: SolidifierInbox,
 }
 
@@ -215,6 +273,10 @@ impl Builder for SolidifierBuilder {
         Self::State {
             service: Service::new(),
             partition_id: self.partition_id.unwrap(),
+            keyspace: self.keyspace.unwrap(),
+            permanode_id: self.permanode_id.unwrap_or(0),
+            in_database: HashMap::new(),
+            lru_in_database: lru::LruCache::new(100),
             milestones_data: HashMap::new(),
             collector_handles: self.collector_handles.unwrap(),
             collectors_count,
@@ -224,6 +286,8 @@ impl Builder for SolidifierBuilder {
             first: None,
             gap_start: 0, // TODO get it
             expected: 0,
+            retries: self.retries.unwrap_or(100),
+            handle: self.handle.unwrap(),
             inbox: self.inbox.unwrap(),
         }
         .set_name()
@@ -248,5 +312,213 @@ impl<H: PermanodeBrokerScope> AknShutdown<Solidifier> for BrokerHandle<H> {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Solidifier(_state.service.clone()));
         let _ = self.send(event);
+    }
+}
+
+// Scylla worker implementation
+#[derive(Clone)]
+pub struct AtomicSolidifierWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send,
+    V: 'static + Send,
+{
+    handle: std::sync::Arc<AtomicSolidifierHandle>,
+    keyspace: S,
+    key: K,
+    value: V,
+    retries: u16,
+}
+
+pub struct AtomicSolidifierHandle {
+    pub(crate) handle: SolidifierHandle,
+    pub(crate) milestone_index: u32,
+    pub(crate) message_id: MessageId,
+    pub(crate) any_error: std::sync::atomic::AtomicBool,
+}
+impl AtomicSolidifierHandle {
+    pub fn new(
+        handle: SolidifierHandle,
+        milestone_index: u32,
+        message_id: MessageId,
+        any_error: std::sync::atomic::AtomicBool,
+    ) -> Self {
+        Self {
+            handle,
+            milestone_index,
+            message_id,
+            any_error,
+        }
+    }
+}
+impl<S: Insert<K, V>, K, V> AtomicSolidifierWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send,
+    V: 'static + Send,
+{
+    pub fn new(handle: std::sync::Arc<AtomicSolidifierHandle>, keyspace: S, key: K, value: V, retries: u16) -> Self {
+        Self {
+            handle,
+            keyspace,
+            key,
+            value,
+            retries,
+        }
+    }
+    pub fn boxed(
+        handle: std::sync::Arc<AtomicSolidifierHandle>,
+        keyspace: S,
+        key: K,
+        value: V,
+        retries: u16,
+    ) -> Box<Self> {
+        Box::new(Self::new(handle, keyspace, key, value, retries))
+    }
+}
+
+impl<S, K, V> Worker for AtomicSolidifierWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send + Clone,
+    V: 'static + Send + Clone,
+{
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
+        let _void = Decoder::from(giveload).get_void();
+    }
+    fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
+        error!(
+            "{:?}, left retries: {}, reporter running: {}",
+            error,
+            self.retries,
+            reporter.is_some()
+        );
+        if let WorkerError::Cql(ref mut cql_error) = error {
+            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
+                scylla::worker::insert::handle_unprepared_error(
+                    &self,
+                    &self.keyspace,
+                    &self.key,
+                    &self.value,
+                    id,
+                    reporter,
+                );
+            }
+        } else if self.retries > 0 {
+            self.retries -= 1;
+            // currently we assume all cql/worker errors are retryable, but we might change this in future
+            let req = self
+                .keyspace
+                .insert_query(&self.key, &self.value)
+                .consistency(Consistency::One)
+                .build();
+            req.send_global(self);
+        } else {
+            // no more retries
+            self.handle.any_error.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Drop for AtomicSolidifierHandle {
+    fn drop(&mut self) {
+        let cql_result = CqlResult::PersistedMsg(self.message_id, self.milestone_index);
+        let any_error = self.any_error.load(Ordering::Relaxed);
+        if any_error {
+            self.handle.send(SolidifierEvent::CqlResult(Err(cql_result)));
+        } else {
+            // respond with void
+            self.handle.send(SolidifierEvent::CqlResult(Ok(cql_result)));
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SolidifierWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send,
+    V: 'static + Send,
+{
+    handle: SolidifierHandle,
+    milestone_index: u32,
+    keyspace: S,
+    key: K,
+    value: V,
+    retries: u16,
+}
+
+impl<S: Insert<K, V>, K, V> SolidifierWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send,
+    V: 'static + Send,
+{
+    pub fn new(handle: SolidifierHandle, milestone_index: u32, keyspace: S, key: K, value: V, retries: u16) -> Self {
+        Self {
+            handle,
+            milestone_index,
+            keyspace,
+            key,
+            value,
+            retries,
+        }
+    }
+    pub fn boxed(
+        handle: SolidifierHandle,
+        milestone_index: u32,
+        keyspace: S,
+        key: K,
+        value: V,
+        retries: u16,
+    ) -> Box<Self> {
+        Box::new(Self::new(handle, milestone_index, keyspace, key, value, retries))
+    }
+}
+
+impl<S, K, V> Worker for SolidifierWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send + Clone,
+    V: 'static + Send + Clone,
+{
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
+        let _void = Decoder::from(giveload).get_void();
+        let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
+        let _ = self.handle.send(SolidifierEvent::CqlResult(Ok(synced_ms)));
+    }
+    fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
+        error!(
+            "{:?}, left retries: {}, reporter running: {}",
+            error,
+            self.retries,
+            reporter.is_some()
+        );
+        if let WorkerError::Cql(ref mut cql_error) = error {
+            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
+                scylla::worker::insert::handle_unprepared_error(
+                    &self,
+                    &self.keyspace,
+                    &self.key,
+                    &self.value,
+                    id,
+                    reporter,
+                );
+            }
+        } else if self.retries > 0 {
+            self.retries -= 1;
+            // currently we assume all cql/worker errors are retryable, but we might change this in future
+            let req = self
+                .keyspace
+                .insert_query(&self.key, &self.value)
+                .consistency(Consistency::One)
+                .build();
+            req.send_global(self);
+        } else {
+            // no more retries
+            // resond with error
+            let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
+            let _ = self.handle.send(SolidifierEvent::CqlResult(Err(synced_ms)));
+        }
     }
 }

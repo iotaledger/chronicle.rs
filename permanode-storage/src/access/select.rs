@@ -349,9 +349,8 @@ impl RowsDecoder<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
     type Row = SyncRecord;
     fn try_decode(decoder: Decoder) -> Result<Option<Iter<SyncRecord>>, CqlError> {
         if decoder.is_rows() {
-            let mut rows_iter = Self::Row::rows_iter(decoder);
+            let rows_iter = Self::Row::rows_iter(decoder);
             if rows_iter.is_empty() {
-                println!("lol {:?}", rows_iter.next());
                 Ok(None)
             } else {
                 Ok(Some(rows_iter))

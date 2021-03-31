@@ -17,6 +17,7 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
             let syncer_inbox = SyncerInbox { rx };
             let syncer_builder = SyncerBuilder::new()
                 .sync_data(self.sync_data.clone())
+                .handle(syncer_handle.clone())
                 .inbox(syncer_inbox);
             // create archiver_builder
             let mut archiver = ArchiverBuilder::new().dir_path(self.logs_dir_path.clone()).build();
@@ -47,16 +48,22 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 let solidifier_handle = SolidifierHandle { tx };
                 let solidifier_inbox = SolidifierInbox { rx };
-                self.solidifier_handles.insert(partition_id, solidifier_handle);
+                self.solidifier_handles.insert(partition_id, solidifier_handle.clone());
                 let solidifier_builder = SolidifierBuilder::new()
                     .collectors_count(self.collectors_count)
                     .syncer_handle(syncer_handle.clone())
                     .archiver_handle(archiver_handle.clone().unwrap())
                     .gap_start(gap_start)
+                    .keyspace(self.default_keyspace.clone())
+                    .handle(solidifier_handle)
                     .inbox(solidifier_inbox)
                     .partition_id(partition_id);
                 solidifier_builders.push(solidifier_builder);
             }
+            // trigger sync process
+            syncer_handle.send(SyncerEvent::Ask(AskSyncer::Complete)).ok();
+            // store copy of syncer_handle in broker state in order to be able to shut it down
+            self.syncer_handle.replace(syncer_handle);
             // Finalize and Spawn Syncer
             let syncer = syncer_builder
                 .solidifier_handles(self.solidifier_handles.clone())

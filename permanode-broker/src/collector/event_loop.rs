@@ -3,6 +3,7 @@
 
 use bee_message::input::Input;
 use permanode_storage::PartitionConfig;
+use std::sync::Arc;
 
 use super::*;
 #[async_trait::async_trait]
@@ -149,7 +150,6 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         AskCollector::MilestoneMessage(milestone_index) => {
                             // Request it from network
                             self.request_milestone_message(milestone_index);
-                            info!("Id: {} is asking for milestone {}", self.partition_id, milestone_index);
                         }
                     }
                 }
@@ -168,6 +168,10 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
+    fn clone_solidifier_handle(&self, milestone_index: u32) -> SolidifierHandle {
+        let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
+        self.solidifier_handles.get(&solidifier_id).unwrap().clone()
+    }
     fn request_milestone_message(&mut self, milestone_index: u32) {
         let remote_url = self.api_endpoints.pop_back().unwrap();
         self.api_endpoints.push_front(remote_url.clone());
@@ -257,36 +261,64 @@ impl Collector {
             metadata = Some(meta.clone());
             ledger_inclusion_state = meta.ledger_inclusion_state.clone();
             self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
+            let milestone_index = *self.est_ms;
+            let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
+            let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap().clone();
+            let inherent_worker = AtomicWorker::new(solidifier_handle, milestone_index, *message_id, self.retries);
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
-            self.insert(&keyspace, *message_id, message_tuple);
+            self.insert(&inherent_worker, &keyspace, *message_id, message_tuple);
+            // Insert parents/children
+            self.insert_parents(
+                &inherent_worker,
+                &message_id,
+                &message.parents(),
+                self.est_ms,
+                ledger_inclusion_state.clone(),
+            );
+            // insert payload (if any)
+            if let Some(payload) = message.payload() {
+                self.insert_payload(
+                    &inherent_worker,
+                    &message_id,
+                    &message,
+                    &payload,
+                    self.est_ms,
+                    ledger_inclusion_state,
+                    metadata,
+                );
+            }
         } else {
             metadata = None;
             ledger_inclusion_state = None;
+            let inherent_worker = SimpleWorker;
             // store message only
-            self.insert(&keyspace, *message_id, message.clone());
-        };
-        // Insert parents/children
-        self.insert_parents(
-            &message_id,
-            &message.parents(),
-            self.est_ms,
-            ledger_inclusion_state.clone(),
-        );
-        // insert payload (if any)
-        if let Some(payload) = message.payload() {
-            self.insert_payload(
+            self.insert(&inherent_worker, &keyspace, *message_id, message.clone());
+            // Insert parents/children
+            self.insert_parents(
+                &inherent_worker,
                 &message_id,
-                &message,
-                &payload,
+                &message.parents(),
                 self.est_ms,
-                ledger_inclusion_state,
-                metadata,
+                ledger_inclusion_state.clone(),
             );
-        }
+            // insert payload (if any)
+            if let Some(payload) = message.payload() {
+                self.insert_payload(
+                    &inherent_worker,
+                    &message_id,
+                    &message,
+                    &payload,
+                    self.est_ms,
+                    ledger_inclusion_state,
+                    metadata,
+                );
+            }
+        };
     }
-    fn insert_parents(
+    fn insert_parents<I: Inherent>(
         &self,
+        inherent_worker: &I,
         message_id: &MessageId,
         parents: &[MessageId],
         milestone_index: MilestoneIndex,
@@ -296,16 +328,17 @@ impl Collector {
         for parent_id in parents {
             let partitioned = Partitioned::new(*parent_id, partition_id, milestone_index.0);
             let parent_record = ParentRecord::new(*message_id, inclusion_state);
-            self.insert(&self.get_keyspace(), partitioned, parent_record);
+            self.insert(inherent_worker, &self.get_keyspace(), partitioned, parent_record);
             // insert hint record
             let hint = Hint::parent(parent_id.to_string());
             let partition = Partition::new(partition_id, *milestone_index);
-            self.insert(&self.get_keyspace(), hint, partition)
+            self.insert(inherent_worker, &self.get_keyspace(), hint, partition)
         }
     }
     // NOT complete, TODO finish it.
-    fn insert_payload(
+    fn insert_payload<I: Inherent>(
         &mut self,
+        inherent_worker: &I,
         message_id: &MessageId,
         message: &Message,
         payload: &Payload,
@@ -316,6 +349,7 @@ impl Collector {
         match payload {
             Payload::Indexation(indexation) => {
                 self.insert_index(
+                    inherent_worker,
                     message_id,
                     Indexation(String::from_utf8_lossy(indexation.index()).into_owned()),
                     milestone_index,
@@ -323,6 +357,7 @@ impl Collector {
                 );
             }
             Payload::Transaction(transaction) => self.insert_transaction(
+                inherent_worker,
                 message_id,
                 message,
                 transaction,
@@ -356,8 +391,9 @@ impl Collector {
             }
         }
     }
-    fn insert_index(
+    fn insert_index<I: Inherent>(
         &self,
+        inherent_worker: &I,
         message_id: &MessageId,
         index: Indexation,
         milestone_index: MilestoneIndex,
@@ -366,19 +402,22 @@ impl Collector {
         let partition_id = self.get_partition_id(milestone_index);
         let partitioned = Partitioned::new(index.clone(), partition_id, milestone_index.0);
         let index_record = IndexationRecord::new(*message_id, inclusion_state);
-        self.insert(&self.get_keyspace(), partitioned, index_record);
+        self.insert(inherent_worker, &self.get_keyspace(), partitioned, index_record);
         // insert hint record
         let hint = Hint::index(index.0);
         let partition = Partition::new(partition_id, *milestone_index);
-        self.insert(&self.get_keyspace(), hint, partition)
+        self.insert(inherent_worker, &self.get_keyspace(), hint, partition)
     }
-    fn insert_message_metadata(&mut self, metadata: MessageMetadata) {
+    fn insert_message_metadata(&self, metadata: MessageMetadata) {
         let message_id = metadata.message_id;
+        let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms);
+        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries);
         // store message and metadata
-        self.insert(&self.get_keyspace(), message_id, metadata.clone());
+        self.insert(&inherent_worker, &self.get_keyspace(), message_id, metadata.clone());
         // Insert parents/children
         let parents = metadata.parent_message_ids;
         self.insert_parents(
+            &inherent_worker,
             &message_id,
             &parents.as_slice(),
             self.ref_ms,
@@ -391,8 +430,11 @@ impl Collector {
         let keyspace = self.get_keyspace_for_message(&mut message);
         #[cfg(not(feature = "filter"))]
         let keyspace = self.get_keyspace();
+        let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms);
+        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries);
         // Insert parents/children
         self.insert_parents(
+            &inherent_worker,
             &message_id,
             &message.parents(),
             self.ref_ms,
@@ -401,6 +443,7 @@ impl Collector {
         // insert payload (if any)
         if let Some(payload) = message.payload() {
             self.insert_payload(
+                &inherent_worker,
                 &message_id,
                 &message,
                 &payload,
@@ -411,10 +454,11 @@ impl Collector {
         }
         let message_tuple = (message, metadata);
         // store message and metadata
-        self.insert(&keyspace, message_id, message_tuple);
+        self.insert(&inherent_worker, &keyspace, message_id, message_tuple);
     }
-    fn insert_transaction(
+    fn insert_transaction<I: Inherent>(
         &mut self,
+        inherent_worker: &I,
         message_id: &MessageId,
         message: &Message,
         transaction: &Box<TransactionPayload>,
@@ -438,6 +482,7 @@ impl Collector {
                     let input_data = InputData::utxo(utxo_input.clone(), unlock_block.clone());
                     // insert input row
                     self.insert_input(
+                        inherent_worker,
                         message_id,
                         &transaction_id,
                         input_index as u16,
@@ -450,6 +495,7 @@ impl Collector {
                     // therefore we insert utxo_input.output_id() -> unlock_block to indicate that this output is_spent;
                     let unlock_data = UnlockData::new(transaction_id, input_index as u16, unlock_block.clone());
                     self.insert_unlock(
+                        inherent_worker,
                         &message_id,
                         output_id.transaction_id(),
                         output_id.index(),
@@ -461,6 +507,7 @@ impl Collector {
                     let input_data = InputData::treasury(treasury_input.clone());
                     // insert input row
                     self.insert_input(
+                        inherent_worker,
                         message_id,
                         &transaction_id,
                         input_index as u16,
@@ -475,6 +522,7 @@ impl Collector {
             for (output_index, output) in regular.outputs().iter().enumerate() {
                 // insert output row
                 self.insert_output(
+                    inherent_worker,
                     message_id,
                     &transaction_id,
                     output_index as u16,
@@ -484,6 +532,7 @@ impl Collector {
                 );
                 // insert address row
                 self.insert_address(
+                    inherent_worker,
                     output,
                     &transaction_id,
                     output_index as u16,
@@ -493,6 +542,7 @@ impl Collector {
             }
             if let Some(payload) = regular.payload() {
                 self.insert_payload(
+                    inherent_worker,
                     message_id,
                     message,
                     payload,
@@ -503,8 +553,9 @@ impl Collector {
             }
         };
     }
-    fn insert_input(
+    fn insert_input<I: Inherent>(
         &self,
+        inherent_worker: &I,
         message_id: &MessageId,
         transaction_id: &TransactionId,
         index: u16,
@@ -515,10 +566,11 @@ impl Collector {
         // -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
         let input_id = (*transaction_id, index);
         let transaction_record = TransactionRecord::input(*message_id, input_data, inclusion_state, milestone_index);
-        self.insert(&self.get_keyspace(), input_id, transaction_record)
+        self.insert(inherent_worker, &self.get_keyspace(), input_id, transaction_record)
     }
-    fn insert_unlock(
+    fn insert_unlock<I: Inherent>(
         &self,
+        inherent_worker: &I,
         message_id: &MessageId,
         utxo_transaction_id: &TransactionId,
         utxo_index: u16,
@@ -529,10 +581,11 @@ impl Collector {
         // -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
         let utxo_id = (*utxo_transaction_id, utxo_index);
         let transaction_record = TransactionRecord::unlock(*message_id, unlock_data, inclusion_state, milestone_index);
-        self.insert(&self.get_keyspace(), utxo_id, transaction_record)
+        self.insert(inherent_worker, &self.get_keyspace(), utxo_id, transaction_record)
     }
-    fn insert_output(
+    fn insert_output<I: Inherent>(
         &self,
+        inherent_worker: &I,
         message_id: &MessageId,
         transaction_id: &TransactionId,
         index: u16,
@@ -543,10 +596,11 @@ impl Collector {
         // -output variant: (OutputTransactionId, OutputIndex) -> Output data column
         let output_id = (*transaction_id, index);
         let transaction_record = TransactionRecord::output(*message_id, output, inclusion_state, milestone_index);
-        self.insert(&self.get_keyspace(), output_id, transaction_record)
+        self.insert(inherent_worker, &self.get_keyspace(), output_id, transaction_record)
     }
-    fn insert_address(
+    fn insert_address<I: Inherent>(
         &self,
+        inherent_worker: &I,
         output: &Output,
         transaction_id: &TransactionId,
         index: u16,
@@ -561,11 +615,11 @@ impl Collector {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, sls.amount(), inclusion_state);
-                    self.insert(&self.get_keyspace(), partitioned, address_record);
+                    self.insert(inherent_worker, &self.get_keyspace(), partitioned, address_record);
                     // insert hint record
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
-                    self.insert(&self.get_keyspace(), hint, partition)
+                    self.insert(inherent_worker, &self.get_keyspace(), hint, partition)
                 } else {
                     error!("Unexpected address variant");
                 }
@@ -575,11 +629,11 @@ impl Collector {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, slda.amount(), inclusion_state);
-                    self.insert(&self.get_keyspace(), partitioned, address_record);
+                    self.insert(inherent_worker, &self.get_keyspace(), partitioned, address_record);
                     // insert hint record
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
-                    self.insert(&self.get_keyspace(), hint, partition)
+                    self.insert(inherent_worker, &self.get_keyspace(), hint, partition)
                 } else {
                     error!("Unexpected address variant");
                 }
@@ -592,16 +646,18 @@ impl Collector {
             }
         }
     }
-    fn insert<S, K, V>(&self, keyspace: &S, key: K, value: V)
+    fn insert<I, S, K, V>(&self, inherent_worker: &I, keyspace: &S, key: K, value: V)
     where
+        I: Inherent,
         S: 'static + Insert<K, V>,
         K: 'static + Send + Clone,
         V: 'static + Send + Clone,
     {
         let insert_req = keyspace.insert(&key, &value).consistency(Consistency::One).build();
-        let worker = InsertWorker::boxed(keyspace.clone(), key, value);
+        let worker = inherent_worker.inherent_boxed(keyspace.clone(), key, value);
         insert_req.send_local(worker);
     }
+
     fn delete_parents(&self, message_id: &MessageId, parents: &Parents, milestone_index: MilestoneIndex) {
         let partition_id = self.get_partition_id(milestone_index);
         for parent_id in parents.iter() {
@@ -688,5 +744,50 @@ impl Collector {
         let delete_req = self.default_keyspace.delete(&key).consistency(Consistency::One).build();
         let worker = DeleteWorker::boxed(self.default_keyspace.clone(), key);
         delete_req.send_local(worker);
+    }
+}
+
+pub struct AtomicWorker {
+    arc_handle: Arc<AtomicSolidifierHandle>,
+    retries: u16,
+}
+
+impl AtomicWorker {
+    fn new(solidifier_handle: SolidifierHandle, milestone_index: u32, message_id: MessageId, retries: u16) -> Self {
+        let any_error = std::sync::atomic::AtomicBool::new(false);
+        let atomic_handle = AtomicSolidifierHandle::new(solidifier_handle, milestone_index, message_id, any_error);
+        let arc_handle = std::sync::Arc::new(atomic_handle);
+        Self { arc_handle, retries }
+    }
+}
+pub struct SimpleWorker;
+
+trait Inherent {
+    fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
+    where
+        S: 'static + Insert<K, V>,
+        K: 'static + Send + Clone,
+        V: 'static + Send + Clone;
+}
+
+impl Inherent for SimpleWorker {
+    fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
+    where
+        S: 'static + Insert<K, V>,
+        K: 'static + Send + Clone,
+        V: 'static + Send + Clone,
+    {
+        InsertWorker::boxed(keyspace, key, value)
+    }
+}
+
+impl Inherent for AtomicWorker {
+    fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
+    where
+        S: 'static + Insert<K, V>,
+        K: 'static + Send + Clone,
+        V: 'static + Send + Clone,
+    {
+        AtomicSolidifierWorker::boxed(self.arc_handle.clone(), keyspace, key, value, self.retries)
     }
 }

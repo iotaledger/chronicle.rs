@@ -122,6 +122,8 @@ impl Default for SyncRange {
         }
     }
 }
+#[derive(Clone, Copy)]
+pub struct Synckey;
 /// Defines the max time-to-live for permanode records: 20 years
 pub const MAX_TTL: u32 = 20 * 365 * 24 * 60 * 60;
 

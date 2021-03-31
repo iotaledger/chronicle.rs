@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     application::*,
-    archiver::ArchiverHandle,
+    archiver::{
+        ArchiverEvent,
+        ArchiverHandle,
+    },
     collector::*,
     solidifier::{
         FullMessage,
         MilestoneData,
+        SolidifierEvent,
         SolidifierHandle,
     },
 };
@@ -30,6 +34,7 @@ builder!(SyncerBuilder {
     sync_data: SyncData,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     archiver_handle: ArchiverHandle,
+    handle: SyncerHandle,
     inbox: SyncerInbox
 });
 
@@ -37,6 +42,7 @@ pub enum SyncerEvent {
     Ask(AskSyncer),
     Process,
     MilestoneData(MilestoneData),
+    Shutdown,
 }
 
 #[derive(Debug)]
@@ -94,7 +100,8 @@ impl Shutdown for SyncerHandle {
     where
         Self: Sized,
     {
-        todo!()
+        self.send(SyncerEvent::Shutdown);
+        None
     }
 }
 
@@ -106,6 +113,12 @@ pub struct Syncer {
     solidifier_count: u8,
     active: Option<Active>,
     archiver_handle: ArchiverHandle,
+    milestones_data: std::collections::BinaryHeap<Ascending<MilestoneData>>,
+    highest: u32,
+    pending: u32,
+    eof: bool,
+    next: u32,
+    handle: SyncerHandle,
     inbox: SyncerInbox,
 }
 
@@ -126,6 +139,12 @@ impl Builder for SyncerBuilder {
             solidifier_count,
             active: None,
             archiver_handle: self.archiver_handle.unwrap(),
+            milestones_data: std::collections::BinaryHeap::new(),
+            highest: 0,
+            pending: solidifier_count as u32,
+            next: 0,
+            eof: false,
+            handle: self.handle.unwrap(),
             inbox: self.inbox.unwrap(),
         }
         .set_name()
@@ -152,3 +171,43 @@ impl Name for Syncer {
 impl<H: PermanodeBrokerScope> AknShutdown<Syncer> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Syncer, _status: Result<(), Need>) {}
 }
+
+pub struct Ascending<T> {
+    inner: T,
+}
+
+impl<T> Ascending<T> {
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+    pub fn get_ref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl Ascending<MilestoneData> {
+    pub fn new(milestone_data: MilestoneData) -> Self {
+        Self { inner: milestone_data }
+    }
+}
+
+impl std::cmp::Ord for Ascending<MilestoneData> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.inner.milestone_index().cmp(&self.inner.milestone_index())
+    }
+}
+impl std::cmp::PartialOrd for Ascending<MilestoneData> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(other.inner.milestone_index().cmp(&self.inner.milestone_index()))
+    }
+}
+impl std::cmp::PartialEq for Ascending<MilestoneData> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.inner.milestone_index() == other.inner.milestone_index() {
+            true
+        } else {
+            false
+        }
+    }
+}
+impl std::cmp::Eq for Ascending<MilestoneData> {}
