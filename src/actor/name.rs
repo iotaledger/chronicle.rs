@@ -1,4 +1,5 @@
+#[async_trait::async_trait]
 pub trait Name {
-    fn set_name(self) -> Self;
-    fn get_name(&self) -> String;
+    async fn set_name(self) -> Self;
+    async fn get_name(&self) -> String;
 }

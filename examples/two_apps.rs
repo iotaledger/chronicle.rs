@@ -14,9 +14,10 @@ impl ThroughType for HelloWorldBuilder {
     type Through = HelloWorldEvent;
 }
 
+#[async_trait]
 impl Builder for HelloWorldBuilder {
     type State = HelloWorld;
-    fn build(self) -> Self::State {
+    async fn build(self) -> Self::State {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<HelloWorldEvent>();
         HelloWorld {
             tx,
@@ -24,16 +25,18 @@ impl Builder for HelloWorldBuilder {
             service: Service::new(),
         }
         .set_name()
+        .await
     }
 }
 
 impl<H: LauncherSender<HelloWorldBuilder>> AppBuilder<H> for HelloWorldBuilder {}
 
+#[async_trait]
 impl Name for HelloWorld {
-    fn get_name(&self) -> String {
+    async fn get_name(&self) -> String {
         self.service.get_name()
     }
-    fn set_name(mut self) -> Self {
+    async fn set_name(mut self) -> Self {
         self.service.update_name("HelloWorld".to_string());
         self
     }
@@ -60,7 +63,7 @@ impl<H: LauncherSender<Self>> Starter<H> for HelloWorldBuilder {
     // if application asked for Need::Restart or RescheduleAfter then the input will hold the prev app From::from(state)
     type Input = HelloWorld;
     async fn starter(mut self, handle: H, mut _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
-        let hello_world = self.build();
+        let hello_world = self.build().await;
         // create handle
         let app_handle = HelloWorldSender {
             tx: hello_world.tx.clone(),
@@ -99,12 +102,12 @@ impl<H: LauncherSender<HelloWorldBuilder>> EventLoop<H> for HelloWorld {
                 match apps_events.try_get_my_event() {
                     // event belong to self application
                     Ok(HelloWorldEvent::Shutdown) => {
-                        _supervisor.as_mut().unwrap().shutdown_app(&self.get_name());
+                        _supervisor.as_mut().unwrap().shutdown_app(&self.get_name().await);
                     }
                     // event belongs to other application, so we passthrough to the launcher in order to route it
                     // to the corresponding application
                     Err(other_app_event) => {
-                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name());
+                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name().await);
                     }
                 }
             } else {
@@ -162,9 +165,10 @@ impl ThroughType for HowdyBuilder {
     type Through = HowdyEvent;
 }
 
+#[async_trait]
 impl Builder for HowdyBuilder {
     type State = Howdy;
-    fn build(self) -> Self::State {
+    async fn build(self) -> Self::State {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<HowdyEvent>();
         Howdy {
             tx,
@@ -172,16 +176,18 @@ impl Builder for HowdyBuilder {
             service: Service::new(),
         }
         .set_name()
+        .await
     }
 }
 
 impl<H: LauncherSender<HowdyBuilder>> AppBuilder<H> for HowdyBuilder {}
 
+#[async_trait]
 impl Name for Howdy {
-    fn get_name(&self) -> String {
+    async fn get_name(&self) -> String {
         self.service.get_name()
     }
-    fn set_name(mut self) -> Self {
+    async fn set_name(mut self) -> Self {
         self.service.update_name("Howdy".to_string());
         self
     }
@@ -208,7 +214,7 @@ impl<H: LauncherSender<HowdyBuilder>> Starter<H> for HowdyBuilder {
     // if application asked for Need::Restart or RescheduleAfter then the input will hold the prev app From::from(state)
     type Input = Howdy;
     async fn starter(mut self, handle: H, mut _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
-        let howdy = self.build();
+        let howdy = self.build().await;
         // create handle
         let app_handle = HowdySender { tx: howdy.tx.clone() };
         // spawn and start Howdy
@@ -245,12 +251,12 @@ impl<H: LauncherSender<HowdyBuilder>> EventLoop<H> for Howdy {
                 match apps_events.try_get_my_event() {
                     // event belong to self application
                     Ok(HowdyEvent::Shutdown) => {
-                        _supervisor.as_mut().unwrap().shutdown_app(&self.get_name());
+                        _supervisor.as_mut().unwrap().shutdown_app(&self.get_name().await);
                     }
                     // event belong to other application, so we passthrough to the launcher in order to route it
                     // to the corresponding application
                     Err(other_app_event) => {
-                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name());
+                        _supervisor.as_mut().unwrap().passthrough(other_app_event, self.get_name().await);
                     }
                 }
             } else {
@@ -299,14 +305,15 @@ pub enum HowdyEvent {
 //////////////////////////////// Launcher (root of program) ////////////////////////////////////////////
 launcher!(builder: AppsBuilder {[] -> HelloWorld: HelloWorldBuilder, [] -> Howdy: HowdyBuilder}, state: Apps {});
 
+#[async_trait]
 impl Builder for AppsBuilder {
     type State = Apps;
-    fn build(self) -> Self::State {
+    async fn build(self) -> Self::State {
         // create apps
         let hello_world_builder = HelloWorldBuilder::new();
         let howdy_builder = HowdyBuilder::new();
         // add it to launcher
-        self.HelloWorld(hello_world_builder).Howdy(howdy_builder).to_apps()
+        self.HelloWorld(hello_world_builder).Howdy(howdy_builder).to_apps().await
     }
 }
 
@@ -314,7 +321,7 @@ impl Builder for AppsBuilder {
 async fn main() {
     env_logger::init();
     // create apps_builder and build apps
-    let apps = AppsBuilder::new().build();
+    let apps = AppsBuilder::new().build().await;
     // start the launcher
     apps.HelloWorld().await.Howdy().await.start(None).await;
 }

@@ -2,11 +2,12 @@ use super::{Actor, AknShutdown, LauncherSender, Passthrough, Shutdown, Starter};
 use serde::{Deserialize, Serialize};
 
 /// Allows an actor to be built by parts
+#[async_trait::async_trait]
 pub trait Builder {
     /// The "state" (actor type) which is built
     type State;
     /// Build the actor
-    fn build(self) -> Self::State;
+    async fn build(self) -> Self::State;
 }
 
 /// Should be implemented on the ActorBuilder struct

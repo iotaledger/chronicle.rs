@@ -1,6 +1,12 @@
 use super::*;
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
+use tokio::sync::RwLock;
+
+lazy_static! {
+    pub static ref SERVICE: Arc<RwLock<Service>> = Default::default();
+}
 
 pub trait Appsthrough<B: ThroughType>: for<'de> Deserialize<'de> + Serialize + Send + 'static {
     fn is_self(&self, my_app_name: &str) -> bool {
@@ -25,7 +31,7 @@ pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + Akn
 
 /// The possible statuses a service (application) can be
 #[repr(u8)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum ServiceStatus {
     /// Early bootup
     Starting = 0,
@@ -64,14 +70,7 @@ pub struct Service {
 impl Service {
     /// Create a new Service
     pub fn new() -> Self {
-        Self {
-            status: ServiceStatus::Starting,
-            name: String::new(),
-            up_since: SystemTime::now(),
-            downtime_ms: 0,
-            microservices: std::collections::HashMap::new(),
-            log_path: None,
-        }
+        Self::default()
     }
     /// Set the service status
     pub fn set_status(mut self, service_status: ServiceStatus) -> Self {
@@ -148,6 +147,19 @@ impl Service {
     /// Get the service status
     pub fn service_status(&self) -> &ServiceStatus {
         &self.status
+    }
+}
+
+impl Default for Service {
+    fn default() -> Self {
+        Self {
+            status: ServiceStatus::Starting,
+            name: Default::default(),
+            up_since: SystemTime::now(),
+            downtime_ms: 0,
+            microservices: Default::default(),
+            log_path: Default::default(),
+        }
     }
 }
 
@@ -327,8 +339,7 @@ macro_rules! launcher {
                 }
             )*
             /// Consume the launcher and emit its apps
-            pub fn to_apps(self) -> $apps {
-                let service = Service::new();
+            pub async fn to_apps(self) -> $apps {
                 let apps_names = vec![ $(stringify!($app).to_string()),*];
                 let apps_handlers = AppsHandlers::default();
                 let mut apps_deps: AppsDeps = AppsDeps::default();
@@ -348,7 +359,6 @@ macro_rules! launcher {
                 let (tx, rx) = mpsc::unbounded_channel::<Event>();
                 let consumed_ctrl_c = false;
                 $apps {
-                    service,
                     apps_names,
                     apps_handlers,
                     apps_deps,
@@ -363,7 +373,7 @@ macro_rules! launcher {
                     $(
                         $field: self.$field.unwrap(),
                     )*
-                }.set_name()
+                }.set_name().await
             }
 
             $(
@@ -379,7 +389,6 @@ macro_rules! launcher {
         /// Launcher state
         #[allow(non_snake_case)]
         pub struct $apps {
-            service: Service,
             apps_names: Vec<String>,
             apps_handlers: AppsHandlers,
             apps_deps: AppsDeps,
@@ -423,14 +432,14 @@ macro_rules! launcher {
                             // create new service that indicates the app is starting
                             let service = Service::new().set_name(app_name.clone());
                             // update main service
-                            self.service.update_microservice(app_name, service);
+                            SERVICE.write().await.update_microservice(app_name, service);
                             info!("Succesfully starting {}", stringify!($app));
                         }
                         Err(e) => {
                             // create new service that indicates the app is stopped
                             let service = Service::new().set_status(ServiceStatus::Stopped).set_name(app_name.clone());
                             // update main service
-                            self.service.update_microservice(app_name, service);
+                            SERVICE.write().await.update_microservice(app_name, service);
                             error!("Unable to start {}: {}", stringify!($app), e);
                         }
                     }
@@ -438,24 +447,25 @@ macro_rules! launcher {
                 }
             )*
             // cast status_change to all active applications
-            fn status_change(&mut self, service: Service) {
+            async fn status_change(&mut self, service: Service) {
                 $(
                     if let Some(app_handler) = self.apps_handlers.$app.as_mut() {
                         app_handler.app_status_change(&service);
                     }
                 )*
                 // update the service for microservice
-                self.service.update_microservice(service.name.clone(), service);
+                SERVICE.write().await.update_microservice(service.name.clone(), service);
             }
             // cast launcher status_change to all active applications without updating self.service
-            fn launcher_status_change(&mut self) {
+            async fn launcher_status_change(&mut self) {
                 $(
                     if let Some(app_handler) = self.apps_handlers.$app.as_mut() {
-                        app_handler.launcher_status_change(&self.service);
+                        app_handler.launcher_status_change(&*SERVICE.read().await);
                     }
                 )*
             }
-            fn shutdown_app(&mut self, app_name: String) {
+            #[async_recursion::async_recursion]
+            async fn shutdown_app(&mut self, app_name: String) {
                 match &app_name[..] {
                     $(
                         stringify!($app) => {
@@ -465,7 +475,7 @@ macro_rules! launcher {
                                 // make sure app deps to get shutdown first
                                 for app in &self.apps_deps.$app {
                                     // add only if the app not stopped
-                                    let is_dep_stopped = self.service.microservices.get(&app[..]).unwrap().is_stopped();
+                                    let is_dep_stopped = SERVICE.read().await.microservices.get(&app[..]).unwrap().is_stopped();
                                     if !is_dep_stopped {
                                         // shutdown the dep if not already stopped
                                         self.shutdown_queue.push_front(app.clone());
@@ -485,7 +495,7 @@ macro_rules! launcher {
                                             // reset consumed_ctrl_c
                                             self.consumed_ctrl_c = false;
                                         }
-                                        if self.service.is_stopping() {
+                                        if SERVICE.read().await.is_stopping() {
                                             error!(
                                                 "unable to exit program, please try again, using dashboard or from shell `kill -SIGINT {}`",
                                                 std::process::id()
@@ -499,20 +509,20 @@ macro_rules! launcher {
                                 } else {
                                     // return the handler, because it's not yet ready to get shutdown
                                     self.apps_handlers.$app.replace(app_handler);
-                                    self.shutdown_app(shutdown_first.clone())
+                                    self.shutdown_app(shutdown_first.clone()).await
                                 }
                             } else {
                                 // get the app_status
-                                let app_status = &self.service.microservices.get(&app_name[..]).unwrap().status;
+                                let app_status = SERVICE.read().await.microservices.get(&app_name[..]).unwrap().status;
 
-                                if app_status == &ServiceStatus::Stopped {
+                                if app_status == ServiceStatus::Stopped {
                                     info!("no app handler for {}, as it's already stopped", app_name);
                                     // shutdown next app (if any)
                                     if let Some(app) = self.shutdown_queue.pop_front() {
                                         self.shutdown_app(app);
                                     } else {
                                         // nothing to shutdown, check if main service is stopping to send exit_program
-                                        if self.service.is_stopping() {
+                                        if SERVICE.read().await.is_stopping() {
                                             let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
                                             let _ = self.tx.0.send(exit_program_event);
                                         }
@@ -537,14 +547,14 @@ macro_rules! launcher {
             }
             /// dynamically start an application
             async fn start_app(&mut self, app_name: String, apps_states_opt: Option<AppsStates>) {
-                if !self.service.is_stopping() {
+                if !SERVICE.read().await.is_stopping() {
                     match &app_name[..] {
                         $(
                             stringify!($app) => {
                                 // get the app_status
-                                let app_status = &self.service.microservices.get(&app_name[..]).unwrap().status;
+                                let app_status = SERVICE.read().await.microservices.get(&app_name[..]).unwrap().status;
                                 // check if app is stopped to make sure is safe to start it;
-                                if app_status == &ServiceStatus::Stopped {
+                                if app_status == ServiceStatus::Stopped {
                                     // get app_state (if any)
                                     let app_state_opt;
                                     if let Some(AppsStates::$app(app_state)) = apps_states_opt {
@@ -562,7 +572,7 @@ macro_rules! launcher {
                                             // create new service that indicates the app is starting
                                             let service = Service::new().set_name(app_name.clone());
                                             // store service in the apps_status
-                                            self.service.update_microservice(app_name.clone(), service.clone());
+                                            SERVICE.write().await.update_microservice(app_name.clone(), service.clone());
                                             info!("starter succesfully started {}", app_name);
                                             // tell active applications (including app_name)
                                             self.status_change(service);
@@ -571,7 +581,7 @@ macro_rules! launcher {
                                             // create new service that indicates the app is stopped
                                             let service = Service::new().set_status(ServiceStatus::Stopped).set_name(app_name.clone());
                                             // store it in the apps_status
-                                            self.service.update_microservice(app_name.clone(), service.clone());
+                                            SERVICE.write().await.update_microservice(app_name.clone(), service.clone());
                                             error!("starter unable to start {}", app_name);
                                             // tell active applications
                                             self.status_change(service);
@@ -587,18 +597,19 @@ macro_rules! launcher {
                     }
                 } else {
                     // Apps is stopping, and we shouldn't start any application durring this state,
-                    warn!("cannot starts {}, because {} is stopping", app_name, self.get_name());
+                    warn!("cannot starts {}, because {} is stopping", app_name, self.get_name().await);
                 }
             }
         }
 
         /// Name of the launcher
+        #[async_trait::async_trait]
         impl Name for $apps {
-            fn get_name(&self) -> String {
-                self.service.name.clone()
+            async fn get_name(&self) -> String {
+                SERVICE.read().await.name.clone()
             }
-            fn set_name(mut self) -> Self {
-                self.service.update_name(stringify!($apps).to_string().to_string());
+            async fn set_name(mut self) -> Self {
+                SERVICE.write().await.update_name(stringify!($apps).to_string().to_string());
                 self
             }
         }
@@ -609,7 +620,7 @@ macro_rules! launcher {
                 tokio::spawn(ctrl_c(self.tx.clone()));
                 info!("Initializing {} Apps", self.app_count);
                 // update service to be Initializing
-                self.service.update_status(ServiceStatus::Initializing);
+                SERVICE.write().await.update_status(ServiceStatus::Initializing);
                 // tell active apps
                 self.launcher_status_change();
                 status
@@ -620,7 +631,7 @@ macro_rules! launcher {
         impl EventLoop<NullSupervisor> for $apps {
             async fn event_loop(&mut self, status: Result<(), Need>, _supervisor: &mut Option<NullSupervisor>) -> Result<(), Need> {
                 // update service to be Running
-                self.service.update_status(ServiceStatus::Running);
+                SERVICE.write().await.update_status(ServiceStatus::Running);
                 // tell active apps
                 self.launcher_status_change();
                 while let Some(event) = self.rx.0.recv().await {
@@ -644,9 +655,9 @@ macro_rules! launcher {
                                 $(
                                     AppsStates::$app(ref _state_opt) => {
                                         let app_name = stringify!($app);
-                                        self.service.update_microservice_status(app_name, ServiceStatus::Stopped);
+                                        SERVICE.write().await.update_microservice_status(app_name, ServiceStatus::Stopped);
                                         // tell all active application with this change
-                                        let service = self.service.microservices.get(&app_name[..]).unwrap().clone();
+                                        let service = SERVICE.read().await.microservices.get(&app_name[..]).unwrap().clone();
                                         info!(
                                             "{} is stopped, acknowledging shutdown and telling all active applications",
                                             service.name,
@@ -702,12 +713,12 @@ macro_rules! launcher {
                                         }
                                         // shutdown next app (if any) only if is not already stopping
                                         if let Some(app) = self.shutdown_queue.pop_front() {
-                                            if !self.service.microservices.get(&app[..]).unwrap().is_stopping() {
+                                            if !SERVICE.read().await.microservices.get(&app[..]).unwrap().is_stopping() {
                                                 self.shutdown_app(app);
                                             } else {
                                                 self.shutdown_queue.push_front(app);
                                             };
-                                        } else if self.service.is_stopping() {
+                                        } else if SERVICE.read().await.is_stopping() {
                                             // keep exiting
                                             let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
                                             let _ = self.tx.0.send(exit_program_event);
@@ -729,10 +740,10 @@ macro_rules! launcher {
                             }
                         },
                         Event::ExitProgram { using_ctrl_c } => {
-                            if !self.service.is_stopping() {
+                            if !SERVICE.read().await.is_stopping() {
                                 info!("Exiting Program in progress");
                                 // update service to be Stopping
-                                self.service.update_status(ServiceStatus::Stopping);
+                                SERVICE.write().await.update_status(ServiceStatus::Stopping);
                                 // tell active apps
                                 self.launcher_status_change();
                             }
@@ -743,8 +754,8 @@ macro_rules! launcher {
                             if let Some(app_name) = self.apps_names.last() {
                                 let app_name = app_name.to_string();
                                 // check if app is not already stopped
-                                let app_status = &self.service.microservices.get(&app_name[..]).unwrap().status;
-                                if app_status == &ServiceStatus::Stopped {
+                                let app_status = SERVICE.read().await.microservices.get(&app_name[..]).unwrap().status;
+                                if app_status == ServiceStatus::Stopped {
                                     // pop the app as it is already stopped
                                     self.apps_names.pop();
                                     // send another ExitProgram
@@ -764,7 +775,7 @@ macro_rules! launcher {
                                 $(
                                     stringify!($app) => {
                                         if let Some(requester) = self.apps_handlers.$app.as_mut() {
-                                            requester.service(&self.service);
+                                            requester.service(&*SERVICE.read().await);
                                         }
                                     },
                                 )*
@@ -789,7 +800,7 @@ macro_rules! launcher {
                     status = self.event_loop(status, _supervisor).await;
                 }
                 // update service to stopped
-                self.service.update_status(ServiceStatus::Stopped);
+                SERVICE.write().await.update_status(ServiceStatus::Stopped);
                 info!("Thank you for using Chronicle.rs, GoodBye");
                 status
             }
