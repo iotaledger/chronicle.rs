@@ -368,8 +368,7 @@ impl Collector {
             Payload::Milestone(milestone) => {
                 let ms_index = milestone.essence().index();
                 let parents_check = message.parents().eq(milestone.essence().parents());
-                // todo!("validate milestone through KeyMananger and ensure parents are equal")
-                if metadata.is_some() {
+                if metadata.is_some() && parents_check {
                     // push to the right solidifier
                     let solidifier_id = (ms_index % (self.collectors_count as u32)) as u8;
                     if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
@@ -377,12 +376,12 @@ impl Collector {
                             MilestoneMessage::new(*message_id, milestone.clone(), message.clone(), metadata);
                         let _ = solidifier_handle.send(SolidifierEvent::Milestone(ms_message));
                     };
-                }
-                if parents_check {
-                    // insert milestone
-
-                    // let milestone = Milestone::new(message_id.clone(), timestamp);
-                    // self.insert(&self.get_keyspace(), milestone_index, **milestone)
+                    self.insert(
+                        inherent_worker,
+                        &self.get_keyspace(),
+                        MilestoneIndex(ms_index),
+                        (*message_id, milestone.clone()),
+                    )
                 }
             }
             // remaining payload types

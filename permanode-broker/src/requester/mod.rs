@@ -28,7 +28,8 @@ builder!(RequesterBuilder {
     requester_id: u8,
     inbox: RequesterInbox,
     api_endpoints: VecDeque<Url>,
-    reqwest_client: Client
+    reqwest_client: Client,
+    retries: u16
 });
 pub type RequesterId = u8;
 pub enum RequesterEvent {
@@ -111,6 +112,7 @@ pub struct Requester {
     inbox: RequesterInbox,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
+    retries: u16,
 }
 
 impl ActorBuilder<CollectorHandle> for RequesterBuilder {}
@@ -125,6 +127,7 @@ impl Builder for RequesterBuilder {
             requester_id: self.requester_id.unwrap(),
             api_endpoints: self.api_endpoints.unwrap(),
             reqwest_client: self.reqwest_client.unwrap(),
+            retries: self.retries.unwrap_or(100),
         }
         .set_name()
     }

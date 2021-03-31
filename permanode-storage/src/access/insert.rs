@@ -238,12 +238,11 @@ impl Insert<Hint, Partition> for PermanodeKeyspace {
     }
 }
 
-// TODO finalize
-impl Insert<MilestoneIndex, (Milestone, MilestonePayload)> for PermanodeKeyspace {
+impl Insert<MilestoneIndex, (MessageId, Box<MilestonePayload>)> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.milestones (milestone_index, message_id, timestamp) VALUES (?, ?, ?)",
+            "INSERT INTO {}.milestones (milestone_index, message_id, timestamp, payload) VALUES (?, ?, ?, ?)",
             self.name()
         )
         .into()
@@ -251,13 +250,17 @@ impl Insert<MilestoneIndex, (Milestone, MilestonePayload)> for PermanodeKeyspace
     fn bind_values<T: Values>(
         builder: T,
         milestone_index: &MilestoneIndex,
-        (milestone, payload): &(Milestone, MilestonePayload),
+        (message_id, milestone_payload): &(MessageId, Box<MilestonePayload>),
     ) -> T::Return {
+        let mut milestone_payload_bytes = Vec::new();
+        milestone_payload
+            .pack(&mut milestone_payload_bytes)
+            .expect("Error occurred packing MilestonePayload");
         builder
             .value(&milestone_index.0)
-            .value(&milestone.message_id().to_string())
-            .value(&milestone.timestamp())
-        //.value(&payload.to_string())
+            .value(&message_id.to_string())
+            .value(&milestone_payload.essence().timestamp())
+            .value(&milestone_payload_bytes.as_slice())
     }
 }
 
