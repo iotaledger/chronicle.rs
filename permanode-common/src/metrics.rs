@@ -4,7 +4,9 @@ use chronicle::{
 };
 use lazy_static::lazy_static;
 use log::error;
+pub use prometheus;
 use prometheus::{
+    Encoder,
     HistogramOpts,
     HistogramVec,
     IntCounter,
@@ -13,6 +15,7 @@ use prometheus::{
     IntGaugeVec,
     Opts,
     Registry,
+    TextEncoder,
 };
 use std::{
     collections::HashMap,
@@ -31,11 +34,11 @@ lazy_static! {
     /// Response code collector
     pub static ref RESPONSE_CODE_COLLECTOR: IntCounterVec = IntCounterVec::new(
         Opts::new("response_code", "Response Codes"),
-        &["env", "statuscode", "type"]
+        &["statuscode", "type"]
     )
     .expect("failed to create metric");
     /// Response time collector
     pub static ref RESPONSE_TIME_COLLECTOR: HistogramVec =
-        HistogramVec::new(HistogramOpts::new("response_time", "Response Times"), &["env"])
+        HistogramVec::new(HistogramOpts::new("response_time", "Response Times"), &["endpoint"])
             .expect("failed to create metric");
 }

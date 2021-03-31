@@ -1,7 +1,20 @@
 use super::*;
 use crate::responses::*;
 use mpsc::unbounded_channel;
-use permanode_common::config::PartitionConfig;
+use permanode_common::{
+    config::PartitionConfig,
+    metrics::{
+        prometheus::{
+            self,
+            Encoder,
+            TextEncoder,
+        },
+        INCOMING_REQUESTS,
+        REGISTRY,
+        RESPONSE_CODE_COLLECTOR,
+        RESPONSE_TIME_COLLECTOR,
+    },
+};
 use permanode_storage::{
     access::{
         Ed25519Address,
@@ -27,7 +40,9 @@ use rocket::{
     http::{
         Cookie,
         CookieJar,
+        Status,
     },
+    Data,
     Request,
     Response,
     State,
@@ -49,6 +64,7 @@ use std::{
     },
     path::PathBuf,
     str::FromStr,
+    time::SystemTime,
 };
 use tokio::sync::mpsc;
 
@@ -88,6 +104,7 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
             routes![
                 options,
                 info,
+                metrics,
                 get_message,
                 get_message_metadata,
                 get_message_children,
@@ -98,6 +115,7 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
             ],
         )
         .attach(CORS)
+        .attach(RequestTimer)
 }
 
 struct CORS;
@@ -116,6 +134,60 @@ impl Fairing for CORS {
         response.set_raw_header("Access-Control-Allow-Methods", "GET, OPTIONS");
         response.set_raw_header("Access-Control-Allow-Headers", "*");
         response.set_raw_header("Access-Control-Allow-Credentials", "true");
+    }
+}
+
+pub struct RequestTimer;
+
+#[derive(Copy, Clone)]
+struct TimerStart(Option<SystemTime>);
+
+#[rocket::async_trait]
+impl Fairing for RequestTimer {
+    fn info(&self) -> Info {
+        Info {
+            name: "Request Timer",
+            kind: Kind::Request | Kind::Response,
+        }
+    }
+
+    /// Stores the start time of the request in request-local state.
+    async fn on_request(&self, request: &mut Request<'_>, _: &mut Data) {
+        // Store a `TimerStart` instead of directly storing a `SystemTime`
+        // to ensure that this usage doesn't conflict with anything else
+        // that might store a `SystemTime` in request-local cache.
+        request.local_cache(|| TimerStart(Some(SystemTime::now())));
+        INCOMING_REQUESTS.inc();
+    }
+
+    /// Adds a header to the response indicating how long the server took to
+    /// process the request.
+    async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
+        let start_time = req.local_cache(|| TimerStart(None));
+        if let Some(Ok(duration)) = start_time.0.map(|st| st.elapsed()) {
+            let ms = (duration.as_secs() * 1000 + duration.subsec_millis() as u64) as f64;
+            RESPONSE_TIME_COLLECTOR
+                .with_label_values(&[&format!("{} {}", req.method(), req.uri())])
+                .observe(ms)
+        }
+        match res.status().code {
+            500..=599 => RESPONSE_CODE_COLLECTOR
+                .with_label_values(&[&res.status().code.to_string(), "500"])
+                .inc(),
+            400..=499 => RESPONSE_CODE_COLLECTOR
+                .with_label_values(&[&res.status().code.to_string(), "400"])
+                .inc(),
+            300..=399 => RESPONSE_CODE_COLLECTOR
+                .with_label_values(&[&res.status().code.to_string(), "300"])
+                .inc(),
+            200..=299 => RESPONSE_CODE_COLLECTOR
+                .with_label_values(&[&res.status().code.to_string(), "200"])
+                .inc(),
+            100..=199 => RESPONSE_CODE_COLLECTOR
+                .with_label_values(&[&res.status().code.to_string(), "100"])
+                .inc(),
+            _ => (),
+        }
     }
 }
 
@@ -141,6 +213,25 @@ async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
         features: vec![],
         min_pow_score: 0.0,
     }))
+}
+
+#[get("/metrics")]
+async fn metrics() -> Result<String, Cow<'static, str>> {
+    let encoder = TextEncoder::new();
+    let mut buffer = Vec::new();
+    encoder
+        .encode(&REGISTRY.gather(), &mut buffer)
+        .map_err(|e| Cow::from(e.to_string()))?;
+
+    let res_custom = String::from_utf8(std::mem::take(&mut buffer)).map_err(|e| Cow::from(e.to_string()))?;
+
+    encoder
+        .encode(&prometheus::gather(), &mut buffer)
+        .map_err(|e| Cow::from(e.to_string()))?;
+
+    let res_default = String::from_utf8(buffer).map_err(|e| Cow::from(e.to_string()))?;
+
+    Ok(format!("{}{}", res_custom, res_default))
 }
 
 pub(crate) async fn query<V, S, K>(
