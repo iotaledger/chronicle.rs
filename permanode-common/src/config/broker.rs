@@ -1,25 +1,33 @@
+use super::*;
 use log::warn;
 use paho_mqtt::{
     AsyncClient,
     CreateOptionsBuilder,
 };
-use permanode_storage::access::SyncRange;
 use reqwest::Client;
-use serde::{
-    Deserialize,
-    Serialize,
-};
 use serde_json::Value;
 use std::{
-    borrow::Cow,
     collections::VecDeque,
+    net::SocketAddr,
 };
 use url::Url;
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {
+    pub websocket_address: SocketAddr,
     pub mqtt_brokers: Vec<Url>,
     pub api_endpoints: VecDeque<Url>,
     pub sync_range: Option<SyncRange>,
+}
+
+impl Default for BrokerConfig {
+    fn default() -> Self {
+        Self {
+            websocket_address: ([127, 0, 0, 1], 9000).into(),
+            mqtt_brokers: Default::default(),
+            api_endpoints: Default::default(),
+            sync_range: Default::default(),
+        }
+    }
 }
 
 impl BrokerConfig {

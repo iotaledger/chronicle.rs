@@ -18,8 +18,6 @@
 
 /// The main actor for the API
 pub mod application;
-/// API configuration
-pub mod config;
 /// The http endpoint listener
 pub mod listener;
 /// API response structs
@@ -32,4 +30,3 @@ extern crate rocket;
 
 use async_trait::async_trait;
 use chronicle::*;
-pub use config::ApiConfig;

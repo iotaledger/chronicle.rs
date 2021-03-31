@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use permanode_common::Synckey;
 
 #[async_trait::async_trait]
 impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {

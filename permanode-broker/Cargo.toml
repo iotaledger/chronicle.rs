@@ -5,10 +5,11 @@ authors = ["IOTA Stiftung"]
 edition = "2018"
 
 [dependencies]
+permanode-common = { path = "../permanode-common" }
+permanode-storage = { path = "../permanode-storage" }
 chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
-permanode-storage = { path = "../permanode-storage" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4.14"
@@ -22,7 +23,6 @@ url = { version = "2", features = ["serde"] }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "edb1541" }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "edb1541" }
-
 permanode-filter = { path = "../permanode-filter", optional = true }
 
 [dependencies.tokio]

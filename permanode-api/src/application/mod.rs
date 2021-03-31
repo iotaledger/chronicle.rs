@@ -1,5 +1,8 @@
 use super::*;
-use permanode_storage::StorageConfig;
+use permanode_common::config::{
+    ApiConfig,
+    StorageConfig,
+};
 use rocket::Shutdown as RocketShutdown;
 use serde::{
     Deserialize,

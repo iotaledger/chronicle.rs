@@ -3,30 +3,37 @@
 use crate::{
     archiver::*,
     collector::*,
-    config::BrokerConfig,
     listener::*,
     mqtt::*,
     solidifier::*,
     syncer::*,
     websocket::*,
 };
-use std::ops::Range;
-
 use async_trait::async_trait;
+pub(crate) use bee_common::packable::Packable;
+pub(crate) use bee_message::{
+    Message,
+    MessageId,
+};
 pub use chronicle::*;
 pub use log::*;
 pub(crate) use paho_mqtt::{
     AsyncClient,
     CreateOptionsBuilder,
 };
-pub(crate) use permanode_storage::{
-    access::*,
-    StorageConfig,
+use permanode_common::{
+    config::{
+        BrokerConfig,
+        StorageConfig,
+    },
+    SyncRange,
 };
+pub(crate) use permanode_storage::access::*;
 use serde::{
     Deserialize,
     Serialize,
 };
+use std::ops::Range;
 pub(crate) use std::{
     collections::HashMap,
     convert::TryFrom,
@@ -37,16 +44,9 @@ pub(crate) use std::{
     },
     path::PathBuf,
 };
-
 pub use tokio::{
     spawn,
     sync::mpsc,
-};
-
-pub(crate) use bee_common::packable::Packable;
-pub(crate) use bee_message::{
-    Message,
-    MessageId,
 };
 
 mod event_loop;
@@ -76,6 +76,7 @@ pub enum PermanodeBrokerThrough {
     /// Shutdown json to gracefully shutdown broker app
     Shutdown,
     Topology(Topology),
+    ExitProgram,
 }
 
 /// BrokerHandle to be passed to the children

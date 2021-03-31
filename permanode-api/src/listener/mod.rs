@@ -1,9 +1,7 @@
 use super::*;
 use application::*;
-use permanode_storage::{
-    access::*,
-    StorageConfig,
-};
+use permanode_common::config::StorageConfig;
+use permanode_storage::access::*;
 use rocket::Rocket;
 use serde::Serialize;
 use std::marker::PhantomData;

@@ -1,6 +1,7 @@
 use super::*;
 use crate::responses::*;
 use mpsc::unbounded_channel;
+use permanode_common::config::PartitionConfig;
 use permanode_storage::{
     access::{
         Ed25519Address,
@@ -15,7 +16,6 @@ use permanode_storage::{
         Partitioned,
     },
     keyspaces::PermanodeKeyspace,
-    PartitionConfig,
 };
 use rocket::{
     fairing::{

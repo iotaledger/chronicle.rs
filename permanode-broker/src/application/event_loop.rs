@@ -32,6 +32,9 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 }
                                 Topology::RemoveMqttMessages(url) => self.remove_mqtt::<Messages>(url),
                             },
+                            PermanodeBrokerThrough::ExitProgram => {
+                                supervisor.exit_program(false);
+                            }
                         },
                         Err(other_app_event) => {
                             supervisor.passthrough(other_app_event, self.get_name());

@@ -17,7 +17,7 @@ use bee_message::{
 use std::collections::BinaryHeap;
 
 use lru::LruCache;
-use permanode_storage::StorageConfig;
+use permanode_common::config::StorageConfig;
 use std::ops::{
     Deref,
     DerefMut,

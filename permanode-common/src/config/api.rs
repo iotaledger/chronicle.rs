@@ -1,9 +1,4 @@
-use std::borrow::Cow;
-
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use super::*;
 /// Configuration for the Permanode API
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct ApiConfig {}

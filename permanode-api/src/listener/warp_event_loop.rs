@@ -7,6 +7,7 @@ use crate::{
     responses::*,
 };
 use http::HeaderMap;
+use permanode_common::config::PartitionConfig;
 use permanode_storage::{
     access::{
         Ed25519Address,
@@ -18,7 +19,6 @@ use permanode_storage::{
         OutputRes,
     },
     keyspaces::PermanodeKeyspace,
-    PartitionConfig,
 };
 use rocket::http::{
     private::cookie::Key,

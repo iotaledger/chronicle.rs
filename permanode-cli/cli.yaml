@@ -1,0 +1,124 @@
+name: chronicli
+version: "0.1"
+author: IOTA Stiftung
+about: Provides commands and metrics to interact with a Chronicle instance.
+settings:
+  - VersionlessSubcommands
+  - ArgRequiredElseHelp
+subcommands:
+  - start:
+      about: Start a new Chronicle instance
+      args:
+        - noexit:
+            short: n
+            long: noexit
+            help: Start the instance and force no exit in the shell
+            conflicts_with:
+              - service
+        - service:
+            short: s
+            long: service
+            help: Start the instance as a background service
+            conflicts_with:
+              - noexit
+  - stop:
+      about: Stop a running Chronicle instance
+  - rebuild:
+      about: Rebuild the RING
+  - nodes:
+      about: Manage scylla nodes
+      settings:
+        - ArgRequiredElseHelp
+      args:
+        - add:
+            long: add
+            short: a
+            takes_value: true
+            value_name: SCYLLA_DB_ADDRESS
+            conflicts_with:
+              - remove
+            help: Add a scylla node for the given address
+        - remove:
+            long: rem
+            short: r
+            takes_value: true
+            value_name: SCYLLA_DB_ADDRESS
+            conflicts_with:
+              - add
+            help: Remove the scylla node for the given address
+        - list:
+            long: list
+            short: l
+            help: List the running scylla nodes
+        - skip-connection:
+            short: n
+            long: noconnect
+            help: Skip trying to connect to the running service and just update the config
+            conflicts_with:
+              - list
+  - brokers:
+      about: Manage Chronicle brokers
+      settings:
+        - ArgRequiredElseHelp
+      subcommands:
+        - add:
+            short: a
+            about: Add a broker instance to process network messages
+            settings:
+              - ArgRequiredElseHelp
+            args:
+              - mqtt-address:
+                  short: m
+                  takes_value: true
+                  value_name: MQTT_ADDRESSES
+                  required: true
+                  multiple: true
+                  help: The MQTT addresses which will be subscribed to receive messages (ex. tcp://api.hornet-0.testnet.chrysalis2.com:1883)
+              - endpoint-address:
+                  short: e
+                  takes_value: true
+                  value_name: ENDPOINT_ADDRESSES
+                  required: false
+                  multiple: true
+                  help: The TCP endpoint addresses and port which will be used to fetch missing messages (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
+              - skip-connection:
+                  short: n
+                  long: noconnect
+                  help: Skip trying to connect to the running service and just update the config
+        - remove:
+            short: r
+            about: Remove the broker instance with the given id
+            settings:
+              - ArgRequiredElseHelp
+            args:
+              - id:
+                  takes_value: true
+                  value_name: ID
+                  required: true
+                  help: The unique ID of the broker
+              - skip-connection:
+                  short: n
+                  long: noconnect
+                  help: Skip trying to connect to the running service and just update the config
+        - list:
+            short: l
+            about: List the running brokers
+  - archive:
+      about: Manage archived milestones
+      settings:
+        - ArgRequiredElseHelp
+      subcommands:
+        - import:
+            short: i
+            about: Import a range of milestones from archive files
+            args:
+              - directory:
+                  short: d
+                  takes_value: true
+                  value_name: DIR
+                  help: The directory containing archive files to import. Defaults to the configured output directory.
+              - range:
+                  short: r
+                  takes_value: true
+                  value_name: RANGE
+                  help: The range of milestone indexes to import. Defaults to the configured range.

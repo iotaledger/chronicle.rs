@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bee_message::input::Input;
-use permanode_storage::PartitionConfig;
+use permanode_common::config::PartitionConfig;
 use std::sync::Arc;
 
 use super::*;
