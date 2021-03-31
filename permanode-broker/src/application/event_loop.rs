@@ -232,6 +232,10 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
             for (_, ws) in &mut self.websockets {
                 let _ = ws.close().await;
             }
+            // shutdown syncer
+            if let Some(syncer) = self.syncer_handle.take() {
+                syncer.shutdown();
+            }
             // drop self handler
             self.handle.take();
         }
