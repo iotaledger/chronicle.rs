@@ -28,7 +28,10 @@ mod terminating;
 pub const MAX_LOG_SIZE: u32 = u32::MAX;
 
 // Archiver builder
-builder!(ArchiverBuilder { dir_path: PathBuf });
+builder!(ArchiverBuilder {
+    keyspace: PermanodeKeyspace,
+    dir_path: PathBuf
+});
 
 /// ArchiverHandle to be passed to the supervisor and solidifers
 #[derive(Clone)]
@@ -141,6 +144,7 @@ pub struct Archiver {
     dir_path: PathBuf,
     logs: Vec<LogFile>,
     processed: Vec<std::ops::Range<u32>>,
+    keyspace: PermanodeKeyspace,
     handle: Option<ArchiverHandle>,
     inbox: ArchiverInbox,
 }
@@ -164,6 +168,7 @@ impl Builder for ArchiverBuilder {
             dir_path,
             logs: Vec::new(),
             processed: Vec::new(),
+            keyspace: self.keyspace.unwrap(),
             handle,
             inbox,
         }

@@ -36,7 +36,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                         } else {
                             // append milestone data to the log file if the file_size still less than max limit
                             if (milestone_data_line.len() as u32) + log_file.len() < MAX_LOG_SIZE {
-                                Self::append(log_file, &milestone_data_line).await?;
+                                Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace).await?;
                                 // check if now the log_file reached an upper limit to finish the file
                                 if log_file.upper_ms_limit == milestone_index {
                                     finished_log_file_i = Some(i);
@@ -98,7 +98,7 @@ impl Archiver {
             error!("{}", e);
             return Need::Abort;
         })?;
-        Self::append(&mut log_file, milestone_data_line).await?;
+        Self::append(&mut log_file, milestone_data_line, milestone_index, &self.keyspace).await?;
         self.logs.push(log_file);
         Ok(())
     }
@@ -110,11 +110,24 @@ impl Archiver {
         self.processed.push(r);
         self.processed.sort_by(|a, b| b.start.cmp(&a.start));
     }
-    async fn append(log_file: &mut LogFile, milestone_data_line: &str) -> Result<(), Need> {
+    async fn append(
+        log_file: &mut LogFile,
+        milestone_data_line: &str,
+        ms_index: u32,
+        keyspace: &PermanodeKeyspace,
+    ) -> Result<(), Need> {
         log_file.append_line(&milestone_data_line).await.map_err(|e| {
             error!("{}", e);
             return Need::Abort;
         })?;
+        // insert into the DB, without caring about the response
+        let sync_key = permanode_common::Synckey;
+        let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
+        keyspace
+            .insert(&sync_key, &synced_record)
+            .consistency(Consistency::One)
+            .build()
+            .send_local(InsertWorker::boxed(keyspace.clone(), sync_key, synced_record));
         Ok(())
     }
     async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> Result<(), Need> {

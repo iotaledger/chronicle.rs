@@ -20,7 +20,10 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
                 .handle(syncer_handle.clone())
                 .inbox(syncer_inbox);
             // create archiver_builder
-            let mut archiver = ArchiverBuilder::new().dir_path(self.logs_dir_path.clone()).build();
+            let mut archiver = ArchiverBuilder::new()
+                .dir_path(self.logs_dir_path.clone())
+                .keyspace(self.default_keyspace.clone())
+                .build();
             let archiver_handle = archiver.take_handle();
             // start archiver
             tokio::spawn(archiver.start(self.handle.clone()));

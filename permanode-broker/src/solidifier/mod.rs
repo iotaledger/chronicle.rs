@@ -284,7 +284,7 @@ impl Builder for SolidifierBuilder {
             archiver_handle: self.archiver_handle.unwrap(),
             message_id_partitioner: MessageIdPartitioner::new(collectors_count),
             first: None,
-            gap_start: 0, // TODO get it
+            gap_start: self.gap_start.unwrap(),
             expected: 0,
             retries: self.retries.unwrap_or(100),
             handle: self.handle.unwrap(),
