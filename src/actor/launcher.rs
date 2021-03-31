@@ -339,7 +339,7 @@ macro_rules! launcher {
                 }
             )*
             /// Consume the launcher and emit its apps
-            pub async fn to_apps(self) -> $apps {
+            pub fn to_apps(self) -> $apps {
                 let apps_names = vec![ $(stringify!($app).to_string()),*];
                 let apps_handlers = AppsHandlers::default();
                 let mut apps_deps: AppsDeps = AppsDeps::default();
@@ -373,7 +373,7 @@ macro_rules! launcher {
                     $(
                         $field: self.$field.unwrap(),
                     )*
-                }.set_name().await
+                }.set_name()
             }
 
             $(
@@ -597,19 +597,18 @@ macro_rules! launcher {
                     }
                 } else {
                     // Apps is stopping, and we shouldn't start any application durring this state,
-                    warn!("cannot starts {}, because {} is stopping", app_name, self.get_name().await);
+                    warn!("cannot starts {}, because {} is stopping", app_name, self.get_name());
                 }
             }
         }
 
         /// Name of the launcher
-        #[async_trait::async_trait]
         impl Name for $apps {
-            async fn get_name(&self) -> String {
-                SERVICE.read().await.name.clone()
+            fn get_name(&self) -> String {
+                futures::executor::block_on(SERVICE.read()).name.clone()
             }
-            async fn set_name(mut self) -> Self {
-                SERVICE.write().await.update_name(stringify!($apps).to_string().to_string());
+            fn set_name(mut self) -> Self {
+                futures::executor::block_on(SERVICE.write()).update_name(stringify!($apps).to_string().to_string());
                 self
             }
         }
