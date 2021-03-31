@@ -110,6 +110,7 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     default_keyspace: PermanodeKeyspace,
     sync_range: SyncRange,
     sync_data: SyncData,
+    syncer_handle: Option<SyncerHandle>,
     broker_config: BrokerConfig,
     storage_config: Option<StorageConfig>,
 }
@@ -231,6 +232,7 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             collectors_count: self.collectors_count.unwrap_or(10),
             collector_handles: HashMap::new(),
             solidifier_handles: HashMap::new(),
+            syncer_handle: None,
             logs_dir_path: self.logs_dir_path.expect("Expected logs directory path"),
             handle,
             inbox,

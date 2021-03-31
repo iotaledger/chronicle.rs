@@ -38,6 +38,7 @@ builder!(CollectorBuilder {
     api_endpoints: VecDeque<Url>,
     collectors_count: u8,
     requester_count: u8,
+    retries: u16,
     handle: CollectorHandle,
     storage_config: StorageConfig
 });
@@ -135,6 +136,7 @@ pub struct Collector {
     handle: Option<CollectorHandle>,
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
+    retries: u16,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
     default_keyspace: PermanodeKeyspace,
@@ -171,6 +173,7 @@ impl Builder for CollectorBuilder {
             est_ms: MilestoneIndex(0),
             ref_ms: MilestoneIndex(0),
             solidifier_handles: self.solidifier_handles.expect("Collector expected solidifier handles"),
+            retries: self.retries.unwrap_or(100),
             collectors_count: self.collectors_count.unwrap(),
             requester_count: self.requester_count.unwrap_or(10),
             handle: self.handle,

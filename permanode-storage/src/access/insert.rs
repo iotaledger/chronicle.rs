@@ -1,4 +1,4 @@
-use permanode_common::SyncRange;
+use permanode_common::Synckey;
 
 use super::*;
 
@@ -261,7 +261,7 @@ impl Insert<MilestoneIndex, (Milestone, MilestonePayload)> for PermanodeKeyspace
     }
 }
 
-impl Insert<SyncRange, SyncRecord> for PermanodeKeyspace {
+impl Insert<Synckey, SyncRecord> for PermanodeKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -272,7 +272,7 @@ impl Insert<SyncRange, SyncRecord> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(
         builder: T,
-        sync_range: &SyncRange,
+        _: &Synckey,
         SyncRecord {
             milestone_index,
             synced_by,

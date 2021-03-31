@@ -22,3 +22,5 @@ impl Default for SyncRange {
         }
     }
 }
+#[derive(Clone, Copy)]
+pub struct Synckey;
