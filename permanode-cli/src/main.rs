@@ -17,7 +17,8 @@ use url::Url;
 #[tokio::main]
 async fn main() {
     let yaml = load_yaml!("../cli.yaml");
-    let matches = App::from_yaml(yaml).get_matches();
+    let app = App::from_yaml(yaml).version(std::env!("CARGO_PKG_VERSION"));
+    let matches = app.get_matches();
 
     match matches.subcommand() {
         ("start", Some(matches)) => {

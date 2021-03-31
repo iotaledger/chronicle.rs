@@ -4,7 +4,10 @@
 use futures::executor::block_on;
 use permanode_api::application::*;
 use permanode_broker::application::*;
-use permanode_common::config::*;
+use permanode_common::{
+    config::*,
+    metrics::*,
+};
 use scylla::application::*;
 
 launcher!
@@ -52,6 +55,7 @@ impl Builder for AppsBuilder {
 async fn main() {
     dotenv::dotenv().unwrap();
     env_logger::init();
+    register_metrics();
 
     let mut config = Config::load().expect("Failed to deserialize config!");
     if let Err(e) = block_on(config.verify()) {
@@ -78,4 +82,18 @@ async fn main() {
         .await
         .start(None)
         .await;
+}
+
+fn register_metrics() {
+    REGISTRY
+        .register(Box::new(INCOMING_REQUESTS.clone()))
+        .expect("Could not register collector");
+
+    REGISTRY
+        .register(Box::new(RESPONSE_CODE_COLLECTOR.clone()))
+        .expect("Could not register collector");
+
+    REGISTRY
+        .register(Box::new(RESPONSE_TIME_COLLECTOR.clone()))
+        .expect("Could not register collector");
 }

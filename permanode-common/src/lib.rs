@@ -8,6 +8,7 @@ use serde::{
 
 /// Configuration for the Chronicle application
 pub mod config;
+pub mod metrics;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub struct SyncRange {

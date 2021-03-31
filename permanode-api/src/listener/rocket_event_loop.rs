@@ -124,10 +124,15 @@ async fn options(_path: PathBuf) {}
 
 #[get("/info")]
 async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
+    let version = std::env!("CARGO_PKG_VERSION").to_string();
+    let service = SERVICE.read().await;
+    let is_healthy = !std::iter::once(&*service)
+        .chain(service.microservices.values())
+        .any(|service| service.is_degraded() || service.is_maintenance() || service.is_stopped());
     Ok(Json(InfoResponse {
-        name: "Permanode".into(),
-        version: "1.0".into(),
-        is_healthy: true,
+        name: "Chronicle".into(),
+        version,
+        is_healthy,
         network_id: "network id".into(),
         bech32_hrp: "bech32 hrp".into(),
         latest_milestone_index: 0,
