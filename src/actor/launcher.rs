@@ -519,7 +519,7 @@ macro_rules! launcher {
                                     info!("no app handler for {}, as it's already stopped", app_name);
                                     // shutdown next app (if any)
                                     if let Some(app) = self.shutdown_queue.pop_front() {
-                                        self.shutdown_app(app);
+                                        self.shutdown_app(app).await;
                                     } else {
                                         // nothing to shutdown, check if main service is stopping to send exit_program
                                         if SERVICE.read().await.is_stopping() {
@@ -641,7 +641,7 @@ macro_rules! launcher {
                         }
                         Event::ShutdownApp(app_name) => {
                             info!("trying to shutdown {}", app_name);
-                            self.shutdown_app(app_name);
+                            self.shutdown_app(app_name).await;
                         }
                         Event::StatusChange(service) => {
                             info!("{} is {:?}, telling all active applications", service.name, service.status,);
@@ -713,7 +713,7 @@ macro_rules! launcher {
                                         // shutdown next app (if any)
                                         if let Some(app) = self.shutdown_queue.pop_front() {
                                             // try to shutdown app
-                                            self.shutdown_app(app);
+                                            self.shutdown_app(app).await;
                                         } else if SERVICE.read().await.is_stopping() {
                                             // keep exiting
                                             let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
@@ -759,7 +759,7 @@ macro_rules! launcher {
                                     let _ = self.tx.0.send(exit_program_event);
                                 } else {
                                     info!("trying to shutdown {}", app_name);
-                                    self.shutdown_app(app_name);
+                                    self.shutdown_app(app_name).await;
                                 };
                             } else {
                                 info!("Aknowledged shutdown for all Apps",);
