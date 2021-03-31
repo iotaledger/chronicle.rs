@@ -32,4 +32,11 @@ pub trait StartActor<H: AknShutdown<Self> + Send + 'static>: Sized + Init<H> + E
             self.end(Err(Need::Abort), supervisor).await;
         };
     }
+    /// This method will start the actor after the duration pass
+    async fn start_after(mut self, duration: Duration, mut supervisor: Option<H>) {
+        tokio::time::sleep(duration).await;
+        let mut status = self.init(Ok(()), &mut supervisor).await;
+        status = self.event_loop(status, &mut supervisor).await;
+        self.end(status, supervisor).await;
+    }
 }

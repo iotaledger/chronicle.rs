@@ -1,27 +1,27 @@
 use async_trait::async_trait;
 use std::time::Duration;
 
+#[derive(Clone, Copy)]
+/// Need enum used by children to ask their supervisors
 pub enum Need {
+    /// Child is asking for Restart the actor/service
     Restart,
+    /// Child is asking for RescheduleAfter
     RescheduleAfter(Duration),
+    /// Child is asking for Abort
     Abort,
-}
-
-/// Should be implemented on the Actor(or pid) that should become a child
-pub trait Child<H, S>: Send {
-    fn handle_shutdown(self, handle: Option<H>, supervisor_state: &mut S)
-    where
-        Self: Sized;
 }
 
 /// Should be implemented on the supervisor_handle
 #[async_trait]
 pub trait AknShutdown<A>: Send {
+    /// Child aknowledging shutdown for its supervisor
     async fn aknowledge_shutdown(self, state: A, status: Result<(), Need>);
 }
 
 /// Should be implemented on the child_shutdown_handle
 pub trait Shutdown: Send {
+    /// Shutdown the service
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized;
@@ -30,6 +30,7 @@ pub trait Shutdown: Send {
 /// NoneSupervisor
 pub struct NullSupervisor;
 impl NullSupervisor {
+    /// Create NullSupervisor
     pub fn new() -> Option<Self> {
         Some(Self)
     }

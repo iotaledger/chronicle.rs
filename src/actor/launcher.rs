@@ -31,7 +31,7 @@ pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + Akn
 
 /// The possible statuses a service (application) can be
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize)]
 pub enum ServiceStatus {
     /// Early bootup
     Starting = 0,
@@ -51,7 +51,7 @@ pub enum ServiceStatus {
 }
 
 /// An application's metrics
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Service {
     /// The status of the service
     pub status: ServiceStatus,
@@ -711,13 +711,10 @@ macro_rules! launcher {
                                                 }
                                             }
                                         }
-                                        // shutdown next app (if any) only if is not already stopping
+                                        // shutdown next app (if any)
                                         if let Some(app) = self.shutdown_queue.pop_front() {
-                                            if !SERVICE.read().await.microservices.get(&app[..]).unwrap().is_stopping() {
-                                                self.shutdown_app(app);
-                                            } else {
-                                                self.shutdown_queue.push_front(app);
-                                            };
+                                            // try to shutdown app
+                                            self.shutdown_app(app);
                                         } else if SERVICE.read().await.is_stopping() {
                                             // keep exiting
                                             let exit_program_event = Event::ExitProgram { using_ctrl_c: false };
