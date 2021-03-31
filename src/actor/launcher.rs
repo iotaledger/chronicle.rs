@@ -575,7 +575,7 @@ macro_rules! launcher {
                                             SERVICE.write().await.update_microservice(app_name.clone(), service.clone());
                                             info!("starter succesfully started {}", app_name);
                                             // tell active applications (including app_name)
-                                            self.status_change(service);
+                                            self.status_change(service).await;
                                         }
                                         Err(_err) => {
                                             // create new service that indicates the app is stopped
@@ -584,7 +584,7 @@ macro_rules! launcher {
                                             SERVICE.write().await.update_microservice(app_name.clone(), service.clone());
                                             error!("starter unable to start {}", app_name);
                                             // tell active applications
-                                            self.status_change(service);
+                                            self.status_change(service).await;
                                         }
                                     }
                                 } else {
@@ -621,7 +621,7 @@ macro_rules! launcher {
                 // update service to be Initializing
                 SERVICE.write().await.update_status(ServiceStatus::Initializing);
                 // tell active apps
-                self.launcher_status_change();
+                self.launcher_status_change().await;
                 status
             }
         }
@@ -632,7 +632,7 @@ macro_rules! launcher {
                 // update service to be Running
                 SERVICE.write().await.update_status(ServiceStatus::Running);
                 // tell active apps
-                self.launcher_status_change();
+                self.launcher_status_change().await;
                 while let Some(event) = self.rx.0.recv().await {
                     match event {
                         Event::StartApp(app_name, apps_states_opt) => {
@@ -645,7 +645,7 @@ macro_rules! launcher {
                         }
                         Event::StatusChange(service) => {
                             info!("{} is {:?}, telling all active applications", service.name, service.status,);
-                            self.status_change(service);
+                            self.status_change(service).await;
                         }
                         Event::AknShutdown(app_states, result) => {
                             // shutdown next app
@@ -661,7 +661,7 @@ macro_rules! launcher {
                                             "{} is stopped, acknowledging shutdown and telling all active applications",
                                             service.name,
                                         );
-                                        self.status_change(service);
+                                        self.status_change(service).await;
                                         // drop handler if any
                                         let app_handler_opt = self.apps_handlers.$app.take();
                                         // check if the app needs restart/kill or RescheduleAfter
@@ -741,7 +741,7 @@ macro_rules! launcher {
                                 // update service to be Stopping
                                 SERVICE.write().await.update_status(ServiceStatus::Stopping);
                                 // tell active apps
-                                self.launcher_status_change();
+                                self.launcher_status_change().await;
                             }
                             // identfiy if ctrl_c has been consumed
                             if using_ctrl_c {
