@@ -579,17 +579,16 @@ async fn get_message(
 }
 
 #[get("/<keyspace>/messages/<message_id>/metadata")]
-pub async fn get_message_metadata(
+async fn get_message_metadata(
     keyspace: String,
     message_id: String,
-) -> Result<Json<SuccessBody<MessageMetadata>>, Cow<'static, str>> {
+) -> Result<Json<SuccessBody<MessageMetadataResponse>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
     let message_id = MessageId::from_str(&message_id).unwrap();
-    Ok(Json(
-        query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
-            .await?
-            .into(),
-    ))
+    query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
+        .await
+        .map(|metadata| Json(SuccessBody::new(metadata.into())))
+        .map_err(|e| e.into())
 }
 
 #[get("/<keyspace>/messages/<message_id>/children?<page_size>")]
@@ -769,8 +768,7 @@ async fn get_milestone(
 
 #[cfg(test)]
 mod tests {
-    use super::construct_rocket;
-    use bee_rest_api::types::responses::InfoResponse;
+    use super::*;
     use rocket::{
         http::{
             ContentType,

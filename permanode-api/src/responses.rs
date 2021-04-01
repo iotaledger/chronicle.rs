@@ -13,6 +13,7 @@ use permanode_storage::access::{
     IndexationRecord,
     LedgerInclusionState,
     Message,
+    MessageMetadata,
     OutputId,
     ParentRecord,
     Partitioned,
@@ -90,6 +91,24 @@ pub(crate) struct MessageMetadataResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "shouldReattach")]
     pub should_reattach: Option<bool>,
+}
+
+impl From<MessageMetadata> for MessageMetadataResponse {
+    fn from(metadata: MessageMetadata) -> Self {
+        Self {
+            message_id: metadata.message_id.to_string(),
+            parent_message_ids: metadata
+                .parent_message_ids
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect(),
+            is_solid: metadata.is_solid,
+            referenced_by_milestone_index: metadata.referenced_by_milestone_index,
+            ledger_inclusion_state: metadata.ledger_inclusion_state,
+            should_promote: metadata.should_promote,
+            should_reattach: metadata.should_reattach,
+        }
+    }
 }
 
 /// Response of GET /api/<keyspace>/messages/<message_id>/children

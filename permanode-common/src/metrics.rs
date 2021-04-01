@@ -1,28 +1,12 @@
-use chronicle::{
-    Service,
-    ServiceStatus,
-};
 use lazy_static::lazy_static;
-use log::error;
 pub use prometheus;
 use prometheus::{
-    Encoder,
     HistogramOpts,
     HistogramVec,
     IntCounter,
     IntCounterVec,
-    IntGauge,
-    IntGaugeVec,
     Opts,
     Registry,
-    TextEncoder,
-};
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        RwLock,
-    },
 };
 
 lazy_static! {

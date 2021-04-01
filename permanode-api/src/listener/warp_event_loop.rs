@@ -215,7 +215,7 @@ async fn get_message_metadata(keyspace: String, message_id: String) -> Result<Js
     let message_id = MessageId::from_str(&message_id).unwrap();
     query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
         .await
-        .map(|metadata| json(&SuccessBody::new(metadata)))
+        .map(|metadata| json(&SuccessBody::new(MessageMetadataResponse::from(metadata))))
         .map_err(|e| ErrorBody::from(e).into())
 }
 
