@@ -568,14 +568,10 @@ async fn get_message(
     message_id: String,
 ) -> Result<Json<SuccessBody<MessageResponse>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    query::<Message, _, _>(keyspace, MessageId::from_str(&message_id).unwrap(), None, None)
+    let message_id = MessageId::from_str(&message_id).map_err(|e| Cow::from(e.to_string()))?;
+    query::<Message, _, _>(keyspace, message_id, None, None)
         .await
-        .and_then(|message| {
-            message
-                .try_into()
-                .map(|res: MessageResponse| Json(res.into()))
-                .map_err(|e| e.into())
-        })
+        .and_then(|message| message.try_into().map(|res: MessageResponse| Json(res.into())))
 }
 
 #[get("/<keyspace>/messages/<message_id>/metadata")]
@@ -584,11 +580,10 @@ async fn get_message_metadata(
     message_id: String,
 ) -> Result<Json<SuccessBody<MessageMetadataResponse>>, Cow<'static, str>> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let message_id = MessageId::from_str(&message_id).unwrap();
+    let message_id = MessageId::from_str(&message_id).map_err(|e| Cow::from(e.to_string()))?;
     query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
         .await
         .map(|metadata| Json(SuccessBody::new(metadata.into())))
-        .map_err(|e| e.into())
 }
 
 #[get("/<keyspace>/messages/<message_id>/children?<page_size>")]
@@ -599,7 +594,7 @@ async fn get_message_children(
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
 ) -> Result<Json<SuccessBody<MessageChildrenResponse>>, Cow<'static, str>> {
-    let message_id = MessageId::from_str(&message_id).unwrap();
+    let message_id = MessageId::from_str(&message_id).map_err(|e| Cow::from(e.to_string()))?;
     let page_size = page_size.unwrap_or(100);
 
     let mut messages = page(
@@ -668,7 +663,7 @@ async fn get_ed25519_outputs(
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
 ) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, Cow<'static, str>> {
-    let ed25519_address = Ed25519Address::from_str(&address).unwrap();
+    let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| Cow::from(e.to_string()))?;
     let page_size = page_size.unwrap_or(100);
 
     let mut outputs = page(
@@ -699,7 +694,7 @@ async fn get_output(
     keyspace: String,
     output_id: String,
 ) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
-    let output_id = OutputId::from_str(&output_id).unwrap();
+    let output_id = OutputId::from_str(&output_id).map_err(|e| Cow::from(e.to_string()))?;
 
     let output_data = query::<OutputRes, _, _>(PermanodeKeyspace::new(keyspace.clone()), output_id, None, None).await?;
     let is_spent = if output_data.unlock_blocks.is_empty() {

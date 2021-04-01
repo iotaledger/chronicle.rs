@@ -200,7 +200,8 @@ impl Reject for ErrorBody {}
 
 async fn get_message(keyspace: String, message_id: String) -> Result<Json, Rejection> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    query::<Message, _, _>(keyspace, MessageId::from_str(&message_id).unwrap(), None, None)
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ErrorBody::from(e.to_string()))?;
+    query::<Message, _, _>(keyspace, message_id, None, None)
         .await
         .and_then(|message| {
             message
@@ -212,7 +213,7 @@ async fn get_message(keyspace: String, message_id: String) -> Result<Json, Rejec
 
 async fn get_message_metadata(keyspace: String, message_id: String) -> Result<Json, Rejection> {
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let message_id = MessageId::from_str(&message_id).unwrap();
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ErrorBody::from(e.to_string()))?;
     query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
         .await
         .map(|metadata| json(&SuccessBody::new(MessageMetadataResponse::from(metadata))))
@@ -229,7 +230,7 @@ async fn get_message_children(
     partition_config: PartitionConfig,
     PageParam { page_size }: PageParam,
 ) -> Result<Response, Rejection> {
-    let message_id = MessageId::from_str(&message_id).unwrap();
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ErrorBody::from(e.to_string()))?;
     let page_size = page_size.unwrap_or(100);
 
     if let Some(last_milestone_cookie) = last_milestone_cookie {
@@ -372,7 +373,7 @@ async fn get_ed25519_outputs(
     partition_config: PartitionConfig,
     PageParam { page_size }: PageParam,
 ) -> Result<Response, Rejection> {
-    let ed25519_address = Ed25519Address::from_str(&address).unwrap();
+    let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| ErrorBody::from(e.to_string()))?;
     let page_size = page_size.unwrap_or(100);
 
     if let Some(last_milestone_cookie) = last_milestone_cookie {
@@ -435,7 +436,7 @@ async fn get_ed25519_outputs(
 }
 
 async fn get_output(keyspace: String, output_id: String) -> Result<Json, Rejection> {
-    let output_id = OutputId::from_str(&output_id).unwrap();
+    let output_id = OutputId::from_str(&output_id).map_err(|e| ErrorBody::from(e.to_string()))?;
 
     let output_data = query::<OutputRes, _, _>(PermanodeKeyspace::new(keyspace.clone()), output_id, None, None)
         .await
