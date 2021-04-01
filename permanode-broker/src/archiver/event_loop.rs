@@ -14,7 +14,6 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
                 ArchiverEvent::Close(milestone_index) => {
-                    error!("close {}", milestone_index);
                     let mut finished_log_file_i = None;
                     if let Some((i, log_file)) = self
                         .logs

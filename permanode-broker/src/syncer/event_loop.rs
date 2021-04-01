@@ -144,15 +144,7 @@ impl Syncer {
         }
     }
     fn close_log_file(&mut self) {
-        println!(
-            "inside close_log_file {} {}",
-            self.initial_gap_start, self.prev_closed_log_filename
-        );
         if self.prev_closed_log_filename != self.initial_gap_start {
-            println!(
-                "in-inside close_log_file {} {}",
-                self.initial_gap_start, self.prev_closed_log_filename
-            );
             // We should close any part file related to the current gap
             let _ = self.archiver_handle.send(ArchiverEvent::Close(self.initial_gap_start));
             self.prev_closed_log_filename = self.initial_gap_start;
