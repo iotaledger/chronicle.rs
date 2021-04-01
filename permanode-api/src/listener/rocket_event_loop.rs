@@ -40,7 +40,6 @@ use rocket::{
     http::{
         Cookie,
         CookieJar,
-        Status,
     },
     Data,
     Request,

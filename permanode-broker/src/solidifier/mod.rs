@@ -10,6 +10,10 @@ use crate::{
         SyncerHandle,
     },
 };
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     ops::{
         Deref,
@@ -20,6 +24,7 @@ use std::{
         Ordering,
     },
 };
+
 mod event_loop;
 mod init;
 mod terminating;
@@ -51,7 +56,7 @@ impl MilestoneMessage {
         Self(message_id, milestone_payload, message, metadata)
     }
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct FullMessage(pub Message, pub MessageMetadata);
 
 impl FullMessage {
@@ -71,7 +76,7 @@ impl FullMessage {
         self.1.referenced_by_milestone_index.unwrap()
     }
 }
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct MessageStatus {
     in_messages: bool,
     in_database: bool,
@@ -110,21 +115,17 @@ impl From<&MilestoneData> for InDatabase {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct MilestoneData {
     milestone_index: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
     milestone: Option<Box<MilestonePayload>>,
     messages: HashMap<MessageId, FullMessage>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pending: HashMap<MessageId, ()>,
-    #[serde(skip_serializing)]
     complete: bool,
-    #[serde(skip_serializing)]
     created_by: CreatedBy,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(u8)]
 pub enum CreatedBy {
     /// Created by the new incoming messages from the network

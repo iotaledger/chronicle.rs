@@ -24,6 +24,7 @@ bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "edb1541" }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "edb1541" }
 permanode-filter = { path = "../permanode-filter", optional = true }
+bincode = "1.3.2"
 
 [dependencies.tokio]
 version = "1.2"

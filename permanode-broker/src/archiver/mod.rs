@@ -118,7 +118,7 @@ impl LogFile {
         };
         Ok(())
     }
-    pub async fn append_line(&mut self, line: &str) -> Result<(), String> {
+    pub async fn append_line(&mut self, line: &Vec<u8>) -> Result<(), String> {
         // append to the file
         if let Err(e) = self.file.write_all(line.as_ref()).await {
             self.maybe_corrupted = true;

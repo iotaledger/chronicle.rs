@@ -37,8 +37,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                         milestone_data.milestone_index()
                     );
                     let milestone_index = milestone_data.milestone_index();
-                    let mut milestone_data_line = serde_json::to_string(&milestone_data).unwrap();
-                    milestone_data_line.push('\n');
+                    let mut milestone_data_line = bincode::serialize(&milestone_data).unwrap();
+                    milestone_data_line = bincode::serialize(&(milestone_data_line.len() as u32).to_be_bytes())
+                        .unwrap()
+                        .into_iter()
+                        .chain(milestone_data_line)
+                        .collect::<Vec<_>>();
                     let mut finished_log_file_i;
                     // check the logs files to find if any has already existing log file
                     if let Some((i, log_file)) = self
@@ -111,7 +115,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
 }
 
 impl Archiver {
-    async fn create_and_append(&mut self, milestone_index: u32, milestone_data_line: &str) -> Result<(), Need> {
+    async fn create_and_append(&mut self, milestone_index: u32, milestone_data_line: &Vec<u8>) -> Result<(), Need> {
         let mut log_file = LogFile::create(&self.dir_path, milestone_index).await.map_err(|e| {
             error!("{}", e);
             return Need::Abort;
@@ -130,7 +134,7 @@ impl Archiver {
     }
     async fn append(
         log_file: &mut LogFile,
-        milestone_data_line: &str,
+        milestone_data_line: &Vec<u8>,
         ms_index: u32,
         keyspace: &PermanodeKeyspace,
     ) -> Result<(), Need> {
