@@ -183,7 +183,8 @@ pub enum SolidifierEvent {
     Close(MessageId, u32),
     /// Solidifiy request from Syncer.
     /// Solidifier should collect milestonedata and pass it to Syncer(not archiver)
-    Solidify(u32),
+    Solidify(Result<u32, u32>),
+    /// CqlResult from scylla worker;
     CqlResult(Result<CqlResult, CqlResult>),
     /// Shutdown the solidifier
     Shutdown,
@@ -250,6 +251,7 @@ pub struct Solidifier {
     milestones_data: HashMap<u32, MilestoneData>,
     in_database: HashMap<u32, InDatabase>,
     lru_in_database: lru::LruCache<u32, ()>,
+    unreachable: lru::LruCache<u32, ()>,
     collector_handles: HashMap<u8, CollectorHandle>,
     collectors_count: u8,
     syncer_handle: SyncerHandle,
@@ -277,6 +279,7 @@ impl Builder for SolidifierBuilder {
             permanode_id: self.permanode_id.unwrap_or(0),
             in_database: HashMap::new(),
             lru_in_database: lru::LruCache::new(100),
+            unreachable: lru::LruCache::new(100),
             milestones_data: HashMap::new(),
             collector_handles: self.collector_handles.unwrap(),
             collectors_count,

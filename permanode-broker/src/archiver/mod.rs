@@ -64,9 +64,10 @@ impl Shutdown for ArchiverHandle {
         todo!()
     }
 }
-
+pub type UpperLimit = u32;
 pub enum ArchiverEvent {
-    MilestoneData(MilestoneData),
+    MilestoneData(MilestoneData, Option<UpperLimit>),
+    Close(u32),
 }
 
 #[derive(Debug)]

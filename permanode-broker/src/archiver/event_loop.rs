@@ -13,7 +13,26 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
         status?;
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
-                ArchiverEvent::MilestoneData(milestone_data) => {
+                ArchiverEvent::Close(milestone_index) => {
+                    error!("close {}", milestone_index);
+                    let mut finished_log_file_i = None;
+                    if let Some((i, log_file)) = self
+                        .logs
+                        .iter_mut()
+                        .enumerate()
+                        .find(|(_, log)| log.from_ms_index == milestone_index)
+                    {
+                        finished_log_file_i = Some(i);
+                        Self::finish_log_file(log_file, &self.dir_path).await?;
+                    };
+                    // remove finished log file
+                    if let Some(i) = finished_log_file_i {
+                        let log_file = self.logs.remove(i);
+                        self.push_to_processed(log_file);
+                        self.logs.sort_by(|a, b| a.from_ms_index.cmp(&b.from_ms_index));
+                    }
+                }
+                ArchiverEvent::MilestoneData(milestone_data, _opt_upper_limit) => {
                     info!(
                         "Archiver received milestone data for index: {}",
                         milestone_data.milestone_index()

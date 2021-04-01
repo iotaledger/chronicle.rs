@@ -42,6 +42,7 @@ pub enum SyncerEvent {
     Ask(AskSyncer),
     Process,
     MilestoneData(MilestoneData),
+    Unreachable(u32),
     Shutdown,
 }
 
@@ -118,6 +119,10 @@ pub struct Syncer {
     pending: u32,
     eof: bool,
     next: u32,
+    skip: bool,
+    initial_gap_start: u32,
+    initial_gap_end: u32,
+    prev_closed_log_filename: u32,
     handle: SyncerHandle,
     inbox: SyncerInbox,
 }
@@ -144,6 +149,10 @@ impl Builder for SyncerBuilder {
             pending: solidifier_count as u32,
             next: 0,
             eof: false,
+            skip: false,
+            initial_gap_start: 0,
+            initial_gap_end: 0,
+            prev_closed_log_filename: 0,
             handle: self.handle.unwrap(),
             inbox: self.inbox.unwrap(),
         }

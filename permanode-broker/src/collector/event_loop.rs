@@ -54,7 +54,16 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         }
                         self.insert_message_with_metadata(message_id, message, metadata);
                     } else {
-                        error!("{} , unable to fetch message from network", self.get_name())
+                        error!(
+                            "{} , unable to fetch message: {:?}, from network triggered by milestone_index: {}",
+                            self.get_name(),
+                            message_id,
+                            try_ms_index
+                        );
+                        // inform solidifier
+                        let solidifier_id = (try_ms_index % (self.collectors_count as u32)) as u8;
+                        let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap();
+                        let _ = solidifier_handle.send(SolidifierEvent::Solidify(Err(try_ms_index)));
                     }
                 }
                 CollectorEvent::Message(message_id, mut message) => {

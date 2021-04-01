@@ -33,8 +33,10 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                                         // in rare condition there is a chance that collector will reinsert the same
                                         // message twice, therefore we ensure to
                                         // only insert new entry if the milestone_index is not already in
-                                        // lru_in_database cache
-                                        if self.lru_in_database.get(&milestone_index).is_none() {
+                                        // lru_in_database cache and not in unreachable
+                                        if self.lru_in_database.get(&milestone_index).is_none()
+                                            && self.unreachable.get(&milestone_index).is_none()
+                                        {
                                             let mut in_database = InDatabase::new(milestone_index);
                                             in_database.add_message_id(message_id);
                                             self.in_database.insert(milestone_index, in_database);
@@ -72,7 +74,19 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                 SolidifierEvent::Milestone(milestone_message) => {
                     self.handle_milestone_msg(milestone_message);
                 }
-                SolidifierEvent::Solidify(milestone_index) => self.handle_solidify(milestone_index),
+                SolidifierEvent::Solidify(milestone_index) => {
+                    match milestone_index {
+                        Ok(milestone_index) => {
+                            // this is request to solidify this milestone
+                            self.handle_solidify(milestone_index)
+                        }
+                        Err(milestone_index) => {
+                            // This is response from collector(s) that we are unable to solidify
+                            // this milestone_index
+                            self.handle_solidify_failure(milestone_index);
+                        }
+                    }
+                }
                 SolidifierEvent::Shutdown => break,
             }
         }
@@ -81,7 +95,29 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
 }
 
 impl Solidifier {
+    fn handle_solidify_failure(&mut self, milestone_index: u32) {
+        error!(
+            "Solidifier id: {}. was unable to solidify milestone_index: {}",
+            self.partition_id, milestone_index
+        );
+        // check if it's not already in our unreachable cache
+        if self.unreachable.get(&milestone_index).is_none() {
+            error!("inside unreachable! {}", milestone_index);
+            // remove its milestone_data
+            self.milestones_data.remove(&milestone_index);
+            // move it out lru_in_database (if any)
+            self.lru_in_database.pop(&milestone_index);
+            // move to unreachable atm
+            self.unreachable.put(milestone_index, ());
+            // tell syncer to skip it
+            let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
+        } else {
+            error!("outside unreachable! {}", milestone_index);
+        }
+    }
     fn handle_solidify(&mut self, milestone_index: u32) {
+        // remove it from unreachable (if we already tried to solidify it before)
+        self.unreachable.pop(&milestone_index);
         info!(
             "Solidifier id: {}. got solidifiy request for milestone_index: {}",
             self.partition_id, milestone_index
@@ -118,7 +154,14 @@ impl Solidifier {
                 self.push_to_syncer(milestone_index);
             };
         } else {
-            error!("Not supposed to get close response on non-existing milestone data")
+            if milestone_index < self.expected {
+                warn!("Already deleted milestone data for milestone index: {}, this happens when solidify request has failure", milestone_index)
+            } else {
+                error!(
+                    "Not supposed to get close response on non-existing milestone data {}",
+                    milestone_index
+                )
+            }
         }
     }
     fn push_to_logger(&mut self, milestone_index: u32) {
@@ -138,7 +181,7 @@ impl Solidifier {
             // Insert record into sync table
             self.handle_in_database(milestone_index);
         }
-        let archiver_event = ArchiverEvent::MilestoneData(milestone_data);
+        let archiver_event = ArchiverEvent::MilestoneData(milestone_data, None);
         let _ = self.archiver_handle.send(archiver_event);
     }
     fn push_to_syncer(&mut self, milestone_index: u32) {

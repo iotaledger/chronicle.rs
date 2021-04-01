@@ -38,6 +38,13 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
                 SyncerEvent::MilestoneData(milestone_data) => {
                     self.handle_milestone_data(milestone_data).await;
                 }
+                SyncerEvent::Unreachable(milestone_index) => {
+                    self.pending -= 1;
+                    // This happens when all the peers don't have the requested milestone_index
+                    error!("Syncer unable to reach milestone_index: {}", milestone_index);
+                    self.handle_skip();
+                    self.trigger_process_more();
+                }
                 SyncerEvent::Shutdown => break,
             }
         }
@@ -53,9 +60,12 @@ impl Syncer {
             // these are the first milestones data, which we didn't even request it.
             let milestone_data = self.milestones_data.pop().unwrap().into_inner();
             self.highest = milestone_data.milestone_index();
+            self.initial_gap_start = self.highest;
             let mut next = self.highest + 1;
             // push it to archiver
-            let _ = self.archiver_handle.send(ArchiverEvent::MilestoneData(milestone_data));
+            let _ = self
+                .archiver_handle
+                .send(ArchiverEvent::MilestoneData(milestone_data, None));
             // push the rest
             while let Some(ms_data) = self.milestones_data.pop() {
                 let milestone_data = ms_data.into_inner();
@@ -71,12 +81,20 @@ impl Syncer {
                     // we update our highest to be the ms_index which caused the glitch
                     // this enable us later to solidify the last gap up to this ms.
                     self.highest = ms_index;
+                    self.close_log_file();
+                    // set new initial_gap_start
+                    self.initial_gap_start = self.highest;
                 }
                 next = ms_index + 1;
                 // push it to archiver
-                let _ = self.archiver_handle.send(ArchiverEvent::MilestoneData(milestone_data));
+                let _ = self
+                    .archiver_handle
+                    .send(ArchiverEvent::MilestoneData(milestone_data, None));
             }
-        } else if !self.highest.eq(&0) {
+            // tell archiver to finish the logfile
+            self.close_log_file();
+        } else if !self.highest.eq(&0) && !self.skip {
+            let upper_ms_limit = Some(self.initial_gap_end);
             // check if we could send the next expected milestone_index
             while let Some(ms_data) = self.milestones_data.pop() {
                 let ms_index = ms_data.get_ref().milestone_index();
@@ -84,7 +102,7 @@ impl Syncer {
                     // push it to archiver
                     let _ = self
                         .archiver_handle
-                        .send(ArchiverEvent::MilestoneData(ms_data.into_inner()));
+                        .send(ArchiverEvent::MilestoneData(ms_data.into_inner(), upper_ms_limit));
                     self.next += 1;
                 } else {
                     // put it back and then break
@@ -92,10 +110,53 @@ impl Syncer {
                     break;
                 }
             }
+        } else if self.skip {
+            self.handle_skip();
+            // close the current file
         }
         // check if pending is zero which is an indicator that all milestones_data
         // has been processed, in order to move further
         self.trigger_process_more();
+    }
+    pub(crate) fn handle_skip(&mut self) {
+        self.skip = true;
+        // we should skip/drop the current active slot but only when pending == 0
+        if self.pending.eq(&0) {
+            while let Some(d) = self.milestones_data.pop() {
+                let d = d.into_inner();
+                error!("We got milestone data for index: {}, but we're skipping it due to previous unreachable indexex within the same gap range", d.milestone_index());
+            }
+
+            match self.active.as_mut().unwrap() {
+                Active::Complete(ref mut range) => {
+                    error!("Complete: Skipping the remaining gap range: {:?}", range);
+                    // we just consume the range in order for the trigger_process_more to move further
+                    while let Some(_) = range.next() {}
+                }
+                Active::FillGaps(ref mut range) => {
+                    error!("FillGaps: Skipping the remaining gap range: {:?}", range);
+                    // we just consume the range in order for the trigger_process_more to move further
+                    while let Some(_) = range.next() {}
+                }
+            };
+            // reset skip back to false
+            self.skip = false;
+        }
+    }
+    fn close_log_file(&mut self) {
+        println!(
+            "inside close_log_file {} {}",
+            self.initial_gap_start, self.prev_closed_log_filename
+        );
+        if self.prev_closed_log_filename != self.initial_gap_start {
+            println!(
+                "in-inside close_log_file {} {}",
+                self.initial_gap_start, self.prev_closed_log_filename
+            );
+            // We should close any part file related to the current gap
+            let _ = self.archiver_handle.send(ArchiverEvent::Close(self.initial_gap_start));
+            self.prev_closed_log_filename = self.initial_gap_start;
+        }
     }
     pub(crate) fn process_more(&mut self) {
         if let Some(ref mut active) = self.active {
@@ -109,6 +170,8 @@ impl Syncer {
                         } else {
                             // move to next gap (only if pending is zero)
                             if self.pending.eq(&0) {
+                                // We should close any part file related to the current(above finished range) gap
+                                self.close_log_file();
                                 // Finished the current active range, therefore we drop it
                                 self.active.take();
                                 self.complete();
@@ -126,6 +189,8 @@ impl Syncer {
                         } else {
                             // move to next gap (only if pending is zero)
                             if self.pending.eq(&0) {
+                                // We should close any part file related to the current(above finished range) gap
+                                self.close_log_file();
                                 // Finished the current active range, therefore we drop it
                                 self.active.take();
                                 self.fill_gaps();
@@ -147,7 +212,7 @@ impl Syncer {
     ) {
         let solidifier_id = (milestone_index % (solidifier_count as u32)) as u8;
         let solidifier_handle = solidifier_handles.get(&solidifier_id).unwrap();
-        let solidify_event = SolidifierEvent::Solidify(milestone_index);
+        let solidify_event = SolidifierEvent::Solidify(Ok(milestone_index));
         let _ = solidifier_handle.send(solidify_event);
     }
     fn trigger_process_more(&mut self) {
@@ -166,6 +231,7 @@ impl Syncer {
                 // set next to be the start
                 self.next = gap.start;
                 self.active.replace(Active::Complete(gap));
+                self.initial_gap_start = self.next;
                 self.trigger_process_more();
             } else {
                 // fill this with the gap.start up to self.highest
@@ -175,6 +241,7 @@ impl Syncer {
                     info!("Completing the last gap {:?}", gap);
                     // set next to be the start
                     self.next = gap.start;
+                    self.initial_gap_start = self.next;
                     // update the end of the gap
                     gap.end = self.highest;
                     self.active.replace(Active::Complete(gap));
@@ -196,6 +263,7 @@ impl Syncer {
                 // set next to be the start
                 self.next = gap.start;
                 self.active.replace(Active::FillGaps(gap));
+                self.initial_gap_start = self.next;
                 self.trigger_process_more();
             } else {
                 // fill this with the gap.start up to self.highest
