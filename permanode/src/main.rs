@@ -1,7 +1,6 @@
 #![warn(missing_docs)]
 //! # Permanode
 
-use futures::executor::block_on;
 use permanode_api::application::*;
 use permanode_broker::application::*;
 use permanode_common::{
@@ -51,24 +50,40 @@ impl Builder for AppsBuilder {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     dotenv::dotenv().unwrap();
     env_logger::init();
     register_metrics();
-
     let mut config = Config::load().expect("Failed to deserialize config!");
-    if let Err(e) = block_on(config.verify()) {
+    let thread_count;
+    match config.storage_config.thread_count {
+        ThreadCount::Count(c) => {
+            thread_count = c;
+        }
+        ThreadCount::CoreMultiple(c) => {
+            thread_count = num_cpus::get() * c;
+        }
+    }
+    let apps = AppsBuilder::new().config(config.clone()).build();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(thread_count)
+        .thread_name("permanode")
+        .thread_stack_size(apps.app_count * 4 * 1024 * 1024)
+        .build()
+        .expect("Expected to build tokio runtime");
+    if let Err(e) = runtime.block_on(config.verify()) {
         panic!("{}", e)
     }
     config.save().unwrap();
-    let nodes = config.storage_config.nodes.clone();
+    runtime.block_on(permanode(apps));
+}
 
-    let apps = AppsBuilder::new().config(config).build();
-
+async fn permanode(apps: Apps) {
     apps.Scylla()
         .await
         .future(|apps| async {
+            let nodes = apps.config.storage_config.nodes.clone();
             let ws = format!("ws://{}/", "127.0.0.1:8080");
             add_nodes(&ws, nodes.clone(), 1)
                 .await

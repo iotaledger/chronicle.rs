@@ -27,7 +27,7 @@ features = [
 ]
 
 [dependencies.tokio]
-version = "1.2"
+version = "1.4"
 default-features = false
 features = [
     "io-std",

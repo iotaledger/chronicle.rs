@@ -41,18 +41,18 @@ optional = true
 features = ["json"]
 
 [dependencies.tokio]
-version = "1.0"
+version = "1.4"
 default-features = false
 features = [
     "io-std",
-    "fs", 
-    "macros", 
-    "sync", 
-    "net", 
-    "io-util", 
-    "time", 
+    "fs",
+    "macros",
+    "sync",
+    "net",
+    "io-util",
+    "time",
     "rt-multi-thread",
-    "signal", 
+    "signal",
     "full"
 ]
 
