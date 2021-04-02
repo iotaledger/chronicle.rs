@@ -44,7 +44,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                                     }
                                 }
                                 CqlResult::SyncedMilestone(milestone_index) => {
-                                    // TODO Inform syncer (maybe it wants to update the dashboard or something)
+                                    // Inform syncer (maybe it wants to update the dashboard or something)
                                     info!("Synced this milestone {}", milestone_index);
                                 }
                             }
@@ -102,7 +102,6 @@ impl Solidifier {
         );
         // check if it's not already in our unreachable cache
         if self.unreachable.get(&milestone_index).is_none() {
-            error!("inside unreachable! {}", milestone_index);
             // remove its milestone_data
             self.milestones_data.remove(&milestone_index);
             // move it out lru_in_database (if any)
@@ -111,8 +110,6 @@ impl Solidifier {
             self.unreachable.put(milestone_index, ());
             // tell syncer to skip it
             let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
-        } else {
-            error!("outside unreachable! {}", milestone_index);
         }
     }
     fn handle_solidify(&mut self, milestone_index: u32) {
@@ -358,9 +355,8 @@ impl Solidifier {
             if milestone_index >= self.gap_start {
                 // Set it as static bound.
                 self.first.replace(milestone_index);
-                // TODO Tell syncer about this bound.
                 info!(
-                    "solidifier id: {:?}, observed its first is: {}",
+                    "solidifier id: {:?}, observed its first milestone index: {}",
                     solidifier_id, milestone_index
                 );
                 // For safety reasons, we ask collector for this milestone,
@@ -406,12 +402,20 @@ impl Solidifier {
             for expected in self.expected..milestone_index {
                 let id = (expected % self.collectors_count as u32) as u8;
                 if id.eq(&self.partition_id) {
+                    error!(
+                        "solidifier_id: {}, expected: {}, but got: {}",
+                        id, expected, milestone_index
+                    );
                     // Insert it as new expected entry, only if we don't already have an existing entry for it
                     let milestone_data = self
                         .milestones_data
                         .entry(expected)
                         .or_insert_with(|| MilestoneData::new(expected, CreatedBy::Expected));
                     if !milestone_data.milestone_exist() {
+                        error!(
+                            "solidifier_id: {}, however it will request the expected index: {} milestone",
+                            id, expected
+                        );
                         // For safety reasons, we ask collector for expected milestone
                         Self::request_milestone_message(collector_handles, solidifier_id, expected)
                     }
