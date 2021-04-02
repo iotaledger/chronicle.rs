@@ -43,13 +43,15 @@ use rocket::{
         Cookie,
         CookieJar,
     },
-    response::Responder,
+    response::{
+        Content,
+        Responder,
+    },
     Data,
     Request,
     Response,
     State,
 };
-use rocket_contrib::json::Json;
 use scylla_cql::{
     Consistency,
     TryInto,
@@ -217,17 +219,31 @@ impl<'r> Responder<'r, 'static> for ListenerError {
     }
 }
 
+impl<'r> Responder<'r, 'static> for ListenerResponse {
+    fn respond_to(self, req: &'r Request<'_>) -> rocket::response::Result<'static> {
+        let success = SuccessBody::from(self);
+        let string = serde_json::to_string(&success).map_err(|e| {
+            error!("JSON failed to serialize: {:?}", e);
+            Status::InternalServerError
+        })?;
+
+        Content(ContentType::JSON, string).respond_to(req)
+    }
+}
+
+type ListenerResult = Result<ListenerResponse, ListenerError>;
+
 #[options("/<_path..>")]
 async fn options(_path: PathBuf) {}
 
 #[get("/info")]
-async fn info() -> Result<Json<InfoResponse>, ListenerError> {
+async fn info() -> ListenerResult {
     let version = std::env!("CARGO_PKG_VERSION").to_string();
     let service = SERVICE.read().await;
     let is_healthy = !std::iter::once(&*service)
         .chain(service.microservices.values())
         .any(|service| service.is_degraded() || service.is_maintenance() || service.is_stopped());
-    Ok(Json(InfoResponse {
+    Ok(ListenerResponse::Info {
         name: "Chronicle".into(),
         version,
         is_healthy,
@@ -238,7 +254,7 @@ async fn info() -> Result<Json<InfoResponse>, ListenerError> {
         pruning_index: 0,
         features: vec![],
         min_pow_score: 0.0,
-    }))
+    })
 }
 
 #[get("/metrics")]
@@ -596,11 +612,7 @@ where
 }
 
 #[get("/<keyspace>/messages/<message_id>")]
-async fn get_message(
-    keyspace: String,
-    message_id: String,
-    keyspaces: State<'_, HashSet<String>>,
-) -> Result<Json<SuccessBody<MessageResponse>>, ListenerError> {
+async fn get_message(keyspace: String, message_id: String, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -608,12 +620,7 @@ async fn get_message(
     let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     query::<Message, _, _>(keyspace, message_id, None, None)
         .await
-        .and_then(|message| {
-            message
-                .try_into()
-                .map(|res: MessageResponse| Json(res.into()))
-                .map_err(|e| anyhow!(e).into())
-        })
+        .and_then(|message| message.try_into().map_err(|e: Cow<'static, str>| anyhow!(e).into()))
 }
 
 #[get("/<keyspace>/messages/<message_id>/metadata")]
@@ -621,7 +628,7 @@ async fn get_message_metadata(
     keyspace: String,
     message_id: String,
     keyspaces: State<'_, HashSet<String>>,
-) -> Result<Json<SuccessBody<MessageMetadataResponse>>, ListenerError> {
+) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -629,7 +636,7 @@ async fn get_message_metadata(
     let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
         .await
-        .map(|metadata| Json(SuccessBody::new(metadata.into())))
+        .map(|metadata| metadata.into())
 }
 
 #[get("/<keyspace>/messages/<message_id>/children?<page_size>")]
@@ -640,7 +647,7 @@ async fn get_message_children(
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
-) -> Result<Json<SuccessBody<MessageChildrenResponse>>, ListenerError> {
+) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -658,15 +665,12 @@ async fn get_message_children(
     )
     .await?;
 
-    Ok(Json(
-        MessageChildrenResponse {
-            message_id: message_id.to_string(),
-            max_results: 2 * page_size,
-            count: messages.len(),
-            children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
-        }
-        .into(),
-    ))
+    Ok(ListenerResponse::MessageChildren {
+        message_id: message_id.to_string(),
+        max_results: 2 * page_size,
+        count: messages.len(),
+        children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
+    })
 }
 
 #[get("/<keyspace>/messages?<index>&<page_size>")]
@@ -677,7 +681,7 @@ async fn get_message_by_index(
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
-) -> Result<Json<SuccessBody<MessagesForIndexResponse>>, ListenerError> {
+) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -698,15 +702,12 @@ async fn get_message_by_index(
     )
     .await?;
 
-    Ok(Json(
-        MessagesForIndexResponse {
-            index,
-            max_results: 2 * page_size,
-            count: messages.len(),
-            message_ids: messages.drain(..).map(|record| record.into()).collect(),
-        }
-        .into(),
-    ))
+    Ok(ListenerResponse::MessagesForIndex {
+        index,
+        max_results: 2 * page_size,
+        count: messages.len(),
+        message_ids: messages.drain(..).map(|record| record.into()).collect(),
+    })
 }
 
 #[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>")]
@@ -717,7 +718,7 @@ async fn get_ed25519_outputs(
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
-) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, ListenerError> {
+) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -735,24 +736,17 @@ async fn get_ed25519_outputs(
     )
     .await?;
 
-    Ok(Json(
-        OutputsForAddressResponse {
-            address_type: 1,
-            address,
-            max_results: 2 * page_size,
-            count: outputs.len(),
-            output_ids: outputs.drain(..).map(|record| record.into()).collect(),
-        }
-        .into(),
-    ))
+    Ok(ListenerResponse::OutputsForAddress {
+        address_type: 1,
+        address,
+        max_results: 2 * page_size,
+        count: outputs.len(),
+        output_ids: outputs.drain(..).map(|record| record.into()).collect(),
+    })
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
-async fn get_output(
-    keyspace: String,
-    output_id: String,
-    keyspaces: State<'_, HashSet<String>>,
-) -> Result<Json<SuccessBody<OutputResponse>>, ListenerError> {
+async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -789,28 +783,21 @@ async fn get_output(
         }
         is_spent
     };
-    Ok(Json(
-        OutputResponse {
-            message_id: output_data.output.message_id().to_string(),
-            transaction_id: output_id.transaction_id().to_string(),
-            output_index: output_id.index(),
-            is_spent,
-            output: output_data
-                .output
-                .inner()
-                .try_into()
-                .map_err(|e: String| ListenerError::Other(anyhow!(e)))?,
-        }
-        .into(),
-    ))
+    Ok(ListenerResponse::Output {
+        message_id: output_data.output.message_id().to_string(),
+        transaction_id: output_id.transaction_id().to_string(),
+        output_index: output_id.index(),
+        is_spent,
+        output: output_data
+            .output
+            .inner()
+            .try_into()
+            .map_err(|e: String| ListenerError::Other(anyhow!(e)))?,
+    })
 }
 
 #[get("/<keyspace>/milestones/<index>")]
-async fn get_milestone(
-    keyspace: String,
-    index: u32,
-    keyspaces: State<'_, HashSet<String>>,
-) -> Result<Json<SuccessBody<MilestoneResponse>>, ListenerError> {
+async fn get_milestone(keyspace: String, index: u32, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -818,15 +805,10 @@ async fn get_milestone(
 
     query::<Milestone, _, _>(keyspace, MilestoneIndex::from(index), None, None)
         .await
-        .map(|milestone| {
-            Json(
-                MilestoneResponse {
-                    milestone_index: index,
-                    message_id: milestone.message_id().to_string(),
-                    timestamp: milestone.timestamp(),
-                }
-                .into(),
-            )
+        .map(|milestone| ListenerResponse::Milestone {
+            milestone_index: index,
+            message_id: milestone.message_id().to_string(),
+            timestamp: milestone.timestamp(),
         })
 }
 
@@ -895,7 +877,7 @@ mod tests {
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
-        let _body: InfoResponse = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+        let _body: ListenerResponse = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
             .expect("Failed to deserialize Info Response!");
     }
 

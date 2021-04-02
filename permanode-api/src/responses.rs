@@ -24,44 +24,117 @@ use serde::{
     Serialize,
 };
 
-/// Response of GET /info
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct InfoResponse {
-    pub name: String,
-    pub version: String,
-    #[serde(rename = "isHealthy")]
-    pub is_healthy: bool,
-    #[serde(rename = "networkId")]
-    pub network_id: String,
-    #[serde(rename = "bech32HRP")]
-    pub bech32_hrp: String,
-    #[serde(rename = "latestMilestoneIndex")]
-    pub latest_milestone_index: u32,
-    #[serde(rename = "confirmedMilestoneIndex")]
-    pub confirmed_milestone_index: u32,
-    #[serde(rename = "pruningIndex")]
-    pub pruning_index: u32,
-    pub features: Vec<String>,
-    #[serde(rename = "minPowScore")]
-    pub min_pow_score: f64,
+#[serde(untagged)]
+pub(crate) enum ListenerResponse {
+    /// Response of GET /info
+    Info {
+        name: String,
+        version: String,
+        #[serde(rename = "isHealthy")]
+        is_healthy: bool,
+        #[serde(rename = "networkId")]
+        network_id: String,
+        #[serde(rename = "bech32HRP")]
+        bech32_hrp: String,
+        #[serde(rename = "latestMilestoneIndex")]
+        latest_milestone_index: u32,
+        #[serde(rename = "confirmedMilestoneIndex")]
+        confirmed_milestone_index: u32,
+        #[serde(rename = "pruningIndex")]
+        pruning_index: u32,
+        features: Vec<String>,
+        #[serde(rename = "minPowScore")]
+        min_pow_score: f64,
+    },
+    /// Response of GET /api/<keyspace>/messages/<message_id>
+    Message {
+        #[serde(rename = "networkId")]
+        network_id: String,
+        #[serde(rename = "parentMessageIds")]
+        parents: Vec<String>,
+        payload: Option<PayloadDto>,
+        nonce: String,
+    },
+    /// Response of GET /api/<keyspace>/messages/<message_id>/metadata
+    MessageMetadata {
+        #[serde(rename = "messageId")]
+        message_id: String,
+        #[serde(rename = "parentMessageIds")]
+        parent_message_ids: Vec<String>,
+        #[serde(rename = "isSolid")]
+        is_solid: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "referencedByMilestoneIndex")]
+        referenced_by_milestone_index: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "ledgerInclusionState")]
+        ledger_inclusion_state: Option<LedgerInclusionState>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "shouldPromote")]
+        should_promote: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "shouldReattach")]
+        should_reattach: Option<bool>,
+    },
+    /// Response of GET /api/<keyspace>/messages/<message_id>/children
+    MessageChildren {
+        #[serde(rename = "messageId")]
+        message_id: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "childrenMessageIds")]
+        children_message_ids: Vec<Record>,
+    },
+    /// Response of GET /api/<keyspace>/messages?<index>
+    MessagesForIndex {
+        index: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "messageIds")]
+        message_ids: Vec<Record>,
+    },
+    /// Response of GET /api/<keyspace>/addresses/<address>/outputs
+    OutputsForAddress {
+        // The type of the address (1=Ed25519).
+        #[serde(rename = "addressType")]
+        address_type: u8,
+        address: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "outputIds")]
+        output_ids: Vec<Record>,
+    },
+    /// Response of GET /api/<keyspace>/outputs/<output_id>
+    Output {
+        #[serde(rename = "messageId")]
+        message_id: String,
+        #[serde(rename = "transactionId")]
+        transaction_id: String,
+        #[serde(rename = "outputIndex")]
+        output_index: u16,
+        #[serde(rename = "isSpent")]
+        is_spent: bool,
+        output: OutputDto,
+    },
+    /// Response of GET /api/<keyspace>/milestone/<index>
+    Milestone {
+        #[serde(rename = "index")]
+        milestone_index: u32,
+        #[serde(rename = "messageId")]
+        message_id: String,
+        timestamp: u64,
+    },
 }
 
-/// Response of GET /api/<keyspace>/messages/<message_id>
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MessageResponse {
-    #[serde(rename = "networkId")]
-    pub network_id: String,
-    #[serde(rename = "parentMessageIds")]
-    pub parents: Vec<String>,
-    pub payload: Option<PayloadDto>,
-    pub nonce: String,
-}
-
-impl TryFrom<Message> for MessageResponse {
+impl TryFrom<Message> for ListenerResponse {
     type Error = Cow<'static, str>;
 
     fn try_from(message: Message) -> Result<Self, Self::Error> {
-        Ok(MessageResponse {
+        Ok(ListenerResponse::Message {
             network_id: message.network_id().to_string(),
             parents: message.parents().iter().map(|p| p.to_string()).collect(),
             payload: message.payload().as_ref().map(TryInto::try_into).transpose()?,
@@ -70,32 +143,9 @@ impl TryFrom<Message> for MessageResponse {
     }
 }
 
-/// Response of GET /api/<keyspace>/messages/<message_id>/metadata
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MessageMetadataResponse {
-    #[serde(rename = "messageId")]
-    pub message_id: String,
-    #[serde(rename = "parentMessageIds")]
-    pub parent_message_ids: Vec<String>,
-    #[serde(rename = "isSolid")]
-    pub is_solid: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "referencedByMilestoneIndex")]
-    pub referenced_by_milestone_index: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "ledgerInclusionState")]
-    pub ledger_inclusion_state: Option<LedgerInclusionState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "shouldPromote")]
-    pub should_promote: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "shouldReattach")]
-    pub should_reattach: Option<bool>,
-}
-
-impl From<MessageMetadata> for MessageMetadataResponse {
+impl From<MessageMetadata> for ListenerResponse {
     fn from(metadata: MessageMetadata) -> Self {
-        Self {
+        ListenerResponse::MessageMetadata {
             message_id: metadata.message_id.to_string(),
             parent_message_ids: metadata
                 .parent_message_ids
@@ -109,67 +159,6 @@ impl From<MessageMetadata> for MessageMetadataResponse {
             should_reattach: metadata.should_reattach,
         }
     }
-}
-
-/// Response of GET /api/<keyspace>/messages/<message_id>/children
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MessageChildrenResponse {
-    #[serde(rename = "messageId")]
-    pub message_id: String,
-    #[serde(rename = "maxResults")]
-    pub max_results: usize,
-    pub count: usize,
-    #[serde(rename = "childrenMessageIds")]
-    pub children_message_ids: Vec<Record>,
-}
-
-/// Response of GET /api/<keyspace>/messages?<index>
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MessagesForIndexResponse {
-    pub index: String,
-    #[serde(rename = "maxResults")]
-    pub max_results: usize,
-    pub count: usize,
-    #[serde(rename = "messageIds")]
-    pub message_ids: Vec<Record>,
-}
-
-/// Response of GET /api/<keyspace>/addresses/<address>/outputs
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct OutputsForAddressResponse {
-    // The type of the address (1=Ed25519).
-    #[serde(rename = "addressType")]
-    pub address_type: u8,
-    pub address: String,
-    #[serde(rename = "maxResults")]
-    pub max_results: usize,
-    pub count: usize,
-    #[serde(rename = "outputIds")]
-    pub output_ids: Vec<Record>,
-}
-
-/// Response of GET /api/<keyspace>/outputs/<output_id>
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct OutputResponse {
-    #[serde(rename = "messageId")]
-    pub message_id: String,
-    #[serde(rename = "transactionId")]
-    pub transaction_id: String,
-    #[serde(rename = "outputIndex")]
-    pub output_index: u16,
-    #[serde(rename = "isSpent")]
-    pub is_spent: bool,
-    pub output: OutputDto,
-}
-
-/// Response of GET /api/<keyspace>/milestone/<index>
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MilestoneResponse {
-    #[serde(rename = "index")]
-    pub milestone_index: u32,
-    #[serde(rename = "messageId")]
-    pub message_id: String,
-    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
