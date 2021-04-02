@@ -170,7 +170,7 @@ impl SyncData {
     pub fn take_lowest_unlogged(&mut self) -> Option<Range<u32>> {
         self.synced_but_unlogged.pop()
     }
-    pub fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
+    pub fn take_lowest_gap_or_unlogged(&mut self) -> Option<Range<u32>> {
         let lowest_gap = self.gaps.last();
         let lowest_unlogged = self.synced_but_unlogged.last();
         match (lowest_gap, lowest_unlogged) {
@@ -183,6 +183,40 @@ impl SyncData {
             }
             (Some(_), None) => self.gaps.pop(),
             (None, Some(_)) => self.synced_but_unlogged.pop(),
+            _ => None,
+        }
+    }
+    pub fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
+        if let Some(mut pre_range) = self.take_lowest_gap_or_unlogged() {
+            loop {
+                if let Some(next_range) = self.get_lowest_gap_or_unlogged() {
+                    if next_range.start.eq(&pre_range.end) {
+                        pre_range.end = next_range.end;
+                        let _ = self.take_lowest_gap_or_unlogged();
+                    } else {
+                        return Some(pre_range);
+                    }
+                } else {
+                    return Some(pre_range);
+                }
+            }
+        } else {
+            None
+        }
+    }
+    fn get_lowest_gap_or_unlogged(&self) -> Option<&Range<u32>> {
+        let lowest_gap = self.gaps.last();
+        let lowest_unlogged = self.synced_but_unlogged.last();
+        match (lowest_gap, lowest_unlogged) {
+            (Some(gap), Some(unlogged)) => {
+                if gap.start < unlogged.start {
+                    self.gaps.last()
+                } else {
+                    self.synced_but_unlogged.last()
+                }
+            }
+            (Some(_), None) => self.gaps.last(),
+            (None, Some(_)) => self.synced_but_unlogged.last(),
             _ => None,
         }
     }

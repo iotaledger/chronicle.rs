@@ -23,7 +23,7 @@ dotenv = "0.15.0"
 futures = "0.3"
 
 [dependencies.tokio]
-version = "1.0"
+version = "1.4"
 default-features = false
 features = [
     "io-std",

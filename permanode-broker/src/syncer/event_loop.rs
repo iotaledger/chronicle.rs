@@ -60,7 +60,6 @@ impl Syncer {
             // these are the first milestones data, which we didn't even request it.
             let milestone_data = self.milestones_data.pop().unwrap().into_inner();
             self.highest = milestone_data.milestone_index();
-            self.initial_gap_start = self.highest;
             let mut next = self.highest + 1;
             // push it to archiver
             let _ = self
@@ -71,6 +70,7 @@ impl Syncer {
                 let milestone_data = ms_data.into_inner();
                 let ms_index = milestone_data.milestone_index();
                 if next != ms_index {
+                    let _ = self.archiver_handle.send(ArchiverEvent::Close(self.highest));
                     // identify self.highest as glitch.
                     // eventually we will fill up this glitch
                     warn!(
@@ -81,9 +81,6 @@ impl Syncer {
                     // we update our highest to be the ms_index which caused the glitch
                     // this enable us later to solidify the last gap up to this ms.
                     self.highest = ms_index;
-                    self.close_log_file();
-                    // set new initial_gap_start
-                    self.initial_gap_start = self.highest;
                 }
                 next = ms_index + 1;
                 // push it to archiver
@@ -92,7 +89,7 @@ impl Syncer {
                     .send(ArchiverEvent::MilestoneData(milestone_data, None));
             }
             // tell archiver to finish the logfile
-            self.close_log_file();
+            let _ = self.archiver_handle.send(ArchiverEvent::Close(self.highest));
         } else if !self.highest.eq(&0) && !self.skip {
             let upper_ms_limit = Some(self.initial_gap_end);
             // check if we could send the next expected milestone_index
@@ -126,7 +123,6 @@ impl Syncer {
                 let d = d.into_inner();
                 error!("We got milestone data for index: {}, but we're skipping it due to previous unreachable indexex within the same gap range", d.milestone_index());
             }
-
             match self.active.as_mut().unwrap() {
                 Active::Complete(ref mut range) => {
                     error!("Complete: Skipping the remaining gap range: {:?}", range);
@@ -144,10 +140,13 @@ impl Syncer {
         }
     }
     fn close_log_file(&mut self) {
-        if self.prev_closed_log_filename != self.initial_gap_start {
+        let created_log_file = self.initial_gap_start != self.next;
+        if self.prev_closed_log_filename != self.initial_gap_start && created_log_file {
             // We should close any part file related to the current gap
             let _ = self.archiver_handle.send(ArchiverEvent::Close(self.initial_gap_start));
             self.prev_closed_log_filename = self.initial_gap_start;
+        } else {
+            self.prev_closed_log_filename = 0;
         }
     }
     pub(crate) fn process_more(&mut self) {
