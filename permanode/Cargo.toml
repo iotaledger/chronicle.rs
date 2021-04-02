@@ -39,7 +39,6 @@ features = [
 ]
 
 [features]
-default = ["rocket", "warp"]
+default = ["rocket"]
 filter = ["permanode-broker/filter"]
 rocket = ["permanode-api/rocket_listener"]
-warp = ["permanode-api/warp_listener"]

@@ -1,5 +1,6 @@
 use super::*;
 use crate::responses::*;
+use anyhow::anyhow;
 use mpsc::unbounded_channel;
 use permanode_common::{
     config::PartitionConfig,
@@ -38,9 +39,11 @@ use rocket::{
     },
     get,
     http::{
+        ContentType,
         Cookie,
         CookieJar,
     },
+    response::Responder,
     Data,
     Request,
     Response,
@@ -52,15 +55,13 @@ use scylla_cql::{
     TryInto,
 };
 use std::{
-    borrow::{
-        Borrow,
-        Cow,
-    },
+    borrow::Borrow,
     collections::{
         HashMap,
         HashSet,
         VecDeque,
     },
+    io::Cursor,
     path::PathBuf,
     str::FromStr,
     time::SystemTime,
@@ -83,12 +84,22 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 .map_err(|_| Need::Abort)?;
         }
 
+        let keyspaces = self
+            .storage_config
+            .keyspaces
+            .iter()
+            .cloned()
+            .map(|k| k.name)
+            .collect::<HashSet<_>>();
+
         construct_rocket(
             self.data
                 .rocket
                 .take()
                 .ok_or(Need::Abort)?
-                .manage(self.storage_config.partition_config.clone()),
+                .manage(self.storage_config.partition_config.clone())
+                .manage(keyspaces)
+                .register(catchers![internal_error, not_found]),
         )
         .launch()
         .await
@@ -190,11 +201,27 @@ impl Fairing for RequestTimer {
     }
 }
 
+impl<'r> Responder<'r, 'static> for ListenerError {
+    fn respond_to(self, _req: &'r Request<'_>) -> rocket::response::Result<'static> {
+        let err = ErrorBody::from(self);
+        let string = serde_json::to_string(&err).map_err(|e| {
+            error!("JSON failed to serialize: {:?}", e);
+            Status::InternalServerError
+        })?;
+
+        Response::build()
+            .sized_body(None, Cursor::new(string))
+            .status(err.status)
+            .header(ContentType::JSON)
+            .ok()
+    }
+}
+
 #[options("/<_path..>")]
 async fn options(_path: PathBuf) {}
 
 #[get("/info")]
-async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
+async fn info() -> Result<Json<InfoResponse>, ListenerError> {
     let version = std::env!("CARGO_PKG_VERSION").to_string();
     let service = SERVICE.read().await;
     let is_healthy = !std::iter::once(&*service)
@@ -215,30 +242,30 @@ async fn info() -> Result<Json<InfoResponse>, Cow<'static, str>> {
 }
 
 #[get("/metrics")]
-async fn metrics() -> Result<String, Cow<'static, str>> {
+async fn metrics() -> Result<String, ListenerError> {
     let encoder = TextEncoder::new();
     let mut buffer = Vec::new();
     encoder
         .encode(&REGISTRY.gather(), &mut buffer)
-        .map_err(|e| Cow::from(e.to_string()))?;
+        .map_err(|e| ListenerError::Other(e.into()))?;
 
-    let res_custom = String::from_utf8(std::mem::take(&mut buffer)).map_err(|e| Cow::from(e.to_string()))?;
+    let res_custom = String::from_utf8(std::mem::take(&mut buffer)).map_err(|e| ListenerError::Other(e.into()))?;
 
     encoder
         .encode(&prometheus::gather(), &mut buffer)
-        .map_err(|e| Cow::from(e.to_string()))?;
+        .map_err(|e| ListenerError::Other(e.into()))?;
 
-    let res_default = String::from_utf8(buffer).map_err(|e| Cow::from(e.to_string()))?;
+    let res_default = String::from_utf8(buffer).map_err(|e| ListenerError::Other(e.into()))?;
 
     Ok(format!("{}{}", res_custom, res_default))
 }
 
-pub(crate) async fn query<V, S, K>(
+async fn query<V, S, K>(
     keyspace: S,
     key: K,
     page_size: Option<i32>,
     paging_state: Option<Vec<u8>>,
-) -> Result<V, Cow<'static, str>>
+) -> Result<V, ListenerError>
 where
     S: 'static + Select<K, V>,
     K: 'static + Send + Clone,
@@ -259,15 +286,15 @@ where
 
     while let Some(event) = inbox.recv().await {
         match event {
-            Ok(res) => return res.ok_or("No results returned!".into()),
-            Err(worker_error) => return Err(format!("{:?}", worker_error).into()),
+            Ok(res) => return res.ok_or(ListenerError::NoResults),
+            Err(worker_error) => return Err(ListenerError::Other(worker_error.into())),
         }
     }
 
-    Err("Failed to receive response!".into())
+    Err(ListenerError::NoResponseError)
 }
 
-pub(crate) async fn page<K, V>(
+async fn page<K, V>(
     keyspace: String,
     hint: Hint,
     page_size: usize,
@@ -275,7 +302,7 @@ pub(crate) async fn page<K, V>(
     cookie_path: String,
     partition_config: &PartitionConfig,
     key: K,
-) -> Result<Vec<Partitioned<V>>, Cow<'static, str>>
+) -> Result<Vec<Partitioned<V>>, ListenerError>
 where
     K: 'static + Send + Clone,
     V: 'static + Send + Clone,
@@ -308,7 +335,7 @@ where
         query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
 
     if partition_ids.is_empty() {
-        return Err("No results returned!".into());
+        return Err(ListenerError::NoResults);
     }
 
     debug!(
@@ -405,11 +432,17 @@ where
                 list_map.insert(partition_id, list);
             }
         }
-        // Get the list from the map
-        let list = match list_map.get_mut(&partition_id).unwrap().as_mut() {
-            Ok(list) => list,
-            Err(msg) => return Err(msg.to_owned()),
-        };
+        // Get the list from the map.
+        // Since we can't make ListenerError `Clone`, we have to hack this
+        // together to avoid trying to clone the error if there is one.
+        // So first we check if it's an error, then we steal that error
+        // and return it.
+        // Otherwise we grab the mutable list as normal.
+        let list_err = list_map.get(&partition_id).unwrap().is_err();
+        if list_err {
+            list_map.remove(&partition_id).unwrap()?;
+        }
+        let list = list_map.get_mut(&partition_id).unwrap().as_mut().unwrap();
 
         // Iterate the list, pulling records from the front until we hit
         // a milestone in the next chunk or run out
@@ -566,21 +599,34 @@ where
 async fn get_message(
     keyspace: String,
     message_id: String,
-) -> Result<Json<SuccessBody<MessageResponse>>, Cow<'static, str>> {
+    keyspaces: State<'_, HashSet<String>>,
+) -> Result<Json<SuccessBody<MessageResponse>>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let message_id = MessageId::from_str(&message_id).map_err(|e| Cow::from(e.to_string()))?;
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     query::<Message, _, _>(keyspace, message_id, None, None)
         .await
-        .and_then(|message| message.try_into().map(|res: MessageResponse| Json(res.into())))
+        .and_then(|message| {
+            message
+                .try_into()
+                .map(|res: MessageResponse| Json(res.into()))
+                .map_err(|e| anyhow!(e).into())
+        })
 }
 
 #[get("/<keyspace>/messages/<message_id>/metadata")]
 async fn get_message_metadata(
     keyspace: String,
     message_id: String,
-) -> Result<Json<SuccessBody<MessageMetadataResponse>>, Cow<'static, str>> {
+    keyspaces: State<'_, HashSet<String>>,
+) -> Result<Json<SuccessBody<MessageMetadataResponse>>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
     let keyspace = PermanodeKeyspace::new(keyspace);
-    let message_id = MessageId::from_str(&message_id).map_err(|e| Cow::from(e.to_string()))?;
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
         .await
         .map(|metadata| Json(SuccessBody::new(metadata.into())))
@@ -593,8 +639,12 @@ async fn get_message_children(
     page_size: Option<usize>,
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
-) -> Result<Json<SuccessBody<MessageChildrenResponse>>, Cow<'static, str>> {
-    let message_id = MessageId::from_str(&message_id).map_err(|e| Cow::from(e.to_string()))?;
+    keyspaces: State<'_, HashSet<String>>,
+) -> Result<Json<SuccessBody<MessageChildrenResponse>>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     let page_size = page_size.unwrap_or(100);
 
     let mut messages = page(
@@ -626,9 +676,13 @@ async fn get_message_by_index(
     page_size: Option<usize>,
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
-) -> Result<Json<SuccessBody<MessagesForIndexResponse>>, Cow<'static, str>> {
+    keyspaces: State<'_, HashSet<String>>,
+) -> Result<Json<SuccessBody<MessagesForIndexResponse>>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
     if index.len() > 64 {
-        return Err("Provided index is too large! (Max 64 characters)".into());
+        return Err(ListenerError::IndexTooLarge.into());
     }
     let indexation = Indexation(index.clone());
     let page_size = page_size.unwrap_or(1000);
@@ -662,8 +716,12 @@ async fn get_ed25519_outputs(
     page_size: Option<usize>,
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
-) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, Cow<'static, str>> {
-    let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| Cow::from(e.to_string()))?;
+    keyspaces: State<'_, HashSet<String>>,
+) -> Result<Json<SuccessBody<OutputsForAddressResponse>>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?;
     let page_size = page_size.unwrap_or(100);
 
     let mut outputs = page(
@@ -693,8 +751,12 @@ async fn get_ed25519_outputs(
 async fn get_output(
     keyspace: String,
     output_id: String,
-) -> Result<Json<SuccessBody<OutputResponse>>, Cow<'static, str>> {
-    let output_id = OutputId::from_str(&output_id).map_err(|e| Cow::from(e.to_string()))?;
+    keyspaces: State<'_, HashSet<String>>,
+) -> Result<Json<SuccessBody<OutputResponse>>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let output_id = OutputId::from_str(&output_id).map_err(|e| ListenerError::BadParse(e.into()))?;
 
     let output_data = query::<OutputRes, _, _>(PermanodeKeyspace::new(keyspace.clone()), output_id, None, None).await?;
     let is_spent = if output_data.unlock_blocks.is_empty() {
@@ -733,7 +795,11 @@ async fn get_output(
             transaction_id: output_id.transaction_id().to_string(),
             output_index: output_id.index(),
             is_spent,
-            output: output_data.output.inner().try_into().map_err(|e| Cow::from(e))?,
+            output: output_data
+                .output
+                .inner()
+                .try_into()
+                .map_err(|e: String| ListenerError::Other(anyhow!(e)))?,
         }
         .into(),
     ))
@@ -743,7 +809,11 @@ async fn get_output(
 async fn get_milestone(
     keyspace: String,
     index: u32,
-) -> Result<Json<SuccessBody<MilestoneResponse>>, Cow<'static, str>> {
+    keyspaces: State<'_, HashSet<String>>,
+) -> Result<Json<SuccessBody<MilestoneResponse>>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
     let keyspace = PermanodeKeyspace::new(keyspace);
 
     query::<Milestone, _, _>(keyspace, MilestoneIndex::from(index), None, None)
@@ -758,7 +828,16 @@ async fn get_milestone(
                 .into(),
             )
         })
-        .map_err(|_| Cow::from(format!("No milestone found for index {}", index)))
+}
+
+#[catch(500)]
+fn internal_error() -> ListenerError {
+    ListenerError::Other(anyhow!("Internal server error!"))
+}
+
+#[catch(404)]
+fn not_found() -> ListenerError {
+    ListenerError::NotFound
 }
 
 #[cfg(test)]

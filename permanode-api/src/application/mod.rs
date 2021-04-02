@@ -36,7 +36,6 @@ where
     inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
     sender: Option<PermanodeAPISender<H>>,
     rocket_listener: Option<RocketShutdown>,
-    warp_listener: Option<Sender<()>>,
     // websocket: AbortHandle,
 }
 
@@ -86,8 +85,7 @@ builder!(
     PermanodeAPIBuilder<H> {
         api_config: ApiConfig,
         storage_config: StorageConfig,
-        rocket_listener_handle: RocketShutdown,
-        warp_listener_handle: Sender<()>
+        rocket_listener_handle: RocketShutdown
     }
 );
 
@@ -97,7 +95,6 @@ impl<H: PermanodeAPIScope> Clone for PermanodeAPIBuilder<H> {
             api_config: self.api_config.clone(),
             storage_config: self.storage_config.clone(),
             rocket_listener_handle: self.rocket_listener_handle.clone(),
-            warp_listener_handle: None,
             // websocket_handle: self.websocket_handle.clone(),
             _phantom: self._phantom.clone(),
         }
@@ -117,7 +114,7 @@ where
     fn build(self) -> Self::State {
         let (tx, inbox) = tokio::sync::mpsc::unbounded_channel();
         let sender = Some(PermanodeAPISender { tx });
-        if self.rocket_listener_handle.is_none() && self.warp_listener_handle.is_none() {
+        if self.rocket_listener_handle.is_none() {
             panic!("No listener handle was provided!");
         }
         Self::State {
@@ -125,7 +122,6 @@ where
             inbox,
             sender,
             rocket_listener: self.rocket_listener_handle,
-            warp_listener: self.warp_listener_handle,
             // websocket: self.websocket_handle.expect("No websocket handle was provided!"),
         }
         .set_name()

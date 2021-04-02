@@ -41,14 +41,6 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-info-response-example"
-        "403":
-          description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
         "500":
           description: >-
             Unsuccessful operation: indicates that an unexpected, internal
@@ -71,14 +63,6 @@ paths:
             text/plain:
               schema:
                 $ref: "#/components/schemas/MetricsResponse"
-        "403":
-          description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
         "500":
           description: >-
             Unsuccessful operation: indicates that an unexpected, internal
@@ -113,7 +97,7 @@ paths:
           name: page_size
           schema:
             type: number
-          example: 6000
+          example: 100
           description: Requested page size.
         - in: cookie
           name: last_milestone_index
@@ -140,20 +124,28 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-messages-by-index-response-example"
+        "204":
+          description: >-
+            No Records Found: indicates that no records were found for the given index
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
         "400":
-          description: "Unsuccessful operation: indicates that the provided data is invalid."
+          description: >-
+            Unsuccessful operation: indicates that the provided index is invalid.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BadRequestResponse"
-        "403":
+        "404":
           description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
+            Unsuccessful operation: indicates that the requested data was not
+            found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
+                $ref: "#/components/schemas/NotFoundResponse"
         "500":
           description: >-
             Unsuccessful operation: indicates that an unexpected, internal
@@ -206,20 +198,19 @@ paths:
                 Indexation Payload:
                   $ref: >-
                     #/components/examples/get-message-by-id-indexation-response-example
+        "204":
+          description: >-
+            No Records Found: indicates that n record was found for the given message id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
         "400":
-          description: "Unsuccessful operation: indicates that the provided data is invalid."
+          description: "Unsuccessful operation: indicates that the provided message id is invalid."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BadRequestResponse"
-        "403":
-          description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
         "404":
           description: >-
             Unsuccessful operation: indicates that the requested data was not
@@ -277,20 +268,19 @@ paths:
                 Conflicting:
                   $ref: >-
                     #/components/examples/get-message-by-id-response-example-conflicting
+        "204":
+          description: >-
+            No Records Found: indicates that no metadata was found for the given message id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
         "400":
-          description: "Unsuccessful operation: indicates that the provided data is invalid."
+          description: "Unsuccessful operation: indicates that the provided message id is invalid."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BadRequestResponse"
-        "403":
-          description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
         "404":
           description: >-
             Unsuccessful operation: indicates that the requested data was not
@@ -343,20 +333,27 @@ paths:
                 No children were found:
                   $ref: >-
                     #/components/examples/get-messages-by-id-response-example-nochildren
+        "204":
+          description: >-
+            No Records Found: indicates that no children records were found for the given message id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
         "400":
-          description: "Unsuccessful operation: indicates that the provided data is invalid."
+          description: "Unsuccessful operation: indicates that the provided message id is invalid."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BadRequestResponse"
-        "403":
+        "404":
           description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
+            Unsuccessful operation: indicates that the requested data was not
+            found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
+                $ref: "#/components/schemas/NotFoundResponse"
         "500":
           description: >-
             Unsuccessful operation: indicates that an unexpected, internal
@@ -398,24 +395,22 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-outputs-by-id-response-example"
+        "204":
+          description: >-
+            No Records Found: indicates that no record was found for the given output id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
         "400":
-          description: "Unsuccessful operation: indicates that the provided data is invalid."
+          description: "Unsuccessful operation: indicates that the provided output id is invalid."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BadRequestResponse"
-        "403":
-          description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
         "404":
           description: >-
-            Unsuccessful operation: indicates that the requested data was not
-            found.
+            Unsuccessful operation: indicates that the requested data was not found.
           content:
             application/json:
               schema:
@@ -485,20 +480,26 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-address-outputs-response-example"
+        "204":
+          description: >-
+            No Records Found: indicates that no records were found for the given address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
         "400":
-          description: "Unsuccessful operation: indicates that the provided data is invalid."
+          description: "Unsuccessful operation: indicates that the provided address is invalid."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BadRequestResponse"
-        "403":
+        "404":
           description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
+            Unsuccessful operation: indicates that the requested data was not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
+                $ref: "#/components/schemas/NotFoundResponse"
         "500":
           description: >-
             Unsuccessful operation: indicates that an unexpected, internal
@@ -540,24 +541,22 @@ paths:
                 default:
                   $ref: >-
                     #/components/examples/get-milestone-by-index-response-example
+        "204":
+          description: >-
+            No Records Found: indicates that no milestone was found for the given index
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
         "400":
-          description: "Unsuccessful operation: indicates that the provided data is invalid."
+          description: "Unsuccessful operation: indicates that the provided milestone index is invalid."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BadRequestResponse"
-        "403":
-          description: >-
-            Unsuccessful operation: indicates that the endpoint is not available
-            for public use.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ForbiddenResponse"
         "404":
           description: >-
-            Unsuccessful operation: indicates that the requested data was not
-            found.
+            Unsuccessful operation: indicates that the requested data was not found.
           content:
             application/json:
               schema:
@@ -576,10 +575,10 @@ components:
     get-info-response-example:
       value:
         data:
-          name: HORNET
-          version: 0.5.3
+          name: Chronicle
+          version: 0.1.0
           isHealthy: true
-          networkId: alphanet1
+          networkId: mainnet
           bech32HRP: iota
           latestMilestoneIndex: 25211
           confirmedMilestoneIndex: 25211
@@ -1297,15 +1296,23 @@ components:
       example:
         error:
           code: 400
-          message: invalid data provided
+          message: Invalid data provided!
+    NoContentResponse:
+      description: Indicates that no results were found for the given endpoint and query.
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+      example:
+        error:
+          code: 204
+          message: No results returned!
     NotFoundResponse:
-      description: Indicates that the data was not found.
+      description: Indicates that the endpoint was not found.
       allOf:
         - $ref: "#/components/schemas/ErrorResponse"
       example:
         error:
           code: 404
-          message: could not find data
+          message: Endpoint does not exist!
     InternalErrorResponse:
       description: >-
         Indicates that the server encountered an unexpected condition, which
@@ -1315,7 +1322,7 @@ components:
       example:
         error:
           code: 500
-          message: internal server error
+          message: Internal server error!
     InfoResponse:
       description: Returns general information about the node.
       properties:
