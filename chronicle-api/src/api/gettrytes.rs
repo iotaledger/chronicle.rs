@@ -17,7 +17,10 @@ use chronicle_cql::{
     compression::MyCompression,
     frame::{
         consistency::Consistency,
-        decoder::{Decoder, Frame},
+        decoder::{
+            Decoder,
+            Frame,
+        },
         header::Header,
         query::Query,
         queryflags,
@@ -27,9 +30,15 @@ use chronicle_cql::{
 use chronicle_storage::{
     ring::Ring,
     stage::reporter,
-    worker::{Error, Worker},
+    worker::{
+        Error,
+        Worker,
+    },
 };
-use hyper::{Body, Response};
+use hyper::{
+    Body,
+    Response,
+};
 use log::*;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -72,7 +81,14 @@ impl GetTrytes {
         let hashes = self.hashes.iter_mut();
         let mut milestones: Milestones = Vec::new();
         for value in hashes {
-            worker = Self::process(value, &mut milestones, worker, &mut rx).await;
+            match Self::process(value, &mut milestones, worker, &mut rx).await {
+                Ok(pid) => {
+                    worker = pid;
+                }
+                Err(response) => {
+                    return response;
+                }
+            }
         }
         let res_trytes = ResTrytes {
             trytes: self.hashes,
@@ -84,41 +100,52 @@ impl GetTrytes {
     async fn process(
         value: &mut JsonValue,
         milestones: &mut Milestones,
-        worker: Box<GetTrytesId>,
+        mut worker: Box<GetTrytesId>,
         rx: &mut Receiver,
-    ) -> Box<GetTrytesId> {
+    ) -> Result<Box<GetTrytesId>, Response<Body>> {
         // by taking the value we are leaving behind null.
         // now we try to query and get the result
         if let JsonValue::String(hash) = value.take() {
-            let request = reporter::Event::Request {
-                payload: Self::query(hash),
-                worker,
-            };
-            // use random token till murmur3 hash function algo impl is ready
-            // send_local_random_replica will select random replica for token.
-            Ring::send_local_random_replica(rand::random::<i64>(), request);
-            match rx.recv().await.unwrap() {
-                Event::Response { giveload, pid } => {
-                    // create decoder
-                    let decoder = Decoder::new(giveload, MyCompression::get());
-                    if decoder.is_rows() {
-                        if let Some((trytes, milestone)) = Trytes::new(decoder, None).decode().finalize() {
-                            *value = serde_json::value::Value::String(trytes);
-                            milestones.push(milestone)
-                        } else {
-                            milestones.push(None);
-                        };
-                    } else {
-                        error!("GetTrytes: {:?}", decoder.get_error());
+            let mut max_retries: usize = 10;
+            loop {
+                if max_retries > 0 {
+                    let request = reporter::Event::Request {
+                        payload: Self::query(hash.clone()),
+                        worker,
+                    };
+                    // use random token till murmur3 hash function algo impl is ready
+                    // send_local_random_replica will select random replica for token.
+                    Ring::send_local_random_replica(rand::random::<i64>(), request);
+                    match rx.recv().await.unwrap() {
+                        Event::Response { giveload, pid } => {
+                            // create decoder
+                            let decoder = Decoder::new(giveload, MyCompression::get());
+                            if decoder.is_rows() {
+                                if let Some((trytes, milestone)) = Trytes::new(decoder, None).decode().finalize() {
+                                    *value = serde_json::value::Value::String(trytes);
+                                    milestones.push(milestone)
+                                } else {
+                                    milestones.push(None);
+                                };
+                                return Ok(pid);
+                            } else {
+                                error!("GetTrytes: {:?}", decoder.get_error());
+                                max_retries -= 1;
+                                worker = pid;
+                                continue;
+                            }
+                        }
+                        Event::Error { pid, .. } => {
+                            max_retries -= 1;
+                            worker = pid;
+                            continue;
+                        }
                     }
-                    pid
-                }
-                Event::Error { pid, .. } => {
-                    // do nothing to the value as it's already null,
-                    // still we have to push none to milestones.
-                    milestones.push(None);
-                    // still we can apply other retry strategies
-                    pid
+                } else {
+                    return Err(response!(
+                        status: INTERNAL_SERVER_ERROR,
+                        body: r#"{"error":"scylla error while processing hash"}"#
+                    ));
                 }
             }
         } else {
