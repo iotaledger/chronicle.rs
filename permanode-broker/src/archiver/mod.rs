@@ -25,11 +25,12 @@ mod init;
 mod terminating;
 
 /// The maximum bytes size for a given log file;
-pub const MAX_LOG_SIZE: u32 = u32::MAX;
+pub const MAX_LOG_SIZE: u64 = u32::MAX as u64;
 
 // Archiver builder
 builder!(ArchiverBuilder {
     keyspace: PermanodeKeyspace,
+    max_log_size: u64,
     dir_path: PathBuf
 });
 
@@ -72,7 +73,7 @@ pub enum ArchiverEvent {
 
 #[derive(Debug)]
 pub struct LogFile {
-    len: u32,
+    len: u64,
     filename: String,
     /// Included milestone data
     from_ms_index: u32,
@@ -85,7 +86,11 @@ pub struct LogFile {
 }
 
 impl LogFile {
-    pub async fn create(dir_path: &PathBuf, milestone_index: u32) -> Result<LogFile, String> {
+    pub async fn create(
+        dir_path: &PathBuf,
+        milestone_index: u32,
+        opt_upper_limit: Option<u32>,
+    ) -> Result<LogFile, String> {
         let filename = format!("{}.part", milestone_index);
         let file_path = dir_path.join(&filename);
         let file: File = OpenOptions::new()
@@ -99,7 +104,7 @@ impl LogFile {
             filename,
             from_ms_index: milestone_index,
             to_ms_index: milestone_index,
-            upper_ms_limit: u32::MAX,
+            upper_ms_limit: opt_upper_limit.unwrap_or(u32::MAX),
             file,
             maybe_corrupted: false,
         })
@@ -129,10 +134,10 @@ impl LogFile {
         };
         self.to_ms_index += 1;
         // update bytes size length;
-        self.len += line.len() as u32;
+        self.len += line.len() as u64;
         Ok(())
     }
-    pub fn len(&self) -> u32 {
+    pub fn len(&self) -> u64 {
         self.len
     }
     pub fn milestones_range(&self) -> u32 {
@@ -144,6 +149,7 @@ pub struct Archiver {
     service: Service,
     dir_path: PathBuf,
     logs: Vec<LogFile>,
+    max_log_size: u64,
     processed: Vec<std::ops::Range<u32>>,
     keyspace: PermanodeKeyspace,
     handle: Option<ArchiverHandle>,
@@ -168,6 +174,7 @@ impl Builder for ArchiverBuilder {
             service: Service::new(),
             dir_path,
             logs: Vec::new(),
+            max_log_size: self.max_log_size.unwrap_or(MAX_LOG_SIZE),
             processed: Vec::new(),
             keyspace: self.keyspace.unwrap(),
             handle,

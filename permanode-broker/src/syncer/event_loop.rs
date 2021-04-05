@@ -70,7 +70,7 @@ impl Syncer {
                 let milestone_data = ms_data.into_inner();
                 let ms_index = milestone_data.milestone_index();
                 if next != ms_index {
-                    let _ = self.archiver_handle.send(ArchiverEvent::Close(self.highest));
+                    let _ = self.archiver_handle.send(ArchiverEvent::Close(next));
                     // identify self.highest as glitch.
                     // eventually we will fill up this glitch
                     warn!(
@@ -89,7 +89,7 @@ impl Syncer {
                     .send(ArchiverEvent::MilestoneData(milestone_data, None));
             }
             // tell archiver to finish the logfile
-            let _ = self.archiver_handle.send(ArchiverEvent::Close(self.highest));
+            let _ = self.archiver_handle.send(ArchiverEvent::Close(next));
         } else if !self.highest.eq(&0) && !self.skip {
             let upper_ms_limit = Some(self.initial_gap_end);
             // check if we could send the next expected milestone_index
@@ -142,8 +142,12 @@ impl Syncer {
     fn close_log_file(&mut self) {
         let created_log_file = self.initial_gap_start != self.next;
         if self.prev_closed_log_filename != self.initial_gap_start && created_log_file {
+            info!(
+                "Informing Archiver to close {}.part, and should be renamed to: {}to{}.log",
+                self.initial_gap_start, self.initial_gap_start, self.next
+            );
             // We should close any part file related to the current gap
-            let _ = self.archiver_handle.send(ArchiverEvent::Close(self.initial_gap_start));
+            let _ = self.archiver_handle.send(ArchiverEvent::Close(self.next));
             self.prev_closed_log_filename = self.initial_gap_start;
         } else {
             self.prev_closed_log_filename = 0;
@@ -221,8 +225,9 @@ impl Syncer {
                 info!("Completing the gap {:?}", gap);
                 // set next to be the start
                 self.next = gap.start;
-                self.active.replace(Active::Complete(gap));
                 self.initial_gap_start = self.next;
+                self.initial_gap_end = gap.end;
+                self.active.replace(Active::Complete(gap));
                 self.trigger_process_more();
             } else {
                 // fill this with the gap.start up to self.highest
@@ -233,6 +238,7 @@ impl Syncer {
                     // set next to be the start
                     self.next = gap.start;
                     self.initial_gap_start = self.next;
+                    self.initial_gap_end = gap.end;
                     // update the end of the gap
                     gap.end = self.highest;
                     self.active.replace(Active::Complete(gap));
@@ -253,8 +259,9 @@ impl Syncer {
                 info!("Filling the gap {:?}", gap);
                 // set next to be the start
                 self.next = gap.start;
-                self.active.replace(Active::FillGaps(gap));
                 self.initial_gap_start = self.next;
+                self.initial_gap_end = gap.end;
+                self.active.replace(Active::FillGaps(gap));
                 self.trigger_process_more();
             } else {
                 // fill this with the gap.start up to self.highest
@@ -264,6 +271,8 @@ impl Syncer {
                     info!("Filling the last gap {:?}", gap);
                     // set next to be the start
                     self.next = gap.start;
+                    self.initial_gap_start = self.next;
+                    self.initial_gap_end = gap.end;
                     // update the end of the gap
                     gap.end = self.highest;
                     self.active.replace(Active::FillGaps(gap));

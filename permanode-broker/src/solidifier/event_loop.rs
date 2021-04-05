@@ -103,13 +103,33 @@ impl Solidifier {
         // check if it's not already in our unreachable cache
         if self.unreachable.get(&milestone_index).is_none() {
             // remove its milestone_data
-            self.milestones_data.remove(&milestone_index);
-            // move it out lru_in_database (if any)
-            self.lru_in_database.pop(&milestone_index);
-            // move to unreachable atm
-            self.unreachable.put(milestone_index, ());
-            // tell syncer to skip it
-            let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
+            if let Some(ms_data) = self.milestones_data.remove(&milestone_index) {
+                // move it out lru_in_database (if any)
+                self.lru_in_database.pop(&milestone_index);
+                self.in_database.remove(&milestone_index);
+                // move to unreachable atm
+                self.unreachable.put(milestone_index, ());
+                // ensure it's created by syncer
+                if ms_data.created_by.eq(&CreatedBy::Syncer) {
+                    // tell syncer to skip it
+                    warn!(
+                        "Solidifier id: {}, failed to solidify syncer requested index: {} milestone data",
+                        self.partition_id, milestone_index
+                    );
+                    let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
+                } else {
+                    // there is a glitch in the new incoming data,
+                    // therefore we are going to tell archiver to close the log file
+                    // NOTE: only the lowest milestone will the close the logfile, because the solidifiers are
+                    // partitioned; As the Archiver finishes the log using to_ms_index (the next
+                    // expected milestone data)
+                    warn!(
+                        "Solidifier id: {}, failed to solidify new incoming index: {} milestone data",
+                        self.partition_id, milestone_index
+                    );
+                    let _ = self.archiver_handle.send(ArchiverEvent::Close(milestone_index));
+                }
+            }
         }
     }
     fn handle_solidify(&mut self, milestone_index: u32) {
@@ -121,7 +141,14 @@ impl Solidifier {
         );
         // this is request from syncer in order for solidifier to collect,
         // the milestone data for the provided milestone index.
-        if let None = self.milestones_data.get_mut(&milestone_index) {
+        if let Some(ms_data) = self.milestones_data.get_mut(&milestone_index) {
+            // Give the ownership of this ms_data to syncer
+            // This happens when the syncer tries to solidify a milestone data for new incoming data;
+            // no need to ask collector, because we already requested it, and we still awaiting for a response
+            // NOTE: this likely will never happen
+            ms_data.created_by = CreatedBy::Syncer;
+            warn!("Not supposed to receive solidify request from syncer on an existing milestone ata, unless this is an expected race condition");
+        } else {
             // Asking any collector (as we don't know the message id of the milestone)
             // however, we use milestone_index % collectors_count to have unfirom distribution.
             // note: solidifier_id/partition_id is actually = milestone_index % collectors_count;
@@ -135,8 +162,6 @@ impl Solidifier {
             // insert empty entry
             self.milestones_data
                 .insert(milestone_index, MilestoneData::new(milestone_index, CreatedBy::Syncer));
-        } else {
-            error!("Not supposed to get solidifiy request on existing milestone data")
         }
     }
     fn close_message_id(&mut self, milestone_index: u32, message_id: &MessageId) {
@@ -163,7 +188,7 @@ impl Solidifier {
     }
     fn push_to_logger(&mut self, milestone_index: u32) {
         info!(
-            "solidifier_id: {}, is  pushing the milestone data for index: {}, to Logger",
+            "solidifier_id: {}, is pushing the milestone data for index: {}, to Logger",
             self.partition_id, milestone_index
         );
         // Remove milestoneData from self state and pass it to archiver
@@ -240,7 +265,7 @@ impl Solidifier {
                 solidifier_id,
                 milestone_index,
             );
-            // insert milestone to milestone_data
+            // insert milestone into milestone_data
             if let Some(metadata) = metadata {
                 info!(
                     "solidifier_id: {}, got full milestone {}, in progress: {}",
@@ -456,8 +481,6 @@ impl Solidifier {
             milestone_data.set_completed();
             info!("{} is solid", index);
             return true;
-        } else if no_pending_left {
-            warn!("Milestone: {}, doesn't exist yet", index);
         }
         false
     }
