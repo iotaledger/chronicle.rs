@@ -63,6 +63,12 @@ impl Default for StorageConfig {
 impl StorageConfig {
     /// Verify that the storage config is valid
     pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
+        if self.reporter_count.eq(&0) {
+            return Err("reporter_count must be greater than zero, ensure your config is correct".into());
+        }
+        if self.local_datacenter.eq(&"") {
+            return Err("local_datacenter must be non-empty string, ensure your config is correct".into());
+        }
         Ok(())
     }
 }
