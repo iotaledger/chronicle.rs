@@ -7,6 +7,14 @@ license = "APACHE 2.0"
 homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
 repository = "https://github.com/iotaledger/scylla.rs"
 
+[lib]
+name = "permanode"
+path = "src/lib.rs"
+
+[[bin]]
+name = "permanode"
+path = "src/main.rs"
+
 [dependencies]
 chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
@@ -15,15 +23,19 @@ permanode-api = { path = "../permanode-api" }
 permanode-storage = { path = "../permanode-storage" }
 permanode-broker = { path = "../permanode-broker" }
 serde = { version = "1.0", features = ["derive"] }
-async-trait = "0.1.42"
-env_logger = "0.8.3"
-log = "0.4.14"
-num_cpus = "1.13.0"
-dotenv = "0.15.0"
+async-trait = "0.1"
+env_logger = "0.8"
+log = "0.4"
+num_cpus = "1.13"
+dotenv = "0.15"
 futures = "0.3"
+warp = "0.3"
+serde_json = "1.0"
+tokio-tungstenite = "0.13"
+url = "2.2"
 
 [dependencies.tokio]
-version = "1.4"
+version = "1.2"
 default-features = false
 features = [
     "io-std",

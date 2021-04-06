@@ -1,4 +1,4 @@
-use lazy_static::lazy_static;
+use super::*;
 pub use prometheus;
 use prometheus::{
     HistogramOpts,

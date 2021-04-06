@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["IOTA Stiftung"]
 edition = "2018"
 
+[lib]
+name = "permanode_broker"
+path = "src/lib.rs"
+
 [dependencies]
 permanode-common = { path = "../permanode-common" }
 permanode-storage = { path = "../permanode-storage" }

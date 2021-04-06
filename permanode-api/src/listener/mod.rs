@@ -1,6 +1,6 @@
 use super::*;
 use application::*;
-use permanode_common::config::StorageConfig;
+use permanode_common::get_config_async;
 use permanode_storage::access::*;
 use rocket::{
     http::Status,
@@ -69,7 +69,6 @@ pub struct Listener<T> {
     /// The listener's service
     pub service: Service,
     data: T,
-    storage_config: StorageConfig,
 }
 
 /// Trait to be implemented on the API engines (ie Rocket, warp, etc)
@@ -99,8 +98,7 @@ pub enum Event {
 }
 
 builder!(ListenerBuilder<T> {
-    data: T,
-    storage_config: StorageConfig
+    data: T
 });
 
 impl<T: APIEngine> Builder for ListenerBuilder<T> {
@@ -110,7 +108,6 @@ impl<T: APIEngine> Builder for ListenerBuilder<T> {
         Self::State {
             service: Service::new(),
             data: self.data.expect("No listener data was provided!"),
-            storage_config: self.storage_config.expect("No storage config was provided!"),
         }
         .set_name()
     }

@@ -25,6 +25,19 @@ subcommands:
       about: Stop a running Chronicle instance
   - rebuild:
       about: Rebuild the RING
+  - config:
+      about: Manage the Chronicle configuration files
+      settings:
+        - ArgRequiredElseHelp
+      args:
+        - print:
+            long: print
+            short: p
+            help: Print the current configuration
+        - rollback:
+            long: rollback
+            short: r
+            help: Roll the configuration back to the previous revision
   - nodes:
       about: Manage scylla nodes
       settings:

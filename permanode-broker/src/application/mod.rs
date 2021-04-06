@@ -22,27 +22,29 @@ pub(crate) use paho_mqtt::{
     CreateOptionsBuilder,
 };
 use permanode_common::{
-    config::{
-        BrokerConfig,
-        StorageConfig,
-    },
+    config::MqttType,
+    get_config,
+    get_config_async,
     SyncRange,
+    CONFIG,
 };
 pub(crate) use permanode_storage::access::*;
 use serde::{
     Deserialize,
     Serialize,
 };
-use std::ops::Range;
 pub(crate) use std::{
     collections::HashMap,
     convert::TryFrom,
-    net::SocketAddr,
     ops::{
         Deref,
         DerefMut,
     },
     path::PathBuf,
+};
+use std::{
+    ops::Range,
+    str::FromStr,
 };
 pub use tokio::{
     spawn,
@@ -62,12 +64,8 @@ impl<H: LauncherSender<PermanodeBrokerBuilder<H>>> PermanodeBrokerScope for H {}
 builder!(
     #[derive(Clone)]
     PermanodeBrokerBuilder<H> {
-        listen_address: SocketAddr,
         listener_handle: ListenerHandle,
-        logs_dir_path: PathBuf,
-        collectors_count: u8,
-        broker_config: BrokerConfig,
-        storage_config: StorageConfig
+        collectors_count: u8
 });
 
 #[derive(Deserialize, Serialize)]
@@ -111,8 +109,6 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     sync_range: SyncRange,
     sync_data: SyncData,
     syncer_handle: Option<SyncerHandle>,
-    broker_config: BrokerConfig,
-    storage_config: Option<StorageConfig>,
 }
 
 /// SubEvent type, indicated the children
@@ -236,27 +232,27 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let handle = Some(BrokerHandle { tx });
         let inbox = BrokerInbox { rx };
+        let config = get_config();
         let default_keyspace = PermanodeKeyspace::new(
-            self.storage_config
-                .as_ref()
-                .and_then(|config| {
-                    config
-                        .keyspaces
-                        .first()
-                        .and_then(|keyspace| Some(keyspace.name.clone()))
-                })
+            config
+                .storage_config
+                .keyspaces
+                .first()
+                .and_then(|keyspace| Some(keyspace.name.clone()))
                 .unwrap_or("permanode".to_owned()),
         );
-        let sync_range = self
+        let sync_range = config
             .broker_config
-            .as_ref()
-            .and_then(|config| config.sync_range.and_then(|range| Some(range)))
+            .sync_range
+            .and_then(|range| Some(range))
             .unwrap_or(SyncRange::default());
         let sync_data = SyncData {
             completed: Vec::new(),
             synced_but_unlogged: Vec::new(),
             gaps: Vec::new(),
         };
+        let logs_dir_path =
+            PathBuf::from_str(&config.broker_config.logs_dir).expect("Failed to parse configured logs path!");
         PermanodeBroker::<H> {
             service: Service::new(),
             websockets: HashMap::new(),
@@ -267,14 +263,12 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             collector_handles: HashMap::new(),
             solidifier_handles: HashMap::new(),
             syncer_handle: None,
-            logs_dir_path: self.logs_dir_path.expect("Expected logs directory path"),
+            logs_dir_path,
             handle,
             inbox,
             default_keyspace,
             sync_range,
             sync_data,
-            broker_config: self.broker_config.unwrap(),
-            storage_config: self.storage_config,
         }
         .set_name()
     }

@@ -1,5 +1,8 @@
 use super::*;
-use std::net::SocketAddr;
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+};
 
 /// Type alias for datacenter names
 pub type DatacenterName = String;
@@ -37,7 +40,7 @@ pub struct StorageConfig {
     /// The name of the local datacenter
     pub local_datacenter: String,
     /// Nodes to initialize in the cluster
-    pub nodes: Vec<SocketAddr>,
+    pub nodes: HashSet<SocketAddr>,
     /// The partition config
     #[serde(default)]
     pub partition_config: PartitionConfig,

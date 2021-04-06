@@ -4,8 +4,15 @@ use clap::{
     ArgMatches,
 };
 use futures::SinkExt;
+use permanode::{
+    ConfigCommand,
+    SocketMsg,
+};
 use permanode_broker::application::PermanodeBrokerThrough;
-use permanode_common::config::Config;
+use permanode_common::config::{
+    Config,
+    MqttType,
+};
 use scylla::application::ScyllaThrough;
 use std::process::Command;
 use tokio_tungstenite::{
@@ -62,43 +69,52 @@ async fn main() {
                 panic!("No chronicle exe in the current directory: {}", parent_dir.display());
             }
         }
-        ("stop", Some(matches)) => {
-            let config = Config::load().expect("No config file found for Chronicle!");
-            let (mut stream, _) =
-                connect_async(Url::parse(&format!("ws://{}/", config.broker_config.websocket_address)).unwrap())
-                    .await
-                    .unwrap();
-            let message = Message::text(
-                serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
-                    PermanodeBrokerThrough::ExitProgram,
-                ))
-                .unwrap(),
-            );
+        ("stop", Some(_matches)) => {
+            let config = Config::load(None).expect("No config file found for Chronicle!");
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address)).unwrap())
+                .await
+                .unwrap();
+            let message =
+                Message::text(serde_json::to_string(&SocketMsg::Broker(PermanodeBrokerThrough::ExitProgram)).unwrap());
             stream.send(message).await.unwrap();
         }
-        ("rebuild", Some(matches)) => {
-            let config = Config::load().expect("No config file found for Chronicle!");
-            let (mut stream, _) =
-                connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap())
-                    .await
-                    .unwrap();
+        ("rebuild", Some(_matches)) => {
+            let config = Config::load(None).expect("No config file found for Chronicle!");
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address)).unwrap())
+                .await
+                .unwrap();
             let message = Message::text(
-                serde_json::to_string(&scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
+                serde_json::to_string(&SocketMsg::Scylla(ScyllaThrough::Topology(
                     scylla::application::Topology::BuildRing(1),
                 )))
                 .unwrap(),
             );
             stream.send(message).await.unwrap();
         }
-        ("nodes", Some(matches)) => node(matches).await,
+        ("config", Some(matches)) => {
+            let config = Config::load(None).expect("No config file found for Chronicle!");
+            if matches.is_present("print") {
+                println!("{:#?}", config);
+            }
+            if matches.is_present("rollback") {
+                let (mut stream, _) =
+                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address)).unwrap())
+                        .await
+                        .unwrap();
+                let message =
+                    Message::text(serde_json::to_string(&SocketMsg::General(ConfigCommand::Rollback)).unwrap());
+                stream.send(message).await.unwrap();
+            }
+        }
+        ("nodes", Some(matches)) => nodes(matches).await,
         ("brokers", Some(matches)) => brokers(matches).await,
         ("archive", Some(matches)) => archive(matches).await,
         _ => (),
     }
 }
 
-async fn node<'a>(matches: &ArgMatches<'a>) {
-    let mut config = Config::load().expect("No config file found for Chronicle!");
+async fn nodes<'a>(matches: &ArgMatches<'a>) {
+    let mut config = Config::load(None).expect("No config file found for Chronicle!");
     let add_address = matches
         .value_of("add")
         .map(|address| address.parse().expect("Invalid address provided!"));
@@ -106,43 +122,39 @@ async fn node<'a>(matches: &ArgMatches<'a>) {
         .value_of("remove")
         .map(|address| address.parse().expect("Invalid address provided!"));
     if !matches.is_present("skip-connection") {
-        if let Ok((mut stream, _)) =
-            connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address)).unwrap()).await
-        {
-            if matches.is_present("list") {
-                todo!("Print list of nodes");
-            }
-            if let Some(address) = add_address {
-                let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
-                    scylla::application::Topology::AddNode(address),
-                ));
-                let message = Message::text(serde_json::to_string(&message).unwrap());
-                stream.send(message).await.unwrap();
-            }
-            if let Some(address) = rem_address {
-                let message = scylla::application::SocketMsg::Scylla(ScyllaThrough::Topology(
-                    scylla::application::Topology::RemoveNode(address),
-                ));
-                let message = Message::text(serde_json::to_string(&message).unwrap());
-                stream.send(message).await.unwrap();
-            }
+        let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address)).unwrap())
+            .await
+            .unwrap();
+
+        if matches.is_present("list") {
+            todo!("Print list of nodes");
         }
-    }
-    if let Some(address) = add_address {
-        config.storage_config.nodes.push(address);
-        config.save().expect("Failed to save config!");
-    }
-    if let Some(address) = rem_address {
-        let idx = config.storage_config.nodes.iter().position(|a| a == &address);
-        if let Some(idx) = idx {
-            config.storage_config.nodes.remove(idx);
-            config.save().expect("Failed to save config!");
+        if let Some(address) = add_address {
+            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla::application::Topology::AddNode(address)));
+            let message = Message::text(serde_json::to_string(&message).unwrap());
+            stream.send(message).await.unwrap();
+        }
+        if let Some(address) = rem_address {
+            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla::application::Topology::RemoveNode(
+                address,
+            )));
+            let message = Message::text(serde_json::to_string(&message).unwrap());
+            stream.send(message).await.unwrap();
+        }
+    } else {
+        if let Some(address) = add_address {
+            config.storage_config.nodes.insert(address);
+            config.save(None).expect("Failed to save config!");
+        }
+        if let Some(address) = rem_address {
+            config.storage_config.nodes.remove(&address);
+            config.save(None).expect("Failed to save config!");
         }
     }
 }
 
 async fn brokers<'a>(matches: &ArgMatches<'a>) {
-    let mut config = Config::load().expect("No config file found for Chronicle!");
+    let mut config = Config::load(None).expect("No config file found for Chronicle!");
     match matches.subcommand() {
         ("add", Some(subcommand)) => {
             let mqtt_addresses = subcommand
@@ -155,34 +167,39 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) {
             if !matches.is_present("skip-connection") {
                 let mut messages = mqtt_addresses.clone().fold(Vec::new(), |mut list, mqtt_address| {
                     list.push(Message::text(
-                        serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
-                            PermanodeBrokerThrough::Topology(permanode_broker::application::Topology::AddMqttMessages(
-                                mqtt_address.clone(),
-                            )),
-                        ))
+                        serde_json::to_string(&SocketMsg::Broker(PermanodeBrokerThrough::Topology(
+                            permanode_broker::application::Topology::AddMqttMessages(mqtt_address.clone()),
+                        )))
                         .unwrap(),
                     ));
                     list.push(Message::text(
-                        serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(
-                            PermanodeBrokerThrough::Topology(
-                                permanode_broker::application::Topology::AddMqttMessagesReferenced(mqtt_address),
-                            ),
-                        ))
+                        serde_json::to_string(&SocketMsg::Broker(PermanodeBrokerThrough::Topology(
+                            permanode_broker::application::Topology::AddMqttMessagesReferenced(mqtt_address),
+                        )))
                         .unwrap(),
                     ));
                     list
                 });
-                if let Ok((mut stream, _)) =
-                    connect_async(Url::parse(&format!("ws://{}/", config.broker_config.websocket_address)).unwrap())
+                let (mut stream, _) =
+                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address)).unwrap())
                         .await
-                {
-                    for message in messages.drain(..) {
-                        stream.send(message).await.unwrap();
-                    }
+                        .unwrap();
+                for message in messages.drain(..) {
+                    stream.send(message).await.unwrap();
                 }
+            } else {
+                config
+                    .broker_config
+                    .mqtt_brokers
+                    .get_mut(&MqttType::Messages)
+                    .map(|m| m.extend(mqtt_addresses.clone()));
+                config
+                    .broker_config
+                    .mqtt_brokers
+                    .get_mut(&MqttType::MessagesReferenced)
+                    .map(|m| m.extend(mqtt_addresses));
+                config.save(None).expect("Failed to save config!");
             }
-            config.broker_config.mqtt_brokers.extend(mqtt_addresses);
-            config.save().expect("Failed to save config!");
         }
         ("remove", Some(subcommand)) => {
             let id = subcommand.value_of("id").unwrap();
@@ -196,7 +213,7 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) {
 }
 
 async fn archive<'a>(matches: &ArgMatches<'a>) {
-    let mut config = Config::load().expect("No config file found for Chronicle!");
+    let config = Config::load(None).expect("No config file found for Chronicle!");
     match matches.subcommand() {
         ("import", Some(subcommand)) => {
             let dir = subcommand.value_of("directory");

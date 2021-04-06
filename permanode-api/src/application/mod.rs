@@ -1,20 +1,13 @@
 use super::*;
-use permanode_common::config::{
-    ApiConfig,
-    StorageConfig,
-};
 use rocket::Shutdown as RocketShutdown;
 use serde::{
     Deserialize,
     Serialize,
 };
 use std::ops::Deref;
-use tokio::sync::{
-    mpsc::{
-        UnboundedReceiver,
-        UnboundedSender,
-    },
-    oneshot::Sender,
+use tokio::sync::mpsc::{
+    UnboundedReceiver,
+    UnboundedSender,
 };
 
 mod event_loop;
@@ -82,24 +75,11 @@ impl<H: PermanodeAPIScope> Shutdown for PermanodeAPISender<H> {
 }
 
 builder!(
+    #[derive(Clone)]
     PermanodeAPIBuilder<H> {
-        api_config: ApiConfig,
-        storage_config: StorageConfig,
         rocket_listener_handle: RocketShutdown
     }
 );
-
-impl<H: PermanodeAPIScope> Clone for PermanodeAPIBuilder<H> {
-    fn clone(&self) -> Self {
-        Self {
-            api_config: self.api_config.clone(),
-            storage_config: self.storage_config.clone(),
-            rocket_listener_handle: self.rocket_listener_handle.clone(),
-            // websocket_handle: self.websocket_handle.clone(),
-            _phantom: self._phantom.clone(),
-        }
-    }
-}
 
 impl<H: PermanodeAPIScope> ThroughType for PermanodeAPIBuilder<H> {
     type Through = PermanodeAPIThrough;

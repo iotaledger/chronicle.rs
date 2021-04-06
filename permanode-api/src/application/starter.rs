@@ -1,3 +1,5 @@
+use permanode_common::CONFIG;
+
 use super::*;
 use crate::listener::ListenerBuilder;
 #[cfg(feature = "rocket_listener")]
@@ -20,10 +22,7 @@ where
         let rocket_listener = {
             let rocket = rocket::ignite();
             let rocket_listener_handle = rocket.shutdown();
-            let rocket_listener = ListenerBuilder::new()
-                .data(RocketListener::new(rocket))
-                .storage_config(self.storage_config.clone().expect("No storage config provided!"))
-                .build();
+            let rocket_listener = ListenerBuilder::new().data(RocketListener::new(rocket)).build();
             self = self.rocket_listener_handle(rocket_listener_handle);
             rocket_listener
         };

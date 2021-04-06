@@ -1,5 +1,6 @@
 use super::*;
 use futures::SinkExt;
+use permanode_common::get_history_mut;
 
 #[async_trait]
 impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
@@ -18,19 +19,23 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                             PermanodeBrokerThrough::Shutdown => self.shutdown(supervisor).await,
                             PermanodeBrokerThrough::Topology(topology) => match topology {
                                 Topology::AddMqttMessages(url) => {
-                                    if let Some(mqtt) = self.add_mqtt(Messages, url) {
+                                    if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
                                         tokio::spawn(mqtt.start(self.handle.clone()));
                                     }
                                 }
                                 Topology::AddMqttMessagesReferenced(url) => {
-                                    if let Some(mqtt) = self.add_mqtt(MessagesReferenced, url) {
+                                    if let Some(mqtt) =
+                                        self.add_mqtt(MessagesReferenced, MqttType::MessagesReferenced, url)
+                                    {
                                         tokio::spawn(mqtt.start(self.handle.clone()));
                                     }
                                 }
                                 Topology::RemoveMqttMessagesReferenced(url) => {
-                                    self.remove_mqtt::<MessagesReferenced>(url)
+                                    self.remove_mqtt::<MessagesReferenced>(MqttType::MessagesReferenced, url)
                                 }
-                                Topology::RemoveMqttMessages(url) => self.remove_mqtt::<Messages>(url),
+                                Topology::RemoveMqttMessages(url) => {
+                                    self.remove_mqtt::<Messages>(MqttType::Messages, url)
+                                }
                             },
                             PermanodeBrokerThrough::ExitProgram => {
                                 supervisor.exit_program(false);
@@ -98,13 +103,16 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                             warn!("Restarting Mqtt: {}, after: {:?}", microservice_name, restart_after);
                                             match Topics::try_from(topic).unwrap() {
                                                 Topics::Messages => {
-                                                    let new_mqtt = self.add_mqtt(Messages, url).unwrap();
+                                                    let new_mqtt =
+                                                        self.add_mqtt(Messages, MqttType::Messages, url).unwrap();
                                                     tokio::spawn(
                                                         new_mqtt.start_after(restart_after, self.handle.clone()),
                                                     );
                                                 }
                                                 Topics::MessagesReferenced => {
-                                                    let new_mqtt = self.add_mqtt(MessagesReferenced, url).unwrap();
+                                                    let new_mqtt = self
+                                                        .add_mqtt(MessagesReferenced, MqttType::MessagesReferenced, url)
+                                                        .unwrap();
                                                     tokio::spawn(
                                                         new_mqtt.start_after(restart_after, self.handle.clone()),
                                                     );
@@ -150,13 +158,21 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
 }
 
 impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
-    pub(crate) fn remove_mqtt<T: Topic>(&mut self, url: Url) {
+    pub(crate) fn remove_mqtt<T: Topic>(&mut self, mqtt_type: MqttType, url: Url) {
         let microservice_name = format!("{}@{}", T::name(), url.as_str());
         if let Some(service) = self.service.microservices.get(&microservice_name) {
             // add it to asked_to_shutdown hashmap
             self.asked_to_shutdown.insert(microservice_name.clone(), ());
             if let Some(mqtt_handle) = self.mqtt_handles.remove(&microservice_name) {
                 mqtt_handle.shutdown();
+                let config = get_config();
+                let mut new_config = config.clone();
+                if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
+                    list.remove(&url);
+                }
+                if new_config != config {
+                    get_history_mut().update(new_config);
+                }
             } else {
                 // the mqtt maybe already in process to get shutdown, or we are trying to remove it before
                 // it gets fully initialized
@@ -175,16 +191,24 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
             // Maybe TODO response with something?;
         };
     }
-    pub(crate) fn add_mqtt<T: Topic>(&mut self, topic: T, url: Url) -> Option<Mqtt<T>> {
+    pub(crate) fn add_mqtt<T: Topic>(&mut self, topic: T, mqtt_type: MqttType, url: Url) -> Option<Mqtt<T>> {
         let mqtt = MqttBuilder::new()
             .collectors_handles(self.collector_handles.clone())
             .topic(topic)
-            .url(url)
+            .url(url.clone())
             .build();
         let microservice = mqtt.clone_service();
         let microservice_name = microservice.get_name();
         if let None = self.service.microservices.get(&microservice_name) {
             self.service.update_microservice(microservice_name, microservice);
+            let config = get_config();
+            let mut new_config = config.clone();
+            if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
+                list.insert(url);
+            }
+            if new_config != config {
+                get_history_mut().update(new_config);
+            }
             Some(mqtt)
         } else {
             // it does already exist

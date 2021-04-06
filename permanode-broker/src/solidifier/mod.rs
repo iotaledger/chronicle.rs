@@ -391,12 +391,12 @@ where
         let _void = Decoder::from(giveload).get_void();
     }
     fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
-        error!(
-            "{:?}, left retries: {}, reporter running: {}",
-            error,
-            self.retries,
-            reporter.is_some()
-        );
+        // error!(
+        //    "{:?}, left retries: {}, reporter running: {}",
+        //    error,
+        //    self.retries,
+        //    reporter.is_some()
+        //);
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 scylla::worker::insert::handle_unprepared_error(

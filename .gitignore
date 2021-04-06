@@ -4,4 +4,4 @@ Cargo.lock
 examples/target
 *.log
 
-config.ron
+*config.ron

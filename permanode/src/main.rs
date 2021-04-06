@@ -1,13 +1,18 @@
 #![warn(missing_docs)]
 //! # Permanode
-
 use permanode_api::application::*;
 use permanode_broker::application::*;
 use permanode_common::{
     config::*,
+    get_config,
+    get_config_async,
+    get_history_mut,
     metrics::*,
 };
 use scylla::application::*;
+use websocket::*;
+
+mod websocket;
 
 launcher!
 (
@@ -15,37 +20,33 @@ launcher!
     {
         [] -> PermanodeBroker<Sender>: PermanodeBrokerBuilder<Sender>,
         [] -> PermanodeAPI<Sender>: PermanodeAPIBuilder<Sender>,
+        [] -> Websocket<Sender>: WebsocketBuilder<Sender>,
         [PermanodeBroker, PermanodeAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
     },
-    state: Apps {config: Config}
+    state: Apps {}
 );
 
 impl Builder for AppsBuilder {
     type State = Apps;
 
     fn build(self) -> Self::State {
-        let config = self.config.as_ref().expect("No config provided!");
-        let permanode_api_builder = PermanodeAPIBuilder::new()
-            .api_config(config.api_config.clone())
-            .storage_config(config.storage_config.clone());
-        let logs_dir_path = std::path::PathBuf::from("permanode/logs/");
-        let permanode_broker_builder = PermanodeBrokerBuilder::new()
-            .listen_address(config.broker_config.websocket_address)
-            .logs_dir_path(logs_dir_path)
-            .broker_config(config.broker_config.clone())
-            .storage_config(config.storage_config.clone());
+        let storage_config = get_config().storage_config;
+        let permanode_api_builder = PermanodeAPIBuilder::new();
+        let permanode_broker_builder = PermanodeBrokerBuilder::new();
         let scylla_builder = ScyllaBuilder::new()
-            .listen_address(config.storage_config.listen_address.to_string())
-            .thread_count(match config.storage_config.thread_count {
+            .listen_address(storage_config.listen_address.to_string())
+            .thread_count(match storage_config.thread_count {
                 ThreadCount::Count(c) => c,
                 ThreadCount::CoreMultiple(c) => num_cpus::get() * c,
             })
-            .reporter_count(config.storage_config.reporter_count)
-            .local_dc(config.storage_config.local_datacenter.clone());
+            .reporter_count(storage_config.reporter_count)
+            .local_dc(storage_config.local_datacenter.clone());
+        let websocket_builder = WebsocketBuilder::new();
 
         self.PermanodeAPI(permanode_api_builder)
             .PermanodeBroker(permanode_broker_builder)
             .Scylla(scylla_builder)
+            .Websocket(websocket_builder)
             .to_apps()
     }
 }
@@ -54,7 +55,7 @@ fn main() {
     dotenv::dotenv().unwrap();
     env_logger::init();
     register_metrics();
-    let mut config = Config::load().expect("Failed to deserialize config!");
+    let config = get_config();
     let thread_count;
     match config.storage_config.thread_count {
         ThreadCount::Count(c) => {
@@ -64,7 +65,7 @@ fn main() {
             thread_count = num_cpus::get() * c;
         }
     }
-    let apps = AppsBuilder::new().config(config.clone()).build();
+    let apps = AppsBuilder::new().build();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(thread_count)
@@ -72,10 +73,13 @@ fn main() {
         .thread_stack_size(apps.app_count * 4 * 1024 * 1024)
         .build()
         .expect("Expected to build tokio runtime");
-    if let Err(e) = runtime.block_on(config.verify()) {
+    let mut new_config = config.clone();
+    if let Err(e) = runtime.block_on(new_config.verify()) {
         panic!("{}", e)
     }
-    config.save().unwrap();
+    if new_config != config {
+        get_history_mut().update(new_config);
+    }
     runtime.block_on(permanode(apps));
 }
 
@@ -83,9 +87,10 @@ async fn permanode(apps: Apps) {
     apps.Scylla()
         .await
         .future(|apps| async {
-            let nodes = apps.config.storage_config.nodes.clone();
-            let ws = format!("ws://{}/", "127.0.0.1:8080");
-            add_nodes(&ws, nodes.clone(), 1)
+            let storage_config = get_config_async().await.storage_config;
+            debug!("Adding nodes: {:?}", storage_config.nodes);
+            let ws = format!("ws://{}/", storage_config.listen_address);
+            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
                 .await
                 .unwrap_or_else(|e| panic!("Unable to add nodes: {}", e));
             apps
@@ -94,6 +99,8 @@ async fn permanode(apps: Apps) {
         .PermanodeAPI()
         .await
         .PermanodeBroker()
+        .await
+        .Websocket()
         .await
         .start(None)
         .await;

@@ -86,8 +86,9 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 .map_err(|_| Need::Abort)?;
         }
 
-        let keyspaces = self
-            .storage_config
+        let storage_config = get_config_async().await.storage_config;
+
+        let keyspaces = storage_config
             .keyspaces
             .iter()
             .cloned()
@@ -99,7 +100,7 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
                 .rocket
                 .take()
                 .ok_or(Need::Abort)?
-                .manage(self.storage_config.partition_config.clone())
+                .manage(storage_config.partition_config.clone())
                 .manage(keyspaces)
                 .register(catchers![internal_error, not_found]),
         )
