@@ -103,6 +103,11 @@ impl InDatabase {
         self.in_database.insert(message_id, ());
     }
     fn check_if_all_in_database(&self) -> bool {
+        if self.messages_len.eq(&0) && self.in_database.len().eq(&0) {
+            panic!("Not supposed to be zero, milestone_index: {}", self.milestone_index);
+        } else if self.messages_len > 0 && self.in_database.len().eq(&0) {
+            println!("milestone index: {}, len: {} ", self.milestone_index, self.messages_len);
+        }
         self.messages_len == self.in_database.len()
     }
 }
