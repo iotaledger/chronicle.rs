@@ -78,7 +78,7 @@ async fn manage_connection(ws: WebSocket) {
                     Ok(s) => {
                         // Connect to the appropriate websocket
                         let config = get_config_async().await;
-                        let (mut stream, _) = connect_async(
+                        if let Ok((mut stream, _)) = connect_async(
                             Url::parse(&format!(
                                 "ws://{}/",
                                 match target {
@@ -91,42 +91,43 @@ async fn manage_connection(ws: WebSocket) {
                             .unwrap(),
                         )
                         .await
-                        .unwrap();
-                        let message = tokio_tungstenite::tungstenite::Message::text(s);
-                        // Pass along the message we received
-                        stream.send(message).await.unwrap();
-                        if let SocketMsg::Scylla(v) = target {
-                            if let Ok(through) = serde_json::value::from_value::<ScyllaThrough>(v) {
-                                match through {
-                                    ScyllaThrough::Topology(topo) => {
-                                        let mut config = get_config_async().await;
-                                        match topo {
-                                            Topology::AddNode(address) => {
-                                                if config.storage_config.nodes.insert(address) {
-                                                    get_history_mut_async().await.update(config);
+                        {
+                            let message = tokio_tungstenite::tungstenite::Message::text(s);
+                            // Pass along the message we received
+                            stream.send(message).await.unwrap();
+                            if let SocketMsg::Scylla(v) = target {
+                                if let Ok(through) = serde_json::value::from_value::<ScyllaThrough>(v) {
+                                    match through {
+                                        ScyllaThrough::Topology(topo) => {
+                                            let mut config = get_config_async().await;
+                                            match topo {
+                                                Topology::AddNode(address) => {
+                                                    if config.storage_config.nodes.insert(address) {
+                                                        get_history_mut_async().await.update(config);
+                                                    }
                                                 }
-                                            }
-                                            Topology::RemoveNode(address) => {
-                                                if config.storage_config.nodes.remove(&address) {
-                                                    get_history_mut_async().await.update(config);
+                                                Topology::RemoveNode(address) => {
+                                                    if config.storage_config.nodes.remove(&address) {
+                                                        get_history_mut_async().await.update(config);
+                                                    }
                                                 }
+                                                Topology::BuildRing(_) => (),
                                             }
-                                            Topology::BuildRing(_) => (),
                                         }
+                                        ScyllaThrough::Shutdown => (),
                                     }
-                                    ScyllaThrough::Shutdown => (),
                                 }
                             }
-                        }
-                        // Get the response if there is one
-                        if let Some(res) = stream.next().await {
-                            // Send the response back to the original peer
-                            match res.map(|msg| msg.to_text().map(String::from)).and_then(|r| r) {
-                                Ok(msg) => {
-                                    tx.send(warp::ws::Message::text(msg)).await.ok();
-                                }
-                                Err(e) => {
-                                    tx.send(warp::ws::Message::text(e.to_string())).await.ok();
+                            // Get the response if there is one
+                            if let Some(res) = stream.next().await {
+                                // Send the response back to the original peer
+                                match res.map(|msg| msg.to_text().map(String::from)).and_then(|r| r) {
+                                    Ok(msg) => {
+                                        tx.send(warp::ws::Message::text(msg)).await.ok();
+                                    }
+                                    Err(e) => {
+                                        tx.send(warp::ws::Message::text(e.to_string())).await.ok();
+                                    }
                                 }
                             }
                         }

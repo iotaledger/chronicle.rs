@@ -82,7 +82,7 @@ impl Config {
 }
 
 impl Persist for Config {
-    fn persist(&mut self) {
+    fn persist(&self) {
         if let Err(e) = self.save(None) {
             error!("{}", e);
         } else {

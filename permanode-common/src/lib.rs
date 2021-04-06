@@ -100,7 +100,7 @@ impl Wrapper for HistoricalConfig {
 }
 
 impl Persist for HistoricalConfig {
-    fn persist(&mut self) {
+    fn persist(&self) {
         let mut path = std::env::var("HISTORICAL_CONFIG_PATH").unwrap_or(config::HISTORICAL_CONFIG_PATH.to_owned());
         path = Path::new(&path)
             .join(format!("{}_config.ron", self.created))
@@ -166,9 +166,7 @@ where
         R: From<R::Target>,
         R::Target: Sized,
     {
-        let hist_config = record.into();
-        debug!("Updated records");
-        self.records.push(hist_config);
+        self.records.push(record.into());
         self.truncate();
     }
 
@@ -255,12 +253,17 @@ where
 }
 
 impl Persist for History<HistoricalConfig> {
-    fn persist(&mut self) {
+    fn persist(&self) {
         debug!("Persisting history!");
-        if let Some(mut latest) = self.records.pop() {
+        let mut iter = self.records.clone().into_sorted_vec().into_iter().rev();
+        debug!(
+            "Sorted records: {:?}",
+            iter.clone().map(|r| r.created).collect::<Vec<_>>()
+        );
+        if let Some(latest) = iter.next() {
             debug!("Persisting latest config!");
-            latest.deref_mut().persist();
-            for mut v in self.records.drain() {
+            latest.deref().persist();
+            for v in iter {
                 debug!("Persisting historical config!");
                 v.persist();
             }
@@ -271,7 +274,7 @@ impl Persist for History<HistoricalConfig> {
 /// Specifies that the implementor should be able to persist itself
 pub trait Persist {
     /// Persist this value
-    fn persist(&mut self);
+    fn persist(&self);
 }
 
 /// A handle which will persist when dropped
