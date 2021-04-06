@@ -516,7 +516,7 @@ where
                 .insert_query(&self.key, &self.value)
                 .consistency(Consistency::One)
                 .build();
-            req.send_global(self);
+            tokio::spawn(async {req.send_global(self)});
         } else {
             // no more retries
             // resond with error
