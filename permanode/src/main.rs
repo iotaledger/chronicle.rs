@@ -92,7 +92,7 @@ async fn permanode(apps: Apps) {
             let ws = format!("ws://{}/", storage_config.listen_address);
             add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
                 .await
-                .unwrap_or_else(|e| panic!("Unable to add nodes: {}", e));
+                .unwrap_or_else(|e| error!("Unable to add nodes: {}", e));
             apps
         })
         .await
