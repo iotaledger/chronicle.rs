@@ -5,7 +5,7 @@ pub struct ApiConfig {}
 
 impl ApiConfig {
     /// Verify that the api config is valid
-    pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
+    pub async fn verify(&mut self) -> anyhow::Result<()> {
         // TODO
         Ok(())
     }

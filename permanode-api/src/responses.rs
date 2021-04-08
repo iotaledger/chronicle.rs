@@ -168,13 +168,15 @@ pub(crate) struct Record {
     pub milestone_index: u32,
 }
 
-impl From<Partitioned<AddressRecord>> for Record {
-    fn from(record: Partitioned<AddressRecord>) -> Self {
-        Record {
-            id: OutputId::new(record.transaction_id, record.index).unwrap().to_string(),
+impl TryFrom<Partitioned<AddressRecord>> for Record {
+    type Error = anyhow::Error;
+
+    fn try_from(record: Partitioned<AddressRecord>) -> Result<Self, Self::Error> {
+        Ok(Record {
+            id: OutputId::new(record.transaction_id, record.index)?.to_string(),
             inclusion_state: record.ledger_inclusion_state,
             milestone_index: record.milestone_index(),
-        }
+        })
     }
 }
 

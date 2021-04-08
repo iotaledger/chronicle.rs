@@ -5,6 +5,10 @@ use crate::{
     application::*,
     solidifier::*,
 };
+use anyhow::{
+    anyhow,
+    bail,
+};
 use std::{
     ops::{
         Deref,
@@ -90,7 +94,7 @@ impl LogFile {
         dir_path: &PathBuf,
         milestone_index: u32,
         opt_upper_limit: Option<u32>,
-    ) -> Result<LogFile, String> {
+    ) -> anyhow::Result<LogFile> {
         let filename = format!("{}.part", milestone_index);
         let file_path = dir_path.join(&filename);
         let file: File = OpenOptions::new()
@@ -98,7 +102,7 @@ impl LogFile {
             .create(true)
             .open(file_path)
             .await
-            .map_err(|e| format!("Unable to create log file: {}, error: {}", filename, e))?;
+            .map_err(|e| anyhow!("Unable to create log file: {}, error: {}", filename, e))?;
         Ok(Self {
             len: 0,
             filename,
@@ -109,28 +113,29 @@ impl LogFile {
             maybe_corrupted: false,
         })
     }
-    pub async fn finish(&mut self, dir_path: &PathBuf) -> Result<(), std::io::Error> {
+    pub async fn finish(&mut self, dir_path: &PathBuf) -> anyhow::Result<()> {
         let new_file_name = format!("{}to{}.log", self.from_ms_index, self.to_ms_index);
         let new_file_path = dir_path.join(&new_file_name);
         let old_file_path = dir_path.join(&self.filename);
         if let Err(e) = tokio::fs::rename(old_file_path, new_file_path).await {
             self.maybe_corrupted = true;
-            return Err(e);
+            bail!(e)
         };
         if let Err(e) = self.file.sync_all().await {
             self.maybe_corrupted = true;
-            return Err(e);
+            bail!(e)
         };
         Ok(())
     }
-    pub async fn append_line(&mut self, line: &Vec<u8>) -> Result<(), String> {
+    pub async fn append_line(&mut self, line: &Vec<u8>) -> anyhow::Result<()> {
         // append to the file
         if let Err(e) = self.file.write_all(line.as_ref()).await {
             self.maybe_corrupted = true;
-            return Err(format!(
+            bail!(
                 "Unable to append milestone data line into the log file: {}, error: {}",
-                self.filename, e
-            ));
+                self.filename,
+                e
+            );
         };
         self.to_ms_index += 1;
         // update bytes size length;

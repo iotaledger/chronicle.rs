@@ -1,18 +1,22 @@
+use anyhow::anyhow;
+
 use super::*;
-use std::borrow::Cow;
 
 #[async_trait]
 impl<H: WebsocketScope> Starter<H> for WebsocketBuilder<H> {
     type Ok = WebsocketSender<H>;
 
-    type Error = Cow<'static, str>;
+    type Error = anyhow::Error;
 
     type Input = Websocket<H>;
 
     async fn starter(self, handle: H, input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
-        let websocket = self.build();
+        let websocket = input.unwrap_or_else(|| self.build());
 
-        let supervisor = websocket.sender.clone().unwrap();
+        let supervisor = websocket
+            .sender
+            .clone()
+            .ok_or_else(|| anyhow!("No supervisor for websocket!"))?;
 
         tokio::spawn(websocket.start(Some(handle)));
 

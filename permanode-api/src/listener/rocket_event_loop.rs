@@ -99,7 +99,7 @@ impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketL
             self.data
                 .rocket
                 .take()
-                .ok_or(Need::Abort)?
+                .ok_or_else(|| Need::Abort)?
                 .manage(storage_config.partition_config.clone())
                 .manage(keyspaces)
                 .register(catchers![internal_error, not_found]),
@@ -288,13 +288,13 @@ where
     K: 'static + Send + Clone,
     V: 'static + Send + Clone,
 {
-    let request = keyspace.select::<V>(&key).consistency(Consistency::One);
+    let request = keyspace.select::<V>(&key)?.consistency(Consistency::One);
     let request = if let Some(page_size) = page_size {
         request.page_size(page_size).paging_state(&paging_state)
     } else {
         request.paging_state(&paging_state)
     }
-    .build();
+    .build()?;
 
     let (sender, mut inbox) = unbounded_channel::<Result<Option<V>, WorkerError>>();
     let worker = ValueWorker::boxed(sender, keyspace, key, PhantomData);
@@ -303,7 +303,7 @@ where
 
     while let Some(event) = inbox.recv().await {
         match event {
-            Ok(res) => return res.ok_or(ListenerError::NoResults),
+            Ok(res) => return res.ok_or_else(|| ListenerError::NoResults),
             Err(worker_error) => return Err(ListenerError::Other(worker_error.into())),
         }
     }
@@ -370,7 +370,7 @@ where
                 .iter()
                 .max_by_key(|(index, _)| index)
                 .map(|(index, id)| (*id, index.0))
-                .unwrap()
+                .ok_or_else(|| anyhow!("Unexpected error finding max partition ID!"))?
         };
 
     // Reorder the partitions list so we start with the correct partition id
@@ -446,20 +446,12 @@ where
                 (std::time::Instant::now() - start_time).as_millis()
             );
             for (partition_id, list) in fetch_ids.zip(res) {
-                list_map.insert(partition_id, list);
+                list_map.insert(partition_id, list?);
             }
         }
-        // Get the list from the map.
-        // Since we can't make ListenerError `Clone`, we have to hack this
-        // together to avoid trying to clone the error if there is one.
-        // So first we check if it's an error, then we steal that error
-        // and return it.
-        // Otherwise we grab the mutable list as normal.
-        let list_err = list_map.get(&partition_id).unwrap().is_err();
-        if list_err {
-            list_map.remove(&partition_id).unwrap()?;
-        }
-        let list = list_map.get_mut(&partition_id).unwrap().as_mut().unwrap();
+        let list = list_map
+            .get_mut(&partition_id)
+            .ok_or_else(|| anyhow!("Unexpected error retrieving list by partition!"))?;
 
         // Iterate the list, pulling records from the front until we hit
         // a milestone in the next chunk or run out
@@ -578,8 +570,7 @@ where
                             Some(page_size as i32),
                             paging_state.clone(),
                         )
-                        .await
-                        .unwrap();
+                        .await?;
                         *loop_timings.entry("Requery").or_insert(0) +=
                             (std::time::Instant::now() - loop_start_time).as_nanos();
                     // Unless it didn't have one, in which case we mark it as a depleted partition and
@@ -742,7 +733,11 @@ async fn get_ed25519_outputs(
         address,
         max_results: 2 * page_size,
         count: outputs.len(),
-        output_ids: outputs.drain(..).map(|record| record.into()).collect(),
+        output_ids: outputs
+            .drain(..)
+            .map(|record| Ok(record.try_into()?))
+            .filter_map(|r: anyhow::Result<responses::Record>| r.ok())
+            .collect(),
     })
 }
 

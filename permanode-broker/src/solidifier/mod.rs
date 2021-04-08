@@ -393,7 +393,9 @@ where
     V: 'static + Send + Clone,
 {
     fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
-        let _void = Decoder::from(giveload).get_void();
+        Decoder::try_from(giveload)
+            .and_then(|decoder| decoder.get_void())
+            .unwrap_or_else(|e| error!("{}", e));
     }
     fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
         if let WorkerError::Cql(ref mut cql_error) = error {
@@ -410,12 +412,18 @@ where
         } else if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
-            let req = self
+            match self
                 .keyspace
                 .insert_query(&self.key, &self.value)
-                .consistency(Consistency::One)
-                .build();
-            tokio::spawn(async {req.send_global(self)});
+                .and_then(|b| b.consistency(Consistency::One).build())
+            {
+                Ok(req) => {
+                    tokio::spawn(async { req.send_global(self) });
+                }
+                Err(e) => {
+                    error!("{}", e);
+                }
+            }
         } else {
             // no more retries
             self.handle.any_error.store(true, Ordering::Relaxed);
@@ -486,7 +494,9 @@ where
     V: 'static + Send + Clone,
 {
     fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
-        let _void = Decoder::from(giveload).get_void();
+        Decoder::try_from(giveload)
+            .and_then(|decoder| decoder.get_void())
+            .unwrap_or_else(|e| error!("{}", e));
         let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
         let _ = self.handle.send(SolidifierEvent::CqlResult(Ok(synced_ms)));
     }
@@ -511,12 +521,18 @@ where
         } else if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
-            let req = self
+            match self
                 .keyspace
                 .insert_query(&self.key, &self.value)
-                .consistency(Consistency::One)
-                .build();
-            tokio::spawn(async {req.send_global(self)});
+                .and_then(|b| b.consistency(Consistency::One).build())
+            {
+                Ok(req) => {
+                    tokio::spawn(async { req.send_global(self) });
+                }
+                Err(e) => {
+                    error!("{}", e);
+                }
+            }
         } else {
             // no more retries
             // resond with error

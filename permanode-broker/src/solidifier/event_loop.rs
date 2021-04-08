@@ -226,7 +226,7 @@ impl Solidifier {
         let syncer_event = SyncerEvent::MilestoneData(milestone_data);
         let _ = self.syncer_handle.send(syncer_event);
     }
-    fn handle_in_database(&mut self, milestone_index: u32) {
+    fn handle_in_database(&mut self, milestone_index: u32) -> anyhow::Result<()> {
         self.in_database.remove(&milestone_index);
         self.lru_in_database.put(milestone_index, ());
         let sync_key = Synckey;
@@ -234,9 +234,9 @@ impl Solidifier {
         let synced_record = SyncRecord::new(MilestoneIndex(milestone_index), synced_by, None);
         let request = self
             .keyspace
-            .insert(&sync_key, &synced_record)
+            .insert(&sync_key, &synced_record)?
             .consistency(Consistency::One)
-            .build();
+            .build()?;
         let worker = SolidifierWorker::boxed(
             self.handle.clone(),
             milestone_index,
@@ -246,12 +246,13 @@ impl Solidifier {
             self.retries,
         );
         request.send_local(worker);
+        Ok(())
     }
     fn handle_milestone_msg(
         &mut self,
         MilestoneMessage(_message_id, milestone_payload, message, metadata): MilestoneMessage,
-    ) {
-        let milestone_index = milestone_payload.essence().index();
+    ) -> anyhow::Result<()> {
+        let milestone_index = milestone_payload.essence().index().0;
         let partitioner = &self.message_id_partitioner;
         let collectors_handles = &self.collector_handles;
         let solidifier_id = self.partition_id;
@@ -288,6 +289,7 @@ impl Solidifier {
                 self.insert_new_entry_or_not(milestone_index, FullMessage::new(message, metadata))
             }
         }
+        Ok(())
     }
     fn process_parents(
         parents: &[MessageId],

@@ -5,8 +5,7 @@ use crate::{
     requester::*,
     solidifier::*,
 };
-use std::collections::VecDeque;
-
+use anyhow::bail;
 use bee_message::{
     output::Output,
     payload::transaction::{
@@ -14,7 +13,10 @@ use bee_message::{
         TransactionPayload,
     },
 };
-use std::collections::BinaryHeap;
+use std::collections::{
+    BinaryHeap,
+    VecDeque,
+};
 
 use lru::LruCache;
 use permanode_common::config::StorageConfig;

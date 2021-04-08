@@ -171,7 +171,7 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                     list.remove(&url);
                 }
                 if new_config != config {
-                    get_history_mut().update(new_config);
+                    get_history_mut().update(new_config.into());
                 }
             } else {
                 // the mqtt maybe already in process to get shutdown, or we are trying to remove it before
@@ -207,7 +207,7 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                 list.insert(url);
             }
             if new_config != config {
-                get_history_mut().update(new_config);
+                get_history_mut().update(new_config.into());
             }
             Some(mqtt)
         } else {

@@ -21,7 +21,10 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                         .enumerate()
                         .find(|(_, log)| log.to_ms_index == milestone_index)
                     {
-                        Self::finish_log_file(log_file, &self.dir_path).await?;
+                        Self::finish_log_file(log_file, &self.dir_path).await.map_err(|e| {
+                            error!("{}", e);
+                            Need::Abort
+                        })?;
                         // remove finished log file
                         let log_file = self.logs.remove(i);
                         self.push_to_processed(log_file);
@@ -48,17 +51,28 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                     {
                         // append milestone data to the log file if the file_size still less than max limit
                         if (milestone_data_line.len() as u64) + log_file.len() < self.max_log_size {
-                            Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace).await?;
+                            Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace)
+                                .await
+                                .map_err(|e| {
+                                    error!("{}", e);
+                                    Need::Abort
+                                })?;
                             // check if now the log_file reached an upper limit to finish the file
                             if log_file.upper_ms_limit == log_file.to_ms_index {
                                 cleanup.push(log_file.from_ms_index);
-                                Self::finish_log_file(log_file, &self.dir_path).await?;
+                                Self::finish_log_file(log_file, &self.dir_path).await.map_err(|e| {
+                                    error!("{}", e);
+                                    Need::Abort
+                                })?;
                             }
                         } else {
                             // push it into cleanup
                             cleanup.push(log_file.from_ms_index);
                             // Finish it;
-                            Self::finish_log_file(log_file, &self.dir_path).await?;
+                            Self::finish_log_file(log_file, &self.dir_path).await.map_err(|e| {
+                                error!("{}", e);
+                                Need::Abort
+                            })?;
                             info!(
                                 "{} hits filesize limit: {} bytes, contains: {} milestones data",
                                 log_file.filename,
@@ -75,7 +89,11 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                                 );
                                 opt_upper_limit.replace(log_file.upper_ms_limit);
                                 self.create_and_append(milestone_index, &milestone_data_line, opt_upper_limit)
-                                    .await?;
+                                    .await
+                                    .map_err(|e| {
+                                        error!("{}", e);
+                                        Need::Abort
+                                    })?;
                             }
                         }
                     } else {
@@ -86,7 +104,11 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                                 milestone_index
                             );
                             self.create_and_append(milestone_index, &milestone_data_line, opt_upper_limit)
-                                .await?;
+                                .await
+                                .map_err(|e| {
+                                    error!("{}", e);
+                                    Need::Abort
+                                })?;
                         };
                     };
                     // remove finished log file
@@ -112,13 +134,8 @@ impl Archiver {
         milestone_index: u32,
         milestone_data_line: &Vec<u8>,
         opt_upper_limit: Option<u32>,
-    ) -> Result<(), Need> {
-        let mut log_file = LogFile::create(&self.dir_path, milestone_index, opt_upper_limit)
-            .await
-            .map_err(|e| {
-                error!("{}", e);
-                return Need::Abort;
-            })?;
+    ) -> anyhow::Result<()> {
+        let mut log_file = LogFile::create(&self.dir_path, milestone_index, opt_upper_limit).await?;
         Self::append(&mut log_file, milestone_data_line, milestone_index, &self.keyspace).await?;
         // check if we hit an upper_ms_limit, as this is possible when the log_file only needs 1 milestone data.
         if log_file.upper_ms_limit == log_file.to_ms_index {
@@ -159,26 +176,20 @@ impl Archiver {
         milestone_data_line: &Vec<u8>,
         ms_index: u32,
         keyspace: &PermanodeKeyspace,
-    ) -> Result<(), Need> {
-        log_file.append_line(&milestone_data_line).await.map_err(|e| {
-            error!("{}", e);
-            return Need::Abort;
-        })?;
+    ) -> anyhow::Result<()> {
+        log_file.append_line(&milestone_data_line).await?;
         // insert into the DB, without caring about the response
         let sync_key = permanode_common::Synckey;
         let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
         keyspace
-            .insert(&sync_key, &synced_record)
+            .insert(&sync_key, &synced_record)?
             .consistency(Consistency::One)
-            .build()
+            .build()?
             .send_local(InsertWorker::boxed(keyspace.clone(), sync_key, synced_record));
         Ok(())
     }
-    async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> Result<(), Need> {
-        log_file.finish(dir_path).await.map_err(|e| {
-            error!("{}", e);
-            return Need::Abort;
-        })?;
+    async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> anyhow::Result<()> {
+        log_file.finish(dir_path).await?;
         info!(
             "Finished {}.part, LogFile: {}to{}.log",
             log_file.from_ms_index, log_file.from_ms_index, log_file.to_ms_index

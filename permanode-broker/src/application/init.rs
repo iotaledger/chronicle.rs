@@ -123,8 +123,16 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
         let _ = self
             .default_keyspace
             .select(&self.sync_range)
+            .map_err(|e| {
+                error!("{}", e);
+                Need::Abort
+            })?
             .consistency(Consistency::One)
             .build()
+            .map_err(|e| {
+                error!("{}", e);
+                Need::Abort
+            })?
             .send_local(ValueWorker::boxed(
                 tx,
                 self.default_keyspace.clone(),

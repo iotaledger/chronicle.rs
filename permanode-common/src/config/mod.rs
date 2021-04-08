@@ -1,10 +1,16 @@
 use super::*;
+use anyhow::{
+    anyhow,
+    bail,
+    ensure,
+};
 pub use api::*;
 pub use broker::*;
-use log::error;
+use ron::value::Value;
 use std::{
-    borrow::Cow,
     collections::HashMap,
+    convert::TryInto,
+    io::Read,
     net::SocketAddr,
     path::Path,
 };
@@ -16,6 +22,128 @@ mod storage;
 
 pub const CONFIG_PATH: &str = "./config.ron";
 pub const HISTORICAL_CONFIG_PATH: &str = "./historical_config";
+pub const CURRENT_VERSION: u32 = 0;
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+pub struct VersionedConfig {
+    version: u32,
+    config: Config,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct VersionedValue {
+    version: u32,
+    config: Value,
+}
+
+impl VersionedConfig {
+    pub fn new(config: Config) -> Self {
+        Self {
+            version: CURRENT_VERSION,
+            config,
+        }
+    }
+
+    pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<Self> {
+        VersionedValue::load(path)
+    }
+
+    pub fn load_unchecked<P: Into<Option<String>>>(path: P) -> anyhow::Result<Self> {
+        let path = path
+            .into()
+            .or_else(|| std::env::var("CONFIG_PATH").ok())
+            .unwrap_or(CONFIG_PATH.to_string());
+        match std::fs::File::open(Path::new(&path)) {
+            Ok(f) => ron::de::from_reader(f).map_err(|e| anyhow!(e)),
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    let config: VersionedConfig = Config::default().try_into()?;
+                    config.save(path)?;
+                    Ok(config)
+                }
+                _ => bail!(e),
+            },
+        }
+    }
+
+    pub fn save<P: Into<Option<String>>>(&self, path: P) -> anyhow::Result<()> {
+        let path = path
+            .into()
+            .or_else(|| std::env::var("CONFIG_PATH").ok())
+            .unwrap_or(CONFIG_PATH.to_string());
+        debug!("Saving config to {}", path);
+        let path = Path::new(&path);
+        if let Some(dir) = path.parent() {
+            if !dir.exists() {
+                std::fs::create_dir_all(dir)?;
+            }
+        }
+        let f = std::fs::File::create(Path::new(&path))?;
+
+        ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| anyhow!(e))
+    }
+
+    pub async fn verify(self) -> anyhow::Result<Config> {
+        ensure!(
+            self.version == CURRENT_VERSION,
+            "Config file version mismatch! Expected: {}, Actual: {}",
+            CURRENT_VERSION,
+            self.version
+        );
+        self.config.verify().await
+    }
+}
+
+impl VersionedValue {
+    pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<VersionedConfig> {
+        let path = path
+            .into()
+            .or_else(|| std::env::var("CONFIG_PATH").ok())
+            .unwrap_or(CONFIG_PATH.to_string());
+        match std::fs::File::open(Path::new(&path)) {
+            Ok(mut f) => {
+                let mut val = String::new();
+                f.read_to_string(&mut val)?;
+                ron::de::from_str::<VersionedValue>(&val)
+                    .map_err(|e| anyhow!(e))
+                    .and_then(|v| {
+                        v.verify_version()
+                            .and_then(|_| ron::de::from_str::<VersionedConfig>(&val).map_err(|e| anyhow!(e)))
+                    })
+            }
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    let config: VersionedConfig = Config::default().try_into()?;
+                    config.save(path)?;
+                    Ok(config)
+                }
+                _ => bail!(e),
+            },
+        }
+    }
+
+    fn verify_version(self) -> anyhow::Result<()> {
+        ensure!(
+            self.version == CURRENT_VERSION,
+            "Config file version mismatch! Expected: {}, Actual: {}",
+            CURRENT_VERSION,
+            self.version
+        );
+        Ok(())
+    }
+}
+
+impl From<Config> for VersionedConfig {
+    fn from(config: Config) -> Self {
+        Self::new(config)
+    }
+}
+
+impl Default for VersionedConfig {
+    fn default() -> Self {
+        Config::default().into()
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Config {
@@ -39,55 +167,27 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn load<P: Into<Option<String>>>(path: P) -> Result<Config, Cow<'static, str>> {
-        let path = path
-            .into()
-            .or_else(|| std::env::var("CONFIG_PATH").ok())
-            .unwrap_or(CONFIG_PATH.to_string());
-        match std::fs::File::open(Path::new(&path)) {
-            Ok(f) => ron::de::from_reader(f).map_err(|e| e.to_string().into()),
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    let config = Self::default();
-                    config.save(path)?;
-                    Ok(config)
-                }
-                _ => Err(e.to_string().into()),
-            },
-        }
+    pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<Config> {
+        VersionedConfig::load(path).map(|c| c.config)
     }
 
-    pub fn save<P: Into<Option<String>>>(&self, path: P) -> Result<(), Cow<'static, str>> {
-        let path = path
-            .into()
-            .or_else(|| std::env::var("CONFIG_PATH").ok())
-            .unwrap_or(CONFIG_PATH.to_string());
-        debug!("Saving config to {}", path);
-        let path = Path::new(&path);
-        if let Some(dir) = path.parent() {
-            if !dir.exists() {
-                std::fs::create_dir_all(dir).map_err(|e| Cow::from(e.to_string()))?;
-            }
-        }
-        let f = std::fs::File::create(Path::new(&path)).map_err(|e| Cow::from(e.to_string()))?;
-        ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| e.to_string().into())
+    pub fn save<P: Into<Option<String>>>(&self, path: P) -> anyhow::Result<()> {
+        VersionedConfig::new(self.clone()).save(path)
     }
 
-    pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
+    pub async fn verify(mut self) -> anyhow::Result<Self> {
         self.storage_config.verify().await?;
         self.api_config.verify().await?;
         self.broker_config.verify().await?;
-        Ok(())
+        Ok(self)
     }
 }
 
 impl Persist for Config {
-    fn persist(&self) {
-        if let Err(e) = self.save(None) {
-            error!("{}", e);
-        } else {
+    fn persist(&self) -> anyhow::Result<()> {
+        self.save(None).map(|_| {
             std::env::set_var("HISTORICAL_CONFIG_PATH", self.historical_config_path.clone());
-        }
+        })
     }
 }
 
@@ -145,14 +245,15 @@ mod test {
             },
             historical_config_path: HISTORICAL_CONFIG_PATH.to_owned(),
         };
+        let config: VersionedConfig = config.try_into().unwrap();
 
         std::env::set_var("CONFIG_PATH", "../config.example.ron");
 
-        let mut deserialized_config = Config::load(None).expect("Failed to deserialize example config!");
+        let mut deserialized_config = VersionedConfig::load(None).expect("Failed to deserialize example config!");
 
         if config != deserialized_config {
             config.save(None).expect("Failed to serialize example config!");
-            deserialized_config = Config::load(None).expect("Failed to deserialize example config!");
+            deserialized_config = VersionedConfig::load(None).expect("Failed to deserialize example config!");
         }
 
         assert_eq!(config, deserialized_config);

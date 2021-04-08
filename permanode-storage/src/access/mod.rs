@@ -1,4 +1,9 @@
 pub use crate::keyspaces::PermanodeKeyspace;
+use anyhow::{
+    anyhow,
+    bail,
+    ensure,
+};
 use bee_common::packable::Packable;
 use bincode::Options;
 pub use delete::{
@@ -62,7 +67,7 @@ impl<T> Record<T> {
 
     /// Creates an iterator over a set of records
     /// by decoding database rows using the `Row` impl
-    pub fn rows_iter(decoder: Decoder) -> scylla::access::Iter<Self>
+    pub fn rows_iter(decoder: Decoder) -> anyhow::Result<scylla::access::Iter<Self>>
     where
         Self: scylla::access::Row,
     {
@@ -310,13 +315,13 @@ pub enum TransactionVariant {
 }
 
 impl ColumnDecoder for TransactionVariant {
-    fn decode(slice: &[u8]) -> Self {
-        match std::str::from_utf8(slice).expect("Invalid string in variant column") {
+    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+        Ok(match std::str::from_utf8(slice)? {
             "input" => TransactionVariant::Input,
             "output" => TransactionVariant::Output,
             "unlock" => TransactionVariant::Unlock,
-            _ => panic!("Unexpected variant type"),
-        }
+            _ => bail!("Unexpected variant type"),
+        })
     }
 }
 

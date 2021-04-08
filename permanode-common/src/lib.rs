@@ -1,7 +1,11 @@
 #![warn(missing_docs)]
 //! Common code for Chronicle
 
-use config::Config;
+use anyhow::anyhow;
+use config::{
+    Config,
+    VersionedConfig,
+};
 use glob::glob;
 use log::{
     debug,
@@ -100,16 +104,14 @@ impl Wrapper for HistoricalConfig {
 }
 
 impl Persist for HistoricalConfig {
-    fn persist(&self) {
-        let mut path = std::env::var("HISTORICAL_CONFIG_PATH").unwrap_or(config::HISTORICAL_CONFIG_PATH.to_owned());
-        path = Path::new(&path)
-            .join(format!("{}_config.ron", self.created))
+    fn persist(&self) -> anyhow::Result<()> {
+        let path = std::env::var("HISTORICAL_CONFIG_PATH").unwrap_or(config::HISTORICAL_CONFIG_PATH.to_owned());
+        let path_buf = Path::new(&path).join(format!("{}_config.ron", self.created));
+        let path = path_buf
             .to_str()
-            .unwrap()
+            .ok_or_else(|| anyhow!("Invalid historical path: {}/{}_config.ron", path, self.created))?
             .to_owned();
-        if let Err(e) = self.save(path) {
-            error!("{}", e);
-        }
+        self.save(path)
     }
 }
 
@@ -253,28 +255,25 @@ where
 }
 
 impl Persist for History<HistoricalConfig> {
-    fn persist(&self) {
+    fn persist(&self) -> anyhow::Result<()> {
         debug!("Persisting history!");
         let mut iter = self.records.clone().into_sorted_vec().into_iter().rev();
-        debug!(
-            "Sorted records: {:?}",
-            iter.clone().map(|r| r.created).collect::<Vec<_>>()
-        );
         if let Some(latest) = iter.next() {
             debug!("Persisting latest config!");
-            latest.deref().persist();
+            latest.deref().persist()?;
             for v in iter {
                 debug!("Persisting historical config!");
-                v.persist();
+                v.persist()?;
             }
         }
+        Ok(())
     }
 }
 
 /// Specifies that the implementor should be able to persist itself
 pub trait Persist {
     /// Persist this value
-    fn persist(&self);
+    fn persist(&self) -> anyhow::Result<()>;
 }
 
 /// A handle which will persist when dropped
@@ -304,7 +303,9 @@ impl DerefMut for PersistHandle {
 
 impl std::ops::Drop for PersistHandle {
     fn drop(&mut self) {
-        self.persist()
+        if let Err(e) = self.persist() {
+            error!("{}", e);
+        }
     }
 }
 

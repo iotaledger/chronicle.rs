@@ -22,8 +22,8 @@ pub use bee_message::{
         Payload,
         TransactionId,
         TreasuryInput,
-        UTXOInput,
         UnlockBlock,
+        UtxoInput,
         HASHED_INDEX_LENGTH,
     },
     solid_entry_point::SolidEntryPoint,
@@ -36,7 +36,6 @@ pub use bee_tangle::{
     unconfirmed_message::UnconfirmedMessage,
 };
 use std::{
-    borrow::Cow,
     io::Cursor,
     ops::{
         Deref,
@@ -98,8 +97,10 @@ impl<Type> From<Type> for Bee<Type> {
 }
 
 impl<P: Packable> ColumnDecoder for Bee<P> {
-    fn decode(slice: &[u8]) -> Self {
-        P::unpack(&mut Cursor::new(slice)).unwrap().into()
+    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+        P::unpack(&mut Cursor::new(slice))
+            .map_err(|e| anyhow!("{:?}", e))
+            .map(Into::into)
     }
 }
 
@@ -125,24 +126,25 @@ impl UnlockData {
     }
 }
 impl Packable for UnlockData {
-    type Error = Cow<'static, str>;
+    type Error = anyhow::Error;
     fn packed_len(&self) -> usize {
         self.input_tx_id.packed_len() + self.input_index.packed_len() + self.unlock_block.packed_len()
     }
     fn pack<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Self::Error> {
-        self.input_tx_id.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-        self.input_index.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-        self.unlock_block.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
+        self.input_tx_id.pack(writer)?;
+        self.input_index.pack(writer)?;
+        self.unlock_block.pack(writer)?;
         Ok(())
     }
-    fn unpack<R: std::io::Read + ?Sized>(reader: &mut R) -> Result<Self, Self::Error>
+
+    fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
         Ok(Self {
-            input_tx_id: TransactionId::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-            input_index: u16::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-            unlock_block: UnlockBlock::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
+            input_tx_id: TransactionId::unpack(reader)?,
+            input_index: u16::unpack(reader)?,
+            unlock_block: UnlockBlock::unpack(reader)?,
         })
     }
 }
@@ -151,14 +153,14 @@ impl Packable for UnlockData {
 #[derive(Debug, Clone)]
 pub enum InputData {
     /// An regular Input which spends a prior Output and its unlock block
-    UTXO(UTXOInput, UnlockBlock),
+    UTXO(UtxoInput, UnlockBlock),
     /// A special input for migrating funds from another network
     Treasury(TreasuryInput),
 }
 
 impl InputData {
     /// Creates a regular Input Data
-    pub fn utxo(utxo_input: UTXOInput, unlock_block: UnlockBlock) -> Self {
+    pub fn utxo(utxo_input: UtxoInput, unlock_block: UnlockBlock) -> Self {
         Self::UTXO(utxo_input, unlock_block)
     }
     /// Creates a special migration Input Data
@@ -168,7 +170,7 @@ impl InputData {
 }
 
 impl Packable for InputData {
-    type Error = Cow<'static, str>;
+    type Error = anyhow::Error;
     fn packed_len(&self) -> usize {
         match self {
             InputData::UTXO(utxo_input, unlock_block) => {
@@ -180,31 +182,27 @@ impl Packable for InputData {
     fn pack<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Self::Error> {
         match self {
             InputData::UTXO(utxo_input, unlock_block) => {
-                0u8.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-                utxo_input.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-                unlock_block.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
+                0u8.pack(writer)?;
+                utxo_input.pack(writer)?;
+                unlock_block.pack(writer)?;
             }
             InputData::Treasury(treasury_input) => {
-                1u8.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-                treasury_input.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
+                1u8.pack(writer)?;
+                treasury_input.pack(writer)?;
             }
         }
         Ok(())
     }
-    fn unpack<R: std::io::Read + ?Sized>(reader: &mut R) -> Result<Self, Self::Error>
+
+    fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        match u8::unpack(reader).map_err(|e| Cow::from(e.to_string()))? {
-            0 => Ok(InputData::UTXO(
-                UTXOInput::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-                UnlockBlock::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-            )),
-            1 => Ok(InputData::Treasury(
-                TreasuryInput::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-            )),
-            _ => Err("Tried to unpack an invalid inputdata variant!".into()),
-        }
+        Ok(match u8::unpack(reader)? {
+            0 => InputData::UTXO(UtxoInput::unpack(reader)?, UnlockBlock::unpack(reader)?),
+            1 => InputData::Treasury(TreasuryInput::unpack(reader)?),
+            _ => bail!("Tried to unpack an invalid inputdata variant!"),
+        })
     }
 }
 
@@ -221,7 +219,7 @@ pub enum TransactionData {
 }
 
 impl Packable for TransactionData {
-    type Error = Cow<'static, str>;
+    type Error = anyhow::Error;
 
     fn packed_len(&self) -> usize {
         match self {
@@ -234,43 +232,37 @@ impl Packable for TransactionData {
     fn pack<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Self::Error> {
         match self {
             TransactionData::Input(input_data) => {
-                0u8.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-                input_data.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
+                0u8.pack(writer)?;
+                input_data.pack(writer)?;
             }
             TransactionData::Output(output) => {
-                1u8.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-                output.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
+                1u8.pack(writer)?;
+                output.pack(writer)?;
             }
             TransactionData::Unlock(block_data) => {
-                2u8.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
-                block_data.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
+                2u8.pack(writer)?;
+                block_data.pack(writer)?;
             }
         }
         Ok(())
     }
 
-    fn unpack<R: std::io::Read + ?Sized>(reader: &mut R) -> Result<Self, Self::Error>
+    fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        match u8::unpack(reader).map_err(|e| Cow::from(e.to_string()))? {
-            0 => Ok(TransactionData::Input(
-                InputData::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-            )),
-            1 => Ok(TransactionData::Output(
-                Output::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-            )),
-            2 => Ok(TransactionData::Unlock(
-                UnlockData::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
-            )),
-            _ => Err("Tried to unpack an invalid transaction variant!".into()),
-        }
+        Ok(match u8::unpack(reader)? {
+            0 => TransactionData::Input(InputData::unpack(reader)?),
+            1 => TransactionData::Output(Output::unpack(reader)?),
+            2 => TransactionData::Unlock(UnlockData::unpack(reader)?),
+            _ => bail!("Tried to unpack an invalid transaction variant!"),
+        })
     }
 }
 
 impl ColumnDecoder for TransactionData {
-    fn decode(slice: &[u8]) -> Self {
-        Self::unpack(&mut Cursor::new(slice)).unwrap().into()
+    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+        Self::unpack(&mut Cursor::new(slice)).map(Into::into)
     }
 }
 /// MessageMetadata storage object
@@ -315,8 +307,8 @@ impl ColumnEncoder for LedgerInclusionState {
 }
 
 impl ColumnDecoder for LedgerInclusionState {
-    fn decode(slice: &[u8]) -> Self {
-        bincode_config().deserialize(slice).unwrap()
+    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+        bincode_config().deserialize(slice).map_err(Into::into)
     }
 }
 
@@ -329,8 +321,8 @@ impl ColumnEncoder for MessageMetadata {
 }
 
 impl ColumnDecoder for MessageMetadata {
-    fn decode(slice: &[u8]) -> Self {
-        bincode_config().deserialize(slice).unwrap()
+    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+        bincode_config().deserialize(slice).map_err(Into::into)
     }
 }
 impl ColumnEncoder for TransactionData {

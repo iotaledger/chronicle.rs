@@ -73,12 +73,9 @@ fn main() {
         .thread_stack_size(apps.app_count * 4 * 1024 * 1024)
         .build()
         .expect("Expected to build tokio runtime");
-    let mut new_config = config.clone();
-    if let Err(e) = runtime.block_on(new_config.verify()) {
-        panic!("{}", e)
-    }
+    let new_config = runtime.block_on(config.clone().verify()).unwrap();
     if new_config != config {
-        get_history_mut().update(new_config);
+        get_history_mut().update(new_config.into());
     }
     runtime.block_on(permanode(apps));
 }

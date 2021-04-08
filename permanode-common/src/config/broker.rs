@@ -40,7 +40,7 @@ impl Default for BrokerConfig {
 
 impl BrokerConfig {
     /// Verify that the broker's config is valid
-    pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
+    pub async fn verify(&mut self) -> anyhow::Result<()> {
         for mqtt_broker in self.mqtt_brokers.values().flatten() {
             let random_id: u64 = rand::random();
             let create_opts = CreateOptionsBuilder::new()
@@ -49,7 +49,7 @@ impl BrokerConfig {
                 .persistence(None)
                 .finalize();
             let _client = AsyncClient::new(create_opts)
-                .map_err(|e| format!("Error verifying mqtt broker {}: {}", mqtt_broker, e))?;
+                .map_err(|e| anyhow!("Error verifying mqtt broker {}: {}", mqtt_broker, e))?;
         }
         let client = Client::new();
         self.api_endpoints = self
@@ -79,26 +79,27 @@ impl BrokerConfig {
                 .get(
                     endpoint
                         .join("info")
-                        .map_err(|e| format!("Error verifying endpoint {}: {}", endpoint, e))?,
+                        .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?,
                 )
                 .send()
                 .await
-                .map_err(|e| format!("Error verifying endpoint {}: {}", endpoint, e))?;
+                .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?;
             if !res.status().is_success() {
                 let url = res.url().clone();
                 let err = res.json::<Value>().await;
-                return Err(format!(
+                bail!(
                     "Error verifying endpoint \"{}\"\nRequest URL: \"{}\"\nResult: {:#?}",
-                    endpoint, url, err
-                )
-                .into());
+                    endpoint,
+                    url,
+                    err
+                );
             }
         }
         let sync_range = self.sync_range.get_or_insert_with(|| SyncRange::default());
         if sync_range.from == 0 || sync_range.to == 0 {
-            return Err("Error verifying sync from/to, zero provided!\nPlease provide non-zero milestone index".into());
+            bail!("Error verifying sync from/to, zero provided!\nPlease provide non-zero milestone index");
         } else if sync_range.from >= sync_range.to {
-            return Err("Error verifying sync from/to, greater or equal provided!\nPlease provide lower \"Sync range from\" milestone index".into());
+            bail!("Error verifying sync from/to, greater or equal provided!\nPlease provide lower \"Sync range from\" milestone index");
         }
         Ok(())
     }
