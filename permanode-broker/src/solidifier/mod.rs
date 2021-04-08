@@ -24,7 +24,6 @@ use std::{
         Ordering,
     },
 };
-
 mod event_loop;
 mod init;
 mod terminating;
@@ -128,6 +127,12 @@ pub struct MilestoneData {
     pending: HashMap<MessageId, ()>,
     complete: bool,
     created_by: CreatedBy,
+}
+
+impl MilestoneData {
+    pub fn created_by(&self) -> &CreatedBy {
+        &self.created_by
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -415,7 +420,7 @@ where
                 .insert_query(&self.key, &self.value)
                 .consistency(Consistency::One)
                 .build();
-            tokio::spawn(async {req.send_global(self)});
+            tokio::spawn(async { req.send_global(self) });
         } else {
             // no more retries
             self.handle.any_error.store(true, Ordering::Relaxed);
@@ -491,12 +496,6 @@ where
         let _ = self.handle.send(SolidifierEvent::CqlResult(Ok(synced_ms)));
     }
     fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
-        error!(
-            "{:?}, left retries: {}, reporter running: {}",
-            error,
-            self.retries,
-            reporter.is_some()
-        );
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 scylla::worker::insert::handle_unprepared_error(
@@ -516,7 +515,7 @@ where
                 .insert_query(&self.key, &self.value)
                 .consistency(Consistency::One)
                 .build();
-            tokio::spawn(async {req.send_global(self)});
+            tokio::spawn(async { req.send_global(self) });
         } else {
             // no more retries
             // resond with error

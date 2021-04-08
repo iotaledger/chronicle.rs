@@ -14,10 +14,7 @@ use crate::{
         SolidifierHandle,
     },
 };
-use std::collections::VecDeque;
-
-use bee_rest_api::types::dtos::MessageDto;
-use std::convert::TryFrom;
+use tokio::sync::oneshot::Sender;
 
 use std::ops::{
     Deref,
@@ -27,13 +24,14 @@ use std::ops::{
 mod event_loop;
 mod init;
 mod terminating;
-use reqwest::Client;
-use url::Url;
+
 // Syncer builder
 builder!(SyncerBuilder {
     sync_data: SyncData,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     archiver_handle: ArchiverHandle,
+    first_ask: AskSyncer,
+    oneshot: Sender<u32>,
     handle: SyncerHandle,
     inbox: SyncerInbox
 });
@@ -113,6 +111,7 @@ pub struct Syncer {
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     solidifier_count: u8,
     active: Option<Active>,
+    first_ask: Option<AskSyncer>,
     archiver_handle: ArchiverHandle,
     milestones_data: std::collections::BinaryHeap<Ascending<MilestoneData>>,
     highest: u32,
@@ -123,6 +122,7 @@ pub struct Syncer {
     initial_gap_start: u32,
     initial_gap_end: u32,
     prev_closed_log_filename: u32,
+    oneshot: Option<Sender<u32>>,
     handle: SyncerHandle,
     inbox: SyncerInbox,
 }
@@ -143,6 +143,7 @@ impl Builder for SyncerBuilder {
             solidifier_handles,
             solidifier_count,
             active: None,
+            first_ask: self.first_ask,
             archiver_handle: self.archiver_handle.unwrap(),
             milestones_data: std::collections::BinaryHeap::new(),
             highest: 0,
@@ -153,6 +154,7 @@ impl Builder for SyncerBuilder {
             initial_gap_start: 0,
             initial_gap_end: 0,
             prev_closed_log_filename: 0,
+            oneshot: self.oneshot,
             handle: self.handle.unwrap(),
             inbox: self.inbox.unwrap(),
         }

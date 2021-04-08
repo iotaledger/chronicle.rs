@@ -11,7 +11,11 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         status?;
-        let mut cleanup: Vec<u32> = Vec::with_capacity(2);
+        let mut next = self.oneshot.take().unwrap().await.unwrap();
+        info!(
+            "Archiver will write ahead log files for new incoming data starting: {}",
+            next
+        );
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
                 ArchiverEvent::Close(milestone_index) => {
@@ -27,77 +31,38 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                         self.push_to_processed(log_file);
                     };
                 }
-                ArchiverEvent::MilestoneData(milestone_data, mut opt_upper_limit) => {
+                ArchiverEvent::MilestoneData(milestone_data, opt_upper_limit) => {
                     info!(
                         "Archiver received milestone data for index: {}, upper_ms_limit: {:?}",
                         milestone_data.milestone_index(),
                         opt_upper_limit
                     );
-                    let milestone_index = milestone_data.milestone_index();
-                    let mut milestone_data_line = bincode::serialize(&milestone_data).unwrap();
-                    milestone_data_line = bincode::serialize(&(milestone_data_line.len() as u32).to_be_bytes())
-                        .unwrap()
-                        .into_iter()
-                        .chain(milestone_data_line)
-                        .collect::<Vec<_>>();
-                    // check the logs files to find if any has already existing log file
-                    if let Some(log_file) = self
-                        .logs
-                        .iter_mut()
-                        .find(|log| log.to_ms_index == milestone_index && log.upper_ms_limit > milestone_index)
-                    {
-                        // append milestone data to the log file if the file_size still less than max limit
-                        if (milestone_data_line.len() as u64) + log_file.len() < self.max_log_size {
-                            Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace).await?;
-                            // check if now the log_file reached an upper limit to finish the file
-                            if log_file.upper_ms_limit == log_file.to_ms_index {
-                                cleanup.push(log_file.from_ms_index);
-                                Self::finish_log_file(log_file, &self.dir_path).await?;
-                            }
-                        } else {
-                            // push it into cleanup
-                            cleanup.push(log_file.from_ms_index);
-                            // Finish it;
-                            Self::finish_log_file(log_file, &self.dir_path).await?;
-                            info!(
-                                "{} hits filesize limit: {} bytes, contains: {} milestones data",
-                                log_file.filename,
-                                log_file.len(),
-                                log_file.milestones_range()
-                            );
-                            // check if the milestone_index already belongs to an existing processed logs
-                            let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
-                            if not_processed {
-                                // create new file
-                                info!(
-                                    "Creating new log file starting from milestone index: {}",
-                                    milestone_index
-                                );
-                                opt_upper_limit.replace(log_file.upper_ms_limit);
-                                self.create_and_append(milestone_index, &milestone_data_line, opt_upper_limit)
+                    // check if it belongs to new incoming data
+                    if !milestone_data.created_by().eq(&CreatedBy::Syncer) {
+                        self.milestones_data.push(Ascending::new(milestone_data));
+                        while let Some(ms_data) = self.milestones_data.pop() {
+                            let ms_index = ms_data.get_ref().milestone_index();
+                            if next.eq(&ms_index) {
+                                self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
                                     .await?;
+                                next += 1;
+                            } else {
+                                // check if we buffered too much.
+                                if self.milestones_data.len() > self.solidifiers_count as usize {
+                                    error!("Identified gap in the new incoming data: {}..{}", next, ms_index);
+                                    self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
+                                        .await?;
+                                    // reset next
+                                    next = ms_index + 1;
+                                } else {
+                                    self.milestones_data.push(ms_data);
+                                    break;
+                                }
                             }
                         }
                     } else {
-                        // check if the milestone_index already belongs to an existing processed files/ranges;
-                        if !self.processed.iter().any(|r| r.contains(&milestone_index)) {
-                            info!(
-                                "Creating new log file starting from milestone index: {}",
-                                milestone_index
-                            );
-                            self.create_and_append(milestone_index, &milestone_data_line, opt_upper_limit)
-                                .await?;
-                        };
-                    };
-                    // remove finished log file
-                    while let Some(from_ms_index) = cleanup.pop() {
-                        let i = self
-                            .logs
-                            .iter()
-                            .position(|item| item.from_ms_index == from_ms_index)
-                            .unwrap();
-                        let log_file = self.logs.remove(i);
-                        self.push_to_processed(log_file);
+                        // handle syncer milestone data;
+                        self.handle_milestone_data(milestone_data, opt_upper_limit).await?;
                     }
                 }
             }
@@ -107,6 +72,79 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
 }
 
 impl Archiver {
+    async fn handle_milestone_data(
+        &mut self,
+        milestone_data: MilestoneData,
+        mut opt_upper_limit: Option<u32>,
+    ) -> Result<(), Need> {
+        let milestone_index = milestone_data.milestone_index();
+        let mut milestone_data_line = bincode::serialize(&milestone_data).unwrap();
+        milestone_data_line = bincode::serialize(&(milestone_data_line.len() as u32).to_be_bytes())
+            .unwrap()
+            .into_iter()
+            .chain(milestone_data_line)
+            .collect::<Vec<_>>();
+        // check the logs files to find if any has already existing log file
+        if let Some(log_file) = self
+            .logs
+            .iter_mut()
+            .find(|log| log.to_ms_index == milestone_index && log.upper_ms_limit > milestone_index)
+        {
+            // append milestone data to the log file if the file_size still less than max limit
+            if (milestone_data_line.len() as u64) + log_file.len() < self.max_log_size {
+                Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace).await?;
+                // check if now the log_file reached an upper limit to finish the file
+                if log_file.upper_ms_limit == log_file.to_ms_index {
+                    self.cleanup.push(log_file.from_ms_index);
+                    Self::finish_log_file(log_file, &self.dir_path).await?;
+                }
+            } else {
+                // push it into cleanup
+                self.cleanup.push(log_file.from_ms_index);
+                // Finish it;
+                Self::finish_log_file(log_file, &self.dir_path).await?;
+                info!(
+                    "{} hits filesize limit: {} bytes, contains: {} milestones data",
+                    log_file.filename,
+                    log_file.len(),
+                    log_file.milestones_range()
+                );
+                // check if the milestone_index already belongs to an existing processed logs
+                let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
+                if not_processed {
+                    // create new file
+                    info!(
+                        "Creating new log file starting from milestone index: {}",
+                        milestone_index
+                    );
+                    opt_upper_limit.replace(log_file.upper_ms_limit);
+                    self.create_and_append(milestone_index, &milestone_data_line, opt_upper_limit)
+                        .await?;
+                }
+            }
+        } else {
+            // check if the milestone_index already belongs to an existing processed files/ranges;
+            if !self.processed.iter().any(|r| r.contains(&milestone_index)) {
+                info!(
+                    "Creating new log file starting from milestone index: {}",
+                    milestone_index
+                );
+                self.create_and_append(milestone_index, &milestone_data_line, opt_upper_limit)
+                    .await?;
+            };
+        };
+        // remove finished log file
+        while let Some(from_ms_index) = self.cleanup.pop() {
+            let i = self
+                .logs
+                .iter()
+                .position(|item| item.from_ms_index == from_ms_index)
+                .unwrap();
+            let log_file = self.logs.remove(i);
+            self.push_to_processed(log_file);
+        }
+        Ok(())
+    }
     async fn create_and_append(
         &mut self,
         milestone_index: u32,

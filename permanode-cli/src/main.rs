@@ -59,7 +59,7 @@ async fn main() {
                             .spawn()
                             .expect("failed to execute process")
                     } else {
-                        Command::new("sh")
+                        Command::new("bash")
                             .arg(permanode_exe.to_str().unwrap())
                             .spawn()
                             .expect("failed to execute process")

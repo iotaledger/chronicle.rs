@@ -304,8 +304,9 @@ impl Solidifier {
         parents.iter().for_each(|parent_id| {
             let in_messages = milestone_data.messages().contains_key(&parent_id);
             let in_pending = milestone_data.pending().contains_key(&parent_id);
+            let genesis = parent_id.eq(&MessageId::null());
             // Check if parent NOT in messages nor pending
-            if !in_messages && !in_pending {
+            if !in_messages && !in_pending && !genesis {
                 // Request it from collector
                 Self::request_full_message(
                     collectors_handles,
@@ -484,5 +485,4 @@ impl Solidifier {
         }
         false
     }
-    // fn check_if_in_database()
 }

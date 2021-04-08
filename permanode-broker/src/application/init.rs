@@ -15,14 +15,18 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             let syncer_handle = SyncerHandle { tx };
             let syncer_inbox = SyncerInbox { rx };
+            let (one, recv) = tokio::sync::oneshot::channel();
             let syncer_builder = SyncerBuilder::new()
                 .sync_data(self.sync_data.clone())
                 .handle(syncer_handle.clone())
+                .oneshot(one)
                 .inbox(syncer_inbox);
             // create archiver_builder
             let mut archiver = ArchiverBuilder::new()
                 .dir_path(self.logs_dir_path.clone())
                 .keyspace(self.default_keyspace.clone())
+                .solidifiers_count(self.collectors_count)
+                .oneshot(recv)
                 .build();
             let archiver_handle = archiver.take_handle();
             // start archiver
@@ -62,14 +66,13 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
                     .partition_id(partition_id);
                 solidifier_builders.push(solidifier_builder);
             }
-            // trigger sync process
-            syncer_handle.send(SyncerEvent::Ask(AskSyncer::Complete)).ok();
             // store copy of syncer_handle in broker state in order to be able to shut it down
             self.syncer_handle.replace(syncer_handle);
             // Finalize and Spawn Syncer
             let syncer = syncer_builder
                 .solidifier_handles(self.solidifier_handles.clone())
                 .archiver_handle(archiver_handle.unwrap())
+                .first_ask(AskSyncer::Complete)
                 .build();
             tokio::spawn(syncer.start(self.handle.clone()));
             // Spawn mqtt brokers
