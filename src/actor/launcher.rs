@@ -110,7 +110,7 @@ impl Service {
     }
     /// Update the status of a microservice
     pub fn update_microservice_status(&mut self, service_name: &str, status: ServiceStatus) {
-        self.microservices.get_mut(service_name).unwrap().status = status;
+        self.microservices.get_mut(service_name).map(|s| s.status = status);
     }
     /// Delete a microservice
     pub fn delete_microservice(&mut self, service_name: &str) {

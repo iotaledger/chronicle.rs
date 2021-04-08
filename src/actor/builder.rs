@@ -1,5 +1,6 @@
 use super::{Actor, AknShutdown, LauncherSender, Passthrough, Shutdown, Starter};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 /// Allows an actor to be built by parts
 pub trait Builder {
@@ -22,7 +23,7 @@ where
     Self::State: Actor<H>,
     Self::Ok: Shutdown + Passthrough<Self::Through>,
     Self::Input: From<Self::State>,
-    Self::Error: Serialize,
+    Self::Error: Display,
 {
 }
 
