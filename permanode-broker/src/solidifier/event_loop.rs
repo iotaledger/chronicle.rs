@@ -14,7 +14,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
         while let Some(event) = self.inbox.recv().await {
             match event {
                 SolidifierEvent::Message(full_message) => {
-                    self.handle_new_msg(full_message);
+                    self.handle_new_msg(full_message).unwrap_or_else(|e| {
+                        error!("{}", e);
+                    });
                 }
                 SolidifierEvent::CqlResult(result) => {
                     match result {
@@ -27,7 +29,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                                         // check_if_in_database
                                         if in_database.check_if_all_in_database() {
                                             // Insert record into sync table
-                                            self.handle_in_database(milestone_index);
+                                            self.handle_in_database(milestone_index).unwrap_or_else(|e| {
+                                                error!("{}", e);
+                                            });
                                         }
                                     } else {
                                         // in rare condition there is a chance that collector will reinsert the same
@@ -69,10 +73,14 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                     }
                 }
                 SolidifierEvent::Close(message_id, milestone_index) => {
-                    self.close_message_id(milestone_index, &message_id);
+                    self.close_message_id(milestone_index, &message_id).unwrap_or_else(|e| {
+                        error!("{}", e);
+                    });
                 }
                 SolidifierEvent::Milestone(milestone_message) => {
-                    self.handle_milestone_msg(milestone_message);
+                    self.handle_milestone_msg(milestone_message).unwrap_or_else(|e| {
+                        error!("{}", e);
+                    });
                 }
                 SolidifierEvent::Solidify(milestone_index) => {
                     match milestone_index {
@@ -164,16 +172,16 @@ impl Solidifier {
                 .insert(milestone_index, MilestoneData::new(milestone_index, CreatedBy::Syncer));
         }
     }
-    fn close_message_id(&mut self, milestone_index: u32, message_id: &MessageId) {
+    fn close_message_id(&mut self, milestone_index: u32, message_id: &MessageId) -> anyhow::Result<()> {
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
             // remove it from pending
             milestone_data.remove_from_pending(message_id);
             let check_if_completed = Self::check_if_completed(milestone_data);
             let created_by = milestone_data.created_by;
             if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
-                self.push_to_logger(milestone_index);
+                self.push_to_logger(milestone_index)?;
             } else if check_if_completed {
-                self.push_to_syncer(milestone_index);
+                self.push_to_syncer(milestone_index)?;
             };
         } else {
             if milestone_index < self.expected {
@@ -185,8 +193,9 @@ impl Solidifier {
                 )
             }
         }
+        Ok(())
     }
-    fn push_to_logger(&mut self, milestone_index: u32) {
+    fn push_to_logger(&mut self, milestone_index: u32) -> anyhow::Result<()> {
         info!(
             "solidifier_id: {}, is pushing the milestone data for index: {}, to Logger",
             self.partition_id, milestone_index
@@ -201,12 +210,13 @@ impl Solidifier {
         in_database.set_messages_len(milestone_data.messages().len());
         if in_database.check_if_all_in_database() {
             // Insert record into sync table
-            self.handle_in_database(milestone_index);
+            self.handle_in_database(milestone_index)?;
         }
         let archiver_event = ArchiverEvent::MilestoneData(milestone_data, None);
         let _ = self.archiver_handle.send(archiver_event);
+        Ok(())
     }
-    fn push_to_syncer(&mut self, milestone_index: u32) {
+    fn push_to_syncer(&mut self, milestone_index: u32) -> anyhow::Result<()> {
         info!(
             "Solidifier is pushing the milestone data for index: {}, to Syncer",
             milestone_index
@@ -221,10 +231,11 @@ impl Solidifier {
         in_database.set_messages_len(milestone_data.messages().len());
         if in_database.check_if_all_in_database() {
             // Insert record into sync table
-            self.handle_in_database(milestone_index);
+            self.handle_in_database(milestone_index)?;
         }
         let syncer_event = SyncerEvent::MilestoneData(milestone_data);
         let _ = self.syncer_handle.send(syncer_event);
+        Ok(())
     }
     fn handle_in_database(&mut self, milestone_index: u32) -> anyhow::Result<()> {
         self.in_database.remove(&milestone_index);
@@ -278,9 +289,9 @@ impl Solidifier {
                 let check_if_completed = Self::check_if_completed(milestone_data);
                 let created_by = milestone_data.created_by;
                 if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
-                    self.push_to_logger(milestone_index);
+                    self.push_to_logger(milestone_index)?;
                 } else if check_if_completed {
-                    self.push_to_syncer(milestone_index);
+                    self.push_to_syncer(milestone_index)?;
                 };
             }
         } else {
@@ -345,7 +356,7 @@ impl Solidifier {
             let _ = collector_handle.send(ask_event);
         }
     }
-    fn handle_new_msg(&mut self, full_message: FullMessage) {
+    fn handle_new_msg(&mut self, full_message: FullMessage) -> anyhow::Result<()> {
         // check what milestone_index referenced this message
         let milestone_index = full_message.ref_ms();
         let partitioner = &self.message_id_partitioner;
@@ -363,14 +374,15 @@ impl Solidifier {
             let check_if_completed = Self::check_if_completed(milestone_data);
             let created_by = milestone_data.created_by;
             if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
-                self.push_to_logger(milestone_index);
+                self.push_to_logger(milestone_index)?;
             } else if check_if_completed {
-                self.push_to_syncer(milestone_index);
+                self.push_to_syncer(milestone_index)?;
             };
         } else {
             // We have to decide whether to insert entry for milestone_index or not.
             self.insert_new_entry_or_not(milestone_index, full_message)
         }
+        Ok(())
     }
     fn insert_new_entry_or_not(&mut self, milestone_index: u32, full_message: FullMessage) {
         let partitioner = &self.message_id_partitioner;

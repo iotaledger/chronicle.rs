@@ -50,9 +50,15 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         // Cache metadata.
                         self.lru_msg_ref.put(message_id, metadata.clone());
                         if let Some(wrong_est_ms) = wrong_msg_est_ms {
-                            self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms);
+                            self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms)
+                                .unwrap_or_else(|e| {
+                                    error!("{}", e);
+                                });
                         }
-                        self.insert_message_with_metadata(message_id, message, metadata);
+                        self.insert_message_with_metadata(message_id, message, metadata)
+                            .unwrap_or_else(|e| {
+                                error!("{}", e);
+                            });
                     } else {
                         error!(
                             "{} , unable to fetch message: {:?}, from network triggered by milestone_index: {}",
@@ -70,7 +76,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
                         // store message
-                        self.insert_message(&message_id, &mut message);
+                        self.insert_message(&message_id, &mut message).unwrap_or_else(|e| {
+                            error!("{}", e);
+                        });
                         // add it to the cache in order to not presist it again.
                         self.lru_msg.put(message_id, (self.est_ms, message));
                     }
@@ -121,12 +129,20 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         }
                         if let Some(message) = cached_msg {
                             if let Some(wrong_est_ms) = wrong_msg_est_ms {
-                                self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms);
+                                self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms)
+                                    .unwrap_or_else(|e| {
+                                        error!("{}", e);
+                                    });
                             }
-                            self.insert_message_with_metadata(message_id, message, metadata);
+                            self.insert_message_with_metadata(message_id, message, metadata)
+                                .unwrap_or_else(|e| {
+                                    error!("{}", e);
+                                });
                         } else {
                             // store it as metadata
-                            self.insert_message_metadata(metadata.clone());
+                            self.insert_message_metadata(metadata.clone()).unwrap_or_else(|e| {
+                                error!("{}", e);
+                            });
                         }
                     }
                 }
@@ -209,23 +225,27 @@ impl Collector {
             })
             .collect();
     }
-}
 
-impl Collector {
-    fn clean_up_wrong_est_msg(&mut self, message_id: &MessageId, message: &Message, wrong_est_ms: MilestoneIndex) {
-        self.delete_parents(message_id, message.parents(), wrong_est_ms);
+    fn clean_up_wrong_est_msg(
+        &mut self,
+        message_id: &MessageId,
+        message: &Message,
+        wrong_est_ms: MilestoneIndex,
+    ) -> anyhow::Result<()> {
+        self.delete_parents(message_id, message.parents(), wrong_est_ms)?;
         match message.payload() {
             // delete indexation if any
             Some(Payload::Indexation(indexation)) => {
                 let index_key = Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
-                self.delete_indexation(&message_id, index_key, wrong_est_ms);
+                self.delete_indexation(&message_id, index_key, wrong_est_ms)?;
             }
             // delete transactiion partitioned rows if any
             Some(Payload::Transaction(transaction_payload)) => {
-                self.delete_transaction_partitioned_rows(message_id, transaction_payload, wrong_est_ms)
+                self.delete_transaction_partitioned_rows(message_id, transaction_payload, wrong_est_ms)?;
             }
             _ => {}
         }
+        Ok(())
     }
     fn push_fullmsg_to_solidifier(&self, partition_id: u8, message: Message, metadata: MessageMetadata) {
         if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
@@ -257,7 +277,7 @@ impl Collector {
             .partition_id(milestone_index.0)
     }
 
-    fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) {
+    fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) -> anyhow::Result<()> {
         // Check if metadata already exist in the cache
         let ledger_inclusion_state;
 
@@ -276,7 +296,7 @@ impl Collector {
             let inherent_worker = AtomicWorker::new(solidifier_handle, milestone_index, *message_id, self.retries);
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
-            self.insert(&inherent_worker, &keyspace, *message_id, message_tuple);
+            self.insert(&inherent_worker, &keyspace, *message_id, message_tuple)?;
             // Insert parents/children
             self.insert_parents(
                 &inherent_worker,
@@ -284,7 +304,7 @@ impl Collector {
                 &message.parents(),
                 self.est_ms,
                 ledger_inclusion_state.clone(),
-            );
+            )?;
             // insert payload (if any)
             if let Some(payload) = message.payload() {
                 self.insert_payload(
@@ -295,14 +315,17 @@ impl Collector {
                     self.est_ms,
                     ledger_inclusion_state,
                     metadata,
-                );
+                )?;
             }
         } else {
             metadata = None;
             ledger_inclusion_state = None;
             let inherent_worker = SimpleWorker;
             // store message only
-            self.insert(&inherent_worker, &keyspace, *message_id, message.clone());
+            self.insert(&inherent_worker, &keyspace, *message_id, message.clone())
+                .unwrap_or_else(|e| {
+                    error!("{}", e);
+                });
             // Insert parents/children
             self.insert_parents(
                 &inherent_worker,
@@ -310,7 +333,7 @@ impl Collector {
                 &message.parents(),
                 self.est_ms,
                 ledger_inclusion_state.clone(),
-            );
+            )?;
             // insert payload (if any)
             if let Some(payload) = message.payload() {
                 self.insert_payload(
@@ -321,9 +344,10 @@ impl Collector {
                     self.est_ms,
                     ledger_inclusion_state,
                     metadata,
-                );
+                )?;
             }
         };
+        Ok(())
     }
     fn insert_parents<I: Inherent>(
         &self,
@@ -337,7 +361,10 @@ impl Collector {
         for parent_id in parents {
             let partitioned = Partitioned::new(*parent_id, partition_id, milestone_index.0);
             let parent_record = ParentRecord::new(*message_id, inclusion_state);
-            self.insert(inherent_worker, &self.get_keyspace(), partitioned, parent_record);
+            self.insert(inherent_worker, &self.get_keyspace(), partitioned, parent_record)
+                .unwrap_or_else(|e| {
+                    error!("{}", e);
+                });
             // insert hint record
             let hint = Hint::parent(parent_id.to_string());
             let partition = Partition::new(partition_id, *milestone_index);
@@ -631,7 +658,7 @@ impl Collector {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, sls.amount(), inclusion_state);
-                    self.insert(inherent_worker, &self.get_keyspace(), partitioned, address_record);
+                    self.insert(inherent_worker, &self.get_keyspace(), partitioned, address_record)?;
                     // insert hint record
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
@@ -645,7 +672,7 @@ impl Collector {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, slda.amount(), inclusion_state);
-                    self.insert(inherent_worker, &self.get_keyspace(), partitioned, address_record);
+                    self.insert(inherent_worker, &self.get_keyspace(), partitioned, address_record)?;
                     // insert hint record
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
@@ -676,34 +703,46 @@ impl Collector {
         Ok(())
     }
 
-    fn delete_parents(&self, message_id: &MessageId, parents: &Parents, milestone_index: MilestoneIndex) {
+    fn delete_parents(
+        &self,
+        message_id: &MessageId,
+        parents: &Parents,
+        milestone_index: MilestoneIndex,
+    ) -> anyhow::Result<()> {
         let partition_id = self.get_partition_id(milestone_index);
         for parent_id in parents.iter() {
             let parent_pk = ParentPK::new(*parent_id, partition_id, milestone_index, *message_id);
-            self.delete(parent_pk);
+            self.delete(parent_pk)?;
         }
+        Ok(())
     }
-    fn delete_indexation(&self, message_id: &MessageId, indexation: Indexation, milestone_index: MilestoneIndex) {
+    fn delete_indexation(
+        &self,
+        message_id: &MessageId,
+        indexation: Indexation,
+        milestone_index: MilestoneIndex,
+    ) -> anyhow::Result<()> {
         let partition_id = self.get_partition_id(milestone_index);
         let index_pk = IndexationPK::new(indexation, partition_id, milestone_index, *message_id);
-        self.delete(index_pk);
+        self.delete(index_pk)
     }
     fn delete_transaction_partitioned_rows(
         &self,
         message_id: &MessageId,
         transaction: &Box<TransactionPayload>,
         milestone_index: MilestoneIndex,
-    ) {
+    ) -> anyhow::Result<()> {
         let transaction_id = transaction.id();
         if let Essence::Regular(regular) = transaction.essence() {
             if let Some(Payload::Indexation(indexation)) = regular.payload() {
                 let index_key = Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
-                self.delete_indexation(&message_id, index_key, milestone_index);
+                self.delete_indexation(&message_id, index_key, milestone_index)?;
             }
             for (output_index, output) in regular.outputs().iter().enumerate() {
-                self.delete_address(output, &transaction_id, output_index as u16, milestone_index);
+                self.delete_address(output, &transaction_id, output_index as u16, milestone_index)?;
             }
         }
+        Ok(())
     }
     fn delete_address(
         &self,
@@ -711,7 +750,7 @@ impl Collector {
         transaction_id: &TransactionId,
         index: u16,
         milestone_index: MilestoneIndex,
-    ) {
+    ) -> anyhow::Result<()> {
         let partition_id = self.get_partition_id(milestone_index);
         let output_type = output.kind();
         match output {
@@ -725,7 +764,7 @@ impl Collector {
                         *transaction_id,
                         index,
                     );
-                    self.delete(address_pk);
+                    self.delete(address_pk)?;
                 } else {
                     error!("Unexpected address variant");
                 }
@@ -740,7 +779,7 @@ impl Collector {
                         *transaction_id,
                         index,
                     );
-                    self.delete(address_pk);
+                    self.delete(address_pk)?;
                 } else {
                     error!("Unexpected address variant");
                 }
@@ -752,6 +791,7 @@ impl Collector {
                 }
             }
         }
+        Ok(())
     }
     fn delete<K, V>(&self, key: K) -> anyhow::Result<()>
     where

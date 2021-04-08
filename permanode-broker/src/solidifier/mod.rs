@@ -392,12 +392,14 @@ where
     K: 'static + Send + Clone,
     V: 'static + Send + Clone,
 {
-    fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
-        Decoder::try_from(giveload)
-            .and_then(|decoder| decoder.get_void())
-            .unwrap_or_else(|e| error!("{}", e));
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
+        Decoder::try_from(giveload).and_then(|decoder| decoder.get_void())
     }
-    fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
+    fn handle_error(
+        mut self: Box<Self>,
+        mut error: WorkerError,
+        reporter: &Option<ReporterHandle>,
+    ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 scylla::worker::insert::handle_unprepared_error(
@@ -407,7 +409,7 @@ where
                     &self.value,
                     id,
                     reporter,
-                );
+                )?;
             }
         } else if self.retries > 0 {
             self.retries -= 1;
@@ -428,6 +430,7 @@ where
             // no more retries
             self.handle.any_error.store(true, Ordering::Relaxed);
         }
+        Ok(())
     }
 }
 
@@ -436,10 +439,10 @@ impl Drop for AtomicSolidifierHandle {
         let cql_result = CqlResult::PersistedMsg(self.message_id, self.milestone_index);
         let any_error = self.any_error.load(Ordering::Relaxed);
         if any_error {
-            self.handle.send(SolidifierEvent::CqlResult(Err(cql_result)));
+            self.handle.send(SolidifierEvent::CqlResult(Err(cql_result))).ok();
         } else {
             // respond with void
-            self.handle.send(SolidifierEvent::CqlResult(Ok(cql_result)));
+            self.handle.send(SolidifierEvent::CqlResult(Ok(cql_result))).ok();
         }
     }
 }
@@ -493,14 +496,17 @@ where
     K: 'static + Send + Clone,
     V: 'static + Send + Clone,
 {
-    fn handle_response(self: Box<Self>, giveload: Vec<u8>) {
-        Decoder::try_from(giveload)
-            .and_then(|decoder| decoder.get_void())
-            .unwrap_or_else(|e| error!("{}", e));
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
+        Decoder::try_from(giveload).and_then(|decoder| decoder.get_void())?;
         let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
         let _ = self.handle.send(SolidifierEvent::CqlResult(Ok(synced_ms)));
+        Ok(())
     }
-    fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
+    fn handle_error(
+        mut self: Box<Self>,
+        mut error: WorkerError,
+        reporter: &Option<ReporterHandle>,
+    ) -> anyhow::Result<()> {
         error!(
             "{:?}, left retries: {}, reporter running: {}",
             error,
@@ -516,7 +522,7 @@ where
                     &self.value,
                     id,
                     reporter,
-                );
+                )?;
             }
         } else if self.retries > 0 {
             self.retries -= 1;
@@ -539,5 +545,6 @@ where
             let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
             let _ = self.handle.send(SolidifierEvent::CqlResult(Err(synced_ms)));
         }
+        Ok(())
     }
 }

@@ -109,7 +109,7 @@ impl<H: WebsocketScope> Shutdown for WebsocketSender<H> {
     where
         Self: Sized,
     {
-        get_history_mut().persist();
+        get_history_mut().persist().unwrap_or_else(|e| log::error!("{}", e));
         self.send(WebsocketEvent::Passthrough(
             serde_json::from_str("{\"Websocket\": \"Shutdown\"}").unwrap(),
         ))

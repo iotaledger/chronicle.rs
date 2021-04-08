@@ -101,7 +101,7 @@ impl Shutdown for SyncerHandle {
     where
         Self: Sized,
     {
-        self.send(SyncerEvent::Shutdown);
+        self.send(SyncerEvent::Shutdown).ok();
         None
     }
 }
