@@ -251,7 +251,7 @@ impl Solidifier {
         &mut self,
         MilestoneMessage(_message_id, milestone_payload, message, metadata): MilestoneMessage,
     ) {
-        let milestone_index = milestone_payload.essence().index();
+        let milestone_index = *milestone_payload.essence().index();
         let partitioner = &self.message_id_partitioner;
         let collectors_handles = &self.collector_handles;
         let solidifier_id = self.partition_id;

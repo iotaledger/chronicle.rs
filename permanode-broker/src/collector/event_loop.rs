@@ -375,7 +375,7 @@ impl Collector {
                 metadata,
             ),
             Payload::Milestone(milestone) => {
-                let ms_index = milestone.essence().index();
+                let ms_index = *milestone.essence().index();
                 let parents_check = message.parents().eq(milestone.essence().parents());
                 if metadata.is_some() && parents_check {
                     // push to the right solidifier
@@ -485,7 +485,7 @@ impl Collector {
         if let Essence::Regular(regular) = transaction.essence() {
             for (input_index, input) in regular.inputs().iter().enumerate() {
                 // insert utxoinput row along with input row
-                if let Input::UTXO(utxo_input) = input {
+                if let Input::Utxo(utxo_input) = input {
                     let unlock_block = &unlock_blocks[input_index];
                     let input_data = InputData::utxo(utxo_input.clone(), unlock_block.clone());
                     // insert input row

@@ -22,8 +22,8 @@ pub use bee_message::{
         Payload,
         TransactionId,
         TreasuryInput,
-        UTXOInput,
         UnlockBlock,
+        UtxoInput,
         HASHED_INDEX_LENGTH,
     },
     solid_entry_point::SolidEntryPoint,
@@ -135,7 +135,7 @@ impl Packable for UnlockData {
         self.unlock_block.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
         Ok(())
     }
-    fn unpack<R: std::io::Read + ?Sized>(reader: &mut R) -> Result<Self, Self::Error>
+    fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
@@ -151,15 +151,15 @@ impl Packable for UnlockData {
 #[derive(Debug, Clone)]
 pub enum InputData {
     /// An regular Input which spends a prior Output and its unlock block
-    UTXO(UTXOInput, UnlockBlock),
+    Utxo(UtxoInput, UnlockBlock),
     /// A special input for migrating funds from another network
     Treasury(TreasuryInput),
 }
 
 impl InputData {
     /// Creates a regular Input Data
-    pub fn utxo(utxo_input: UTXOInput, unlock_block: UnlockBlock) -> Self {
-        Self::UTXO(utxo_input, unlock_block)
+    pub fn utxo(utxo_input: UtxoInput, unlock_block: UnlockBlock) -> Self {
+        Self::Utxo(utxo_input, unlock_block)
     }
     /// Creates a special migration Input Data
     pub fn treasury(treasury_input: TreasuryInput) -> Self {
@@ -171,7 +171,7 @@ impl Packable for InputData {
     type Error = Cow<'static, str>;
     fn packed_len(&self) -> usize {
         match self {
-            InputData::UTXO(utxo_input, unlock_block) => {
+            InputData::Utxo(utxo_input, unlock_block) => {
                 0u8.packed_len() + utxo_input.packed_len() + unlock_block.packed_len()
             }
             InputData::Treasury(treasury_input) => 0u8.packed_len() + treasury_input.packed_len(),
@@ -179,7 +179,7 @@ impl Packable for InputData {
     }
     fn pack<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Self::Error> {
         match self {
-            InputData::UTXO(utxo_input, unlock_block) => {
+            InputData::Utxo(utxo_input, unlock_block) => {
                 0u8.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
                 utxo_input.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
                 unlock_block.pack(writer).map_err(|e| Cow::from(e.to_string()))?;
@@ -191,13 +191,13 @@ impl Packable for InputData {
         }
         Ok(())
     }
-    fn unpack<R: std::io::Read + ?Sized>(reader: &mut R) -> Result<Self, Self::Error>
+    fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
         match u8::unpack(reader).map_err(|e| Cow::from(e.to_string()))? {
-            0 => Ok(InputData::UTXO(
-                UTXOInput::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
+            0 => Ok(InputData::Utxo(
+                UtxoInput::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
                 UnlockBlock::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
             )),
             1 => Ok(InputData::Treasury(
@@ -249,19 +249,19 @@ impl Packable for TransactionData {
         Ok(())
     }
 
-    fn unpack<R: std::io::Read + ?Sized>(reader: &mut R) -> Result<Self, Self::Error>
+    fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
         match u8::unpack(reader).map_err(|e| Cow::from(e.to_string()))? {
             0 => Ok(TransactionData::Input(
-                InputData::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
+                InputData::unpack_inner::<R, CHECK>(reader).map_err(|e| Cow::from(e.to_string()))?,
             )),
             1 => Ok(TransactionData::Output(
-                Output::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
+                Output::unpack_inner::<R, CHECK>(reader).map_err(|e| Cow::from(e.to_string()))?,
             )),
             2 => Ok(TransactionData::Unlock(
-                UnlockData::unpack(reader).map_err(|e| Cow::from(e.to_string()))?,
+                UnlockData::unpack_inner::<R, CHECK>(reader).map_err(|e| Cow::from(e.to_string()))?,
             )),
             _ => Err("Tried to unpack an invalid transaction variant!".into()),
         }

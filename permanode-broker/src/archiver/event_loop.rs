@@ -11,7 +11,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         status?;
-        let mut next = self.oneshot.take().unwrap().await.unwrap();
+        let mut next;
+        if let Ok(index) = self.oneshot.take().unwrap().await {
+            next = index;
+        } else {
+            return Err(Need::Abort);
+        }
         info!(
             "Archiver will write ahead log files for new incoming data starting: {}",
             next
