@@ -25,8 +25,8 @@ lru = "0.6.5"
 rand = "0.8"
 url = { version = "2", features = ["serde"] }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
-bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "77de10c" }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "77de10c" }
+bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 permanode-filter = { path = "../permanode-filter", optional = true }
 bincode = "1.3.2"
 anyhow = "1.0"
@@ -56,7 +56,7 @@ features = [
 
 [dependencies.bee-message]
 git = "https://github.com/iotaledger/bee.git"
-rev = "77de10c"
+rev = "2825bf5"
 features = [
     "serde"
 ]

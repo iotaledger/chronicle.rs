@@ -14,9 +14,9 @@ path = "src/lib.rs"
 permanode-common = { path = "../permanode-common" }
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "error-handling" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "error-handling" }
-bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "77de10c" }
-bee-ledger = { git = "https://github.com/iotaledger/bee.git", rev = "77de10c" }
-bee-snapshot = { git = "https://github.com/iotaledger/bee.git", rev = "77de10c" }
+bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
+bee-ledger = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
+bee-snapshot = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 async-trait = "0.1.42"
 serde = { version = "1.0", features = ["derive"] }
@@ -26,7 +26,7 @@ anyhow = "1.0"
 
 [dependencies.bee-message]
 git = "https://github.com/iotaledger/bee.git"
-rev = "77de10c"
+rev = "2825bf5"
 features = [
     "serde"
 ]
