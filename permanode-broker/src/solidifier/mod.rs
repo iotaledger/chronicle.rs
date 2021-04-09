@@ -21,7 +21,6 @@ use std::{
     },
     sync::atomic::Ordering,
 };
-
 mod event_loop;
 mod init;
 mod terminating;
@@ -125,6 +124,12 @@ pub struct MilestoneData {
     pending: HashMap<MessageId, ()>,
     complete: bool,
     created_by: CreatedBy,
+}
+
+impl MilestoneData {
+    pub fn created_by(&self) -> &CreatedBy {
+        &self.created_by
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]

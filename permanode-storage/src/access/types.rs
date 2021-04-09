@@ -136,7 +136,6 @@ impl Packable for UnlockData {
         self.unlock_block.pack(writer)?;
         Ok(())
     }
-
     fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
@@ -153,7 +152,7 @@ impl Packable for UnlockData {
 #[derive(Debug, Clone)]
 pub enum InputData {
     /// An regular Input which spends a prior Output and its unlock block
-    UTXO(UtxoInput, UnlockBlock),
+    Utxo(UtxoInput, UnlockBlock),
     /// A special input for migrating funds from another network
     Treasury(TreasuryInput),
 }
@@ -161,7 +160,7 @@ pub enum InputData {
 impl InputData {
     /// Creates a regular Input Data
     pub fn utxo(utxo_input: UtxoInput, unlock_block: UnlockBlock) -> Self {
-        Self::UTXO(utxo_input, unlock_block)
+        Self::Utxo(utxo_input, unlock_block)
     }
     /// Creates a special migration Input Data
     pub fn treasury(treasury_input: TreasuryInput) -> Self {
@@ -173,7 +172,7 @@ impl Packable for InputData {
     type Error = anyhow::Error;
     fn packed_len(&self) -> usize {
         match self {
-            InputData::UTXO(utxo_input, unlock_block) => {
+            InputData::Utxo(utxo_input, unlock_block) => {
                 0u8.packed_len() + utxo_input.packed_len() + unlock_block.packed_len()
             }
             InputData::Treasury(treasury_input) => 0u8.packed_len() + treasury_input.packed_len(),
@@ -181,7 +180,7 @@ impl Packable for InputData {
     }
     fn pack<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Self::Error> {
         match self {
-            InputData::UTXO(utxo_input, unlock_block) => {
+            InputData::Utxo(utxo_input, unlock_block) => {
                 0u8.pack(writer)?;
                 utxo_input.pack(writer)?;
                 unlock_block.pack(writer)?;
@@ -193,13 +192,12 @@ impl Packable for InputData {
         }
         Ok(())
     }
-
     fn unpack_inner<R: std::io::Read + ?Sized, const CHECK: bool>(reader: &mut R) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
         Ok(match u8::unpack(reader)? {
-            0 => InputData::UTXO(UtxoInput::unpack(reader)?, UnlockBlock::unpack(reader)?),
+            0 => InputData::Utxo(UtxoInput::unpack(reader)?, UnlockBlock::unpack(reader)?),
             1 => InputData::Treasury(TreasuryInput::unpack(reader)?),
             _ => bail!("Tried to unpack an invalid inputdata variant!"),
         })

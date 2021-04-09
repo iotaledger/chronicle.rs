@@ -1,6 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use super::syncer::Ascending;
 use crate::{
     application::*,
     solidifier::*,
@@ -10,6 +11,7 @@ use anyhow::{
     bail,
 };
 use std::{
+    collections::BinaryHeap,
     ops::{
         Deref,
         DerefMut,
@@ -22,6 +24,7 @@ use tokio::{
         OpenOptions,
     },
     io::AsyncWriteExt,
+    sync::oneshot::Receiver,
 };
 
 mod event_loop;
@@ -35,6 +38,8 @@ pub const MAX_LOG_SIZE: u64 = u32::MAX as u64;
 builder!(ArchiverBuilder {
     keyspace: PermanodeKeyspace,
     max_log_size: u64,
+    oneshot: Receiver<u32>,
+    solidifiers_count: u8,
     dir_path: PathBuf
 });
 
@@ -75,7 +80,6 @@ pub enum ArchiverEvent {
     Close(u32),
 }
 
-#[derive(Debug)]
 pub struct LogFile {
     len: u64,
     filename: String,
@@ -155,8 +159,12 @@ pub struct Archiver {
     dir_path: PathBuf,
     logs: Vec<LogFile>,
     max_log_size: u64,
+    cleanup: Vec<u32>,
     processed: Vec<std::ops::Range<u32>>,
+    milestones_data: BinaryHeap<Ascending<MilestoneData>>,
+    oneshot: Option<tokio::sync::oneshot::Receiver<u32>>,
     keyspace: PermanodeKeyspace,
+    solidifiers_count: u8,
     handle: Option<ArchiverHandle>,
     inbox: ArchiverInbox,
 }
@@ -179,9 +187,13 @@ impl Builder for ArchiverBuilder {
             service: Service::new(),
             dir_path,
             logs: Vec::new(),
+            cleanup: Vec::with_capacity(2),
             max_log_size: self.max_log_size.unwrap_or(MAX_LOG_SIZE),
             processed: Vec::new(),
             keyspace: self.keyspace.unwrap(),
+            solidifiers_count: self.solidifiers_count.unwrap(),
+            milestones_data: std::collections::BinaryHeap::new(),
+            oneshot: self.oneshot,
             handle,
             inbox,
         }

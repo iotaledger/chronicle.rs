@@ -19,10 +19,18 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
                     if let None = self.active {
                         match ask {
                             AskSyncer::Complete => {
-                                self.complete();
+                                if !self.highest.eq(&0) {
+                                    self.complete();
+                                } else {
+                                    self.first_ask.replace(ask);
+                                }
                             }
                             AskSyncer::FillGaps => {
-                                self.fill_gaps();
+                                if !self.highest.eq(&0) {
+                                    self.fill_gaps();
+                                } else {
+                                    self.first_ask.replace(ask);
+                                }
                             }
                             AskSyncer::UpdateSyncData => {
                                 todo!("Updating the sync data is not implemented yet")
@@ -88,8 +96,18 @@ impl Syncer {
                     .archiver_handle
                     .send(ArchiverEvent::MilestoneData(milestone_data, None));
             }
+            // push the start point to archiver
+            let _ = self.oneshot.take().unwrap().send(next);
             // tell archiver to finish the logfile
             let _ = self.archiver_handle.send(ArchiverEvent::Close(next));
+            // set the first ask request
+            match self.first_ask.take() {
+                Some(AskSyncer::Complete) => {
+                    self.complete();
+                }
+                Some(AskSyncer::FillGaps) => self.fill_gaps(),
+                _ => {}
+            }
         } else if !self.highest.eq(&0) && !self.skip {
             let upper_ms_limit = Some(self.initial_gap_end);
             // check if we could send the next expected milestone_index
@@ -234,13 +252,13 @@ impl Syncer {
                 // this is the last gap in our sync data
                 // First we ensure highest is larger than gap.start
                 if self.highest > gap.start {
-                    info!("Completing the last gap {:?}", gap);
                     // set next to be the start
                     self.next = gap.start;
                     self.initial_gap_start = self.next;
-                    self.initial_gap_end = gap.end;
                     // update the end of the gap
                     gap.end = self.highest;
+                    self.initial_gap_end = gap.end;
+                    info!("Completing the last gap {:?}", gap);
                     self.active.replace(Active::Complete(gap));
                     self.trigger_process_more();
                 } else {
@@ -272,9 +290,9 @@ impl Syncer {
                     // set next to be the start
                     self.next = gap.start;
                     self.initial_gap_start = self.next;
-                    self.initial_gap_end = gap.end;
                     // update the end of the gap
                     gap.end = self.highest;
+                    self.initial_gap_end = gap.end;
                     self.active.replace(Active::FillGaps(gap));
                     self.trigger_process_more();
                 } else {

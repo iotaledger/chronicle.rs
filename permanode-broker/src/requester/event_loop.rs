@@ -15,6 +15,7 @@ impl EventLoop<CollectorHandle> for Requester {
         while let Some(event) = self.inbox.recv().await {
             match event {
                 RequesterEvent::RequestFullMessage(message_id, try_ms_index) => {
+                    // info!("Requesting full message {}", message_id);
                     if let Ok(full_message) = self.request_message_and_metadata(message_id).await {
                         self.response_to_collector(
                             collector_handle,
