@@ -19,7 +19,7 @@ impl Select<MessageId, Message> for PermanodeKeyspace {
 impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
     type Row = Record<Option<Message>>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Message>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         Ok(Self::Row::rows_iter(decoder)?
             .next()
             .map(|row| row.into_inner())
@@ -40,7 +40,7 @@ impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
 impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
     type Row = Record<Option<MessageMetadata>>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<MessageMetadata>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
 
         Ok(Self::Row::rows_iter(decoder)?
             .next()
@@ -66,7 +66,7 @@ impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for Permanode
 impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for PermanodeKeyspace {
     type Row = Record<(Option<Message>, Option<MessageMetadata>)>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<(Option<Message>, Option<MessageMetadata>)>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         if let Some(row) = Self::Row::rows_iter(decoder)?.next() {
             let row = row.into_inner();
             Ok(Some((row.0, row.1)))
@@ -98,7 +98,7 @@ impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> 
 impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<ParentRecord>>>> for PermanodeKeyspace {
     type Row = Record<(PartitionId, MilestoneIndex, MessageId, Option<LedgerInclusionState>)>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Paged<VecDeque<Partitioned<ParentRecord>>>>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let mut iter = Self::Row::rows_iter(decoder)?;
         let paging_state = iter.take_paging_state();
         let values = iter
@@ -137,7 +137,7 @@ impl Select<Partitioned<Indexation>, Paged<VecDeque<Partitioned<IndexationRecord
 impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<IndexationRecord>>>> for PermanodeKeyspace {
     type Row = Record<(PartitionId, MilestoneIndex, MessageId, Option<LedgerInclusionState>)>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Paged<VecDeque<Partitioned<IndexationRecord>>>>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let mut iter = Self::Row::rows_iter(decoder)?;
         let paging_state = iter.take_paging_state();
         let values = iter
@@ -184,7 +184,7 @@ impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<Address
         Option<LedgerInclusionState>,
     )>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Paged<VecDeque<Partitioned<AddressRecord>>>>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let mut iter = Self::Row::rows_iter(decoder)?;
         let paging_state = iter.take_paging_state();
         let values = iter
@@ -225,7 +225,7 @@ impl Select<OutputId, OutputRes> for PermanodeKeyspace {
 impl RowsDecoder<OutputId, OutputRes> for PermanodeKeyspace {
     type Row = Record<(MessageId, TransactionData, Option<LedgerInclusionState>)>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<OutputRes>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let mut unlock_blocks = Vec::new();
         let mut output = None;
         for (message_id, transaction_data, inclusion_state) in
@@ -262,7 +262,7 @@ impl Select<MilestoneIndex, Milestone> for PermanodeKeyspace {
 impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
     type Row = Record<(MessageId, u64)>;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Milestone>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         Ok(Self::Row::rows_iter(decoder)?
             .next()
             .map(|row| Milestone::new(row.0, row.1)))
@@ -291,7 +291,7 @@ impl<K> RowsDecoder<K, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace
     type Row = Record<(u32, u16)>;
 
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Vec<(MilestoneIndex, PartitionId)>>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         Ok(Some(
             Self::Row::rows_iter(decoder)?
                 .map(|row| {
@@ -323,7 +323,7 @@ impl Select<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
 impl RowsDecoder<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
     type Row = SyncRecord;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Iter<SyncRecord>>> {
-        ensure!(decoder.is_rows()?, decoder.get_error()?);
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let rows_iter = Self::Row::rows_iter(decoder)?;
         if rows_iter.is_empty() {
             Ok(None)

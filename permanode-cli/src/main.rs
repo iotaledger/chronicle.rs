@@ -14,7 +14,6 @@ use permanode::{
 };
 use permanode_broker::application::PermanodeBrokerThrough;
 use permanode_common::config::{
-    Config,
     MqttType,
     VersionedConfig,
 };

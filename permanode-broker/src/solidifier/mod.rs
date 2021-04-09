@@ -19,10 +19,7 @@ use std::{
         Deref,
         DerefMut,
     },
-    sync::atomic::{
-        AtomicBool,
-        Ordering,
-    },
+    sync::atomic::Ordering,
 };
 
 mod event_loop;
@@ -417,7 +414,8 @@ where
             match self
                 .keyspace
                 .insert_query(&self.key, &self.value)
-                .and_then(|b| b.consistency(Consistency::One).build())
+                .consistency(Consistency::One)
+                .build()
             {
                 Ok(req) => {
                     tokio::spawn(async { req.send_global(self) });
@@ -530,7 +528,8 @@ where
             match self
                 .keyspace
                 .insert_query(&self.key, &self.value)
-                .and_then(|b| b.consistency(Consistency::One).build())
+                .consistency(Consistency::One)
+                .build()
             {
                 Ok(req) => {
                     tokio::spawn(async { req.send_global(self) });

@@ -245,7 +245,7 @@ impl Solidifier {
         let synced_record = SyncRecord::new(MilestoneIndex(milestone_index), synced_by, None);
         let request = self
             .keyspace
-            .insert(&sync_key, &synced_record)?
+            .insert(&sync_key, &synced_record)
             .consistency(Consistency::One)
             .build()?;
         let worker = SolidifierWorker::boxed(

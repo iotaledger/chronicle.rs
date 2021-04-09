@@ -322,10 +322,7 @@ impl Collector {
             ledger_inclusion_state = None;
             let inherent_worker = SimpleWorker;
             // store message only
-            self.insert(&inherent_worker, &keyspace, *message_id, message.clone())
-                .unwrap_or_else(|e| {
-                    error!("{}", e);
-                });
+            self.insert(&inherent_worker, &keyspace, *message_id, message.clone())?;
             // Insert parents/children
             self.insert_parents(
                 &inherent_worker,
@@ -361,10 +358,7 @@ impl Collector {
         for parent_id in parents {
             let partitioned = Partitioned::new(*parent_id, partition_id, milestone_index.0);
             let parent_record = ParentRecord::new(*message_id, inclusion_state);
-            self.insert(inherent_worker, &self.get_keyspace(), partitioned, parent_record)
-                .unwrap_or_else(|e| {
-                    error!("{}", e);
-                });
+            self.insert(inherent_worker, &self.get_keyspace(), partitioned, parent_record)?;
             // insert hint record
             let hint = Hint::parent(parent_id.to_string());
             let partition = Partition::new(partition_id, *milestone_index);
@@ -697,7 +691,7 @@ impl Collector {
         K: 'static + Send + Clone,
         V: 'static + Send + Clone,
     {
-        let insert_req = keyspace.insert(&key, &value)?.consistency(Consistency::One).build()?;
+        let insert_req = keyspace.insert(&key, &value).consistency(Consistency::One).build()?;
         let worker = inherent_worker.inherent_boxed(keyspace.clone(), key, value);
         insert_req.send_local(worker);
         Ok(())
@@ -801,7 +795,7 @@ impl Collector {
     {
         let delete_req = self
             .default_keyspace
-            .delete(&key)?
+            .delete(&key)
             .consistency(Consistency::One)
             .build()?;
         let worker = DeleteWorker::boxed(self.default_keyspace.clone(), key);

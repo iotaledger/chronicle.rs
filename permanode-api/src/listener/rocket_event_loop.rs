@@ -288,7 +288,7 @@ where
     K: 'static + Send + Clone,
     V: 'static + Send + Clone,
 {
-    let request = keyspace.select::<V>(&key)?.consistency(Consistency::One);
+    let request = keyspace.select::<V>(&key).consistency(Consistency::One);
     let request = if let Some(page_size) = page_size {
         request.page_size(page_size).paging_state(&paging_state)
     } else {

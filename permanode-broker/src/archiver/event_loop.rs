@@ -182,7 +182,7 @@ impl Archiver {
         let sync_key = permanode_common::Synckey;
         let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
         keyspace
-            .insert(&sync_key, &synced_record)?
+            .insert(&sync_key, &synced_record)
             .consistency(Consistency::One)
             .build()?
             .send_local(InsertWorker::boxed(keyspace.clone(), sync_key, synced_record));
