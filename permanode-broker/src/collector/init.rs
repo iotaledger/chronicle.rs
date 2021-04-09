@@ -27,7 +27,7 @@ impl Collector {
             let requester = RequesterBuilder::new()
                 .inbox(inbox)
                 .requester_id(id)
-                .api_endpoints(self.api_endpoints.clone())
+                .api_endpoints(self.api_endpoints.iter().cloned().collect())
                 .reqwest_client(reqwest_client)
                 .build();
             let (abort_handle, abort_registration) = futures::future::AbortHandle::new_pair();

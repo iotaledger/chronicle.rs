@@ -5,17 +5,17 @@ use crate::{
     collector::*,
     solidifier::FullMessage,
 };
-use std::collections::VecDeque;
-
 use bee_rest_api::types::{
     dtos::MessageDto,
     responses::MilestoneResponse,
 };
-use std::convert::TryFrom;
-
-use std::ops::{
-    Deref,
-    DerefMut,
+use std::{
+    collections::VecDeque,
+    convert::TryFrom,
+    ops::{
+        Deref,
+        DerefMut,
+    },
 };
 
 mod event_loop;

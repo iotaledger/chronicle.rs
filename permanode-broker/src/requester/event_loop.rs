@@ -15,7 +15,7 @@ impl EventLoop<CollectorHandle> for Requester {
         while let Some(event) = self.inbox.recv().await {
             match event {
                 RequesterEvent::RequestFullMessage(message_id, try_ms_index) => {
-                    // info!("Requesting full message {}", message_id);
+                    // info!("Requesting full message {}, {}", message_id, try_ms_index);
                     if let Ok(full_message) = self.request_message_and_metadata(message_id).await {
                         self.response_to_collector(
                             collector_handle,
@@ -28,6 +28,7 @@ impl EventLoop<CollectorHandle> for Requester {
                     }
                 }
                 RequesterEvent::RequestMilestone(milestone_index) => {
+                    info!("Requesting ms message {}", milestone_index);
                     if let Ok(full_message) = self.request_milestone_message(milestone_index).await {
                         self.response_to_collector(
                             collector_handle,
