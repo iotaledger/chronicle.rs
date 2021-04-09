@@ -30,7 +30,6 @@ pub use bee_message::{
     Message,
     MessageId,
 };
-pub use bee_snapshot::SnapshotInfo;
 pub use bee_tangle::{
     flags::Flags,
     unconfirmed_message::UnconfirmedMessage,

@@ -15,7 +15,7 @@ scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "e8cafb6" }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.62"
 serde_repr = "0.1"

@@ -9,7 +9,10 @@ use std::collections::VecDeque;
 
 use bee_rest_api::types::{
     dtos::MessageDto,
-    responses::MilestoneResponse,
+    responses::{
+        MessageResponse,
+        MilestoneResponse,
+    },
 };
 use std::convert::TryFrom;
 

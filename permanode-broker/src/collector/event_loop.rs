@@ -21,16 +21,19 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         let message_id = message_id.expect("Expected message_id in requester response");
                         let partition_id = (try_ms_index % (self.collectors_count as u32)) as u8;
                         let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
-                        // set the ref_ms to be the current requested message ref_ms
-                        self.ref_ms.0 = *ref_ms;
                         // check if the requested message actually belongs to the expected milestone_index
                         if ref_ms.eq(&try_ms_index) {
                             // push full message to solidifier;
                             self.push_fullmsg_to_solidifier(partition_id, message.clone(), metadata.clone());
+                            // proceed to insert the message and put it in the cache.
                         } else {
                             // close the request
                             self.push_close_to_solidifier(partition_id, message_id, try_ms_index);
+                            // Don't proceed, we continue to next iteration of the event_loop
+                            continue;
                         }
+                        // set the ref_ms to be the current requested message ref_ms
+                        self.ref_ms.0 = *ref_ms;
                         // check if msg already in lru cache(if so then it's already presisted)
                         let wrong_msg_est_ms;
                         if let Some((est_ms, _)) = self.lru_msg.get_mut(&message_id) {
@@ -87,8 +90,6 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     self.ref_ms.0 = *ref_ms;
                     // update the est_ms to be the most recent ref_ms+1
                     let new_ms = self.ref_ms.0 + 1;
-                    // TODO likely we should remove this check,as the MessageReferenced supposed to be used for fresh
-                    // data
                     if self.est_ms.0 < new_ms {
                         self.est_ms.0 = new_ms;
                     }
@@ -97,7 +98,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         // add it to the cache in order to not presist it again.
                         self.lru_msg_ref.put(message_id, metadata.clone());
                         // check if msg already exist in the cache, if so we push it to solidifier
-                        let cached_msg;
+                        let cached_msg: Option<Message>;
                         let wrong_msg_est_ms;
                         if let Some((est_ms, message)) = self.lru_msg.get_mut(&message_id) {
                             // check if est_ms is not identical to ref_ms
@@ -115,9 +116,35 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 let full_msg_event = SolidifierEvent::Message(full_message);
                                 let _ = solidifier_handle.send(full_msg_event);
                             };
+                            // however the message_id might had been requested,
+                            if let Some((requested_by_this_ms, _)) = self.pending_requests.remove(&message_id) {
+                                // check if we have to close it
+                                if !requested_by_this_ms.eq(&*ref_ms) {
+                                    // close it
+                                    let solidifier_id = (requested_by_this_ms % (self.collectors_count as u32)) as u8;
+                                    self.push_close_to_solidifier(solidifier_id, message_id, requested_by_this_ms);
+                                }
+                            }
+                            // request all pending_requests with less than the received milestone index
+                            self.process_pending_requests(*ref_ms);
                         } else {
-                            cached_msg = None;
+                            // check if it's in the pending_requests
+                            if let Some((requested_by_this_ms, message)) = self.pending_requests.remove(&message_id) {
+                                // check if we have to close or push full message
+                                if requested_by_this_ms.eq(&*ref_ms) {
+                                    // push full message
+                                    self.push_fullmsg_to_solidifier(_partition_id, message.clone(), metadata.clone())
+                                } else {
+                                    // close it
+                                    let solidifier_id = (requested_by_this_ms % (self.collectors_count as u32)) as u8;
+                                    self.push_close_to_solidifier(solidifier_id, message_id, requested_by_this_ms);
+                                }
+                                cached_msg = Some(message);
+                            } else {
+                                cached_msg = None;
+                            }
                             wrong_msg_est_ms = None;
+                            self.process_pending_requests(*ref_ms);
                         }
                         if let Some(message) = cached_msg {
                             if let Some(wrong_est_ms) = wrong_msg_est_ms {
@@ -126,7 +153,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             self.insert_message_with_metadata(message_id, message, metadata);
                         } else {
                             // store it as metadata
-                            self.insert_message_metadata(metadata.clone());
+                            self.insert_message_metadata(metadata);
                         }
                     }
                 }
@@ -138,10 +165,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     // metadata exist means we already pushed the full message to the solidifier,
                                     // or the message doesn't belong to the solidifier
                                     if !metadata.referenced_by_milestone_index.unwrap().eq(&try_ms_index) {
-                                        if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
-                                            let event = SolidifierEvent::Close(message_id, try_ms_index);
-                                            let _ = solidifier_handle.send(event);
-                                        }
+                                        self.push_close_to_solidifier(solidifier_id, message_id, try_ms_index);
                                     } else {
                                         if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
                                             let full_message = FullMessage::new(message.clone(), metadata.clone());
@@ -150,7 +174,42 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                         }
                                     }
                                 } else {
-                                    self.request_full_message(message_id, try_ms_index);
+                                    if !(*self.est_ms).eq(&0) {
+                                        let highest_ms = *self.est_ms - 1;
+                                        if try_ms_index >= highest_ms {
+                                            if let Some((pre_ms_index, _)) = self.pending_requests.get_mut(&message_id)
+                                            {
+                                                // check if other solidifier(other milestone) already requested the
+                                                // message_id with diff try_ms_index
+                                                let old_ms = *pre_ms_index;
+                                                if old_ms < try_ms_index {
+                                                    // close try_ms_index, and keep pre_ms_index to be processed
+                                                    // eventually
+                                                    self.push_close_to_solidifier(
+                                                        solidifier_id,
+                                                        message_id,
+                                                        try_ms_index,
+                                                    );
+                                                } else {
+                                                    // overwrite pre_ms_index by try_ms_index, which it will be
+                                                    // eventually processed;
+                                                    *pre_ms_index = try_ms_index;
+                                                    // close pre_ms_index(old_ms) as it's greater than what we have atm
+                                                    // (try_ms_index).
+                                                    assert!(!old_ms.eq(&try_ms_index));
+                                                    self.push_close_to_solidifier(solidifier_id, message_id, old_ms);
+                                                }
+                                            } else {
+                                                // add it to back_pressured requests
+                                                self.pending_requests
+                                                    .insert(message_id, (try_ms_index, message.clone()));
+                                            };
+                                        } else {
+                                            self.request_full_message(message_id, try_ms_index);
+                                        }
+                                    } else {
+                                        self.request_full_message(message_id, try_ms_index);
+                                    }
                                 }
                             } else {
                                 self.request_full_message(message_id, try_ms_index);
@@ -177,6 +236,19 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
+    fn process_pending_requests(&mut self, milestone_index: u32) {
+        self.pending_requests = std::mem::take(&mut self.pending_requests)
+            .into_iter()
+            .filter_map(|(message_id, (ms, msg))| {
+                if ms < milestone_index {
+                    self.request_full_message(message_id, ms);
+                    None
+                } else {
+                    Some((message_id, (ms, msg)))
+                }
+            })
+            .collect();
+    }
     fn clone_solidifier_handle(&self, milestone_index: u32) -> SolidifierHandle {
         let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
         self.solidifier_handles.get(&solidifier_id).unwrap().clone()

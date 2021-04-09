@@ -14,7 +14,10 @@ use bee_message::{
         TransactionPayload,
     },
 };
-use std::collections::BinaryHeap;
+use std::collections::{
+    BinaryHeap,
+    HashSet,
+};
 
 use lru::LruCache;
 use permanode_common::config::StorageConfig;
@@ -137,6 +140,7 @@ pub struct Collector {
     inbox: CollectorInbox,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     retries: u16,
+    pending_requests: HashMap<MessageId, (u32, Message)>,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
     default_keyspace: PermanodeKeyspace,
@@ -178,6 +182,7 @@ impl Builder for CollectorBuilder {
             requester_count: self.requester_count.unwrap_or(10),
             handle: self.handle,
             inbox: self.inbox.unwrap(),
+            pending_requests: HashMap::new(),
             api_endpoints: self.api_endpoints.unwrap(),
             reqwest_client: self.reqwest_client.unwrap(),
             default_keyspace,

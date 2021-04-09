@@ -449,6 +449,10 @@ impl Solidifier {
             }
             // set it as recent expected
             self.expected = milestone_index + (self.collectors_count as u32);
+            info!(
+                "solidifier_id: {}, set new expected {}",
+                self.partition_id, self.expected
+            );
         }
     }
     fn process_milestone_data(
