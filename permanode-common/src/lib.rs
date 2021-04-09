@@ -2,25 +2,13 @@
 //! Common code for Chronicle
 
 use anyhow::anyhow;
-use config::{
-    Config,
-    VersionedConfig,
-};
+use config::Config;
 use glob::glob;
-use log::{
-    debug,
-    error,
-};
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use log::{debug, error};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BinaryHeap,
-    ops::{
-        Deref,
-        DerefMut,
-    },
+    ops::{Deref, DerefMut},
     path::Path,
 };
 use tokio::sync::RwLock;
@@ -136,7 +124,6 @@ pub struct History<R> {
 impl<R> History<R>
 where
     R: DerefMut + Default + Ord + Persist + Wrapper,
-    R::Target: Persist,
 {
     /// Create a new history with `max_records`
     pub fn new(max_records: usize) -> Self {
@@ -165,7 +152,7 @@ where
     /// Update the history with a new record
     pub fn update(&mut self, record: R::Target)
     where
-        R: From<R::Target>,
+        R: From<<R as Deref>::Target>,
         R::Target: Sized,
     {
         self.records.push(record.into());
@@ -176,7 +163,7 @@ where
     /// *This should only be used to deserialize a `History`.*
     pub fn add(&mut self, record: R::Target, created: u64)
     where
-        R: From<(R::Target, u64)>,
+        R: From<(<R as Deref>::Target, u64)>,
         R::Target: Sized,
     {
         self.records.push((record, created).into());
