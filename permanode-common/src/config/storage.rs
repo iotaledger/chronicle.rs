@@ -1,3 +1,8 @@
+use maplit::{
+    hashmap,
+    hashset,
+};
+
 use super::*;
 use std::{
     collections::HashSet,
@@ -49,12 +54,12 @@ pub struct StorageConfig {
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
-            keyspaces: Default::default(),
+            keyspaces: vec![Default::default()],
             listen_address: ([127, 0, 0, 1], 8080).into(),
             thread_count: Default::default(),
-            reporter_count: Default::default(),
-            local_datacenter: Default::default(),
-            nodes: Default::default(),
+            reporter_count: 1,
+            local_datacenter: "datacenter1".to_string(),
+            nodes: hashset![([127, 0, 0, 1], 9042).into()],
             partition_config: Default::default(),
         }
     }
@@ -80,6 +85,22 @@ pub struct KeyspaceConfig {
     pub name: KeyspaceName,
     /// Datacenters configured for this keyspace, keyed by name
     pub data_centers: HashMap<DatacenterName, DatacenterConfig>,
+}
+
+impl Default for KeyspaceConfig {
+    fn default() -> Self {
+        Self {
+            name: "permanode".to_string(),
+            data_centers: hashmap! {
+                "USA".to_string() => DatacenterConfig {
+                    replication_factor: 2,
+                },
+                "Canada".to_string() => DatacenterConfig {
+                    replication_factor: 1,
+                },
+            },
+        }
+    }
 }
 
 /// Configuration for a scylla datacenter

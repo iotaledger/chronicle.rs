@@ -4,11 +4,20 @@
 use anyhow::anyhow;
 use config::Config;
 use glob::glob;
-use log::{debug, error};
-use serde::{Deserialize, Serialize};
+use log::{
+    debug,
+    error,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::BinaryHeap,
-    ops::{Deref, DerefMut},
+    ops::{
+        Deref,
+        DerefMut,
+    },
     path::Path,
 };
 use tokio::sync::RwLock;
@@ -221,7 +230,7 @@ impl History<HistoricalConfig> {
                     });
             }
             Err(e) => {
-                error!("{}", e)
+                panic!("{}", e)
             }
         }
         history
