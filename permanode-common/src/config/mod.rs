@@ -121,8 +121,11 @@ impl VersionedValue {
             Err(e) => match e.kind() {
                 std::io::ErrorKind::NotFound => {
                     let config: VersionedConfig = Config::default().try_into()?;
-                    config.save(path)?;
-                    Ok(config)
+                    config.save(path.clone())?;
+                    bail!(
+                        "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!", 
+                        std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
+                    );
                 }
                 _ => bail!(e),
             },
