@@ -197,6 +197,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                                     // close pre_ms_index(old_ms) as it's greater than what we have atm
                                                     // (try_ms_index).
                                                     assert!(!old_ms.eq(&try_ms_index));
+                                                    let solidifier_id = (old_ms % (self.collectors_count as u32)) as u8;
                                                     self.push_close_to_solidifier(solidifier_id, message_id, old_ms);
                                                 }
                                             } else {
