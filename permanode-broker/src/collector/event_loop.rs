@@ -64,9 +64,7 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             try_ms_index
                         );
                         // inform solidifier
-                        let solidifier_id = (try_ms_index % (self.collectors_count as u32)) as u8;
-                        let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap();
-                        let _ = solidifier_handle.send(SolidifierEvent::Solidify(Err(try_ms_index)));
+                        self.send_err_solidifiy(try_ms_index);
                     }
                 }
                 CollectorEvent::Message(message_id, mut message) => {
@@ -237,6 +235,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
+    fn send_err_solidifiy(&self, try_ms_index: u32) {
+        // inform solidifier
+        let solidifier_id = (try_ms_index % (self.collectors_count as u32)) as u8;
+        let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap();
+        let _ = solidifier_handle.send(SolidifierEvent::Solidify(Err(try_ms_index)));
+    }
     fn process_pending_requests(&mut self, milestone_index: u32) {
         self.pending_requests = std::mem::take(&mut self.pending_requests)
             .into_iter()
@@ -262,8 +266,6 @@ impl Collector {
         }; // else collector is shutting down
     }
     fn request_full_message(&mut self, message_id: MessageId, try_ms_index: u32) {
-        let remote_url = self.api_endpoints.pop_back().unwrap();
-        self.api_endpoints.push_front(remote_url.clone());
         if let Some(mut requester_handle) = self.requester_handles.peek_mut() {
             requester_handle.send_event(RequesterEvent::RequestFullMessage(message_id, try_ms_index))
         }; // else collector is shutting down
@@ -491,8 +493,7 @@ impl Collector {
     }
     fn insert_message_metadata(&self, metadata: MessageMetadata) {
         let message_id = metadata.message_id;
-        let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms);
-        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries);
+        let inherent_worker = SimpleWorker;
         // store message and metadata
         self.insert(&inherent_worker, &self.get_keyspace(), message_id, metadata.clone());
         // Insert parents/children
