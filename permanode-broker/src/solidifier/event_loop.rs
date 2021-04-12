@@ -128,7 +128,7 @@ impl Solidifier {
                 } else {
                     // there is a glitch in the new incoming data,
                     // therefore we are going to tell archiver to close the log file
-                    // NOTE: only the lowest milestone will the close the logfile, because the solidifiers are
+                    // NOTE: only the lowest milestone will close the logfile, because the solidifiers are
                     // partitioned; As the Archiver finishes the log using to_ms_index (the next
                     // expected milestone data)
                     warn!(

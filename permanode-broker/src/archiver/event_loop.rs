@@ -24,20 +24,10 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
                 ArchiverEvent::Close(milestone_index) => {
-                    if let Some((i, log_file)) = self
-                        .logs
-                        .iter_mut()
-                        .enumerate()
-                        .find(|(_, log)| log.to_ms_index == milestone_index)
-                    {
-                        Self::finish_log_file(log_file, &self.dir_path).await.map_err(|e| {
-                            error!("{}", e);
-                            Need::Abort
-                        })?;
-                        // remove finished log file
-                        let log_file = self.logs.remove(i);
-                        self.push_to_processed(log_file);
-                    };
+                    self.close_log_file(milestone_index).await.map_err(|e| {
+                        error!("{}", e);
+                        Need::Abort
+                    })?;
                 }
                 ArchiverEvent::MilestoneData(milestone_data, opt_upper_limit) => {
                     info!(
@@ -62,6 +52,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                                 // check if we buffered too much.
                                 if self.milestones_data.len() > self.solidifiers_count as usize {
                                     error!("Identified gap in the new incoming data: {}..{}", next, ms_index);
+                                    // Close the file which we're unable atm to append on top.
+                                    self.close_log_file(next).await.map_err(|e| {
+                                        error!("{}", e);
+                                        Need::Abort
+                                    })?;
+                                    // this supposed to create new file
                                     self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
                                         .await
                                         .map_err(|e| {
@@ -93,6 +89,20 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
 }
 
 impl Archiver {
+    async fn close_log_file(&mut self, milestone_index: u32) -> anyhow::Result<()> {
+        if let Some((i, log_file)) = self
+            .logs
+            .iter_mut()
+            .enumerate()
+            .find(|(_, log)| log.to_ms_index == milestone_index)
+        {
+            Self::finish_log_file(log_file, &self.dir_path).await?;
+            // remove finished log file
+            let log_file = self.logs.remove(i);
+            self.push_to_processed(log_file);
+        };
+        Ok(())
+    }
     async fn handle_milestone_data(
         &mut self,
         milestone_data: MilestoneData,

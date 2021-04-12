@@ -6,6 +6,7 @@ use anyhow::{
 };
 pub use api::*;
 pub use broker::*;
+use log::error;
 use maplit::{
     hashmap,
     hashset,
