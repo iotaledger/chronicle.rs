@@ -138,9 +138,9 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                 self.sync_range,
                 std::marker::PhantomData,
             ));
-        let select_response = rx.recv().await.unwrap();
+        let select_response = rx.recv().await;
         match select_response {
-            Ok(opt_sync_rows) => {
+            Some(Ok(opt_sync_rows)) => {
                 if let Some(mut sync_rows) = opt_sync_rows {
                     // Get the first row, note: the first row is always with the largest milestone_index
                     let SyncRecord {
@@ -179,8 +179,12 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                     Ok(())
                 }
             }
-            Err(e) => {
+            Some(Err(e)) => {
                 error!("Unable to query sync table: {}", e);
+                let reschedule_after = Need::RescheduleAfter(std::time::Duration::from_secs(5));
+                return Err(reschedule_after);
+            }
+            None => {
                 let reschedule_after = Need::RescheduleAfter(std::time::Duration::from_secs(5));
                 return Err(reschedule_after);
             }
