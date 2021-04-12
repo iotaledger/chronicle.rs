@@ -1,9 +1,15 @@
 use super::*;
 use log::warn;
-use paho_mqtt::{AsyncClient, CreateOptionsBuilder};
+use paho_mqtt::{
+    AsyncClient,
+    CreateOptionsBuilder,
+};
 use reqwest::Client;
 use serde_json::Value;
-use std::{collections::HashSet, net::SocketAddr};
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+};
 use url::Url;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {

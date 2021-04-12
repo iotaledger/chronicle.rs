@@ -1,15 +1,35 @@
 #![warn(missing_docs)]
 //! # Permanode
-use std::time::Duration;
-
 use permanode_api::application::*;
 use permanode_broker::application::*;
-use permanode_common::{config::*, get_config, get_config_async, get_history_mut, metrics::*};
-use permanode_storage::access::{PermanodeKeyspace, Query, Statements};
-use scylla::access::{send_local, Consistency, ReporterHandle};
-use scylla::{access::Keyspace, Worker};
-use scylla::{application::*, WorkerError};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use permanode_common::{
+    config::*,
+    get_config,
+    get_config_async,
+    get_history_mut,
+    metrics::*,
+};
+use permanode_storage::access::{
+    PermanodeKeyspace,
+    Query,
+    Statements,
+};
+use scylla::{
+    access::{
+        send_local,
+        Consistency,
+        Keyspace,
+        ReporterHandle,
+    },
+    application::*,
+    Worker,
+    WorkerError,
+};
+use std::time::Duration;
+use tokio::sync::mpsc::{
+    unbounded_channel,
+    UnboundedSender,
+};
 use websocket::*;
 
 mod websocket;

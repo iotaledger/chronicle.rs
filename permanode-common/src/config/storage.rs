@@ -1,7 +1,13 @@
-use maplit::{hashmap, hashset};
+use maplit::{
+    hashmap,
+    hashset,
+};
 
 use super::*;
-use std::{collections::HashSet, net::SocketAddr};
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+};
 
 /// Type alias for datacenter names
 pub type DatacenterName = String;

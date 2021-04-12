@@ -1,10 +1,21 @@
 use super::*;
-use anyhow::{anyhow, bail};
+use anyhow::{
+    anyhow,
+    bail,
+};
 pub use api::*;
 pub use broker::*;
 use log::error;
-use maplit::{hashmap, hashset};
-use std::{borrow::Cow, collections::HashMap, net::SocketAddr, path::Path};
+use maplit::{
+    hashmap,
+    hashset,
+};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    net::SocketAddr,
+    path::Path,
+};
 pub use storage::*;
 
 mod api;
@@ -94,7 +105,10 @@ impl Persist for Config {
 #[cfg(test)]
 mod test {
     use super::*;
-    use maplit::{hashmap, hashset};
+    use maplit::{
+        hashmap,
+        hashset,
+    };
 
     #[test]
     pub fn example_config() {
