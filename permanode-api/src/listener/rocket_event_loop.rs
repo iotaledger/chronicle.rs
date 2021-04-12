@@ -297,7 +297,11 @@ where
     .build()?;
 
     let (sender, mut inbox) = unbounded_channel::<Result<Option<V>, WorkerError>>();
-    let worker = ValueWorker::boxed(sender, keyspace, key, PhantomData);
+    let mut worker = ValueWorker::new(sender, keyspace, key, PhantomData);
+    if let Some(page_size) = page_size {
+        worker = worker.with_paging(page_size, paging_state);
+    }
+    let worker = Box::new(worker);
 
     request.send_local(worker);
 
