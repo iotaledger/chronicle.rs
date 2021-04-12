@@ -1,15 +1,9 @@
 use super::*;
 use log::warn;
-use paho_mqtt::{
-    AsyncClient,
-    CreateOptionsBuilder,
-};
+use paho_mqtt::{AsyncClient, CreateOptionsBuilder};
 use reqwest::Client;
 use serde_json::Value;
-use std::{
-    collections::HashSet,
-    net::SocketAddr,
-};
+use std::{collections::HashSet, net::SocketAddr};
 use url::Url;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {
@@ -30,9 +24,22 @@ impl Default for BrokerConfig {
     fn default() -> Self {
         Self {
             websocket_address: ([127, 0, 0, 1], 9000).into(),
-            mqtt_brokers: Default::default(),
-            api_endpoints: Default::default(),
-            sync_range: Default::default(),
+            mqtt_brokers: hashmap! {
+                MqttType::Messages => hashset![
+                    url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap(),
+                    url::Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap(),
+                ],
+                MqttType::MessagesReferenced => hashset![
+                    url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap(),
+                    url::Url::parse("tcp://api.hornet-1.testnet.chrysalis2.com:1883").unwrap(),
+                ]
+            },
+            api_endpoints: hashset![
+                url::Url::parse("https://api.hornet-0.testnet.chrysalis2.com/api/v1").unwrap(),
+                url::Url::parse("https://api.hornet-1.testnet.chrysalis2.com/api/v1").unwrap(),
+            ]
+            .into(),
+            sync_range: Some(Default::default()),
             logs_dir: "permanode/logs/".to_owned(),
         }
     }

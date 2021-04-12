@@ -1,13 +1,10 @@
 use super::*;
+use anyhow::{anyhow, bail};
 pub use api::*;
 pub use broker::*;
 use log::error;
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    net::SocketAddr,
-    path::Path,
-};
+use maplit::{hashmap, hashset};
+use std::{borrow::Cow, collections::HashMap, net::SocketAddr, path::Path};
 pub use storage::*;
 
 mod api;
@@ -39,25 +36,28 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn load<P: Into<Option<String>>>(path: P) -> Result<Config, Cow<'static, str>> {
+    pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<Config> {
         let path = path
             .into()
             .or_else(|| std::env::var("CONFIG_PATH").ok())
             .unwrap_or(CONFIG_PATH.to_string());
         match std::fs::File::open(Path::new(&path)) {
-            Ok(f) => ron::de::from_reader(f).map_err(|e| e.to_string().into()),
+            Ok(f) => ron::de::from_reader(f).map_err(|e| anyhow!(e)),
             Err(e) => match e.kind() {
                 std::io::ErrorKind::NotFound => {
                     let config = Self::default();
-                    config.save(path)?;
-                    Ok(config)
+                    config.save(path.clone())?;
+                    bail!(
+                        "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!", 
+                        std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
+                    );
                 }
-                _ => Err(e.to_string().into()),
+                _ => bail!(e.to_string()),
             },
         }
     }
 
-    pub fn save<P: Into<Option<String>>>(&self, path: P) -> Result<(), Cow<'static, str>> {
+    pub fn save<P: Into<Option<String>>>(&self, path: P) -> anyhow::Result<()> {
         let path = path
             .into()
             .or_else(|| std::env::var("CONFIG_PATH").ok())
@@ -66,11 +66,11 @@ impl Config {
         let path = Path::new(&path);
         if let Some(dir) = path.parent() {
             if !dir.exists() {
-                std::fs::create_dir_all(dir).map_err(|e| Cow::from(e.to_string()))?;
+                std::fs::create_dir_all(dir)?;
             }
         }
-        let f = std::fs::File::create(Path::new(&path)).map_err(|e| Cow::from(e.to_string()))?;
-        ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| e.to_string().into())
+        let f = std::fs::File::create(Path::new(&path))?;
+        ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| anyhow!(e))
     }
 
     pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
@@ -94,10 +94,7 @@ impl Persist for Config {
 #[cfg(test)]
 mod test {
     use super::*;
-    use maplit::{
-        hashmap,
-        hashset,
-    };
+    use maplit::{hashmap, hashset};
 
     #[test]
     pub fn example_config() {

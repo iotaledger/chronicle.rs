@@ -222,7 +222,7 @@ impl History<HistoricalConfig> {
                     });
             }
             Err(e) => {
-                error!("{}", e)
+                panic!("{}", e)
             }
         }
         history
