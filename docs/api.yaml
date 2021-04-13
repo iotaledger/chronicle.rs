@@ -206,7 +206,7 @@ paths:
                     #/components/examples/get-message-by-id-indexation-response-example
         "204":
           description: >-
-            No Records Found: indicates that n record was found for the given message id
+            No Records Found: indicates that no record was found for the given message id
           content:
             application/json:
               schema:
@@ -584,6 +584,77 @@ paths:
         "404":
           description: >-
             Unsuccessful operation: indicates that the requested data was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundResponse"
+        "500":
+          description: >-
+            Unsuccessful operation: indicates that an unexpected, internal
+            server error happened which prevented the node from fulfilling the
+            request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalErrorResponse"
+  "/api/{keyspace}/transactions/{transaction_id}/included-message":
+    get:
+      tags:
+        - messages
+      summary: Look up an included message by a transaction id.
+      description: Look up an included message by a transaction id.
+      parameters:
+        - in: path
+          name: keyspace
+          schema:
+            type: string
+          example: permanode
+          required: true
+          description: Identifier indicating which keyspace to search within.
+        - in: path
+          name: transaction_id
+          schema:
+            type: string
+          example: 50a419a1e46b0b8fbac0e38cd20d4c0d6a5285556241c6778b13e578e36938b8
+          required: true
+          description: Transaction ID to look up.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              examples:
+                Empty Payload:
+                  $ref: >-
+                    #/components/examples/get-message-by-id-empty-response-example
+                Transaction Payload:
+                  $ref: >-
+                    #/components/examples/get-message-by-id-transaction-response-example
+                Milestone Payload:
+                  $ref: >-
+                    #/components/examples/get-message-by-id-milestone-response-example
+                Indexation Payload:
+                  $ref: >-
+                    #/components/examples/get-message-by-id-indexation-response-example
+        "204":
+          description: >-
+            No Records Found: indicates that no record was found for the given message id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
+        "400":
+          description: "Unsuccessful operation: indicates that the provided message id is invalid."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestResponse"
+        "404":
+          description: >-
+            Unsuccessful operation: indicates that the requested data was not
+            found.
           content:
             application/json:
               schema:
