@@ -71,7 +71,11 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                     if service.is_stopped() {
                                         // Abort broker app
                                         self.shutdown(supervisor).await;
-                                        _status = status;
+                                        // update status only if is not rescheduling
+                                        if let Err(Need::RescheduleAfter(_)) = _status.as_ref() {
+                                        } else {
+                                            _status = status;
+                                        }
                                     }
                                 }
                                 self.service.update_microservice(service.get_name(), service.clone());
@@ -82,7 +86,11 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                     if service.is_stopped() {
                                         // Abort broker app
                                         self.shutdown(supervisor).await;
-                                        _status = status;
+                                        // update status only if is not rescheduling
+                                        if let Err(Need::RescheduleAfter(_)) = _status.as_ref() {
+                                        } else {
+                                            _status = status;
+                                        }
                                     }
                                 }
                                 self.service.update_microservice(service.get_name(), service.clone());
