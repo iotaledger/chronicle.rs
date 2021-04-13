@@ -99,21 +99,27 @@ paths:
             type: number
           example: 100
           description: Requested page size.
-        - in: cookie
+        - in: query
+          name: utf8
+          schema:
+            type: boolean
+          example: true
+          description: Indicates whether the provided index is UTF-8. If not provided or false, the index will be encoded by the server.
+        - in: query
           name: last_milestone_index
           schema:
             type: number
           description: The last used milestone index, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: last_partition_id
           schema:
             type: number
           description: The last used partition id, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: paging_state
           schema:
-            type: object
-          description: The paging state, to be stored and re-used when retrieving additional records.
+            type: string
+          description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
       responses:
         "200":
           description: Successful operation.
@@ -319,6 +325,21 @@ paths:
           example: f532a53545103276b46876c473846d98648ee418468bce76df4868648dd73e5d
           required: true
           description: Identifier of the message.
+        - in: query
+          name: last_milestone_index
+          schema:
+            type: number
+          description: The last used milestone index, to be stored and re-used when retrieving additional records.
+        - in: query
+          name: last_partition_id
+          schema:
+            type: number
+          description: The last used partition id, to be stored and re-used when retrieving additional records.
+        - in: query
+          name: paging_state
+          schema:
+            type: string
+          description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
       responses:
         "200":
           description: Successful operation.
@@ -455,21 +476,27 @@ paths:
             type: number
           example: 6000
           description: Requested page size.
-        - in: cookie
+        - in: query
+          name: expanded
+          schema:
+            type: boolean
+          example: true
+          description: Requests additional data for each output if included and true.
+        - in: query
           name: last_milestone_index
           schema:
             type: number
           description: The last used milestone index, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: last_partition_id
           schema:
             type: number
           description: The last used partition id, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: paging_state
           schema:
-            type: object
-          description: The paging state, to be stored and re-used when retrieving additional records.
+            type: string
+          description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
       responses:
         "200":
           description: Successful operation.
