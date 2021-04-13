@@ -31,7 +31,7 @@ pub trait LauncherSender<B: ThroughType + Builder>: Send + Clone + 'static + Akn
 
 /// The possible statuses a service (application) can be
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Debug, Serialize)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ServiceStatus {
     /// Early bootup
     Starting = 0,
@@ -51,7 +51,7 @@ pub enum ServiceStatus {
 }
 
 /// An application's metrics
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Service {
     /// The status of the service
     pub status: ServiceStatus,
@@ -62,7 +62,7 @@ pub struct Service {
     /// Total milliseconds when the app service has been offline since up_since
     pub downtime_ms: u64,
     /// inner services similar
-    pub microservices: std::collections::HashMap<String, Self>,
+    pub microservices: std::collections::HashMap<String, Service>,
     /// Optional log file path
     pub log_path: Option<String>,
 }
