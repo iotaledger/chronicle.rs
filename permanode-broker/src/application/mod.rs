@@ -45,7 +45,9 @@ pub(crate) use std::{
 use std::{
     ops::Range,
     str::FromStr,
+    time::Duration,
 };
+
 pub use tokio::{
     spawn,
     sync::mpsc,
@@ -65,6 +67,7 @@ builder!(
     #[derive(Clone)]
     PermanodeBrokerBuilder<H> {
         listener_handle: ListenerHandle,
+        reschedule_after: Duration,
         collectors_count: u8
 });
 
@@ -105,6 +108,7 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     logs_dir_path: PathBuf,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
+    reschedule_after: Duration,
     default_keyspace: PermanodeKeyspace,
     sync_range: SyncRange,
     sync_data: SyncData,
@@ -120,9 +124,11 @@ pub enum BrokerChild {
     /// Used by Collector(s) to keep Broker up to date with its service
     Collector(Service),
     /// Used by Solidifier(s) to keep Broker up to date with its service
-    Solidifier(Service),
+    Solidifier(Service, Result<(), Need>),
     /// Used by Archiver to keep Broker up to date with its service
     Archiver(Service, Result<(), Need>),
+    /// Used by Syncer to keep Broker up to date with its service
+    Syncer(Service, Result<(), Need>),
     /// Used by Websocket to keep Broker up to date with its service
     Websocket(Service, Option<WsTx>),
 }
@@ -262,6 +268,7 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
             collectors_count: self.collectors_count.unwrap_or(10),
             collector_handles: HashMap::new(),
             solidifier_handles: HashMap::new(),
+            reschedule_after: self.reschedule_after.unwrap_or(Duration::from_secs(10 * 60)),
             syncer_handle: None,
             logs_dir_path,
             handle,

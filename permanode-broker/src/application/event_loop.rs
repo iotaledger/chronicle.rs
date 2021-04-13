@@ -6,7 +6,7 @@ use permanode_common::get_history_mut;
 impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
     async fn event_loop(
         &mut self,
-        _status: Result<(), chronicle::Need>,
+        mut _status: Result<(), chronicle::Need>,
         supervisor: &mut Option<H>,
     ) -> Result<(), chronicle::Need> {
         _status?;
@@ -54,14 +54,35 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                             BrokerChild::Collector(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
-                            BrokerChild::Solidifier(service) => {
+                            BrokerChild::Solidifier(service, status) => {
+                                // Handle abort
+                                if let Err(Need::Abort) = status {
+                                    if service.is_stopped() {
+                                        // Shutdown broker app
+                                        self.shutdown(supervisor).await;
+                                        _status = Err(Need::RescheduleAfter(self.reschedule_after.clone()));
+                                    }
+                                }
+                                self.service.update_microservice(service.get_name(), service.clone());
+                            }
+                            BrokerChild::Syncer(service, status) => {
+                                // Handle abort
+                                if let Err(Need::Abort) = status {
+                                    if service.is_stopped() {
+                                        // Abort broker app
+                                        self.shutdown(supervisor).await;
+                                        _status = status;
+                                    }
+                                }
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
                             BrokerChild::Archiver(service, status) => {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {
                                     if service.is_stopped() {
-                                        //
+                                        // Abort broker app
+                                        self.shutdown(supervisor).await;
+                                        _status = status;
                                     }
                                 }
                                 self.service.update_microservice(service.get_name(), service.clone());
@@ -150,7 +171,7 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                     }
                 }
             }
-            Ok(())
+            _status
         } else {
             Err(Need::Abort)
         }

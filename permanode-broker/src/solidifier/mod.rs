@@ -321,7 +321,7 @@ impl Name for Solidifier {
 impl<H: PermanodeBrokerScope> AknShutdown<Solidifier> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Solidifier, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Solidifier(_state.service.clone()));
+        let event = BrokerEvent::Children(BrokerChild::Solidifier(_state.service.clone(), _status));
         let _ = self.send(event);
     }
 }
