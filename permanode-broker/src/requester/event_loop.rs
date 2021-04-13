@@ -11,34 +11,16 @@ impl EventLoop<CollectorHandle> for Requester {
         _status: Result<(), Need>,
         _supervisor: &mut Option<CollectorHandle>,
     ) -> Result<(), Need> {
-        let collector_handle = _supervisor.as_mut().unwrap();
+        let collector_handle = _supervisor.as_mut().expect("Requester expected collector handle");
         while let Some(event) = self.inbox.recv().await {
             match event {
                 RequesterEvent::RequestFullMessage(message_id, try_ms_index) => {
-                    // info!("Requesting full message {}, {}", message_id, try_ms_index);
-                    if let Ok(full_message) = self.request_message_and_metadata(message_id).await {
-                        self.response_to_collector(
-                            collector_handle,
-                            try_ms_index,
-                            Some(message_id),
-                            Some(full_message),
-                        );
-                    } else {
-                        self.response_to_collector(collector_handle, try_ms_index, Some(message_id), None);
-                    }
+                    self.request_full_message_with_retries(collector_handle, message_id, try_ms_index)
+                        .await;
                 }
                 RequesterEvent::RequestMilestone(milestone_index) => {
-                    info!("Requesting ms message {}", milestone_index);
-                    if let Ok(full_message) = self.request_milestone_message(milestone_index).await {
-                        self.response_to_collector(
-                            collector_handle,
-                            milestone_index,
-                            Some(full_message.metadata().message_id),
-                            Some(full_message),
-                        );
-                    } else {
-                        self.response_to_collector(collector_handle, milestone_index, None, None);
-                    }
+                    self.request_milestone_message_with_retries(collector_handle, milestone_index)
+                        .await;
                 }
             }
         }
@@ -46,8 +28,61 @@ impl EventLoop<CollectorHandle> for Requester {
     }
 }
 use std::str::FromStr;
+
 impl Requester {
-    fn response_to_collector(
+    async fn request_full_message_with_retries(
+        &mut self,
+        collector_handle: &mut CollectorHandle,
+        message_id: MessageId,
+        try_ms_index: u32,
+    ) {
+        let mut retries = self.retries;
+        loop {
+            if retries > 0 {
+                if let Ok(full_message) = self.request_message_and_metadata(message_id).await {
+                    self.respond_to_collector(collector_handle, try_ms_index, Some(message_id), Some(full_message));
+                    break;
+                } else {
+                    retries -= 1;
+                    // keep retrying, but yelid to keep the system responsive
+                    tokio::task::yield_now().await;
+                    continue;
+                }
+            } else {
+                self.respond_to_collector(collector_handle, try_ms_index, None, None);
+                break;
+            }
+        }
+    }
+    async fn request_milestone_message_with_retries(
+        &mut self,
+        collector_handle: &mut CollectorHandle,
+        milestone_index: u32,
+    ) {
+        let mut retries = self.retries;
+        loop {
+            if retries > 0 {
+                if let Ok(full_message) = self.request_milestone_message(milestone_index).await {
+                    self.respond_to_collector(
+                        collector_handle,
+                        milestone_index,
+                        Some(full_message.metadata().message_id),
+                        Some(full_message),
+                    );
+                    break;
+                } else {
+                    retries -= 1;
+                    // keep retrying, but yelid to keep the system responsive
+                    tokio::task::yield_now().await;
+                    continue;
+                }
+            } else {
+                self.respond_to_collector(collector_handle, milestone_index, None, None);
+                break;
+            }
+        }
+    }
+    fn respond_to_collector(
         &self,
         collector_handle: &CollectorHandle,
         ms_index: u32,

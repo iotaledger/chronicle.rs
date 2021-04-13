@@ -189,6 +189,14 @@ impl Archiver {
                     if l.upper_ms_limit > prev_log.from_ms_index {
                         l.upper_ms_limit = prev_log.from_ms_index;
                     }
+                    // check if the L file needs to be closed
+                    if l.upper_ms_limit.eq(&l.to_ms_index) && !l.finished {
+                        // push it into cleanup to get removed and pushed to processed
+                        self.cleanup.push(l.from_ms_index);
+                        // finish the file
+                        Self::finish_log_file(l, &self.dir_path).await?;
+                    }
+
                     prev_log = l;
                 }
             }
@@ -229,6 +237,7 @@ impl Archiver {
             error!("{}", e);
             return Need::Abort;
         })?;
+        log_file.set_finished();
         info!(
             "Finished {}.part, LogFile: {}to{}.log",
             log_file.from_ms_index, log_file.from_ms_index, log_file.to_ms_index

@@ -76,6 +76,7 @@ pub enum ArchiverEvent {
     Close(u32),
 }
 
+#[derive(Debug)]
 pub struct LogFile {
     len: u64,
     filename: String,
@@ -87,6 +88,7 @@ pub struct LogFile {
     file: File,
     /// Identifier if it had io error
     maybe_corrupted: bool,
+    finished: bool,
 }
 
 impl LogFile {
@@ -111,6 +113,7 @@ impl LogFile {
             upper_ms_limit: opt_upper_limit.unwrap_or(u32::MAX),
             file,
             maybe_corrupted: false,
+            finished: false,
         })
     }
     pub async fn finish(&mut self, dir_path: &PathBuf) -> Result<(), std::io::Error> {
@@ -143,6 +146,9 @@ impl LogFile {
     }
     pub fn len(&self) -> u64 {
         self.len
+    }
+    pub fn set_finished(&mut self) {
+        self.finished = true;
     }
     pub fn milestones_range(&self) -> u32 {
         self.to_ms_index - self.from_ms_index
