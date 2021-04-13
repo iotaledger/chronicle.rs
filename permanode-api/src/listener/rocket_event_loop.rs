@@ -120,7 +120,8 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
                 get_message_by_index,
                 get_output,
                 get_ed25519_outputs,
-                get_milestone
+                get_milestone,
+                get_transaction_included_message
             ],
         )
         .attach(CORS)
