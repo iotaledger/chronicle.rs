@@ -99,21 +99,27 @@ paths:
             type: number
           example: 100
           description: Requested page size.
-        - in: cookie
+        - in: query
+          name: utf8
+          schema:
+            type: boolean
+          example: true
+          description: Indicates whether the provided index is UTF-8. If not provided or false, the index will be encoded by the server.
+        - in: query
           name: last_milestone_index
           schema:
             type: number
           description: The last used milestone index, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: last_partition_id
           schema:
             type: number
           description: The last used partition id, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: paging_state
           schema:
-            type: object
-          description: The paging state, to be stored and re-used when retrieving additional records.
+            type: string
+          description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
       responses:
         "200":
           description: Successful operation.
@@ -200,7 +206,7 @@ paths:
                     #/components/examples/get-message-by-id-indexation-response-example
         "204":
           description: >-
-            No Records Found: indicates that n record was found for the given message id
+            No Records Found: indicates that no record was found for the given message id
           content:
             application/json:
               schema:
@@ -319,6 +325,21 @@ paths:
           example: f532a53545103276b46876c473846d98648ee418468bce76df4868648dd73e5d
           required: true
           description: Identifier of the message.
+        - in: query
+          name: last_milestone_index
+          schema:
+            type: number
+          description: The last used milestone index, to be stored and re-used when retrieving additional records.
+        - in: query
+          name: last_partition_id
+          schema:
+            type: number
+          description: The last used partition id, to be stored and re-used when retrieving additional records.
+        - in: query
+          name: paging_state
+          schema:
+            type: string
+          description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
       responses:
         "200":
           description: Successful operation.
@@ -455,21 +476,27 @@ paths:
             type: number
           example: 6000
           description: Requested page size.
-        - in: cookie
+        - in: query
+          name: expanded
+          schema:
+            type: boolean
+          example: true
+          description: Requests additional data for each output if included and true.
+        - in: query
           name: last_milestone_index
           schema:
             type: number
           description: The last used milestone index, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: last_partition_id
           schema:
             type: number
           description: The last used partition id, to be stored and re-used when retrieving additional records.
-        - in: cookie
+        - in: query
           name: paging_state
           schema:
-            type: object
-          description: The paging state, to be stored and re-used when retrieving additional records.
+            type: string
+          description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
       responses:
         "200":
           description: Successful operation.
@@ -570,6 +597,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InternalErrorResponse"
+  "/api/{keyspace}/transactions/{transaction_id}/included-message":
+    get:
+      tags:
+        - messages
+      summary: Look up an included message by a transaction id.
+      description: Look up an included message by a transaction id.
+      parameters:
+        - in: path
+          name: keyspace
+          schema:
+            type: string
+          example: permanode
+          required: true
+          description: Identifier indicating which keyspace to search within.
+        - in: path
+          name: transaction_id
+          schema:
+            type: string
+          example: 50a419a1e46b0b8fbac0e38cd20d4c0d6a5285556241c6778b13e578e36938b8
+          required: true
+          description: Transaction ID to look up.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              examples:
+                default:
+                  $ref: "#/components/examples/get-included-message-of-transaction-example"
+        "204":
+          description: >-
+            No Records Found: indicates that no record was found for the given message id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoContentResponse"
+        "400":
+          description: "Unsuccessful operation: indicates that the provided message id is invalid."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestResponse"
+        "404":
+          description: >-
+            Unsuccessful operation: indicates that the requested data was not
+            found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundResponse"
+        "500":
+          description: >-
+            Unsuccessful operation: indicates that an unexpected, internal
+            server error happened which prevented the node from fulfilling the
+            request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalErrorResponse"
 components:
   examples:
     get-info-response-example:
@@ -599,6 +687,10 @@ components:
             - id: 7ed3d67fc7b619e72e588f51fef2379e43e6e9a856635843b3f29aa3a3f1f006
               inclusion_state: included
               milestone_index: 224118
+          state:
+            pagingState: 00000000fa0000002e000000…0000000ffffffff00000000
+            lastPartitionId: 0
+            lastMilestoneIndex: 53624
     get-message-by-id-response-example-new:
       value:
         data:
@@ -751,6 +843,10 @@ components:
           childrenMessageIds:
             - 1c6943b0487c92fd057d4d22ad844cc37ee27fe6fbe88e5ff0d20b2233f75b9d
             - 7ed3d67fc7b619e72e588f51fef2379e43e6e9a856635843b3f29aa3a3f1f006
+          state:
+            pagingState: 00000000fa0000002e000000…0000000ffffffff00000000
+            lastPartitionId: 0
+            lastMilestoneIndex: 53624
     get-messages-by-id-response-example-nochildren:
       value:
         data:
@@ -771,13 +867,6 @@ components:
               type: 0
               address: 8eaf87ac1f52eb05f2c7c0c15502df990a228838dc37bd18de9503d69afd257d
             amount: 1000
-    get-address-balance-response-example:
-      value:
-        data:
-          addressType: 0
-          address: efdc112efe262b304bcf379b26c31bad029f616ee3ec4aa6345a366e4c9e43a3
-          balance: 1338263
-          dustAllowed: true
     get-address-outputs-response-example:
       value:
         data:
@@ -794,6 +883,10 @@ components:
               ee3447d088e3e2c53c5b3e56a38fdc859ca2c4b4161cf256c0462ce4d34731820100
             - >-
               f8bdbfb0f57ade7fbb95d31b11e2dbda9b2a35e9dc0cd3e11cb324e8a6bedc260100
+          state:
+            pagingState: 00000000fa0000002e000000…0000000ffffffff00000000
+            lastPartitionId: 0
+            lastMilestoneIndex: 53624
     get-treasury-response-example:
       value:
         data:

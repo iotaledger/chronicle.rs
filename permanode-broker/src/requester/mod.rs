@@ -29,7 +29,7 @@ builder!(RequesterBuilder {
     inbox: RequesterInbox,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
-    retries: u16
+    retries: usize
 });
 pub type RequesterId = u8;
 pub enum RequesterEvent {
@@ -112,7 +112,7 @@ pub struct Requester {
     inbox: RequesterInbox,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
-    retries: u16,
+    retries: usize,
 }
 
 impl ActorBuilder<CollectorHandle> for RequesterBuilder {}
@@ -121,13 +121,16 @@ impl ActorBuilder<CollectorHandle> for RequesterBuilder {}
 impl Builder for RequesterBuilder {
     type State = Requester;
     fn build(self) -> Self::State {
+        let api_endpoints = self.api_endpoints.unwrap();
+        // we retry up to 5 times per api endpoint for a given request
+        let retries = api_endpoints.len() * 5 as usize;
         Self::State {
             service: Service::new(),
             inbox: self.inbox.unwrap(),
             requester_id: self.requester_id.unwrap(),
-            api_endpoints: self.api_endpoints.unwrap(),
+            api_endpoints,
             reqwest_client: self.reqwest_client.unwrap(),
-            retries: self.retries.unwrap_or(100),
+            retries,
         }
         .set_name()
     }

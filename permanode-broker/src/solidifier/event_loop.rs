@@ -126,16 +126,11 @@ impl Solidifier {
                     );
                     let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
                 } else {
-                    // there is a glitch in the new incoming data,
-                    // therefore we are going to tell archiver to close the log file
-                    // NOTE: only the lowest milestone will close the logfile, because the solidifiers are
-                    // partitioned; As the Archiver finishes the log using to_ms_index (the next
-                    // expected milestone data)
+                    // there is a glitch in the new incoming data, however the archiver will take care of that.
                     warn!(
-                        "Solidifier id: {}, failed to solidify new incoming index: {} milestone data",
+                        "Solidifier id: {}, failed to solidify new incoming milestone data for index: {}",
                         self.partition_id, milestone_index
                     );
-                    let _ = self.archiver_handle.send(ArchiverEvent::Close(milestone_index));
                 }
             }
         }
