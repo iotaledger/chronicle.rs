@@ -420,13 +420,13 @@ where
                     "Fetching results for partition id: {}, milestone: {}, with paging state: {:?}",
                     partition_id,
                     latest_milestone,
-                    last_partition_id.map(|id| partition_id == id)
+                    prev_last_partition_id.map(|id| partition_id == id)
                 );
                 query::<Paged<VecDeque<Partitioned<V>>>, _, _>(
                     keyspace.clone(),
                     Partitioned::new(key.clone(), partition_id, latest_milestone),
                     Some(page_size as i32),
-                    last_partition_id.and_then(|id| {
+                    prev_last_partition_id.and_then(|id| {
                         if partition_id == id {
                             prev_paging_state.clone()
                         } else {
