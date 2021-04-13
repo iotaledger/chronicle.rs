@@ -48,6 +48,7 @@ pub(crate) enum ListenerResponse {
         min_pow_score: f64,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>
+    /// and GET /api/<keyspace>/transactions/<transaction_id>/included-message
     Message {
         #[serde(rename = "networkId")]
         network_id: String,
@@ -98,6 +99,18 @@ pub(crate) enum ListenerResponse {
     },
     /// Response of GET /api/<keyspace>/addresses/<address>/outputs
     OutputsForAddress {
+        // The type of the address (1=Ed25519).
+        #[serde(rename = "addressType")]
+        address_type: u8,
+        address: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "outputIds")]
+        output_ids: Vec<OutputId>,
+    },
+    /// Response of GET /api/<keyspace>/addresses/<address>/outputs
+    OutputsForAddressExpanded {
         // The type of the address (1=Ed25519).
         #[serde(rename = "addressType")]
         address_type: u8,

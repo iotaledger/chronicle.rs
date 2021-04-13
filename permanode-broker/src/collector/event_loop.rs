@@ -292,7 +292,7 @@ impl Collector {
         match message.payload() {
             // delete indexation if any
             Some(Payload::Indexation(indexation)) => {
-                let index_key = Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
+                let index_key = Indexation(hex::encode(indexation.index()));
                 self.delete_indexation(&message_id, index_key, wrong_est_ms);
             }
             // delete transactiion partitioned rows if any
@@ -435,7 +435,7 @@ impl Collector {
                 self.insert_index(
                     inherent_worker,
                     message_id,
-                    Indexation(String::from_utf8_lossy(indexation.index()).into_owned()),
+                    Indexation(hex::encode(indexation.index())),
                     milestone_index,
                     inclusion_state,
                 );
@@ -761,7 +761,7 @@ impl Collector {
         let transaction_id = transaction.id();
         if let Essence::Regular(regular) = transaction.essence() {
             if let Some(Payload::Indexation(indexation)) = regular.payload() {
-                let index_key = Indexation(String::from_utf8_lossy(indexation.index()).into_owned());
+                let index_key = Indexation(hex::encode(indexation.index()));
                 self.delete_indexation(&message_id, index_key, milestone_index);
             }
             for (output_index, output) in regular.outputs().iter().enumerate() {

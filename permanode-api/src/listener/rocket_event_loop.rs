@@ -579,7 +579,7 @@ where
                         *list = query::<Paged<VecDeque<Partitioned<V>>>, _, _>(
                             keyspace.clone(),
                             Partitioned::new(key.clone(), *partition_id, latest_milestone),
-                            Some(page_size as i32),
+                            Some((page_size - results.len()) as i32),
                             paging_state.clone(),
                         )
                         .await
@@ -678,11 +678,12 @@ async fn get_message_children(
     })
 }
 
-#[get("/<keyspace>/messages?<index>&<page_size>")]
+#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>")]
 async fn get_message_by_index(
     keyspace: String,
-    index: String,
+    mut index: String,
     page_size: Option<usize>,
+    utf8: Option<bool>,
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
@@ -692,6 +693,9 @@ async fn get_message_by_index(
     }
     if index.len() > 64 {
         return Err(ListenerError::IndexTooLarge.into());
+    }
+    if let Some(true) = utf8 {
+        index = hex::encode(index);
     }
     let indexation = Indexation(index.clone());
     let page_size = page_size.unwrap_or(1000);
@@ -715,11 +719,12 @@ async fn get_message_by_index(
     })
 }
 
-#[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>")]
+#[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>&<expanded>")]
 async fn get_ed25519_outputs(
     keyspace: String,
     address: String,
     page_size: Option<usize>,
+    expanded: Option<bool>,
     cookies: &CookieJar<'_>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
@@ -741,13 +746,26 @@ async fn get_ed25519_outputs(
     )
     .await?;
 
-    Ok(ListenerResponse::OutputsForAddress {
-        address_type: 1,
-        address,
-        max_results: 2 * page_size,
-        count: outputs.len(),
-        output_ids: outputs.drain(..).map(|record| record.into()).collect(),
-    })
+    if let Some(true) = expanded {
+        Ok(ListenerResponse::OutputsForAddressExpanded {
+            address_type: 1,
+            address,
+            max_results: 2 * page_size,
+            count: outputs.len(),
+            output_ids: outputs.drain(..).map(|record| record.into()).collect(),
+        })
+    } else {
+        Ok(ListenerResponse::OutputsForAddress {
+            address_type: 1,
+            address,
+            max_results: 2 * page_size,
+            count: outputs.len(),
+            output_ids: outputs
+                .drain(..)
+                .map(|record| OutputId::new(record.transaction_id, record.index).unwrap())
+                .collect(),
+        })
+    }
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
@@ -799,6 +817,25 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
             .try_into()
             .map_err(|e: String| ListenerError::Other(anyhow!(e)))?,
     })
+}
+
+#[get("/<keyspace>/transactions/<transaction_id>/included-message")]
+async fn get_transaction_included_message(
+    keyspace: String,
+    transaction_id: String,
+    keyspaces: State<'_, HashSet<String>>,
+) -> ListenerResult {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let keyspace = PermanodeKeyspace::new(keyspace);
+
+    let transaction_id = TransactionId::from_str(&transaction_id).map_err(|e| ListenerError::Other(anyhow!(e)))?;
+
+    let message_id = query::<MessageId, _, _>(keyspace.clone(), transaction_id, None, None).await?;
+    query::<Message, _, _>(keyspace, message_id, None, None)
+        .await
+        .and_then(|message| message.try_into().map_err(|e: Cow<'static, str>| anyhow!(e).into()))
 }
 
 #[get("/<keyspace>/milestones/<index>")]

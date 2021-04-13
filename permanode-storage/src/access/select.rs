@@ -174,7 +174,7 @@ impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecor
         format!(
             "SELECT partition_id, milestone_index, output_type, transaction_id, idx, amount, inclusion_state
             FROM {}.addresses
-            WHERE address = ? AND address_type = 0 AND partition_id = ? AND milestone_index <= ?",
+            WHERE address = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
         .into()
@@ -261,6 +261,38 @@ impl RowsDecoder<OutputId, OutputRes> for PermanodeKeyspace {
             Ok(output.map(|output| OutputRes { output, unlock_blocks }))
         } else {
             Err(decoder.get_error())
+        }
+    }
+}
+
+impl Select<TransactionId, MessageId> for PermanodeKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT message_id FROM {}.transactions 
+            WHERE transaction_id = ? and inclusion_state = ? and variant = 'input'
+            LIMIT 1 ALLOW FILTERING",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, transaction_id: &TransactionId) -> T::Return {
+        builder
+            .value(&transaction_id.to_string())
+            .value(&LedgerInclusionState::Included)
+    }
+}
+
+impl RowsDecoder<TransactionId, MessageId> for PermanodeKeyspace {
+    type Row = Record<Option<MessageId>>;
+    fn try_decode(decoder: Decoder) -> Result<Option<MessageId>, CqlError> {
+        if decoder.is_rows() {
+            Ok(Self::Row::rows_iter(decoder)
+                .next()
+                .map(|row| row.into_inner())
+                .flatten())
+        } else {
+            return Err(decoder.get_error());
         }
     }
 }
@@ -395,6 +427,15 @@ impl Row for Record<(Option<Message>, Option<MessageMetadata>)> {
 impl Row for Record<MessageId> {
     fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
         Record::new(MessageId::from_str(&rows.column_value::<String>()).unwrap())
+    }
+}
+
+impl Row for Record<Option<MessageId>> {
+    fn decode_row<T: ColumnValue>(rows: &mut T) -> Self {
+        Record::new(
+            rows.column_value::<Option<String>>()
+                .and_then(|id| MessageId::from_str(&id).ok()),
+        )
     }
 }
 
