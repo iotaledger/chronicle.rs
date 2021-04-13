@@ -28,6 +28,7 @@ impl Collector {
                 .inbox(inbox)
                 .requester_id(id)
                 .api_endpoints(self.api_endpoints.clone())
+                .retries_per_endpoint(5)
                 .reqwest_client(reqwest_client)
                 .build();
             let (abort_handle, abort_registration) = futures::future::AbortHandle::new_pair();
