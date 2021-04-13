@@ -139,6 +139,8 @@ pub enum BrokerEvent<T> {
     Passthrough(T),
     /// Used by broker children to push their service
     Children(BrokerChild),
+    /// Used by Scylla to keep Broker up to date with scylla status
+    Scylla(Service),
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -285,7 +287,11 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
 /// implementation of passthrough functionality
 impl<H: PermanodeBrokerScope> Passthrough<PermanodeBrokerThrough> for BrokerHandle<H> {
     fn launcher_status_change(&mut self, _service: &Service) {}
-    fn app_status_change(&mut self, _service: &Service) {}
+    fn app_status_change(&mut self, service: &Service) {
+        if service.is_running() && service.get_name().eq(&"Scylla") {
+            let _ = self.send(BrokerEvent::Scylla(service.clone()));
+        }
+    }
     fn passthrough(&mut self, _event: PermanodeBrokerThrough, _from_app_name: String) {}
     fn service(&mut self, _service: &Service) {}
 }
