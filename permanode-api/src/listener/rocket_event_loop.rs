@@ -48,6 +48,7 @@ use rocket::{
     Response,
     State,
 };
+use rocket_contrib::json::Json;
 use scylla_cql::{
     Consistency,
     TryInto,
@@ -114,6 +115,7 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
                 options,
                 info,
                 metrics,
+                service,
                 get_message,
                 get_message_metadata,
                 get_message_children,
@@ -272,6 +274,11 @@ async fn metrics() -> Result<String, ListenerError> {
     let res_default = String::from_utf8(buffer).map_err(|e| ListenerError::Other(e.into()))?;
 
     Ok(format!("{}{}", res_custom, res_default))
+}
+
+#[get("/service")]
+async fn service() -> Json<Service> {
+    Json(SERVICE.read().await.clone())
 }
 
 async fn query<V, S, K>(
