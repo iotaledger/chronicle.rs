@@ -11,7 +11,7 @@ impl<H: PermanodeBrokerScope> Terminating<BrokerHandle<H>> for Solidifier {
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Stopping);
-        let event = BrokerEvent::Children(BrokerChild::Solidifier(self.service.clone()));
+        let event = BrokerEvent::Children(BrokerChild::Solidifier(self.service.clone(), _status));
         let _ = _supervisor.as_mut().unwrap().send(event);
         _status
     }

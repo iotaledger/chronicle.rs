@@ -62,9 +62,10 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                                 }
                             }
                             error!("Scylla cluster is likely having a complete outage, so we are shutting down broker for meantime.");
-                            // TODO abort solidifier in order to let broker app reschedule itself after few mins
-
-                            // with reasonable retries, it means our cluster is likely in outage.
+                            // Abort solidifier in order to let broker app reschedule itself after few mins
+                            // with reasonable retries, it means our cluster is likely in outage or partial outage (ie
+                            // all replicas for given token).
+                            return Err(Need::Abort);
                         }
                     }
                 }
@@ -142,7 +143,7 @@ impl Solidifier {
             // no need to ask collector, because we already requested it, and we still awaiting for a response
             // NOTE: this likely will never happen
             ms_data.created_by = CreatedBy::Syncer;
-            warn!("Not supposed to receive solidify request from syncer on an existing milestone ata, unless this is an expected race condition");
+            warn!("Not supposed to receive solidify request from syncer on an existing milestone data, unless this is an expected race condition");
         } else {
             // Asking any collector (as we don't know the message id of the milestone)
             // however, we use milestone_index % collectors_count to have unfirom distribution.
