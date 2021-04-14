@@ -766,10 +766,6 @@ impl Collector {
                 self.delete_indexation(&message_id, index_key, milestone_index);
             }
             for (output_index, output) in regular.outputs().iter().enumerate() {
-                warn!(
-                    "deleting address, output: {:?}, odx: {}, tx: {}, milestone_index {}",
-                    output, output_index, transaction_id, milestone_index
-                );
                 self.delete_address(output, &transaction_id, output_index as u16, milestone_index);
             }
         }
@@ -782,7 +778,6 @@ impl Collector {
         milestone_index: MilestoneIndex,
     ) {
         let partition_id = self.get_partition_id(milestone_index);
-        println!("{:?}", partition_id);
         let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
