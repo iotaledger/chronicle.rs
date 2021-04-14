@@ -2,7 +2,10 @@ use super::*;
 use permanode_common::SyncRange;
 use scylla_cql::Row;
 use std::{
-    collections::VecDeque,
+    collections::{
+        HashMap,
+        VecDeque,
+    },
     str::FromStr,
 };
 
@@ -172,7 +175,7 @@ impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecor
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT partition_id, milestone_index, output_type, transaction_id, idx, amount, inclusion_state
+            "SELECT partition_id, milestone_index, output_type, transaction_id, idx, amount, inclusion_state, address
             FROM {}.addresses
             WHERE address = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
@@ -196,22 +199,38 @@ impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<Address
         Index,
         Amount,
         Option<LedgerInclusionState>,
+        String,
     )>;
     fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<Partitioned<AddressRecord>>>>, CqlError> {
         if decoder.is_rows() {
             let mut iter = Self::Row::rows_iter(decoder);
             let paging_state = iter.take_paging_state();
-            let values = iter
-                .map(|row| {
-                    let (partition_id, milestone_index, output_type, transaction_id, index, amount, inclusion_state) =
-                        row.into_inner();
-                    Partitioned::new(
-                        AddressRecord::new(output_type, transaction_id, index, amount, inclusion_state),
-                        partition_id,
-                        milestone_index.0,
-                    )
-                })
-                .collect();
+            let map = iter.fold(HashMap::<String, Partitioned<AddressRecord>>::new(), |mut map, row| {
+                let (
+                    partition_id,
+                    milestone_index,
+                    output_type,
+                    transaction_id,
+                    index,
+                    amount,
+                    inclusion_state,
+                    address,
+                ) = row.into_inner();
+                let record = Partitioned::new(
+                    AddressRecord::new(output_type, transaction_id, index, amount, inclusion_state),
+                    partition_id,
+                    milestone_index.0,
+                );
+                map.entry(address)
+                    .and_modify(|v| {
+                        if v.ledger_inclusion_state.is_none() {
+                            *v = record.clone();
+                        }
+                    })
+                    .or_insert(record);
+                map
+            });
+            let values = map.into_iter().map(|(_, v)| v).collect();
             Ok(Some(Paged::new(values, paging_state)))
         } else {
             Err(decoder.get_error())
@@ -494,6 +513,7 @@ impl Row
         Index,
         Amount,
         Option<LedgerInclusionState>,
+        String,
     )>
 {
     fn decode_row<R: Rows + ColumnValue>(rows: &mut R) -> Self {
@@ -504,6 +524,7 @@ impl Row
         let index = rows.column_value::<u16>();
         let amount = rows.column_value::<Amount>();
         let inclusion_state = rows.column_value::<Option<LedgerInclusionState>>();
+        let address = rows.column_value::<String>();
         Record::new((
             partition_id,
             MilestoneIndex(milestone_index),
@@ -512,6 +533,7 @@ impl Row
             index,
             amount,
             inclusion_state,
+            address,
         ))
     }
 }
