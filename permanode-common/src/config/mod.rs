@@ -59,7 +59,7 @@ impl Config {
                     let config = Self::default();
                     config.save(path.clone())?;
                     bail!(
-                        "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!", 
+                        "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!",
                         std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
                     );
                 }

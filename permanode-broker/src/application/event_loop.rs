@@ -16,7 +16,11 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                 match event {
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
                         Ok(my_event) => match my_event {
-                            PermanodeBrokerThrough::Shutdown => self.shutdown(supervisor).await,
+                            PermanodeBrokerThrough::Shutdown => {
+                                self.shutdown(supervisor, true).await;
+                                // ensure to drop handle
+                                self.handle.take();
+                            }
                             PermanodeBrokerThrough::Topology(topology) => match topology {
                                 Topology::AddMqttMessages(url) => {
                                     if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
@@ -45,6 +49,15 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                             supervisor.passthrough(other_app_event, self.get_name());
                         }
                     },
+                    BrokerEvent::Scylla(service) => {
+                        if let Err(Need::Restart) = _status.as_ref() {
+                            if service.is_running() {
+                                // ask for restart, but first drop the handle to ensure we start with empty event_loop
+                                self.handle.take();
+                                return Err(Need::Restart);
+                            }
+                        }
+                    }
                     BrokerEvent::Children(child) => {
                         let mut is_not_websocket_child = true;
                         match child {
@@ -58,9 +71,10 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {
                                     if service.is_stopped() {
-                                        // Shutdown broker app
-                                        self.shutdown(supervisor).await;
-                                        _status = Err(Need::RescheduleAfter(self.reschedule_after.clone()));
+                                        // Pause broker app (is_stopping but awaitting on its event loop till scylla is
+                                        // running)
+                                        self.shutdown(supervisor, false).await;
+                                        _status = Err(Need::Restart);
                                     }
                                 }
                                 self.service.update_microservice(service.get_name(), service.clone());
@@ -69,11 +83,11 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {
                                     if service.is_stopped() {
-                                        // Abort broker app
-                                        self.shutdown(supervisor).await;
-                                        // update status only if is not rescheduling
-                                        if let Err(Need::RescheduleAfter(_)) = _status.as_ref() {
+                                        // update status only if is not restarting
+                                        if let Err(Need::Restart) = _status.as_ref() {
                                         } else {
+                                            // Abort broker app
+                                            self.shutdown(supervisor, true).await;
                                             _status = status;
                                         }
                                     }
@@ -84,11 +98,11 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {
                                     if service.is_stopped() {
-                                        // Abort broker app
-                                        self.shutdown(supervisor).await;
-                                        // update status only if is not rescheduling
-                                        if let Err(Need::RescheduleAfter(_)) = _status.as_ref() {
+                                        // update status only if is not restarting
+                                        if let Err(Need::Restart) = _status.as_ref() {
                                         } else {
+                                            // Abort broker app
+                                            self.shutdown(supervisor, true).await;
                                             _status = status;
                                         }
                                     }
@@ -256,14 +270,16 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
             let _ = socket.send(m).await;
         }
     }
-    pub(crate) async fn shutdown(&mut self, supervisor: &mut H) {
+    pub(crate) async fn shutdown(&mut self, supervisor: &mut H, drop_handle: bool) {
         if !self.service.is_stopping() {
             // update service to be stopping, to prevent admins from changing the topology
             self.service.update_status(ServiceStatus::Stopping);
             // Ask launcher to shutdown broker application,
             // this is usefull in case the shutdown event sent by the websocket
             // client or being pass it from other application
-            supervisor.shutdown_app(&self.get_name());
+            if drop_handle {
+                supervisor.shutdown_app(&self.get_name());
+            }
             // shutdown children
             // shutdown listener if provided
             if let Some(listener) = self.listener_handle.take() {
@@ -293,7 +309,9 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                 syncer.shutdown();
             }
             // drop self handler
-            self.handle.take();
+            if drop_handle {
+                self.handle.take();
+            }
         }
     }
 }
