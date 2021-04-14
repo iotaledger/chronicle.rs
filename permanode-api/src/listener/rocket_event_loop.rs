@@ -1,6 +1,7 @@
 use super::*;
 use crate::responses::*;
 use anyhow::anyhow;
+use hex::FromHex;
 use mpsc::unbounded_channel;
 use permanode_common::{
     config::PartitionConfig,
@@ -672,12 +673,17 @@ async fn get_message_by_index(
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
-    if index.len() > 64 {
-        return Err(ListenerError::IndexTooLarge.into());
-    }
     if let Some(true) = utf8 {
         index = hex::encode(index);
     }
+    if Vec::<u8>::from_hex(index.clone())
+        .map_err(|_| ListenerError::InvalidHex)?
+        .len()
+        > 64
+    {
+        return Err(ListenerError::IndexTooLarge);
+    }
+
     let indexation = Indexation(index.clone());
     let page_size = page_size.unwrap_or(1000);
     let mut paging_state = paging_state.and_then(|s| hex::decode(s).ok());
