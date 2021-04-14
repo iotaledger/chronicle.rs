@@ -26,7 +26,6 @@ use scylla::{
     Worker,
     WorkerError,
 };
-use std::time::Duration;
 use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,
@@ -111,8 +110,7 @@ async fn permanode(apps: Apps) {
             add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
                 .await
                 .ok();
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            init_database().await.unwrap();
+            init_database().await.ok();
             apps
         })
         .await
@@ -158,7 +156,7 @@ async fn init_database() -> anyhow::Result<()> {
         let token = 1;
         let keyspace_statement = Query::new()
             .statement(&format!(
-                "CREATE KEYSPACE IF NOT EXISTS {0} 
+                "CREATE KEYSPACE IF NOT EXISTS {0}
                 WITH replication = {{'class': 'NetworkTopologyStrategy', {1}}}
                 AND durable_writes = true;",
                 keyspace.name(),
@@ -194,7 +192,7 @@ async fn init_database() -> anyhow::Result<()> {
                 inclusion_state blob,
                 PRIMARY KEY ((address, partition_id), milestone_index, output_type, transaction_id, idx)
             ) WITH CLUSTERING ORDER BY (milestone_index DESC, output_type DESC, transaction_id DESC, idx DESC);
-            
+
             CREATE TABLE IF NOT EXISTS {0}.indexes  (
                 indexation text,
                 partition_id smallint,
@@ -203,7 +201,7 @@ async fn init_database() -> anyhow::Result<()> {
                 inclusion_state blob,
                 PRIMARY KEY ((indexation, partition_id), milestone_index, message_id)
             ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-            
+
             CREATE TABLE IF NOT EXISTS {0}.parents  (
                 parent_id text,
                 partition_id smallint,
@@ -212,7 +210,7 @@ async fn init_database() -> anyhow::Result<()> {
                 inclusion_state blob,
                 PRIMARY KEY ((parent_id, partition_id), milestone_index, message_id)
             ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-            
+
             CREATE TABLE IF NOT EXISTS {0}.transactions  (
                 transaction_id text,
                 idx smallint,
@@ -223,7 +221,7 @@ async fn init_database() -> anyhow::Result<()> {
                 milestone_index int,
                 PRIMARY KEY (transaction_id, idx, variant, message_id, data)
             );
-            
+
             CREATE TABLE IF NOT EXISTS {0}.milestones  (
                 milestone_index int,
                 message_id text,
@@ -231,7 +229,7 @@ async fn init_database() -> anyhow::Result<()> {
                 payload blob,
                 PRIMARY KEY (milestone_index, message_id)
             );
-            
+
             CREATE TABLE IF NOT EXISTS {0}.hints  (
                 hint text,
                 variant text,
@@ -239,7 +237,7 @@ async fn init_database() -> anyhow::Result<()> {
                 milestone_index int,
                 PRIMARY KEY (hint, variant, partition_id)
             ) WITH CLUSTERING ORDER BY (variant DESC, partition_id DESC);
-            
+
             CREATE TABLE IF NOT EXISTS {0}.sync  (
                 key text,
                 milestone_index int,

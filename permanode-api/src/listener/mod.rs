@@ -24,8 +24,10 @@ enum ListenerError {
     NoResults,
     #[error("No response from scylla!")]
     NoResponseError,
-    #[error("Provided index is too large! (Max 64 characters)")]
+    #[error("Provided index is too large! (Max 64 bytes)")]
     IndexTooLarge,
+    #[error("Invalid hexidecimal encoding!")]
+    InvalidHex,
     #[error("Specified keyspace ({0}) is not configured!")]
     InvalidKeyspace(String),
     #[error("No endpoint found!")]
@@ -39,10 +41,8 @@ enum ListenerError {
 impl ListenerError {
     pub fn status(&self) -> Status {
         match self {
-            ListenerError::NoResults => Status::NoContent,
-            ListenerError::IndexTooLarge => Status::BadRequest,
-            ListenerError::InvalidKeyspace(_) => Status::NotFound,
-            ListenerError::BadParse(_) => Status::BadRequest,
+            ListenerError::NoResults | ListenerError::InvalidKeyspace(_) => Status::NotFound,
+            ListenerError::IndexTooLarge | ListenerError::InvalidHex | ListenerError::BadParse(_) => Status::BadRequest,
             _ => Status::InternalServerError,
         }
     }

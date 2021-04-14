@@ -130,13 +130,6 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-messages-by-index-response-example"
-        "204":
-          description: >-
-            No Records Found: indicates that no records were found for the given index
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: >-
             Unsuccessful operation: indicates that the provided index is invalid.
@@ -204,13 +197,6 @@ paths:
                 Indexation Payload:
                   $ref: >-
                     #/components/examples/get-message-by-id-indexation-response-example
-        "204":
-          description: >-
-            No Records Found: indicates that no record was found for the given message id
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: "Unsuccessful operation: indicates that the provided message id is invalid."
           content:
@@ -274,13 +260,6 @@ paths:
                 Conflicting:
                   $ref: >-
                     #/components/examples/get-message-by-id-response-example-conflicting
-        "204":
-          description: >-
-            No Records Found: indicates that no metadata was found for the given message id
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: "Unsuccessful operation: indicates that the provided message id is invalid."
           content:
@@ -354,13 +333,6 @@ paths:
                 No children were found:
                   $ref: >-
                     #/components/examples/get-messages-by-id-response-example-nochildren
-        "204":
-          description: >-
-            No Records Found: indicates that no children records were found for the given message id
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: "Unsuccessful operation: indicates that the provided message id is invalid."
           content:
@@ -416,13 +388,6 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-outputs-by-id-response-example"
-        "204":
-          description: >-
-            No Records Found: indicates that no record was found for the given output id
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: "Unsuccessful operation: indicates that the provided output id is invalid."
           content:
@@ -507,13 +472,6 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-address-outputs-response-example"
-        "204":
-          description: >-
-            No Records Found: indicates that no records were found for the given address
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: "Unsuccessful operation: indicates that the provided address is invalid."
           content:
@@ -568,13 +526,6 @@ paths:
                 default:
                   $ref: >-
                     #/components/examples/get-milestone-by-index-response-example
-        "204":
-          description: >-
-            No Records Found: indicates that no milestone was found for the given index
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: "Unsuccessful operation: indicates that the provided milestone index is invalid."
           content:
@@ -628,13 +579,6 @@ paths:
               examples:
                 default:
                   $ref: "#/components/examples/get-included-message-of-transaction-example"
-        "204":
-          description: >-
-            No Records Found: indicates that no record was found for the given message id
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NoContentResponse"
         "400":
           description: "Unsuccessful operation: indicates that the provided message id is invalid."
           content:
@@ -1274,7 +1218,6 @@ components:
       required:
         - type
         - milestoneId
-
     TreasuryOutput:
       properties:
         type:
@@ -1285,53 +1228,6 @@ components:
       required:
         - type
         - amount
-    Metrics:
-      properties:
-        newMessages:
-          type: integer
-          description: The number of received messages that were new for the node.
-        knownMessages:
-          type: integer
-          description: The number of received messages that already were known to the node.
-        receivedMessages:
-          type: integer
-          description: The number of received messages from the peer.
-        receivedMessageRequests:
-          type: integer
-          description: The number of received message requests from the peer.
-        receivedMilestoneRequests:
-          type: integer
-          description: The number of received milestone requests from the peer.
-        receivedHeartbeats:
-          type: integer
-          description: The number of received heartbeats from the peer.
-        sentMessages:
-          type: integer
-          description: The number of sent messages to the peer.
-        sentMessageRequests:
-          type: integer
-          description: The number of sent message requests to the peer.
-        sentMilestoneRequests:
-          type: integer
-          description: The number of sent milestone requests to the peer.
-        sentHeartbeats:
-          type: integer
-          description: The number of sent heartbeats to the peer.
-        droppedPackets:
-          type: integer
-          description: The number of dropped packets.
-      required:
-        - newMessages
-        - knownMessages
-        - receivedMessages
-        - receivedMessageRequests
-        - receivedMilestoneRequests
-        - receivedHeartbeats
-        - sentMessages
-        - sentMessageRequests
-        - sentMilestoneRequests
-        - sentHeartbeats
-        - droppedPackets
     MetricsResponse:
       description: The metrics generated in the prometheus format
       example: |-
@@ -1374,14 +1270,6 @@ components:
             - message
       required:
         - error
-    ForbiddenResponse:
-      description: Indicates that this endpoint is not available for public use.
-      allOf:
-        - $ref: "#/components/schemas/ErrorResponse"
-      example:
-        error:
-          code: 403
-          message: not available for public use
     BadRequestResponse:
       description: Indicates that the request was bad.
       allOf:
@@ -1390,22 +1278,14 @@ components:
         error:
           code: 400
           message: Invalid data provided!
-    NoContentResponse:
-      description: Indicates that no results were found for the given endpoint and query.
-      allOf:
-        - $ref: "#/components/schemas/ErrorResponse"
-      example:
-        error:
-          code: 204
-          message: No results returned!
     NotFoundResponse:
-      description: Indicates that the endpoint was not found.
+      description: Indicates that the endpoint or data was not found.
       allOf:
         - $ref: "#/components/schemas/ErrorResponse"
       example:
         error:
           code: 404
-          message: Endpoint does not exist!
+          message: Endpoint or data does not exist!
     InternalErrorResponse:
       description: >-
         Indicates that the server encountered an unexpected condition, which
@@ -1658,31 +1538,6 @@ components:
             - output
       required:
         - data
-    BalanceAddressResponse:
-      description: Returns the balance of an address.
-      properties:
-        data:
-          type: object
-          properties:
-            addressType:
-              type: integer
-              description: The type of the address. Value `0` denotes a Ed25519 address.
-            address:
-              type: string
-              description: The hex-encoded Ed25519 address.
-            balance:
-              type: integer
-              description: The computed balance for the address.
-            dustAllowed:
-              type: boolean
-              description: Tells whether the address can receive dust or not.
-          required:
-            - addressType
-            - address
-            - balance
-            - dustAllowed
-      required:
-        - data
     OutputsAddressResponse:
       properties:
         data:
@@ -1734,30 +1589,5 @@ components:
             - index
             - messageId
             - timestamp
-      required:
-        - data
-    UTXOChangesResponse:
-      description: Returns all UTXO changes of the given milestone.
-      properties:
-        data:
-          type: object
-          properties:
-            index:
-              type: integer
-              description: The index number of the milestone.
-            createdOutputs:
-              description: The created outputs of the given milestone.
-              type: array
-              items:
-                type: string
-            consumedOutputs:
-              description: The consumed outputs of the given milestone.
-              type: array
-              items:
-                type: string
-          required:
-            - index
-            - createdOutputs
-            - consumedOutputs
       required:
         - data
