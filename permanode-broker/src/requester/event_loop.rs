@@ -44,7 +44,7 @@ impl Requester {
                     break;
                 } else {
                     retries -= 1;
-                    // keep retrying, but yelid to keep the system responsive
+                    // keep retrying, but yield to keep the system responsive
                     tokio::task::yield_now().await;
                     continue;
                 }
@@ -72,7 +72,7 @@ impl Requester {
                     break;
                 } else {
                     retries -= 1;
-                    // keep retrying, but yelid to keep the system responsive
+                    // keep retrying, but yield to keep the system responsive
                     tokio::task::yield_now().await;
                     continue;
                 }
