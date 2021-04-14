@@ -649,12 +649,13 @@ async fn get_message_children(
     })
 }
 
-#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<paging_state>&<last_partition_id>&<last_milestone_index>")]
+#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<expanded>&<paging_state>&<last_partition_id>&<last_milestone_index>")]
 async fn get_message_by_index(
     keyspace: String,
     mut index: String,
     page_size: Option<usize>,
     utf8: Option<bool>,
+    expanded: Option<bool>,
     paging_state: Option<String>,
     mut last_partition_id: Option<u16>,
     mut last_milestone_index: Option<u32>,
@@ -691,13 +692,23 @@ async fn get_message_by_index(
     )
     .await?;
 
-    Ok(ListenerResponse::MessagesForIndex {
-        index,
-        max_results: 2 * page_size,
-        count: messages.len(),
-        message_ids: messages.drain(..).map(|record| record.into()).collect(),
-        state: (paging_state, last_partition_id, last_milestone_index).into(),
-    })
+    if let Some(true) = expanded {
+        Ok(ListenerResponse::MessagesForIndexExpanded {
+            index,
+            max_results: 2 * page_size,
+            count: messages.len(),
+            message_ids: messages.drain(..).map(|record| record.into()).collect(),
+            state: (paging_state, last_partition_id, last_milestone_index).into(),
+        })
+    } else {
+        Ok(ListenerResponse::MessagesForIndex {
+            index,
+            max_results: 2 * page_size,
+            count: messages.len(),
+            message_ids: messages.drain(..).map(|record| record.message_id.to_string()).collect(),
+            state: (paging_state, last_partition_id, last_milestone_index).into(),
+        })
+    }
 }
 
 #[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>&<expanded>&<paging_state>&<last_partition_id>&<last_milestone_index>")]

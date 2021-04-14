@@ -96,6 +96,16 @@ pub(crate) enum ListenerResponse {
         max_results: usize,
         count: usize,
         #[serde(rename = "messageIds")]
+        message_ids: Vec<String>,
+        state: StateData,
+    },
+    /// Response of GET /api/<keyspace>/messages?expanded=true&<index>
+    MessagesForIndexExpanded {
+        index: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "messageIds")]
         message_ids: Vec<Record>,
         state: StateData,
     },
@@ -112,7 +122,7 @@ pub(crate) enum ListenerResponse {
         output_ids: Vec<OutputId>,
         state: StateData,
     },
-    /// Response of GET /api/<keyspace>/addresses/<address>/outputs
+    /// Response of GET /api/<keyspace>/addresses/<address>/outputs?expanded=true
     OutputsForAddressExpanded {
         // The type of the address (1=Ed25519).
         #[serde(rename = "addressType")]
