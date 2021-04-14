@@ -289,7 +289,7 @@ impl TransactionRecord {
         milestone_index: Option<MilestoneIndex>,
     ) -> Self {
         Self {
-            variant: TransactionVariant::Output,
+            variant: TransactionVariant::Unlock,
             message_id,
             data: TransactionData::Unlock(data),
             inclusion_state,
