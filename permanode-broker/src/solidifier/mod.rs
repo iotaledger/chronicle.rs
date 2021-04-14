@@ -338,7 +338,7 @@ where
     keyspace: S,
     key: K,
     value: V,
-    retries: u16,
+    retries: usize,
 }
 
 pub struct AtomicSolidifierHandle {
@@ -368,7 +368,7 @@ where
     K: 'static + Send,
     V: 'static + Send,
 {
-    pub fn new(handle: std::sync::Arc<AtomicSolidifierHandle>, keyspace: S, key: K, value: V, retries: u16) -> Self {
+    pub fn new(handle: std::sync::Arc<AtomicSolidifierHandle>, keyspace: S, key: K, value: V, retries: usize) -> Self {
         Self {
             handle,
             keyspace,
@@ -382,7 +382,7 @@ where
         keyspace: S,
         key: K,
         value: V,
-        retries: u16,
+        retries: usize,
     ) -> Box<Self> {
         Box::new(Self::new(handle, keyspace, key, value, retries))
     }
@@ -412,6 +412,8 @@ where
                     id,
                     reporter,
                 )?;
+            } else {
+                self.handle.any_error.store(true, Ordering::Relaxed);
             }
         } else if self.retries > 0 {
             self.retries -= 1;

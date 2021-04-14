@@ -300,9 +300,8 @@ where
         request.paging_state(&paging_state)
     }
     .build()?;
-
     let (sender, mut inbox) = unbounded_channel::<Result<Option<V>, WorkerError>>();
-    let mut worker = ValueWorker::new(sender, keyspace, key, PhantomData);
+    let mut worker = ValueWorker::new(sender, keyspace, key, 0, PhantomData);
     if let Some(page_size) = page_size {
         worker = worker.with_paging(page_size, paging_state);
     }

@@ -136,6 +136,7 @@ impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
                 tx,
                 self.default_keyspace.clone(),
                 self.sync_range,
+                10,
                 std::marker::PhantomData,
             ));
         let select_response = rx.recv().await;
