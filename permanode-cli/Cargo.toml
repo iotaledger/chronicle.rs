@@ -11,10 +11,10 @@ permanode = { path = "../permanode" }
 permanode-common = { path = "../permanode-common" }
 permanode-broker = { path = "../permanode-broker" }
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "error-handling" }
-clap = { version = "2.33.3", features = ["yaml"] }
-tokio = "1.2.0"
-tokio-tungstenite = "0.13.0"
-futures = "0.3.13"
-url = "2.2.1"
-serde_json = "1.0.63"
+clap = { version = "2.33", features = ["yaml"] }
+tokio = "1.2"
+tokio-tungstenite = "0.14"
+futures = "0.3"
+url = "2.2"
+serde_json = "1.0"
 anyhow = "1.0"

@@ -17,13 +17,13 @@ scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "er
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4"
-tokio-tungstenite = "0.13"
+tokio-tungstenite = "0.14"
 reqwest = { version = "0.11", features = ["json"] }
 futures = "0.3"
 async-trait = "*"
 lru = "0.6"
 rand = "0.8"
-url = { version = "2", features = ["serde"] }
+url = { version = "2.2", features = ["serde"] }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
@@ -33,7 +33,7 @@ hex = "0.4"
 anyhow = "1.0"
 
 [dependencies.tokio]
-version = "1.2"
+version = "1.4"
 default-features = false
 features = [
     "io-std",

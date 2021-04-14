@@ -18,10 +18,10 @@ bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-ledger = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-snapshot = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
-async-trait = "0.1.42"
+async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
-bincode = "1.3.2"
-rand = "0.8.2"
+bincode = "1.3"
+rand = "0.8"
 anyhow = "1.0"
 
 [dependencies.bee-message]
@@ -32,7 +32,7 @@ features = [
 ]
 
 [dependencies.tokio]
-version = "1.2"
+version = "1.4"
 default-features = false
 features = [
     "io-std",

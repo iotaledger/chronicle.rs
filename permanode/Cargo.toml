@@ -31,12 +31,12 @@ dotenv = "0.15"
 futures = "0.3"
 warp = "0.3"
 serde_json = "1.0"
-tokio-tungstenite = "0.13"
+tokio-tungstenite = "0.14"
 url = "2.2"
 anyhow = "1.0"
 
 [dependencies.tokio]
-version = "1.2"
+version = "1.4"
 default-features = false
 features = [
     "io-std",
