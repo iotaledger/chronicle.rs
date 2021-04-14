@@ -191,9 +191,12 @@ impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<Address
         ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let mut iter = Self::Row::rows_iter(decoder)?;
         let paging_state = iter.take_paging_state();
-        let map = iter.fold(
-            HashMap::<OutputId, Partitioned<AddressRecord>>::new(),
-            |mut map, row| {
+        let (_, values) = iter.fold(
+            (
+                HashMap::<OutputId, usize>::new(),
+                VecDeque::<Partitioned<AddressRecord>>::new(),
+            ),
+            |(mut map, mut values), row| {
                 let (partition_id, milestone_index, output_type, transaction_id, index, amount, inclusion_state) =
                     row.into_inner();
                 let record = Partitioned::new(
@@ -203,20 +206,22 @@ impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<Address
                 );
                 if let Ok(output_id) = OutputId::new(transaction_id, index) {
                     match map.entry(output_id) {
-                        Entry::Occupied(mut v) => {
-                            if v.get().ledger_inclusion_state.is_none() {
-                                v.insert(record);
+                        Entry::Occupied(v) => {
+                            if let Some(prev) = values.get_mut(*v.get()) {
+                                if prev.ledger_inclusion_state.is_none() {
+                                    *prev = record;
+                                }
                             }
                         }
                         Entry::Vacant(e) => {
-                            e.insert(record);
+                            e.insert(values.len());
+                            values.push_back(record);
                         }
                     }
                 }
-                map
+                (map, values)
             },
         );
-        let values = map.into_iter().map(|(_, v)| v).collect();
         Ok(Some(Paged::new(values, paging_state)))
     }
 }
