@@ -229,7 +229,7 @@ impl Archiver {
             .insert(&sync_key, &synced_record)
             .consistency(Consistency::One)
             .build()
-            .send_local(InsertWorker::boxed(keyspace.clone(), sync_key, synced_record));
+            .send_local(InsertWorker::boxed(keyspace.clone(), sync_key, synced_record, 10));
         Ok(())
     }
     async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> Result<(), Need> {

@@ -348,7 +348,8 @@ impl Collector {
             let milestone_index = *self.est_ms;
             let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
             let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap().clone();
-            let inherent_worker = AtomicWorker::new(solidifier_handle, milestone_index, *message_id, self.retries);
+            let inherent_worker =
+                AtomicWorker::new(solidifier_handle, milestone_index, *message_id, self.confirmed_retries);
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
             self.insert(&inherent_worker, &keyspace, *message_id, message_tuple);
@@ -375,7 +376,7 @@ impl Collector {
         } else {
             metadata = None;
             ledger_inclusion_state = None;
-            let inherent_worker = SimpleWorker;
+            let inherent_worker = SimpleWorker { retries: 5 };
             // store message only
             self.insert(&inherent_worker, &keyspace, *message_id, message.clone());
             // Insert parents/children
@@ -493,7 +494,7 @@ impl Collector {
     }
     fn insert_message_metadata(&self, metadata: MessageMetadata) {
         let message_id = metadata.message_id;
-        let inherent_worker = SimpleWorker;
+        let inherent_worker = SimpleWorker { retries: 5 };
         // store message and metadata
         self.insert(&inherent_worker, &self.get_keyspace(), message_id, metadata.clone());
         // Insert parents/children
@@ -513,7 +514,7 @@ impl Collector {
         #[cfg(not(feature = "filter"))]
         let keyspace = self.get_keyspace();
         let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms);
-        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries);
+        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.confirmed_retries);
         // Insert parents/children
         self.insert_parents(
             &inherent_worker,
@@ -765,6 +766,10 @@ impl Collector {
                 self.delete_indexation(&message_id, index_key, milestone_index);
             }
             for (output_index, output) in regular.outputs().iter().enumerate() {
+                warn!(
+                    "deleting address, output: {:?}, odx: {}, tx: {}, milestone_index {}",
+                    output, output_index, transaction_id, milestone_index
+                );
                 self.delete_address(output, &transaction_id, output_index as u16, milestone_index);
             }
         }
@@ -777,6 +782,7 @@ impl Collector {
         milestone_index: MilestoneIndex,
     ) {
         let partition_id = self.get_partition_id(milestone_index);
+        println!("{:?}", partition_id);
         let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
@@ -824,25 +830,27 @@ impl Collector {
         V: 'static + Send + Clone,
     {
         let delete_req = self.default_keyspace.delete(&key).consistency(Consistency::One).build();
-        let worker = DeleteWorker::boxed(self.default_keyspace.clone(), key);
+        let worker = DeleteWorker::boxed(self.default_keyspace.clone(), key, self.confirmed_retries);
         delete_req.send_local(worker);
     }
 }
 
 pub struct AtomicWorker {
     arc_handle: Arc<AtomicSolidifierHandle>,
-    retries: u16,
+    retries: usize,
 }
 
 impl AtomicWorker {
-    fn new(solidifier_handle: SolidifierHandle, milestone_index: u32, message_id: MessageId, retries: u16) -> Self {
+    fn new(solidifier_handle: SolidifierHandle, milestone_index: u32, message_id: MessageId, retries: usize) -> Self {
         let any_error = std::sync::atomic::AtomicBool::new(false);
         let atomic_handle = AtomicSolidifierHandle::new(solidifier_handle, milestone_index, message_id, any_error);
         let arc_handle = std::sync::Arc::new(atomic_handle);
         Self { arc_handle, retries }
     }
 }
-pub struct SimpleWorker;
+pub struct SimpleWorker {
+    retries: usize,
+}
 
 trait Inherent {
     fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
@@ -859,7 +867,7 @@ impl Inherent for SimpleWorker {
         K: 'static + Send + Clone,
         V: 'static + Send + Clone,
     {
-        InsertWorker::boxed(keyspace, key, value)
+        InsertWorker::boxed(keyspace, key, value, self.retries)
     }
 }
 

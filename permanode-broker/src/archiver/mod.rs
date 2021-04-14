@@ -36,6 +36,7 @@ builder!(ArchiverBuilder {
     max_log_size: u64,
     oneshot: Receiver<u32>,
     solidifiers_count: u8,
+    db_insert_retries: usize,
     dir_path: PathBuf
 });
 
@@ -165,6 +166,7 @@ pub struct Archiver {
     milestones_data: BinaryHeap<Ascending<MilestoneData>>,
     oneshot: Option<tokio::sync::oneshot::Receiver<u32>>,
     keyspace: PermanodeKeyspace,
+    db_insert_retries: usize,
     solidifiers_count: u8,
     handle: Option<ArchiverHandle>,
     inbox: ArchiverInbox,
@@ -195,6 +197,7 @@ impl Builder for ArchiverBuilder {
             solidifiers_count: self.solidifiers_count.unwrap(),
             milestones_data: std::collections::BinaryHeap::new(),
             oneshot: self.oneshot,
+            db_insert_retries: self.db_insert_retries.unwrap_or(10),
             handle,
             inbox,
         }
