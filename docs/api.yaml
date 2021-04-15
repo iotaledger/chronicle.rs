@@ -106,17 +106,13 @@ paths:
           example: true
           description: Indicates whether the provided index is UTF-8. If not provided or false, the index will be encoded by the server.
         - in: query
-          name: last_milestone_index
+          name: expanded
           schema:
-            type: number
-          description: The last used milestone index, to be stored and re-used when retrieving additional records.
+            type: boolean
+          example: true
+          description: Requests additional data for each message id if included and true.
         - in: query
-          name: last_partition_id
-          schema:
-            type: number
-          description: The last used partition id, to be stored and re-used when retrieving additional records.
-        - in: query
-          name: paging_state
+          name: state
           schema:
             type: string
           description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
@@ -305,17 +301,19 @@ paths:
           required: true
           description: Identifier of the message.
         - in: query
-          name: last_milestone_index
+          name: page_size
           schema:
             type: number
-          description: The last used milestone index, to be stored and re-used when retrieving additional records.
+          example: 6000
+          description: Requested page size.
         - in: query
-          name: last_partition_id
+          name: expanded
           schema:
-            type: number
-          description: The last used partition id, to be stored and re-used when retrieving additional records.
+            type: boolean
+          example: true
+          description: Requests additional data for each message id if included and true.
         - in: query
-          name: paging_state
+          name: state
           schema:
             type: string
           description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
@@ -448,17 +446,7 @@ paths:
           example: true
           description: Requests additional data for each output if included and true.
         - in: query
-          name: last_milestone_index
-          schema:
-            type: number
-          description: The last used milestone index, to be stored and re-used when retrieving additional records.
-        - in: query
-          name: last_partition_id
-          schema:
-            type: number
-          description: The last used partition id, to be stored and re-used when retrieving additional records.
-        - in: query
-          name: paging_state
+          name: state
           schema:
             type: string
           description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
