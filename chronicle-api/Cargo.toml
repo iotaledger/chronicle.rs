@@ -1,0 +1,63 @@
+[package]
+name = "chronicle-api"
+version = "0.1.0"
+authors = ["Alex Coats <alexandcoats@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "chronicle_api"
+path = "src/lib.rs"
+
+[dependencies]
+chronicle-common = { path = "../chronicle-common" }
+chronicle-storage = { path = "../chronicle-storage" }
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "error-handling" }
+scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "error-handling" }
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "main"}
+bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_repr = "0.1"
+async-trait = "0.1"
+env_logger = "0.8"
+log = "0.4"
+http = "0.2"
+rocket = { git = "https://github.com/SergioBenitez/Rocket.git", rev = "e4c2324", optional = true }
+rand = "0.8"
+hex = "0.4"
+futures = "0.3"
+anyhow = "1.0"
+thiserror = "1.0"
+
+[dependencies.iota-crypto]
+git = "https://github.com/iotaledger/crypto.rs"
+rev = "c3bf565"
+features = ["ed25519", "blake2b"]
+
+[dependencies.rocket_contrib]
+git = "https://github.com/SergioBenitez/Rocket.git"
+rev = "e4c2324"
+default-features = false
+optional = true
+features = ["json"]
+
+[dependencies.tokio]
+version = "1.4"
+default-features = false
+features = [
+    "io-std",
+    "fs",
+    "macros",
+    "sync",
+    "net",
+    "io-util",
+    "time",
+    "rt-multi-thread",
+    "signal",
+    "full"
+]
+
+[features]
+default = ["rocket_listener"]
+rocket_listener = ["rocket", "rocket_contrib/json"]

@@ -1,0 +1,57 @@
+[package]
+name = "chronicle"
+version = "0.1.0"
+authors = ["IOTA Stiftung"]
+edition = "2018"
+license = "APACHE 2.0"
+homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
+repository = "https://github.com/iotaledger/scylla.rs"
+
+[lib]
+name = "chronicle"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chronicle"
+path = "src/main.rs"
+
+[dependencies]
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "main"}
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "error-handling" }
+chronicle-common = { path = "../chronicle-common" }
+chronicle-api = { path = "../chronicle-api" }
+chronicle-storage = { path = "../chronicle-storage" }
+chronicle-broker = { path = "../chronicle-broker" }
+serde = { version = "1.0", features = ["derive"] }
+async-trait = "0.1"
+env_logger = "0.8"
+log = "0.4"
+num_cpus = "1.13"
+dotenv = "0.15"
+futures = "0.3"
+warp = "0.3"
+serde_json = "1.0"
+tokio-tungstenite = "0.14"
+url = "2.2"
+anyhow = "1.0"
+
+[dependencies.tokio]
+version = "1.4"
+default-features = false
+features = [
+    "io-std",
+    "fs",
+    "macros",
+    "sync",
+    "net",
+    "io-util",
+    "time",
+    "rt-multi-thread",
+    "signal",
+    "full"
+]
+
+[features]
+default = ["rocket"]
+filter = ["chronicle-broker/filter"]
+rocket = ["chronicle-api/rocket_listener"]

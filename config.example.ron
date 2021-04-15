@@ -49,7 +49,7 @@
                 from: 1,
                 to: 2147483647,
             )),
-            logs_dir: "permanode/logs/",
+            logs_dir: "chronicle/logs/",
         ),
         historical_config_path: "./historical_config",
     ),

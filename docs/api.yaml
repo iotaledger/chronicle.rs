@@ -83,7 +83,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: query
@@ -167,7 +167,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
@@ -231,7 +231,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
@@ -294,7 +294,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
@@ -367,7 +367,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
@@ -425,7 +425,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
@@ -505,7 +505,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
@@ -559,7 +559,7 @@ paths:
           name: keyspace
           schema:
             type: string
-          example: permanode
+          example: chronicle
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
