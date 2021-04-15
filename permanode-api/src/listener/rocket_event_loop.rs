@@ -618,13 +618,14 @@ async fn get_message_metadata(
 }
 
 #[get(
-    "/<keyspace>/messages/<message_id>/children?<page_size>&<paging_state>&<last_partition_id>&<last_milestone_index>"
+    "/<keyspace>/messages/<message_id>/children?<page_size>&<expanded>&<paging_state>&<last_partition_id>&<last_milestone_index>"
 )]
 async fn get_message_children(
     keyspace: String,
     message_id: String,
     page_size: Option<usize>,
     paging_state: Option<String>,
+    expanded: Option<bool>,
     mut last_partition_id: Option<u16>,
     mut last_milestone_index: Option<u32>,
     partition_config: State<'_, PartitionConfig>,
@@ -649,13 +650,23 @@ async fn get_message_children(
     )
     .await?;
 
-    Ok(ListenerResponse::MessageChildren {
-        message_id: message_id.to_string(),
-        max_results: 2 * page_size,
-        count: messages.len(),
-        children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
-        state: (paging_state, last_partition_id, last_milestone_index).into(),
-    })
+    if let Some(true) = expanded {
+        Ok(ListenerResponse::MessageChildrenExpanded {
+            message_id: message_id.to_string(),
+            max_results: 2 * page_size,
+            count: messages.len(),
+            children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
+            state: (paging_state, last_partition_id, last_milestone_index).into(),
+        })
+    } else {
+        Ok(ListenerResponse::MessageChildren {
+            message_id: message_id.to_string(),
+            max_results: 2 * page_size,
+            count: messages.len(),
+            children_message_ids: messages.drain(..).map(|record| record.message_id.to_string()).collect(),
+            state: (paging_state, last_partition_id, last_milestone_index).into(),
+        })
+    }
 }
 
 #[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<expanded>&<paging_state>&<last_partition_id>&<last_milestone_index>")]

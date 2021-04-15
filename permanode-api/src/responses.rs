@@ -86,6 +86,17 @@ pub(crate) enum ListenerResponse {
         max_results: usize,
         count: usize,
         #[serde(rename = "childrenMessageIds")]
+        children_message_ids: Vec<String>,
+        state: StateData,
+    },
+    /// Response of GET /api/<keyspace>/messages/<message_id>/children?expanded=true
+    MessageChildrenExpanded {
+        #[serde(rename = "messageId")]
+        message_id: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<Record>,
         state: StateData,
     },
