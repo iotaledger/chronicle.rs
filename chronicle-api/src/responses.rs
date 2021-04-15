@@ -8,6 +8,7 @@ use chronicle_storage::access::{
     LedgerInclusionState,
     Message,
     MessageMetadata,
+    MilestoneIndex,
     OutputId,
     ParentRecord,
     Partitioned,
@@ -85,7 +86,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<String>,
-        state: StateData,
+        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>/children?expanded=true
     MessageChildrenExpanded {
@@ -96,7 +97,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<Record>,
-        state: StateData,
+        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?<index>
     MessagesForIndex {
@@ -106,7 +107,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "messageIds")]
         message_ids: Vec<String>,
-        state: StateData,
+        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?expanded=true&<index>
     MessagesForIndexExpanded {
@@ -116,7 +117,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "messageIds")]
         message_ids: Vec<Record>,
-        state: StateData,
+        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/addresses/<address>/outputs
     OutputsForAddress {
@@ -129,7 +130,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "outputIds")]
         output_ids: Vec<OutputId>,
-        state: StateData,
+        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/addresses/<address>/outputs?expanded=true
     OutputsForAddressExpanded {
@@ -142,7 +143,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "outputIds")]
         output_ids: Vec<Record>,
-        state: StateData,
+        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/outputs/<output_id>
     Output {
@@ -236,22 +237,26 @@ impl From<Partitioned<ParentRecord>> for Record {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct StateData {
-    #[serde(rename = "pagingState")]
-    pub paging_state: Option<String>,
-    #[serde(rename = "lastPartitionId")]
+    pub paging_state: Option<Vec<u8>>,
     pub last_partition_id: Option<u16>,
-    #[serde(rename = "lastMilestoneIndex")]
     pub last_milestone_index: Option<u32>,
+    pub partition_ids: Vec<(MilestoneIndex, u16)>,
 }
 
-impl From<(Option<Vec<u8>>, Option<u16>, Option<u32>)> for StateData {
+impl From<(Option<Vec<u8>>, Option<u16>, Option<u32>, Vec<(MilestoneIndex, u16)>)> for StateData {
     fn from(
-        (paging_state, last_partition_id, last_milestone_index): (Option<Vec<u8>>, Option<u16>, Option<u32>),
+        (paging_state, last_partition_id, last_milestone_index, partition_ids): (
+            Option<Vec<u8>>,
+            Option<u16>,
+            Option<u32>,
+            Vec<(MilestoneIndex, u16)>,
+        ),
     ) -> Self {
         Self {
-            paging_state: paging_state.map(|v| hex::encode(v)),
+            paging_state,
             last_partition_id,
             last_milestone_index,
+            partition_ids,
         }
     }
 }

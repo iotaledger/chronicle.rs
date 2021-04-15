@@ -30,6 +30,8 @@ enum ListenerError {
     InvalidHex,
     #[error("Specified keyspace ({0}) is not configured!")]
     InvalidKeyspace(String),
+    #[error("Invalid state provided!")]
+    InvalidState,
     #[error("No endpoint found!")]
     NotFound,
     #[error(transparent)]
