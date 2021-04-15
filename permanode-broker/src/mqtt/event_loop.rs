@@ -8,9 +8,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<Messages> {
     async fn event_loop(
         &mut self,
         status: Result<(), Need>,
-        _supervisor: &mut Option<BrokerHandle<H>>,
+        supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         status?;
+        self.service.update_status(ServiceStatus::Running);
+        let event = BrokerEvent::Children(BrokerChild::Mqtt(self.service.clone(), None, status));
+        let _ = supervisor.as_mut().unwrap().send(event);
         let inbox = self.inbox.as_mut().unwrap();
         while let Some(msg_opt) = inbox.stream.next().await {
             if let Some(msg) = msg_opt {
@@ -36,9 +39,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Mqtt<MessagesRefere
     async fn event_loop(
         &mut self,
         status: Result<(), Need>,
-        _supervisor: &mut Option<BrokerHandle<H>>,
+        supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         status?;
+        self.service.update_status(ServiceStatus::Running);
+        let event = BrokerEvent::Children(BrokerChild::Mqtt(self.service.clone(), None, status));
+        let _ = supervisor.as_mut().unwrap().send(event);
         let inbox = self.inbox.as_mut().unwrap();
         while let Some(msg_ref_opt) = inbox.stream.next().await {
             if let Some(msg_ref) = msg_ref_opt {

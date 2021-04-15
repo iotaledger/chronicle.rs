@@ -21,6 +21,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
             "Archiver will write ahead log files for new incoming data starting: {}",
             next
         );
+        self.service.update_status(ServiceStatus::Running);
+        let event = BrokerEvent::Children(BrokerChild::Archiver(self.service.clone(), status));
+        let _ = _supervisor
+            .as_mut()
+            .expect("Archiver Expected BrokerHandle")
+            .send(event);
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
                 ArchiverEvent::Close(milestone_index) => {

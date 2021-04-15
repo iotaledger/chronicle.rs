@@ -16,6 +16,12 @@ impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Archiver {
                 return Err(Need::Abort);
             }
         };
+        self.service.update_status(ServiceStatus::Initializing);
+        let event = BrokerEvent::Children(BrokerChild::Archiver(self.service.clone(), Ok(())));
+        let _ = _supervisor
+            .as_mut()
+            .expect("Archiver expected BrokerHandle")
+            .send(event);
         info!("Logger got initialized");
         Ok(())
     }

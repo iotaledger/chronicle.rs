@@ -13,6 +13,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
         _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
+        self.service.update_status(ServiceStatus::Running);
+        let event = BrokerEvent::Children(BrokerChild::Collector(self.service.clone()));
+        let _ = _supervisor
+            .as_mut()
+            .expect("Collector expected BrokerHandle")
+            .send(event);
         while let Some(event) = self.inbox.recv().await {
             match event {
                 CollectorEvent::MessageAndMeta(requester_id, try_ms_index, message_id, opt_full_msg) => {
