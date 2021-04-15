@@ -323,9 +323,7 @@ async fn page<K, V>(
     keyspace: String,
     hint: Hint,
     page_size: usize,
-    paging_state: &mut Option<Vec<u8>>,
-    last_partition_id: &mut Option<u16>,
-    last_milestone_index: &mut Option<u32>,
+    state: &mut Option<StateData>,
     partition_config: &PartitionConfig,
     key: K,
 ) -> Result<Vec<Partitioned<V>>, ListenerError>
@@ -339,52 +337,62 @@ where
     // The milestone chunk, i.e. how many sequential milestones go on a partition at a time
     let milestone_chunk = partition_config.milestone_chunk_size as usize;
 
+    let keyspace = ChronicleKeyspace::new(keyspace);
+    // Get the list of partitions which contain records for this request.
+    // These may have been passed in by the client, in which case we do not need
+    // to query for them.
+    let (latest_milestone, partition_ids) = match state {
+        Some(state) => {
+            if state.partition_ids.is_empty() {
+                return Err(ListenerError::InvalidState);
+            }
+            let latest_milestone = state
+                .last_milestone_index
+                .unwrap_or_else(|| state.partition_ids.first().map(|(i, _)| i.0).unwrap());
+            (latest_milestone, state.partition_ids.clone())
+        }
+        None => {
+            let mut partition_ids =
+                query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
+            if partition_ids.is_empty() {
+                return Err(ListenerError::NoResults);
+            }
+            let (first_partition_id, latest_milestone) = partition_ids
+                .iter()
+                .max_by_key(|(index, _)| index)
+                .map(|(index, id)| (*id, index.0))
+                .unwrap();
+            // Reorder the partitions list so we start with the correct partition id
+            let i = partition_ids
+                .iter()
+                .position(|&(_, partition_id)| first_partition_id == partition_id);
+            if let Some(i) = i {
+                partition_ids = partition_ids[i..]
+                    .iter()
+                    .chain(partition_ids[..i].iter())
+                    .cloned()
+                    .collect();
+            }
+            *state = Some((None, None, None, partition_ids.clone()).into());
+            (latest_milestone, partition_ids)
+        }
+    };
+
+    // This is safe because we set the value above
+    let mut state = state.as_mut().unwrap();
+
     // The last partition id that we got results from. This is sent back and forth between
     // the requestor to keep track of pages.
-    let prev_last_partition_id = last_partition_id.take();
+    let prev_last_partition_id = state.last_partition_id.take();
     // The last milestone index we got results from.
-    let prev_last_milestone_index = last_milestone_index.take();
-    let prev_paging_state = paging_state.take();
-
-    let keyspace = ChronicleKeyspace::new(keyspace);
-    // Get the list of partitions which contain records for this request
-    let mut partition_ids =
-        query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
-
-    if partition_ids.is_empty() {
-        return Err(ListenerError::NoResults);
-    }
+    let prev_last_milestone_index = state.last_milestone_index.take();
+    let prev_paging_state = state.paging_state.take();
 
     debug!(
         "Setup time: {} ms",
         (std::time::Instant::now() - start_time).as_millis()
     );
     start_time = std::time::Instant::now();
-
-    // Either use the provided partition / milestone index or the first hint record
-    let (first_partition_id, latest_milestone) = if let (Some(last_partition_id), Some(last_milestone_index)) =
-        (prev_last_partition_id, prev_last_milestone_index)
-    {
-        (last_partition_id, last_milestone_index)
-    } else {
-        partition_ids
-            .iter()
-            .max_by_key(|(index, _)| index)
-            .map(|(index, id)| (*id, index.0))
-            .ok_or_else(|| anyhow!("Unexpected error finding max partition ID!"))?
-    };
-
-    // Reorder the partitions list so we start with the correct partition id
-    let i = partition_ids
-        .iter()
-        .position(|&(_, partition_id)| first_partition_id == partition_id);
-    if let Some(i) = i {
-        partition_ids = partition_ids[i..]
-            .iter()
-            .chain(partition_ids[..i].iter())
-            .cloned()
-            .collect();
-    }
 
     debug!(
         "Reorder time: {} ms",
@@ -401,7 +409,10 @@ where
     let mut results = Vec::new();
     let mut depleted_partitions = HashSet::new();
     let mut last_index_map = HashMap::new();
-    last_index_map.insert(partition_ids[0].1, last_milestone_index.unwrap_or(latest_milestone));
+    last_index_map.insert(
+        partition_ids[0].1,
+        prev_last_milestone_index.unwrap_or(latest_milestone),
+    );
     let mut loop_timings = HashMap::new();
     for (partition_ind, (index, partition_id)) in partition_ids.iter().enumerate().cycle() {
         if !last_index_map.contains_key(partition_id) {
@@ -478,8 +489,8 @@ where
                         // Otherwise we can stop here and set our cookies
                         } else {
                             debug!("Finished a milestone");
-                            *last_partition_id = Some(*partition_id);
-                            *last_milestone_index = Some(list[0].milestone_index());
+                            state.last_partition_id = Some(*partition_id);
+                            state.last_milestone_index = Some(list[0].milestone_index());
                             *loop_timings.entry("Finish Adding Additional").or_insert(0) +=
                                 (std::time::Instant::now() - loop_start_time).as_nanos();
                             debug!(
@@ -519,9 +530,9 @@ where
                 debug!("Results list is empty");
                 if results.len() >= page_size {
                     debug!("...but we already have enough results so returning the paging state");
-                    *paging_state = list.paging_state.take();
-                    *last_partition_id = Some(*partition_id);
-                    *last_milestone_index = Some(latest_milestone);
+                    state.paging_state = list.paging_state.take();
+                    state.last_partition_id = Some(*partition_id);
+                    state.last_milestone_index = Some(latest_milestone);
                     *loop_timings.entry("Returning page_state").or_insert(0) +=
                         (std::time::Instant::now() - loop_start_time).as_nanos();
                     debug!(
@@ -607,17 +618,13 @@ async fn get_message_metadata(
         .map(|metadata| metadata.into())
 }
 
-#[get(
-    "/<keyspace>/messages/<message_id>/children?<page_size>&<expanded>&<paging_state>&<last_partition_id>&<last_milestone_index>"
-)]
+#[get("/<keyspace>/messages/<message_id>/children?<page_size>&<expanded>&<state>")]
 async fn get_message_children(
     keyspace: String,
     message_id: String,
     page_size: Option<usize>,
-    paging_state: Option<String>,
     expanded: Option<bool>,
-    mut last_partition_id: Option<u16>,
-    mut last_milestone_index: Option<u32>,
+    state: Option<String>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
 ) -> ListenerResult {
@@ -626,19 +633,29 @@ async fn get_message_children(
     }
     let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     let page_size = page_size.unwrap_or(100);
-    let mut paging_state = paging_state.and_then(|s| hex::decode(s).ok());
+
+    let mut state = state
+        .map(|state| {
+            hex::decode(state)
+                .map_err(|_| ListenerError::InvalidState)
+                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
+        })
+        .transpose()?;
 
     let mut messages = page(
         keyspace.clone(),
         Hint::parent(message_id.to_string()),
         page_size,
-        &mut paging_state,
-        &mut last_partition_id,
-        &mut last_milestone_index,
+        &mut state,
         partition_config.borrow(),
         message_id,
     )
     .await?;
+
+    let state = state
+        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
+        .transpose()
+        .map_err(|e| anyhow!(e))?;
 
     if let Some(true) = expanded {
         Ok(ListenerResponse::MessageChildrenExpanded {
@@ -646,7 +663,7 @@ async fn get_message_children(
             max_results: 2 * page_size,
             count: messages.len(),
             children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
-            state: (paging_state, last_partition_id, last_milestone_index).into(),
+            state,
         })
     } else {
         Ok(ListenerResponse::MessageChildren {
@@ -654,21 +671,19 @@ async fn get_message_children(
             max_results: 2 * page_size,
             count: messages.len(),
             children_message_ids: messages.drain(..).map(|record| record.message_id.to_string()).collect(),
-            state: (paging_state, last_partition_id, last_milestone_index).into(),
+            state,
         })
     }
 }
 
-#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<expanded>&<paging_state>&<last_partition_id>&<last_milestone_index>")]
+#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<expanded>&<state>")]
 async fn get_message_by_index(
     keyspace: String,
     mut index: String,
     page_size: Option<usize>,
     utf8: Option<bool>,
     expanded: Option<bool>,
-    paging_state: Option<String>,
-    mut last_partition_id: Option<u16>,
-    mut last_milestone_index: Option<u32>,
+    state: Option<String>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
 ) -> ListenerResult {
@@ -686,21 +701,31 @@ async fn get_message_by_index(
         return Err(ListenerError::IndexTooLarge);
     }
 
+    let mut state = state
+        .map(|state| {
+            hex::decode(state)
+                .map_err(|_| ListenerError::InvalidState)
+                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
+        })
+        .transpose()?;
+
     let indexation = Indexation(index.clone());
     let page_size = page_size.unwrap_or(1000);
-    let mut paging_state = paging_state.and_then(|s| hex::decode(s).ok());
 
     let mut messages = page(
         keyspace.clone(),
         Hint::index(index.clone()),
         page_size,
-        &mut paging_state,
-        &mut last_partition_id,
-        &mut last_milestone_index,
+        &mut state,
         partition_config.borrow(),
         indexation,
     )
     .await?;
+
+    let state = state
+        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
+        .transpose()
+        .map_err(|e| anyhow!(e))?;
 
     if let Some(true) = expanded {
         Ok(ListenerResponse::MessagesForIndexExpanded {
@@ -708,7 +733,7 @@ async fn get_message_by_index(
             max_results: 2 * page_size,
             count: messages.len(),
             message_ids: messages.drain(..).map(|record| record.into()).collect(),
-            state: (paging_state, last_partition_id, last_milestone_index).into(),
+            state,
         })
     } else {
         Ok(ListenerResponse::MessagesForIndex {
@@ -716,41 +741,49 @@ async fn get_message_by_index(
             max_results: 2 * page_size,
             count: messages.len(),
             message_ids: messages.drain(..).map(|record| record.message_id.to_string()).collect(),
-            state: (paging_state, last_partition_id, last_milestone_index).into(),
+            state,
         })
     }
 }
 
-#[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>&<expanded>&<paging_state>&<last_partition_id>&<last_milestone_index>")]
+#[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>&<expanded>&<state>")]
 async fn get_ed25519_outputs(
     keyspace: String,
     address: String,
     page_size: Option<usize>,
     expanded: Option<bool>,
-    paging_state: Option<String>,
-    mut last_partition_id: Option<u16>,
-    mut last_milestone_index: Option<u32>,
+    state: Option<String>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
+    let mut state = state
+        .map(|state| {
+            hex::decode(state)
+                .map_err(|_| ListenerError::InvalidState)
+                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
+        })
+        .transpose()?;
+
     let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?;
     let page_size = page_size.unwrap_or(100);
-    let mut paging_state = paging_state.and_then(|s| hex::decode(s).ok());
 
     let mut outputs = page(
         keyspace.clone(),
         Hint::address(ed25519_address.to_string()),
         page_size,
-        &mut paging_state,
-        &mut last_partition_id,
-        &mut last_milestone_index,
+        &mut state,
         partition_config.borrow(),
         ed25519_address,
     )
     .await?;
+
+    let state = state
+        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
+        .transpose()
+        .map_err(|e| anyhow!(e))?;
 
     if let Some(true) = expanded {
         Ok(ListenerResponse::OutputsForAddressExpanded {
@@ -763,7 +796,7 @@ async fn get_ed25519_outputs(
                 .map(|record| Ok(record.try_into()?))
                 .filter_map(|r: anyhow::Result<responses::Record>| r.ok())
                 .collect(),
-            state: (paging_state, last_partition_id, last_milestone_index).into(),
+            state,
         })
     } else {
         Ok(ListenerResponse::OutputsForAddress {
@@ -776,7 +809,7 @@ async fn get_ed25519_outputs(
                 .map(|record| Ok(OutputId::new(record.transaction_id, record.index)?))
                 .filter_map(|r: anyhow::Result<OutputId>| r.ok())
                 .collect(),
-            state: (paging_state, last_partition_id, last_milestone_index).into(),
+            state,
         })
     }
 }

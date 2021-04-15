@@ -29,6 +29,7 @@ hex = "0.4"
 futures = "0.3"
 anyhow = "1.0"
 thiserror = "1.0"
+bincode = "1.3"
 
 [dependencies.iota-crypto]
 git = "https://github.com/iotaledger/crypto.rs"
