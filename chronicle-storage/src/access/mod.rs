@@ -1,4 +1,4 @@
-pub use crate::keyspaces::PermanodeKeyspace;
+pub use crate::keyspaces::ChronicleKeyspace;
 use bee_common::packable::Packable;
 use bincode::Options;
 pub use delete::{
@@ -23,7 +23,7 @@ mod select;
 mod token;
 mod types;
 
-impl VoidDecoder for PermanodeKeyspace {}
+impl VoidDecoder for ChronicleKeyspace {}
 
 use bincode::config::*;
 #[allow(unused)]
@@ -109,7 +109,7 @@ impl<T> Partitioned<T> {
     }
 }
 
-/// Defines the max time-to-live for permanode records: 20 years
+/// Defines the max time-to-live for chronicle records: 20 years
 pub const MAX_TTL: u32 = 20 * 365 * 24 * 60 * 60;
 
 /// A time-to-live specifier

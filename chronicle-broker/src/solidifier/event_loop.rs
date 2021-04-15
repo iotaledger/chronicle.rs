@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use permanode_common::Synckey;
+use chronicle_common::Synckey;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
+impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
@@ -232,7 +232,7 @@ impl Solidifier {
         self.in_database.remove(&milestone_index);
         self.lru_in_database.put(milestone_index, ());
         let sync_key = Synckey;
-        let synced_by = Some(self.permanode_id);
+        let synced_by = Some(self.chronicle_id);
         let synced_record = SyncRecord::new(MilestoneIndex(milestone_index), synced_by, None);
         let request = self
             .keyspace

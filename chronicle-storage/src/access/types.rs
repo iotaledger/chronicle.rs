@@ -54,7 +54,7 @@ pub type ParentIndex = u16;
 /// Identify theoretical nodeid which updated/set the synced_by column in sync table
 pub type SyncedBy = u8;
 /// Identify theoretical nodeid which updated/set the logged_by column in sync table.
-/// This enables the admin to locate the generated logs across cluster of permanodes
+/// This enables the admin to locate the generated logs across cluster of chronicles
 pub type LoggedBy = u8;
 
 /// A `bee` type wrapper which is used to apply the `ColumnEncoder`

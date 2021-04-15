@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bee_message::input::Input;
-use permanode_common::config::PartitionConfig;
+use chronicle_common::config::PartitionConfig;
 use std::sync::Arc;
 
 use super::*;
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
+impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
@@ -322,11 +322,11 @@ impl Collector {
         };
     }
     #[cfg(feature = "filter")]
-    fn get_keyspace_for_message(&self, message: &mut Message) -> PermanodeKeyspace {
-        let res = futures::executor::block_on(permanode_filter::filter_messages(message));
-        PermanodeKeyspace::new(res.keyspace.into_owned())
+    fn get_keyspace_for_message(&self, message: &mut Message) -> ChronicleKeyspace {
+        let res = futures::executor::block_on(chronicle_filter::filter_messages(message));
+        ChronicleKeyspace::new(res.keyspace.into_owned())
     }
-    fn get_keyspace(&self) -> PermanodeKeyspace {
+    fn get_keyspace(&self) -> ChronicleKeyspace {
         self.default_keyspace.clone()
     }
 
@@ -826,7 +826,7 @@ impl Collector {
     }
     fn delete<K, V>(&self, key: K)
     where
-        PermanodeKeyspace: Delete<K, V>,
+        ChronicleKeyspace: Delete<K, V>,
         K: 'static + Send + Clone,
         V: 'static + Send + Clone,
     {

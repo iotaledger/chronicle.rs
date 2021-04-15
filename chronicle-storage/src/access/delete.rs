@@ -33,7 +33,7 @@ impl Ed25519AddressPK {
 }
 
 /// Delete Address record from addresses table
-impl Delete<Ed25519AddressPK, AddressRecord> for PermanodeKeyspace {
+impl Delete<Ed25519AddressPK, AddressRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -89,7 +89,7 @@ impl IndexationPK {
 }
 
 /// Delete Index record from Indexes table
-impl Delete<IndexationPK, IndexationRecord> for PermanodeKeyspace {
+impl Delete<IndexationPK, IndexationRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -141,7 +141,7 @@ impl ParentPK {
 }
 
 /// Delete Parent record from Parents table
-impl Delete<ParentPK, ParentRecord> for PermanodeKeyspace {
+impl Delete<ParentPK, ParentRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(

@@ -1,4 +1,4 @@
-use permanode_storage::access::Message;
+use chronicle_storage::access::Message;
 use std::borrow::Cow;
 
 pub struct FilterResponse {

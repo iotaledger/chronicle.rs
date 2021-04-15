@@ -1,14 +1,14 @@
 use super::*;
 use futures::SinkExt;
-use permanode_common::get_history_mut;
+use chronicle_common::get_history_mut;
 
 #[async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
+impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
     async fn event_loop(
         &mut self,
-        mut _status: Result<(), chronicle::Need>,
+        mut _status: Result<(), Need>,
         supervisor: &mut Option<H>,
-    ) -> Result<(), chronicle::Need> {
+    ) -> Result<(), Need> {
         _status?;
         if let Some(ref mut supervisor) = supervisor {
             self.service.update_status(ServiceStatus::Running);
@@ -16,12 +16,12 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                 match event {
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
                         Ok(my_event) => match my_event {
-                            PermanodeBrokerThrough::Shutdown => {
+                            ChronicleBrokerThrough::Shutdown => {
                                 self.shutdown(supervisor, true).await;
                                 // ensure to drop handle
                                 self.handle.take();
                             }
-                            PermanodeBrokerThrough::Topology(topology) => match topology {
+                            ChronicleBrokerThrough::Topology(topology) => match topology {
                                 Topology::AddMqttMessages(url) => {
                                     if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
                                         tokio::spawn(mqtt.start(self.handle.clone()));
@@ -41,7 +41,7 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                                     self.remove_mqtt::<Messages>(MqttType::Messages, url)
                                 }
                             },
-                            PermanodeBrokerThrough::ExitProgram => {
+                            ChronicleBrokerThrough::ExitProgram => {
                                 supervisor.exit_program(false);
                             }
                         },
@@ -184,9 +184,9 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
                         }
                         if is_not_websocket_child {
                             // response to all websocket
-                            let socket_msg = SocketMsg::PermanodeBroker(self.service.clone());
+                            let socket_msg = SocketMsg::ChronicleBroker(self.service.clone());
                             self.response_to_sockets(&socket_msg).await;
-                            let SocketMsg::PermanodeBroker(service) = socket_msg;
+                            let SocketMsg::ChronicleBroker(service) = socket_msg;
                             // Inform launcher with status change
                             supervisor.status_change(service);
                         }
@@ -200,7 +200,7 @@ impl<H: PermanodeBrokerScope> EventLoop<H> for PermanodeBroker<H> {
     }
 }
 
-impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
+impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
     pub(crate) fn remove_mqtt<T: Topic>(&mut self, mqtt_type: MqttType, url: Url) {
         let microservice_name = format!("{}@{}", T::name(), url.as_str());
         if let Some(service) = self.service.microservices.get(&microservice_name) {

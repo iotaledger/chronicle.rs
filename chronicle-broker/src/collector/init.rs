@@ -4,11 +4,11 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Collector {
+impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Collector {
     async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
-        // Get the first keyspace or default to "permanode"
+        // Get the first keyspace or default to "chronicle"
         info!(
-            "{} is Initializing, with permanode keyspace: {}",
+            "{} is Initializing, with chronicle keyspace: {}",
             self.get_name(),
             self.default_keyspace.name()
         );

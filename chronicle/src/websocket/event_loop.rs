@@ -3,7 +3,7 @@ use futures::{
     SinkExt,
     StreamExt,
 };
-use permanode::{
+use chronicle::{
     ConfigCommand,
     SocketMsg,
 };

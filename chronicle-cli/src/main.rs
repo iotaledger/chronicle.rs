@@ -4,12 +4,12 @@ use clap::{
     ArgMatches,
 };
 use futures::SinkExt;
-use permanode::{
+use chronicle::{
     ConfigCommand,
     SocketMsg,
 };
-use permanode_broker::application::PermanodeBrokerThrough;
-use permanode_common::config::{
+use chronicle_broker::application::ChronicleBrokerThrough;
+use chronicle_common::config::{
     Config,
     MqttType,
 };
@@ -29,15 +29,15 @@ async fn main() {
 
     match matches.subcommand() {
         ("start", Some(matches)) => {
-            // Assume the permanode exe is in the same location as this one
+            // Assume the chronicle exe is in the same location as this one
             let current_exe = std::env::current_exe().unwrap();
             let parent_dir = current_exe.parent().unwrap();
-            let permanode_exe = if cfg!(target_os = "windows") {
-                parent_dir.join("permanode.exe")
+            let chronicle_exe = if cfg!(target_os = "windows") {
+                parent_dir.join("chronicle.exe")
             } else {
-                parent_dir.join("permanode")
+                parent_dir.join("chronicle")
             };
-            if permanode_exe.exists() {
+            if chronicle_exe.exists() {
                 if cfg!(target_os = "windows") {
                     let mut command = Command::new("cmd");
                     command.args(&["/c", "start"]);
@@ -49,18 +49,18 @@ async fn main() {
                         command.arg("-noexit");
                     }
                     command
-                        .arg(permanode_exe.to_str().unwrap())
+                        .arg(chronicle_exe.to_str().unwrap())
                         .spawn()
                         .expect("failed to execute process")
                 } else {
                     if matches.is_present("service") {
-                        Command::new(permanode_exe.to_str().unwrap())
+                        Command::new(chronicle_exe.to_str().unwrap())
                             .arg("&")
                             .spawn()
                             .expect("failed to execute process")
                     } else {
                         Command::new("bash")
-                            .arg(permanode_exe.to_str().unwrap())
+                            .arg(chronicle_exe.to_str().unwrap())
                             .spawn()
                             .expect("failed to execute process")
                     }
@@ -75,7 +75,7 @@ async fn main() {
                 .await
                 .unwrap();
             let message =
-                Message::text(serde_json::to_string(&SocketMsg::Broker(PermanodeBrokerThrough::ExitProgram)).unwrap());
+                Message::text(serde_json::to_string(&SocketMsg::Broker(ChronicleBrokerThrough::ExitProgram)).unwrap());
             stream.send(message).await.unwrap();
         }
         ("rebuild", Some(_matches)) => {
@@ -167,14 +167,14 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) {
             if !matches.is_present("skip-connection") {
                 let mut messages = mqtt_addresses.clone().fold(Vec::new(), |mut list, mqtt_address| {
                     list.push(Message::text(
-                        serde_json::to_string(&SocketMsg::Broker(PermanodeBrokerThrough::Topology(
-                            permanode_broker::application::Topology::AddMqttMessages(mqtt_address.clone()),
+                        serde_json::to_string(&SocketMsg::Broker(ChronicleBrokerThrough::Topology(
+                            chronicle_broker::application::Topology::AddMqttMessages(mqtt_address.clone()),
                         )))
                         .unwrap(),
                     ));
                     list.push(Message::text(
-                        serde_json::to_string(&SocketMsg::Broker(PermanodeBrokerThrough::Topology(
-                            permanode_broker::application::Topology::AddMqttMessagesReferenced(mqtt_address),
+                        serde_json::to_string(&SocketMsg::Broker(ChronicleBrokerThrough::Topology(
+                            chronicle_broker::application::Topology::AddMqttMessagesReferenced(mqtt_address),
                         )))
                         .unwrap(),
                     ));

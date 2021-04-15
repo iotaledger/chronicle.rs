@@ -1,9 +1,9 @@
 use super::{
     ComputeToken,
-    PermanodeKeyspace,
+    ChronicleKeyspace,
 };
 
-impl<K> ComputeToken<K> for PermanodeKeyspace {
+impl<K> ComputeToken<K> for ChronicleKeyspace {
     fn token(_key: &K) -> i64 {
         rand::random()
     }

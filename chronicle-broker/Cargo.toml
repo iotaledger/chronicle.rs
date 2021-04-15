@@ -1,17 +1,17 @@
 [package]
-name = "permanode-broker"
+name = "chronicle-broker"
 version = "0.1.0"
 authors = ["IOTA Stiftung"]
 edition = "2018"
 
 [lib]
-name = "permanode_broker"
+name = "chronicle_broker"
 path = "src/lib.rs"
 
 [dependencies]
-permanode-common = { path = "../permanode-common" }
-permanode-storage = { path = "../permanode-storage" }
-chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
+chronicle-common = { path = "../chronicle-common" }
+chronicle-storage = { path = "../chronicle-storage" }
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "main"}
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 serde = { version = "1.0", features = ["derive"] }
@@ -27,7 +27,7 @@ url = { version = "2", features = ["serde"] }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
-permanode-filter = { path = "../permanode-filter", optional = true }
+chronicle-filter = { path = "../chronicle-filter", optional = true }
 bincode = "1.3"
 hex = "0.4"
 
@@ -62,4 +62,4 @@ features = [
 ]
 
 [features]
-filter = ["permanode-filter"]
+filter = ["chronicle-filter"]

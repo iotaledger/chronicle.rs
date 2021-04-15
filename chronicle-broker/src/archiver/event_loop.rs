@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
+impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
     async fn event_loop(
         &mut self,
         status: Result<(), Need>,
@@ -222,14 +222,14 @@ impl Archiver {
         log_file: &mut LogFile,
         milestone_data_line: &Vec<u8>,
         ms_index: u32,
-        keyspace: &PermanodeKeyspace,
+        keyspace: &ChronicleKeyspace,
     ) -> Result<(), Need> {
         log_file.append_line(&milestone_data_line).await.map_err(|e| {
             error!("{}", e);
             return Need::Abort;
         })?;
         // insert into the DB, without caring about the response
-        let sync_key = permanode_common::Synckey;
+        let sync_key = chronicle_common::Synckey;
         let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
         keyspace
             .insert(&sync_key, &synced_record)

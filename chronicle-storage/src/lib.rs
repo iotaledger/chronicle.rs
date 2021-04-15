@@ -1,6 +1,6 @@
 #![warn(missing_docs)]
-//! # Permanode Storage
-//! This crate provides the Permanode interface with scylla.rs.
+//! # Chronicle Storage
+//! This crate provides the Chronicle interface with scylla.rs.
 /// Scylla access trait implementations
 pub mod access;
 /// Defines keyspace implementations

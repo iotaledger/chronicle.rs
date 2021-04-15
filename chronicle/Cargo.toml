@@ -1,5 +1,5 @@
 [package]
-name = "permanode"
+name = "chronicle"
 version = "0.1.0"
 authors = ["IOTA Stiftung"]
 edition = "2018"
@@ -8,20 +8,20 @@ homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
 repository = "https://github.com/iotaledger/scylla.rs"
 
 [lib]
-name = "permanode"
+name = "chronicle"
 path = "src/lib.rs"
 
 [[bin]]
-name = "permanode"
+name = "chronicle"
 path = "src/main.rs"
 
 [dependencies]
-chronicle = { git = "https://github.com/iotaledger/chronicle.rs.git", branch = "framework"}
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "main"}
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
-permanode-common = { path = "../permanode-common" }
-permanode-api = { path = "../permanode-api" }
-permanode-storage = { path = "../permanode-storage" }
-permanode-broker = { path = "../permanode-broker" }
+chronicle-common = { path = "../chronicle-common" }
+chronicle-api = { path = "../chronicle-api" }
+chronicle-storage = { path = "../chronicle-storage" }
+chronicle-broker = { path = "../chronicle-broker" }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"
 env_logger = "0.8"
@@ -31,7 +31,7 @@ dotenv = "0.15"
 futures = "0.3"
 warp = "0.3"
 serde_json = "1.0"
-tokio-tungstenite = "0.13"
+tokio-tungstenite = "0.14"
 url = "2.2"
 
 [dependencies.tokio]
@@ -52,5 +52,5 @@ features = [
 
 [features]
 default = ["rocket"]
-filter = ["permanode-broker/filter"]
-rocket = ["permanode-api/rocket_listener"]
+filter = ["chronicle-broker/filter"]
+rocket = ["chronicle-api/rocket_listener"]

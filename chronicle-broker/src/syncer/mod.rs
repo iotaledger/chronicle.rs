@@ -127,7 +127,7 @@ pub struct Syncer {
     inbox: SyncerInbox,
 }
 
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for SyncerBuilder {}
+impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for SyncerBuilder {}
 
 /// implementation of builder
 impl Builder for SyncerBuilder {
@@ -179,7 +179,7 @@ impl Name for Syncer {
 }
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> AknShutdown<Syncer> for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> AknShutdown<Syncer> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Syncer, _status: Result<(), Need>) {}
 }
 

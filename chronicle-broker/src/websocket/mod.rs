@@ -9,7 +9,6 @@ use futures::{
     },
     StreamExt,
 };
-
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 pub(crate) use tokio_tungstenite::{
@@ -38,7 +37,7 @@ pub struct Websocket {
     opt_ws_tx: Option<WsTx>,
 }
 
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for WebsocketdBuilder {}
+impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for WebsocketdBuilder {}
 
 impl Builder for WebsocketdBuilder {
     type State = Websocket;
@@ -69,7 +68,7 @@ impl Name for Websocket {
 }
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> AknShutdown<Websocket> for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> AknShutdown<Websocket> for BrokerHandle<H> {
     async fn aknowledge_shutdown(mut self, mut _state: Websocket, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Websocket(_state.service.clone(), None));

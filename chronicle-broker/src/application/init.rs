@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
+impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<H>) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         if let Some(ref mut supervisor) = supervisor {
@@ -120,7 +120,7 @@ impl<H: PermanodeBrokerScope> Init<H> for PermanodeBroker<H> {
     }
 }
 
-impl<H: PermanodeBrokerScope> PermanodeBroker<H> {
+impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
     pub(crate) async fn query_sync_table(&mut self) -> Result<(), Need> {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let _ = self

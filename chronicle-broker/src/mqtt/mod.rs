@@ -121,8 +121,8 @@ impl Topic for LatestMilestone {
     }
 }
 
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<MessagesReferenced> {}
+impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
+impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<MessagesReferenced> {}
 
 /// implementation of builder
 impl<T: Topic> Builder for MqttBuilder<T> {
@@ -158,7 +158,7 @@ impl<T: Topic> Name for Mqtt<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: Topic, H: PermanodeBrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
+impl<T: Topic, H: ChronicleBrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Mqtt<T>, status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Mqtt(_state.service.clone(), None, status));

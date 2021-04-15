@@ -7,9 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-permanode = { path = "../permanode" }
-permanode-common = { path = "../permanode-common" }
-permanode-broker = { path = "../permanode-broker" }
+chronicle = { path = "../chronicle" }
+chronicle-common = { path = "../chronicle-common" }
+chronicle-broker = { path = "../chronicle-broker" }
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 clap = { version = "2.33.3", features = ["yaml"] }
 tokio = "1.2.0"

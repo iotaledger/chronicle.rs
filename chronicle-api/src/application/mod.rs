@@ -16,43 +16,43 @@ mod starter;
 mod terminating;
 
 /// Define the application scope trait
-pub trait PermanodeAPIScope: LauncherSender<PermanodeAPIBuilder<Self>> {}
-impl<H: LauncherSender<PermanodeAPIBuilder<H>>> PermanodeAPIScope for H {}
+pub trait ChronicleAPIScope: LauncherSender<ChronicleAPIBuilder<Self>> {}
+impl<H: LauncherSender<ChronicleAPIBuilder<H>>> ChronicleAPIScope for H {}
 
-/// The Permanode API. Defines endpoints which can be used to
+/// The Chronicle API. Defines endpoints which can be used to
 /// retrieve data from the scylla database.
-pub struct PermanodeAPI<H>
+pub struct ChronicleAPI<H>
 where
-    H: PermanodeAPIScope,
+    H: ChronicleAPIScope,
 {
     service: Service,
-    inbox: UnboundedReceiver<PermanodeAPIEvent<H::AppsEvents>>,
-    sender: Option<PermanodeAPISender<H>>,
+    inbox: UnboundedReceiver<ChronicleAPIEvent<H::AppsEvents>>,
+    sender: Option<ChronicleAPISender<H>>,
     rocket_listener: Option<RocketShutdown>,
     // websocket: AbortHandle,
 }
 
-/// A wrapper type for the sender end of the Permanode API event channel
-pub struct PermanodeAPISender<H: PermanodeAPIScope> {
-    tx: UnboundedSender<PermanodeAPIEvent<H::AppsEvents>>,
+/// A wrapper type for the sender end of the Chronicle API event channel
+pub struct ChronicleAPISender<H: ChronicleAPIScope> {
+    tx: UnboundedSender<ChronicleAPIEvent<H::AppsEvents>>,
 }
 
-impl<H: PermanodeAPIScope> Deref for PermanodeAPISender<H> {
-    type Target = UnboundedSender<PermanodeAPIEvent<H::AppsEvents>>;
+impl<H: ChronicleAPIScope> Deref for ChronicleAPISender<H> {
+    type Target = UnboundedSender<ChronicleAPIEvent<H::AppsEvents>>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx
     }
 }
 
-impl<H: PermanodeAPIScope> Clone for PermanodeAPISender<H> {
+impl<H: ChronicleAPIScope> Clone for ChronicleAPISender<H> {
     fn clone(&self) -> Self {
-        PermanodeAPISender::<H> { tx: self.tx.clone() }
+        ChronicleAPISender::<H> { tx: self.tx.clone() }
     }
 }
 
-impl<H: PermanodeAPIScope> Passthrough<PermanodeAPIThrough> for PermanodeAPISender<H> {
-    fn passthrough(&mut self, event: PermanodeAPIThrough, from_app_name: String) {}
+impl<H: ChronicleAPIScope> Passthrough<ChronicleAPIThrough> for ChronicleAPISender<H> {
+    fn passthrough(&mut self, event: ChronicleAPIThrough, from_app_name: String) {}
 
     fn app_status_change(&mut self, service: &Service) {}
 
@@ -61,13 +61,13 @@ impl<H: PermanodeAPIScope> Passthrough<PermanodeAPIThrough> for PermanodeAPISend
     fn service(&mut self, service: &Service) {}
 }
 
-impl<H: PermanodeAPIScope> Shutdown for PermanodeAPISender<H> {
+impl<H: ChronicleAPIScope> Shutdown for ChronicleAPISender<H> {
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized,
     {
-        self.send(PermanodeAPIEvent::Passthrough(
-            serde_json::from_str("{\"PermanodeAPI\": \"Shutdown\"}").unwrap(),
+        self.send(ChronicleAPIEvent::Passthrough(
+            serde_json::from_str("{\"ChronicleAPI\": \"Shutdown\"}").unwrap(),
         ))
         .ok();
         None
@@ -76,24 +76,24 @@ impl<H: PermanodeAPIScope> Shutdown for PermanodeAPISender<H> {
 
 builder!(
     #[derive(Clone)]
-    PermanodeAPIBuilder<H> {
+    ChronicleAPIBuilder<H> {
         rocket_listener_handle: RocketShutdown
     }
 );
 
-impl<H: PermanodeAPIScope> ThroughType for PermanodeAPIBuilder<H> {
-    type Through = PermanodeAPIThrough;
+impl<H: ChronicleAPIScope> ThroughType for ChronicleAPIBuilder<H> {
+    type Through = ChronicleAPIThrough;
 }
 
-impl<H> Builder for PermanodeAPIBuilder<H>
+impl<H> Builder for ChronicleAPIBuilder<H>
 where
     H: LauncherSender<Self>,
 {
-    type State = PermanodeAPI<H>;
+    type State = ChronicleAPI<H>;
 
     fn build(self) -> Self::State {
         let (tx, inbox) = tokio::sync::mpsc::unbounded_channel();
-        let sender = Some(PermanodeAPISender { tx });
+        let sender = Some(ChronicleAPISender { tx });
         if self.rocket_listener_handle.is_none() {
             panic!("No listener handle was provided!");
         }
@@ -108,12 +108,12 @@ where
     }
 }
 
-impl<H> Name for PermanodeAPI<H>
+impl<H> Name for ChronicleAPI<H>
 where
-    H: PermanodeAPIScope,
+    H: ChronicleAPIScope,
 {
     fn set_name(mut self) -> Self {
-        self.service.update_name("PermanodeAPI".to_string());
+        self.service.update_name("ChronicleAPI".to_string());
         self
     }
 
@@ -122,25 +122,25 @@ where
     }
 }
 
-/// A Permanode API Event
-pub enum PermanodeAPIEvent<T> {
+/// A Chronicle API Event
+pub enum ChronicleAPIEvent<T> {
     /// Passthrough type
     Passthrough(T),
     /// Event which targets a specific child app
-    Children(PermanodeAPIChild),
+    Children(ChronicleAPIChild),
 }
 
-/// Permanode API children apps
-pub enum PermanodeAPIChild {
+/// Chronicle API children apps
+pub enum ChronicleAPIChild {
     /// The listener, which defines http endpoints
     Listener(Service),
     /// The websocket, which provides topics for the dashboard
     Websocket(Service),
 }
 
-/// Permanode API throughtype
+/// Chronicle API throughtype
 #[derive(Deserialize, Serialize, Clone)]
-pub enum PermanodeAPIThrough {
+pub enum ChronicleAPIThrough {
     /// Shutdown the API
     Shutdown,
 }

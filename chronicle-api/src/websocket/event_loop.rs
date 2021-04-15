@@ -30,16 +30,16 @@ use warp::{
 };
 
 #[async_trait]
-impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Websocket {
+impl<H: ChronicleAPIScope> EventLoop<ChronicleAPISender<H>> for Websocket {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
-        supervisor: &mut Option<PermanodeAPISender<H>>,
+        supervisor: &mut Option<ChronicleAPISender<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Running);
         if let Some(ref mut supervisor) = supervisor {
             supervisor
-                .send(PermanodeAPIEvent::Children(PermanodeAPIChild::Listener(
+                .send(ChronicleAPIEvent::Children(ChronicleAPIChild::Listener(
                     self.service.clone(),
                 )))
                 .map_err(|_| Need::Abort)?;

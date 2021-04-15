@@ -32,7 +32,7 @@ pub const MAX_LOG_SIZE: u64 = u32::MAX as u64;
 
 // Archiver builder
 builder!(ArchiverBuilder {
-    keyspace: PermanodeKeyspace,
+    keyspace: ChronicleKeyspace,
     max_log_size: u64,
     oneshot: Receiver<u32>,
     solidifiers_count: u8,
@@ -165,7 +165,7 @@ pub struct Archiver {
     processed: Vec<std::ops::Range<u32>>,
     milestones_data: BinaryHeap<Ascending<MilestoneData>>,
     oneshot: Option<tokio::sync::oneshot::Receiver<u32>>,
-    keyspace: PermanodeKeyspace,
+    keyspace: ChronicleKeyspace,
     db_insert_retries: usize,
     solidifiers_count: u8,
     handle: Option<ArchiverHandle>,
@@ -176,7 +176,7 @@ impl Archiver {
         self.handle.take()
     }
 }
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for ArchiverBuilder {}
+impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for ArchiverBuilder {}
 
 /// implementation of builder
 impl Builder for ArchiverBuilder {
@@ -217,7 +217,7 @@ impl Name for Archiver {
 }
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> AknShutdown<Archiver> for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> AknShutdown<Archiver> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Archiver, status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Archiver(_state.service.clone(), status));

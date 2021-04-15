@@ -1,16 +1,16 @@
 #![warn(missing_docs)]
-//! # Permanode
-use permanode_api::application::*;
-use permanode_broker::application::*;
-use permanode_common::{
+//! # Chronicle
+use chronicle_api::application::*;
+use chronicle_broker::application::*;
+use chronicle_common::{
     config::*,
     get_config,
     get_config_async,
     get_history_mut,
     metrics::*,
 };
-use permanode_storage::access::{
-    PermanodeKeyspace,
+use chronicle_storage::access::{
+    ChronicleKeyspace,
     Query,
     Statements,
 };
@@ -38,10 +38,10 @@ launcher!
 (
     builder: AppsBuilder
     {
-        [] -> PermanodeBroker<Sender>: PermanodeBrokerBuilder<Sender>,
-        [] -> PermanodeAPI<Sender>: PermanodeAPIBuilder<Sender>,
+        [] -> ChronicleBroker<Sender>: ChronicleBrokerBuilder<Sender>,
+        [] -> ChronicleAPI<Sender>: ChronicleAPIBuilder<Sender>,
         [] -> Websocket<Sender>: WebsocketBuilder<Sender>,
-        [PermanodeBroker, PermanodeAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
+        [ChronicleBroker, ChronicleAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
     },
     state: Apps {}
 );
@@ -51,8 +51,8 @@ impl Builder for AppsBuilder {
 
     fn build(self) -> Self::State {
         let storage_config = get_config().storage_config;
-        let permanode_api_builder = PermanodeAPIBuilder::new();
-        let permanode_broker_builder = PermanodeBrokerBuilder::new();
+        let chronicle_api_builder = ChronicleAPIBuilder::new();
+        let chronicle_broker_builder = ChronicleBrokerBuilder::new();
         let scylla_builder = ScyllaBuilder::new()
             .listen_address(storage_config.listen_address.to_string())
             .thread_count(match storage_config.thread_count {
@@ -63,8 +63,8 @@ impl Builder for AppsBuilder {
             .local_dc(storage_config.local_datacenter.clone());
         let websocket_builder = WebsocketBuilder::new();
 
-        self.PermanodeAPI(permanode_api_builder)
-            .PermanodeBroker(permanode_broker_builder)
+        self.ChronicleAPI(chronicle_api_builder)
+            .ChronicleBroker(chronicle_broker_builder)
             .Scylla(scylla_builder)
             .Websocket(websocket_builder)
             .to_apps()
@@ -89,7 +89,7 @@ fn main() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(thread_count)
-        .thread_name("permanode")
+        .thread_name("chronicle")
         .thread_stack_size(apps.app_count * 4 * 1024 * 1024)
         .build()
         .expect("Expected to build tokio runtime");
@@ -100,10 +100,10 @@ fn main() {
     if new_config != config {
         get_history_mut().update(new_config);
     }
-    runtime.block_on(permanode(apps));
+    runtime.block_on(chronicle(apps));
 }
 
-async fn permanode(apps: Apps) {
+async fn chronicle(apps: Apps) {
     apps.Scylla()
         .await
         .future(|apps| async {
@@ -117,9 +117,9 @@ async fn permanode(apps: Apps) {
             apps
         })
         .await
-        .PermanodeAPI()
+        .ChronicleAPI()
         .await
-        .PermanodeBroker()
+        .ChronicleBroker()
         .await
         .Websocket()
         .await
@@ -145,7 +145,7 @@ async fn init_database() {
     let storage_config = get_config_async().await.storage_config;
 
     for keyspace_config in storage_config.keyspaces.first().iter() {
-        let keyspace = PermanodeKeyspace::new(keyspace_config.name.clone());
+        let keyspace = ChronicleKeyspace::new(keyspace_config.name.clone());
         let datacenters = keyspace_config
             .data_centers
             .iter()

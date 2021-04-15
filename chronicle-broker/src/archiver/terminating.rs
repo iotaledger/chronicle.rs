@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> Terminating<BrokerHandle<H>> for Archiver {
+impl<H: ChronicleBrokerScope> Terminating<BrokerHandle<H>> for Archiver {
     async fn terminating(
         &mut self,
         _status: Result<(), Need>,

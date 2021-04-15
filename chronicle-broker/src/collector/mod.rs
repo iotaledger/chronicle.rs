@@ -20,7 +20,7 @@ use std::collections::{
 };
 
 use lru::LruCache;
-use permanode_common::config::StorageConfig;
+use chronicle_common::config::StorageConfig;
 use std::ops::{
     Deref,
     DerefMut,
@@ -145,21 +145,21 @@ pub struct Collector {
     pending_requests: HashMap<MessageId, (u32, Message)>,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
-    default_keyspace: PermanodeKeyspace,
+    default_keyspace: ChronicleKeyspace,
     storage_config: Option<StorageConfig>,
 }
 
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder {}
+impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder {}
 
 /// implementation of builder
 impl Builder for CollectorBuilder {
     type State = Collector;
     fn build(self) -> Self::State {
         let lru_cap = self.lru_capacity.unwrap_or(10000);
-        // Get the first keyspace or default to "permanode"
+        // Get the first keyspace or default to "chronicle"
         // In order to use multiple keyspaces, the user must
         // use filters to determine where records go
-        let default_keyspace = PermanodeKeyspace::new(
+        let default_keyspace = ChronicleKeyspace::new(
             self.storage_config
                 .as_ref()
                 .and_then(|config| {
@@ -168,7 +168,7 @@ impl Builder for CollectorBuilder {
                         .first()
                         .and_then(|keyspace| Some(keyspace.name.clone()))
                 })
-                .unwrap_or("permanode".to_owned()),
+                .unwrap_or("chronicle".to_owned()),
         );
         Self::State {
             service: Service::new(),
@@ -208,7 +208,7 @@ impl Name for Collector {
 }
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> AknShutdown<Collector> for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> AknShutdown<Collector> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Collector, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Collector(_state.service.clone()));

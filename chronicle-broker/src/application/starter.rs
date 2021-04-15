@@ -4,15 +4,15 @@ use std::borrow::Cow;
 use tokio::net::TcpListener;
 
 #[async_trait::async_trait]
-impl<H> Starter<H> for PermanodeBrokerBuilder<H>
+impl<H> Starter<H> for ChronicleBrokerBuilder<H>
 where
-    H: PermanodeBrokerScope,
+    H: ChronicleBrokerScope,
 {
     type Ok = BrokerHandle<H>;
 
     type Error = Cow<'static, str>;
 
-    type Input = PermanodeBroker<H>;
+    type Input = ChronicleBroker<H>;
 
     async fn starter(mut self, handle: H, mut _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
         // check if starter is invoked by restart request

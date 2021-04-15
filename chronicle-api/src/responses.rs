@@ -2,13 +2,11 @@ use std::{
     borrow::Cow,
     convert::TryFrom,
 };
-
 use bee_rest_api::types::dtos::{
     OutputDto,
     PayloadDto,
 };
-
-use permanode_storage::access::{
+use chronicle_storage::access::{
     AddressRecord,
     IndexationRecord,
     LedgerInclusionState,

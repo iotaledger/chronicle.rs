@@ -1,5 +1,5 @@
 use super::*;
-/// Configuration for the Permanode API
+/// Configuration for the Chronicle API
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct ApiConfig {}
 

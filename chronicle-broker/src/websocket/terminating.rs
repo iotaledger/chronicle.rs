@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> Terminating<BrokerHandle<H>> for Websocket {
+impl<H: ChronicleBrokerScope> Terminating<BrokerHandle<H>> for Websocket {
     async fn terminating(
         &mut self,
         _status: Result<(), Need>,

@@ -3,7 +3,7 @@
     storage_config: (
         keyspaces: [
             (
-                name: "permanode",
+                name: "chronicle",
                 data_centers: {
                     "USA": (
                         replication_factor: 2,

@@ -46,7 +46,7 @@ impl Default for BrokerConfig {
             ]
             .into(),
             sync_range: Some(Default::default()),
-            logs_dir: "permanode/logs/".to_owned(),
+            logs_dir: "chronicle/logs/".to_owned(),
         }
     }
 }

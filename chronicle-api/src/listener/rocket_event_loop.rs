@@ -3,7 +3,7 @@ use crate::responses::*;
 use anyhow::anyhow;
 use hex::FromHex;
 use mpsc::unbounded_channel;
-use permanode_common::{
+use chronicle_common::{
     config::PartitionConfig,
     metrics::{
         prometheus::{
@@ -17,7 +17,7 @@ use permanode_common::{
         RESPONSE_TIME_COLLECTOR,
     },
 };
-use permanode_storage::{
+use chronicle_storage::{
     access::{
         Ed25519Address,
         GetSelectRequest,
@@ -30,7 +30,7 @@ use permanode_storage::{
         PartitionId,
         Partitioned,
     },
-    keyspaces::PermanodeKeyspace,
+    keyspaces::ChronicleKeyspace,
 };
 use rocket::{
     fairing::{
@@ -69,16 +69,16 @@ use std::{
 use tokio::sync::mpsc;
 
 #[async_trait]
-impl<H: PermanodeAPIScope> EventLoop<PermanodeAPISender<H>> for Listener<RocketListener> {
+impl<H: ChronicleAPIScope> EventLoop<ChronicleAPISender<H>> for Listener<RocketListener> {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
-        supervisor: &mut Option<PermanodeAPISender<H>>,
+        supervisor: &mut Option<ChronicleAPISender<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Running);
         if let Some(ref mut supervisor) = supervisor {
             supervisor
-                .send(PermanodeAPIEvent::Children(PermanodeAPIChild::Listener(
+                .send(ChronicleAPIEvent::Children(ChronicleAPIChild::Listener(
                     self.service.clone(),
                 )))
                 .map_err(|_| Need::Abort)?;
@@ -333,7 +333,7 @@ async fn page<K, V>(
 where
     K: 'static + Send + Clone,
     V: 'static + Send + Clone,
-    PermanodeKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
+    ChronicleKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
 {
     let total_start_time = std::time::Instant::now();
     let mut start_time = total_start_time;
@@ -347,7 +347,7 @@ where
     let prev_last_milestone_index = last_milestone_index.take();
     let prev_paging_state = paging_state.take();
 
-    let keyspace = PermanodeKeyspace::new(keyspace);
+    let keyspace = ChronicleKeyspace::new(keyspace);
     // Get the list of partitions which contain records for this request
     let mut partition_ids =
         query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
@@ -594,7 +594,7 @@ async fn get_message(keyspace: String, message_id: String, keyspaces: State<'_, 
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
-    let keyspace = PermanodeKeyspace::new(keyspace);
+    let keyspace = ChronicleKeyspace::new(keyspace);
     let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     query::<Message, _, _>(keyspace, message_id, None, None)
         .await
@@ -610,7 +610,7 @@ async fn get_message_metadata(
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
-    let keyspace = PermanodeKeyspace::new(keyspace);
+    let keyspace = ChronicleKeyspace::new(keyspace);
     let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
         .await
@@ -793,7 +793,7 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
     }
     let output_id = OutputId::from_str(&output_id).map_err(|e| ListenerError::BadParse(e.into()))?;
 
-    let output_data = query::<OutputRes, _, _>(PermanodeKeyspace::new(keyspace.clone()), output_id, None, None).await?;
+    let output_data = query::<OutputRes, _, _>(ChronicleKeyspace::new(keyspace.clone()), output_id, None, None).await?;
     let is_spent = if output_data.unlock_blocks.is_empty() {
         false
     } else {
@@ -814,7 +814,7 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
         }
         if !query_message_ids.is_empty() {
             let queries = query_message_ids.drain().map(|&message_id| {
-                query::<MessageMetadata, _, _>(PermanodeKeyspace::new(keyspace.clone()), message_id.clone(), None, None)
+                query::<MessageMetadata, _, _>(ChronicleKeyspace::new(keyspace.clone()), message_id.clone(), None, None)
             });
             is_spent = futures::future::join_all(queries)
                 .await
@@ -846,7 +846,7 @@ async fn get_transaction_included_message(
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
-    let keyspace = PermanodeKeyspace::new(keyspace);
+    let keyspace = ChronicleKeyspace::new(keyspace);
 
     let transaction_id = TransactionId::from_str(&transaction_id).map_err(|e| ListenerError::Other(anyhow!(e)))?;
 
@@ -861,7 +861,7 @@ async fn get_milestone(keyspace: String, index: u32, keyspaces: State<'_, HashSe
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
-    let keyspace = PermanodeKeyspace::new(keyspace);
+    let keyspace = ChronicleKeyspace::new(keyspace);
 
     query::<Milestone, _, _>(keyspace, MilestoneIndex::from(index), None, None)
         .await
@@ -947,7 +947,7 @@ mod tests {
         let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
 
         let res = client
-            .get("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
+            .get("/api/chronicle/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
             .dispatch()
             .await;
         assert_eq!(res.status(), Status::Ok);

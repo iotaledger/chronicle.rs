@@ -30,8 +30,8 @@ mod terminating;
 
 // Solidifier builder
 builder!(SolidifierBuilder {
-    permanode_id: u8,
-    keyspace: PermanodeKeyspace,
+    chronicle_id: u8,
+    keyspace: ChronicleKeyspace,
     partition_id: u8,
     lru_capacity: usize,
     syncer_handle: SyncerHandle,
@@ -255,9 +255,9 @@ impl Shutdown for SolidifierHandle {
 // Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier {
     service: Service,
-    /// It's the permanode id.
-    permanode_id: u8,
-    keyspace: PermanodeKeyspace,
+    /// It's the chronicle id.
+    chronicle_id: u8,
+    keyspace: ChronicleKeyspace,
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneData>,
     in_database: HashMap<u32, InDatabase>,
@@ -276,7 +276,7 @@ pub struct Solidifier {
     inbox: SolidifierInbox,
 }
 
-impl<H: PermanodeBrokerScope> ActorBuilder<BrokerHandle<H>> for SolidifierBuilder {}
+impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for SolidifierBuilder {}
 
 /// implementation of builder
 impl Builder for SolidifierBuilder {
@@ -287,7 +287,7 @@ impl Builder for SolidifierBuilder {
             service: Service::new(),
             partition_id: self.partition_id.unwrap(),
             keyspace: self.keyspace.unwrap(),
-            permanode_id: self.permanode_id.unwrap_or(0),
+            chronicle_id: self.chronicle_id.unwrap_or(0),
             in_database: HashMap::new(),
             lru_in_database: lru::LruCache::new(100),
             unreachable: lru::LruCache::new(100),
@@ -321,7 +321,7 @@ impl Name for Solidifier {
 }
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> AknShutdown<Solidifier> for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> AknShutdown<Solidifier> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Solidifier, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Solidifier(_state.service.clone(), _status));

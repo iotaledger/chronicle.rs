@@ -19,7 +19,7 @@ impl<T: Serialize> SocketMsg<T> {
                 todo!()
             }
             SocketMsg::Broker(v) => {
-                serde_json::to_string(&permanode_broker::application::SocketMsg::PermanodeBroker(v))
+                serde_json::to_string(&chronicle_broker::application::SocketMsg::ChronicleBroker(v))
                     .map_err(|e| e.to_string())
             }
             SocketMsg::Scylla(v) => {

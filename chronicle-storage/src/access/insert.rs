@@ -1,8 +1,8 @@
-use permanode_common::Synckey;
+use chronicle_common::Synckey;
 
 use super::*;
 
-impl Insert<MessageId, Message> for PermanodeKeyspace {
+impl Insert<MessageId, Message> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -20,7 +20,7 @@ impl Insert<MessageId, Message> for PermanodeKeyspace {
     }
 }
 /// Insert Metadata
-impl Insert<MessageId, MessageMetadata> for PermanodeKeyspace {
+impl Insert<MessageId, MessageMetadata> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -35,7 +35,7 @@ impl Insert<MessageId, MessageMetadata> for PermanodeKeyspace {
     }
 }
 
-impl Insert<MessageId, (Message, MessageMetadata)> for PermanodeKeyspace {
+impl Insert<MessageId, (Message, MessageMetadata)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -61,7 +61,7 @@ impl Insert<MessageId, (Message, MessageMetadata)> for PermanodeKeyspace {
     }
 }
 /// Insert Address into addresses table
-impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
+impl Insert<Partitioned<Ed25519Address>, AddressRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -96,7 +96,7 @@ impl Insert<Partitioned<Ed25519Address>, AddressRecord> for PermanodeKeyspace {
 }
 
 /// Insert Index into Indexes table
-impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
+impl Insert<Partitioned<Indexation>, IndexationRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -124,7 +124,7 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for PermanodeKeyspace {
 }
 
 /// Insert ParentId into Parents table
-impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
+impl Insert<Partitioned<MessageId>, ParentRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -155,7 +155,7 @@ impl Insert<Partitioned<MessageId>, ParentRecord> for PermanodeKeyspace {
 /// -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
 /// -output variant: (OutputTransactionId, OutputIndex) -> Output data column
 /// -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
-impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
+impl Insert<(TransactionId, Index), TransactionRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -188,7 +188,7 @@ impl Insert<(TransactionId, Index), TransactionRecord> for PermanodeKeyspace {
 }
 
 /// Insert Output into Transactions table
-impl Insert<OutputId, TransactionRecord> for PermanodeKeyspace {
+impl Insert<OutputId, TransactionRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -220,7 +220,7 @@ impl Insert<OutputId, TransactionRecord> for PermanodeKeyspace {
 }
 
 /// Insert Hint into Hints table
-impl Insert<Hint, Partition> for PermanodeKeyspace {
+impl Insert<Hint, Partition> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -238,7 +238,7 @@ impl Insert<Hint, Partition> for PermanodeKeyspace {
     }
 }
 
-impl Insert<MilestoneIndex, (MessageId, Box<MilestonePayload>)> for PermanodeKeyspace {
+impl Insert<MilestoneIndex, (MessageId, Box<MilestonePayload>)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -264,7 +264,7 @@ impl Insert<MilestoneIndex, (MessageId, Box<MilestonePayload>)> for PermanodeKey
     }
 }
 
-impl Insert<Synckey, SyncRecord> for PermanodeKeyspace {
+impl Insert<Synckey, SyncRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -283,7 +283,7 @@ impl Insert<Synckey, SyncRecord> for PermanodeKeyspace {
         }: &SyncRecord,
     ) -> T::Return {
         builder
-            .value(&"permanode")
+            .value(&"chronicle")
             .value(&milestone_index.0)
             .value(synced_by)
             .value(logged_by)

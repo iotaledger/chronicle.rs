@@ -1,16 +1,16 @@
 use super::*;
 
 #[async_trait]
-impl<T: APIEngine, H: PermanodeAPIScope> Init<PermanodeAPISender<H>> for Listener<T> {
+impl<T: APIEngine, H: ChronicleAPIScope> Init<ChronicleAPISender<H>> for Listener<T> {
     async fn init(
         &mut self,
         _status: Result<(), Need>,
-        supervisor: &mut Option<PermanodeAPISender<H>>,
+        supervisor: &mut Option<ChronicleAPISender<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Initializing);
         if let Some(ref mut supervisor) = supervisor {
             supervisor
-                .send(PermanodeAPIEvent::Children(PermanodeAPIChild::Listener(
+                .send(ChronicleAPIEvent::Children(ChronicleAPIChild::Listener(
                     self.service.clone(),
                 )))
                 .map_err(|_| Need::Abort)

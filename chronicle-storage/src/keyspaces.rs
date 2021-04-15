@@ -1,20 +1,20 @@
 pub use scylla::access::Keyspace;
 use std::borrow::Cow;
 
-/// The Permanode keyspace
+/// The Chronicle keyspace
 #[derive(Default, Clone, Debug)]
-pub struct PermanodeKeyspace {
+pub struct ChronicleKeyspace {
     name: Cow<'static, str>,
 }
 
-impl PermanodeKeyspace {
+impl ChronicleKeyspace {
     /// Create a new instance of the keyspace
     pub fn new(name: String) -> Self {
         Self { name: name.into() }
     }
 }
 
-impl Keyspace for PermanodeKeyspace {
+impl Keyspace for ChronicleKeyspace {
     fn name(&self) -> &Cow<'static, str> {
         &self.name
     }

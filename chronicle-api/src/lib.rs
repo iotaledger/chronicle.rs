@@ -1,9 +1,9 @@
 #![warn(missing_docs)]
 
-//! # Permanode API
+//! # Chronicle API
 //!
 //! This crate defines HTTP endpoints and topics to be used by a
-//! dashboard to explore Permanode stored tangle data.
+//! dashboard to explore Chronicle stored tangle data.
 //!
 //! ### HTTP Endpoints
 //! - `/api/<keyspace>`
@@ -29,4 +29,4 @@ pub mod responses;
 extern crate rocket;
 
 use async_trait::async_trait;
-use chronicle::*;
+use backstage::*;

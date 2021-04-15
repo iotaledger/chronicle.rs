@@ -1,7 +1,7 @@
 use super::*;
 use application::*;
-use permanode_common::get_config_async;
-use permanode_storage::access::*;
+use chronicle_common::get_config_async;
+use chronicle_storage::access::*;
 use rocket::{
     http::Status,
     Rocket,
@@ -125,7 +125,7 @@ impl<T: APIEngine> Name for Listener<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: APIEngine, H: PermanodeAPIScope> AknShutdown<Listener<T>> for PermanodeAPISender<H> {
+impl<T: APIEngine, H: ChronicleAPIScope> AknShutdown<Listener<T>> for ChronicleAPISender<H> {
     async fn aknowledge_shutdown(self, mut state: Listener<T>, _status: Result<(), Need>) {
         state.service.update_status(ServiceStatus::Stopped);
     }

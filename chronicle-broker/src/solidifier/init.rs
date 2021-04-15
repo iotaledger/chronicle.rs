@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Solidifier {
+impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Solidifier {
     async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         info!("{} is Initializing", self.get_name());
         self.service.update_status(ServiceStatus::Initializing);

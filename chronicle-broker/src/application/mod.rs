@@ -15,20 +15,20 @@ pub(crate) use bee_message::{
     Message,
     MessageId,
 };
-pub use chronicle::*;
-pub use log::*;
+pub(crate) use backstage::*;
+pub(crate) use log::*;
 pub(crate) use paho_mqtt::{
     AsyncClient,
     CreateOptionsBuilder,
 };
-use permanode_common::{
+use chronicle_common::{
     config::MqttType,
     get_config,
     get_config_async,
     SyncRange,
     CONFIG,
 };
-pub(crate) use permanode_storage::access::*;
+pub(crate) use chronicle_storage::access::*;
 use serde::{
     Deserialize,
     Serialize,
@@ -59,13 +59,13 @@ mod starter;
 mod terminating;
 
 /// Define the application scope trait
-pub trait PermanodeBrokerScope: LauncherSender<PermanodeBrokerBuilder<Self>> {}
-impl<H: LauncherSender<PermanodeBrokerBuilder<H>>> PermanodeBrokerScope for H {}
+pub trait ChronicleBrokerScope: LauncherSender<ChronicleBrokerBuilder<Self>> {}
+impl<H: LauncherSender<ChronicleBrokerBuilder<H>>> ChronicleBrokerScope for H {}
 
 // Scylla builder
 builder!(
     #[derive(Clone)]
-    PermanodeBrokerBuilder<H> {
+    ChronicleBrokerBuilder<H> {
         listener_handle: ListenerHandle,
         reschedule_after: Duration,
         collectors_count: u8
@@ -73,7 +73,7 @@ builder!(
 
 #[derive(Deserialize, Serialize)]
 /// It's the Interface of the broker app to dynamiclly configure the application during runtime
-pub enum PermanodeBrokerThrough {
+pub enum ChronicleBrokerThrough {
     /// Shutdown json to gracefully shutdown broker app
     Shutdown,
     Topology(Topology),
@@ -81,22 +81,22 @@ pub enum PermanodeBrokerThrough {
 }
 
 /// BrokerHandle to be passed to the children
-pub struct BrokerHandle<H: PermanodeBrokerScope> {
+pub struct BrokerHandle<H: ChronicleBrokerScope> {
     tx: tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>,
 }
 /// BrokerInbox used to recv events
-pub struct BrokerInbox<H: PermanodeBrokerScope> {
+pub struct BrokerInbox<H: ChronicleBrokerScope> {
     rx: tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>,
 }
 
-impl<H: PermanodeBrokerScope> Clone for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> Clone for BrokerHandle<H> {
     fn clone(&self) -> Self {
         BrokerHandle::<H> { tx: self.tx.clone() }
     }
 }
 
 /// Application state
-pub struct PermanodeBroker<H: PermanodeBrokerScope> {
+pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     service: Service,
     websockets: HashMap<String, WsTx>,
     listener_handle: Option<ListenerHandle>,
@@ -108,7 +108,7 @@ pub struct PermanodeBroker<H: PermanodeBrokerScope> {
     logs_dir_path: PathBuf,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
-    default_keyspace: PermanodeKeyspace,
+    default_keyspace: ChronicleKeyspace,
     sync_range: SyncRange,
     sync_data: SyncData,
     syncer_handle: Option<SyncerHandle>,
@@ -152,9 +152,9 @@ pub enum Topology {
 }
 
 #[derive(Deserialize, Serialize)]
-// use PermanodeBroker to indicate to the msg is from/to PermanodeBroker
+// use ChronicleBroker to indicate to the msg is from/to ChronicleBroker
 pub enum SocketMsg<T> {
-    PermanodeBroker(T),
+    ChronicleBroker(T),
 }
 #[derive(Debug, Clone)]
 pub struct SyncData {
@@ -225,28 +225,28 @@ impl SyncData {
     }
 }
 /// implementation of the AppBuilder
-impl<H: PermanodeBrokerScope> AppBuilder<H> for PermanodeBrokerBuilder<H> {}
+impl<H: ChronicleBrokerScope> AppBuilder<H> for ChronicleBrokerBuilder<H> {}
 
 /// implementation of through type
-impl<H: PermanodeBrokerScope> ThroughType for PermanodeBrokerBuilder<H> {
-    type Through = PermanodeBrokerThrough;
+impl<H: ChronicleBrokerScope> ThroughType for ChronicleBrokerBuilder<H> {
+    type Through = ChronicleBrokerThrough;
 }
 
 /// implementation of builder
-impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
-    type State = PermanodeBroker<H>;
+impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
+    type State = ChronicleBroker<H>;
     fn build(self) -> Self::State {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let handle = Some(BrokerHandle { tx });
         let inbox = BrokerInbox { rx };
         let config = get_config();
-        let default_keyspace = PermanodeKeyspace::new(
+        let default_keyspace = ChronicleKeyspace::new(
             config
                 .storage_config
                 .keyspaces
                 .first()
                 .and_then(|keyspace| Some(keyspace.name.clone()))
-                .unwrap_or("permanode".to_owned()),
+                .unwrap_or("chronicle".to_owned()),
         );
         let sync_range = config
             .broker_config
@@ -260,7 +260,7 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
         };
         let logs_dir_path =
             PathBuf::from_str(&config.broker_config.logs_dir).expect("Failed to parse configured logs path!");
-        PermanodeBroker::<H> {
+        ChronicleBroker::<H> {
             service: Service::new(),
             websockets: HashMap::new(),
             listener_handle: self.listener_handle,
@@ -283,30 +283,30 @@ impl<H: PermanodeBrokerScope> Builder for PermanodeBrokerBuilder<H> {
 
 // TODO integrate well with other services;
 /// implementation of passthrough functionality
-impl<H: PermanodeBrokerScope> Passthrough<PermanodeBrokerThrough> for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> Passthrough<ChronicleBrokerThrough> for BrokerHandle<H> {
     fn launcher_status_change(&mut self, _service: &Service) {}
     fn app_status_change(&mut self, service: &Service) {
         if service.is_running() && service.get_name().eq(&"Scylla") {
             let _ = self.send(BrokerEvent::Scylla(service.clone()));
         }
     }
-    fn passthrough(&mut self, _event: PermanodeBrokerThrough, _from_app_name: String) {}
+    fn passthrough(&mut self, _event: ChronicleBrokerThrough, _from_app_name: String) {}
     fn service(&mut self, _service: &Service) {}
 }
 
 /// implementation of shutdown functionality
-impl<H: PermanodeBrokerScope> Shutdown for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> Shutdown for BrokerHandle<H> {
     fn shutdown(self) -> Option<Self>
     where
         Self: Sized,
     {
-        let broker_shutdown: H::AppsEvents = serde_json::from_str("{\"PermanodeBroker\": \"Shutdown\"}").unwrap();
+        let broker_shutdown: H::AppsEvents = serde_json::from_str("{\"ChronicleBroker\": \"Shutdown\"}").unwrap();
         let _ = self.send(BrokerEvent::Passthrough(broker_shutdown));
         None
     }
 }
 
-impl<H: PermanodeBrokerScope> Deref for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> Deref for BrokerHandle<H> {
     type Target = tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>;
 
     fn deref(&self) -> &Self::Target {
@@ -314,13 +314,13 @@ impl<H: PermanodeBrokerScope> Deref for BrokerHandle<H> {
     }
 }
 
-impl<H: PermanodeBrokerScope> DerefMut for BrokerHandle<H> {
+impl<H: ChronicleBrokerScope> DerefMut for BrokerHandle<H> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.tx
     }
 }
 
-impl<H: PermanodeBrokerScope> Deref for BrokerInbox<H> {
+impl<H: ChronicleBrokerScope> Deref for BrokerInbox<H> {
     type Target = tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>;
 
     fn deref(&self) -> &Self::Target {
@@ -328,16 +328,16 @@ impl<H: PermanodeBrokerScope> Deref for BrokerInbox<H> {
     }
 }
 
-impl<H: PermanodeBrokerScope> DerefMut for BrokerInbox<H> {
+impl<H: ChronicleBrokerScope> DerefMut for BrokerInbox<H> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.rx
     }
 }
 
 /// impl name of the application
-impl<H: PermanodeBrokerScope> Name for PermanodeBroker<H> {
+impl<H: ChronicleBrokerScope> Name for ChronicleBroker<H> {
     fn set_name(mut self) -> Self {
-        self.service.update_name("PermanodeBroker".to_string());
+        self.service.update_name("ChronicleBroker".to_string());
         self
     }
     fn get_name(&self) -> String {

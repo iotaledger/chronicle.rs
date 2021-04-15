@@ -1,5 +1,5 @@
 use super::*;
-use permanode_common::SyncRange;
+use chronicle_common::SyncRange;
 use scylla_cql::Row;
 use std::{
     collections::{
@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 
-impl Select<MessageId, Message> for PermanodeKeyspace {
+impl Select<MessageId, Message> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!("SELECT message FROM {}.messages WHERE message_id = ?", self.name()).into()
@@ -20,7 +20,7 @@ impl Select<MessageId, Message> for PermanodeKeyspace {
     }
 }
 
-impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
+impl RowsDecoder<MessageId, Message> for ChronicleKeyspace {
     type Row = Record<Option<Message>>;
     fn try_decode(decoder: Decoder) -> Result<Option<Message>, CqlError> {
         if decoder.is_rows() {
@@ -34,7 +34,7 @@ impl RowsDecoder<MessageId, Message> for PermanodeKeyspace {
     }
 }
 
-impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
+impl Select<MessageId, MessageMetadata> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!("SELECT metadata FROM {}.messages WHERE message_id = ?", self.name()).into()
@@ -44,7 +44,7 @@ impl Select<MessageId, MessageMetadata> for PermanodeKeyspace {
     }
 }
 
-impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
+impl RowsDecoder<MessageId, MessageMetadata> for ChronicleKeyspace {
     type Row = Record<Option<MessageMetadata>>;
     fn try_decode(decoder: Decoder) -> Result<Option<MessageMetadata>, CqlError> {
         if decoder.is_rows() {
@@ -58,7 +58,7 @@ impl RowsDecoder<MessageId, MessageMetadata> for PermanodeKeyspace {
     }
 }
 
-impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for PermanodeKeyspace {
+impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -72,7 +72,7 @@ impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for Permanode
     }
 }
 
-impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for PermanodeKeyspace {
+impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for ChronicleKeyspace {
     type Row = Record<(Option<Message>, Option<MessageMetadata>)>;
     fn try_decode(decoder: Decoder) -> Result<Option<(Option<Message>, Option<MessageMetadata>)>, CqlError> {
         if decoder.is_rows() {
@@ -88,7 +88,7 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Perm
     }
 }
 
-impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> for PermanodeKeyspace {
+impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -107,7 +107,7 @@ impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> 
     }
 }
 
-impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<ParentRecord>>>> for PermanodeKeyspace {
+impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<ParentRecord>>>> for ChronicleKeyspace {
     type Row = Record<(PartitionId, MilestoneIndex, MessageId, Option<LedgerInclusionState>)>;
     fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<Partitioned<ParentRecord>>>>, CqlError> {
         if decoder.is_rows() {
@@ -130,7 +130,7 @@ impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<ParentRecord>>>> 
     }
 }
 
-impl Select<Partitioned<Indexation>, Paged<VecDeque<Partitioned<IndexationRecord>>>> for PermanodeKeyspace {
+impl Select<Partitioned<Indexation>, Paged<VecDeque<Partitioned<IndexationRecord>>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -149,7 +149,7 @@ impl Select<Partitioned<Indexation>, Paged<VecDeque<Partitioned<IndexationRecord
     }
 }
 
-impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<IndexationRecord>>>> for PermanodeKeyspace {
+impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<IndexationRecord>>>> for ChronicleKeyspace {
     type Row = Record<(PartitionId, MilestoneIndex, MessageId, Option<LedgerInclusionState>)>;
     fn try_decode(decoder: Decoder) -> Result<Option<Paged<VecDeque<Partitioned<IndexationRecord>>>>, CqlError> {
         if decoder.is_rows() {
@@ -172,7 +172,7 @@ impl<K> RowsDecoder<Partitioned<K>, Paged<VecDeque<Partitioned<IndexationRecord>
     }
 }
 
-impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecord>>>> for PermanodeKeyspace {
+impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecord>>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -191,7 +191,7 @@ impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecor
     }
 }
 
-impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecord>>>> for PermanodeKeyspace {
+impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecord>>>> for ChronicleKeyspace {
     type Row = Record<(
         PartitionId,
         MilestoneIndex,
@@ -243,7 +243,7 @@ impl RowsDecoder<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<Address
     }
 }
 
-impl Select<OutputId, OutputRes> for PermanodeKeyspace {
+impl Select<OutputId, OutputRes> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -263,7 +263,7 @@ impl Select<OutputId, OutputRes> for PermanodeKeyspace {
     }
 }
 
-impl RowsDecoder<OutputId, OutputRes> for PermanodeKeyspace {
+impl RowsDecoder<OutputId, OutputRes> for ChronicleKeyspace {
     type Row = Record<(MessageId, TransactionData, Option<LedgerInclusionState>)>;
     fn try_decode(decoder: Decoder) -> Result<Option<OutputRes>, CqlError> {
         if decoder.is_rows() {
@@ -289,7 +289,7 @@ impl RowsDecoder<OutputId, OutputRes> for PermanodeKeyspace {
     }
 }
 
-impl Select<TransactionId, MessageId> for PermanodeKeyspace {
+impl Select<TransactionId, MessageId> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -307,7 +307,7 @@ impl Select<TransactionId, MessageId> for PermanodeKeyspace {
     }
 }
 
-impl RowsDecoder<TransactionId, MessageId> for PermanodeKeyspace {
+impl RowsDecoder<TransactionId, MessageId> for ChronicleKeyspace {
     type Row = Record<Option<MessageId>>;
     fn try_decode(decoder: Decoder) -> Result<Option<MessageId>, CqlError> {
         if decoder.is_rows() {
@@ -321,7 +321,7 @@ impl RowsDecoder<TransactionId, MessageId> for PermanodeKeyspace {
     }
 }
 
-impl Select<MilestoneIndex, Milestone> for PermanodeKeyspace {
+impl Select<MilestoneIndex, Milestone> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -335,7 +335,7 @@ impl Select<MilestoneIndex, Milestone> for PermanodeKeyspace {
     }
 }
 
-impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
+impl RowsDecoder<MilestoneIndex, Milestone> for ChronicleKeyspace {
     type Row = Record<(MessageId, u64)>;
     fn try_decode(decoder: Decoder) -> Result<Option<Milestone>, CqlError> {
         if decoder.is_rows() {
@@ -348,7 +348,7 @@ impl RowsDecoder<MilestoneIndex, Milestone> for PermanodeKeyspace {
     }
 }
 
-impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
+impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
 
     fn statement(&self) -> std::borrow::Cow<'static, str> {
@@ -366,7 +366,7 @@ impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
     }
 }
 
-impl<K> RowsDecoder<K, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace {
+impl<K> RowsDecoder<K, Vec<(MilestoneIndex, PartitionId)>> for ChronicleKeyspace {
     type Row = Record<(u32, u16)>;
 
     fn try_decode(decoder: Decoder) -> Result<Option<Vec<(MilestoneIndex, PartitionId)>>, CqlError> {
@@ -385,7 +385,7 @@ impl<K> RowsDecoder<K, Vec<(MilestoneIndex, PartitionId)>> for PermanodeKeyspace
     }
 }
 
-impl Select<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
+impl Select<SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
     type QueryOrPrepared = QueryStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -396,13 +396,13 @@ impl Select<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
     }
     fn bind_values<T: Values>(builder: T, sync_range: &SyncRange) -> T::Return {
         builder
-            .value(&"permanode")
+            .value(&"chronicle")
             .value(&sync_range.from)
             .value(&sync_range.to)
     }
 }
 
-impl RowsDecoder<SyncRange, Iter<SyncRecord>> for PermanodeKeyspace {
+impl RowsDecoder<SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
     type Row = SyncRecord;
     fn try_decode(decoder: Decoder) -> Result<Option<Iter<SyncRecord>>, CqlError> {
         if decoder.is_rows() {

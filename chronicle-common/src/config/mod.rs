@@ -116,7 +116,7 @@ mod test {
             websocket_address: ([127, 0, 0, 1], 8081).into(),
             storage_config: StorageConfig {
                 keyspaces: vec![KeyspaceConfig {
-                    name: "permanode".to_string(),
+                    name: "chronicle".to_string(),
                     data_centers: hashmap! {
                         "USA".to_string() => DatacenterConfig {
                             replication_factor: 2,
@@ -152,7 +152,7 @@ mod test {
                 ]
                 .into(),
                 sync_range: Some(SyncRange::default()),
-                logs_dir: "permanode/logs/".to_owned(),
+                logs_dir: "chronicle/logs/".to_owned(),
             },
             historical_config_path: HISTORICAL_CONFIG_PATH.to_owned(),
         };

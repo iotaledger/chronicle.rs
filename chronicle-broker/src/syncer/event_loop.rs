@@ -3,7 +3,7 @@
 
 use super::*;
 #[async_trait::async_trait]
-impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
+impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,

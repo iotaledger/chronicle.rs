@@ -1,17 +1,17 @@
 [package]
-name = "permanode-storage"
+name = "chronicle-storage"
 version = "0.1.0"
 authors = ["IOTA Stiftung"]
 edition = "2018"
 
 [lib]
-name = "permanode_storage"
+name = "chronicle_storage"
 path = "src/lib.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-permanode-common = { path = "../permanode-common" }
+chronicle-common = { path = "../chronicle-common" }
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }

@@ -1,5 +1,4 @@
-use permanode_common::CONFIG;
-
+use chronicle_common::CONFIG;
 use super::*;
 use crate::listener::ListenerBuilder;
 #[cfg(feature = "rocket_listener")]
@@ -7,15 +6,15 @@ use crate::listener::RocketListener;
 use std::borrow::Cow;
 
 #[async_trait]
-impl<H> Starter<H> for PermanodeAPIBuilder<H>
+impl<H> Starter<H> for ChronicleAPIBuilder<H>
 where
-    H: PermanodeAPIScope,
+    H: ChronicleAPIScope,
 {
-    type Ok = PermanodeAPISender<H>;
+    type Ok = ChronicleAPISender<H>;
 
     type Error = Cow<'static, str>;
 
-    type Input = PermanodeAPI<H>;
+    type Input = ChronicleAPI<H>;
 
     async fn starter(mut self, handle: H, _input: Option<Self::Input>) -> Result<Self::Ok, Self::Error> {
         #[cfg(feature = "rocket_listener")]
@@ -30,16 +29,16 @@ where
         // let websocket = WebsocketBuilder::new().build();
         // let (websocket_handle, websocket_abort_registration) = AbortHandle::new_pair();
 
-        let permanode = self.build();
+        let chronicle = self.build();
 
-        let supervisor = permanode.sender.clone().unwrap();
+        let supervisor = chronicle.sender.clone().unwrap();
 
         #[cfg(feature = "rocket_listener")]
         tokio::spawn(rocket_listener.start(Some(supervisor.clone())));
 
         // tokio::spawn(websocket.start_abortable(websocket_abort_registration, Some(supervisor.clone())));
 
-        tokio::spawn(permanode.start(Some(handle)));
+        tokio::spawn(chronicle.start(Some(handle)));
 
         Ok(supervisor)
     }
