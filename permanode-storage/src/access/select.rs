@@ -251,7 +251,7 @@ impl Select<OutputId, OutputRes> for PermanodeKeyspace {
             FROM {}.transactions
             WHERE transaction_id = ?
             AND idx = ?
-            AND (variant = 'output' OR variant = 'unlock')",
+            AND variant IN ('output', 'unlock')",
             self.name()
         )
         .into()
