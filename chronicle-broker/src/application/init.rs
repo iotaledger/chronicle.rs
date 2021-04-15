@@ -46,6 +46,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
                     .handle(collector_handle)
                     .inbox(collector_inbox)
                     .api_endpoints(config.broker_config.api_endpoints.iter().cloned().collect())
+                    .storage_config(config.storage_config.clone())
                     .reqwest_client(reqwest_client.clone())
                     .partition_id(partition_id);
 
