@@ -1,8 +1,6 @@
 use super::*;
 use crate::responses::*;
 use anyhow::anyhow;
-use hex::FromHex;
-use mpsc::unbounded_channel;
 use chronicle_common::{
     config::PartitionConfig,
     metrics::{
@@ -32,6 +30,8 @@ use chronicle_storage::{
     },
     keyspaces::ChronicleKeyspace,
 };
+use hex::FromHex;
+use mpsc::unbounded_channel;
 use rocket::{
     fairing::{
         Fairing,

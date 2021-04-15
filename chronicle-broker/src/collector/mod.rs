@@ -19,8 +19,8 @@ use std::collections::{
     HashSet,
 };
 
-use lru::LruCache;
 use chronicle_common::config::StorageConfig;
+use lru::LruCache;
 use std::ops::{
     Deref,
     DerefMut,

@@ -1,11 +1,11 @@
 use super::*;
-use futures::{
-    SinkExt,
-    StreamExt,
-};
 use chronicle::{
     ConfigCommand,
     SocketMsg,
+};
+use futures::{
+    SinkExt,
+    StreamExt,
 };
 use scylla::application::Topology;
 use serde_json::Value;

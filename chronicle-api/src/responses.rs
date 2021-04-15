@@ -1,7 +1,3 @@
-use std::{
-    borrow::Cow,
-    convert::TryFrom,
-};
 use bee_rest_api::types::dtos::{
     OutputDto,
     PayloadDto,
@@ -20,6 +16,10 @@ use scylla_cql::TryInto;
 use serde::{
     Deserialize,
     Serialize,
+};
+use std::{
+    borrow::Cow,
+    convert::TryFrom,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

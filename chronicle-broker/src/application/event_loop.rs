@@ -1,14 +1,10 @@
 use super::*;
-use futures::SinkExt;
 use chronicle_common::get_history_mut;
+use futures::SinkExt;
 
 #[async_trait]
 impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
-    async fn event_loop(
-        &mut self,
-        mut _status: Result<(), Need>,
-        supervisor: &mut Option<H>,
-    ) -> Result<(), Need> {
+    async fn event_loop(&mut self, mut _status: Result<(), Need>, supervisor: &mut Option<H>) -> Result<(), Need> {
         _status?;
         if let Some(ref mut supervisor) = supervisor {
             self.service.update_status(ServiceStatus::Running);

@@ -2,11 +2,7 @@ use super::*;
 
 #[async_trait]
 impl<H: ChronicleAPIScope> EventLoop<H> for ChronicleAPI<H> {
-    async fn event_loop(
-        &mut self,
-        _status: Result<(), Need>,
-        supervisor: &mut Option<H>,
-    ) -> Result<(), Need> {
+    async fn event_loop(&mut self, _status: Result<(), Need>, supervisor: &mut Option<H>) -> Result<(), Need> {
         if let Some(ref mut supervisor) = supervisor {
             self.service.update_status(ServiceStatus::Running);
             while let Some(event) = self.inbox.recv().await {

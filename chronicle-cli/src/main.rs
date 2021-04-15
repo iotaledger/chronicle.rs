@@ -1,9 +1,3 @@
-use clap::{
-    load_yaml,
-    App,
-    ArgMatches,
-};
-use futures::SinkExt;
 use chronicle::{
     ConfigCommand,
     SocketMsg,
@@ -13,6 +7,12 @@ use chronicle_common::config::{
     Config,
     MqttType,
 };
+use clap::{
+    load_yaml,
+    App,
+    ArgMatches,
+};
+use futures::SinkExt;
 use scylla::application::ScyllaThrough;
 use std::process::Command;
 use tokio_tungstenite::{

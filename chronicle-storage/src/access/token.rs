@@ -1,6 +1,6 @@
 use super::{
-    ComputeToken,
     ChronicleKeyspace,
+    ComputeToken,
 };
 
 impl<K> ComputeToken<K> for ChronicleKeyspace {

@@ -1,8 +1,8 @@
-use chronicle_common::CONFIG;
 use super::*;
 use crate::listener::ListenerBuilder;
 #[cfg(feature = "rocket_listener")]
 use crate::listener::RocketListener;
+use chronicle_common::CONFIG;
 use std::borrow::Cow;
 
 #[async_trait]

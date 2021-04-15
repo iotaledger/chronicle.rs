@@ -10,16 +10,11 @@ use crate::{
     websocket::*,
 };
 use async_trait::async_trait;
+pub(crate) use backstage::*;
 pub(crate) use bee_common::packable::Packable;
 pub(crate) use bee_message::{
     Message,
     MessageId,
-};
-pub(crate) use backstage::*;
-pub(crate) use log::*;
-pub(crate) use paho_mqtt::{
-    AsyncClient,
-    CreateOptionsBuilder,
 };
 use chronicle_common::{
     config::MqttType,
@@ -29,6 +24,11 @@ use chronicle_common::{
     CONFIG,
 };
 pub(crate) use chronicle_storage::access::*;
+pub(crate) use log::*;
+pub(crate) use paho_mqtt::{
+    AsyncClient,
+    CreateOptionsBuilder,
+};
 use serde::{
     Deserialize,
     Serialize,
