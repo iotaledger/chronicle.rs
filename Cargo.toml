@@ -1,13 +1,13 @@
 [workspace]
 members = [
-    "permanode",
-    "permanode-api",
-    "permanode-broker",
-    "permanode-storage",
-    "permanode-filter",
-    "permanode-cli",
-    "permanode-common"
+    "chronicle",
+    "chronicle-api",
+    "chronicle-broker",
+    "chronicle-storage",
+    "chronicle-filter",
+    "chronicle-cli",
+    "chronicle-common"
 ]
 default-members = [
-    "permanode",
+    "chronicle",
 ]

@@ -1,6 +1,6 @@
 <h1 align="center">
   <br>
-  <a href="https://docs.iota.org/docs/permanode/1.1/overview"><img src=".github/Chronicle.png"></a>
+  <a href="https://docs.iota.org/docs/chronicle/1.1/overview"><img src=".github/Chronicle.png"></a>
 </h1>
 
 <h2 align="center">A Permanent IOTA Message Storage Solution</h2>
@@ -10,12 +10,12 @@
     <img src="https://img.shields.io/badge/Documentation%20portal-blue.svg?style=for-the-badge" alt="Developer documentation portal">
 </p>
 <p align="center">
-    <a href="https://github.com/iotaledger/permanode.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/permanode.rs/workflows/Build/badge.svg"></a>
-    <a href="https://github.com/iotaledger/permanode.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/permanode.rs/workflows/Test/badge.svg"></a>
+    <a href="https://github.com/iotaledger/chronicle.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/chronicle.rs/workflows/Build/badge.svg"></a>
+    <a href="https://github.com/iotaledger/chronicle.rs/actions" style="text-decoration:none;"><img src="https://github.com/iotaledger/chronicle.rs/workflows/Test/badge.svg"></a>
     <a href="https://discord.iota.org/" style="text-decoration:none;"><img src="https://img.shields.io/badge/Discord-9cf.svg?logo=discord" alt="Discord"></a>
     <a href="https://iota.stackexchange.com/" style="text-decoration:none;"><img src="https://img.shields.io/badge/StackExchange-9cf.svg?logo=stackexchange" alt="StackExchange"></a>
-    <a href="https://github.com/iotaledger/permanode.rs/blob/master/LICENSE" style="text-decoration:none;"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="Apache 2.0 license"></a>
-    <a href="https://dependabot.com" style="text-decoration:none;"><img src="https://api.dependabot.com/badges/status?host=github&repo=iotaledger/permanode.rs" alt=""></a>
+    <a href="https://github.com/iotaledger/chronicle.rs/blob/master/LICENSE" style="text-decoration:none;"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="Apache 2.0 license"></a>
+    <a href="https://dependabot.com" style="text-decoration:none;"><img src="https://api.dependabot.com/badges/status?host=github&repo=iotaledger/chronicle.rs" alt=""></a>
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@
 
 ## About
 
-Chronicle provides tools for managing and accessing permanode solutions using the IOTA actor framework [backstage](#). With Chronicle, you can:
+Chronicle provides tools for managing and accessing permanode solutions using the IOTA actor framework [backstage](https://github.com/iotaledger/backstage). With Chronicle, you can:
 
 - Store IOTA messages in real time, using one or more [Scylla](https://www.scylladb.com/) clusters
 - Explore stored messages using an HTTP API
@@ -42,13 +42,13 @@ Chronicle provides tools for managing and accessing permanode solutions using th
 
 Chronicle includes the following crates:
 
-- **[Chronicle](permanode/README.md)** The entry point for the Chronicle application
-- **[API](permanode-api/README.md):** API that allows you to access stored messages
-- **[Broker](permanode-broker/README.md):** Allows subscribing to incoming messages from IOTA nodes
-- **[Storage](permanode-storage/README.md):** Implements storage related functionality from [scylla.rs](https://github.com/iotaledger/scylla.rs)
-- **[Filter](permanode-filter/README.md):** A simple container for user modified code
+- **[Chronicle](chronicle/README.md)** The entry point for the Chronicle application
+- **[API](chronicle-api/README.md):** API that allows you to access stored messages
+- **[Broker](chronicle-broker/README.md):** Allows subscribing to incoming messages from IOTA nodes
+- **[Storage](chronicle-storage/README.md):** Implements storage related functionality from [scylla.rs](https://github.com/iotaledger/scylla.rs)
+- **[Filter](chronicle-filter/README.md):** A simple container for user modified code
 
-**Note:** This is alpha software, so there may be performance and stability issues. Please report any issues in our [issue tracker](https://github.com/iotaledger/permanode.rs/issues/new).
+**Note:** This is alpha software, so there may be performance and stability issues. Please report any issues in our [issue tracker](https://github.com/iotaledger/chronicle.rs/issues/new).
 
 ## Prerequisites
 
@@ -128,7 +128,7 @@ For an API reference, see the [documentation portal](https://docs.iota.org/docs/
 ### `storage_config`
 
 #### `keyspaces: Vec<KeyspaceConfig>`
-See [KeyspaceConfig](permanode-storage/src/config.rs#KeyspaceConfig)
+See [KeyspaceConfig](chronicle-storage/src/config.rs#KeyspaceConfig)
 
 Multiple keyspaces can be configured in order to filter incoming messages. If the `filter` feature is not used, *only the first configured keyspace will be considered* or the default (`chronicle`) if none is provided.
 
@@ -147,7 +147,7 @@ The number of reporters Scylla will spawn.
 The Scylla local datacenter.
 
 #### `partition_config`
-See [PartitionConfig](permanode-storage/src/config.rs#PartitionConfig)
+See [PartitionConfig](chronicle-storage/src/config.rs#PartitionConfig)
 
 Specifies the number of partitions to use in the database, as well as the number of milestones to use as chunks.
 

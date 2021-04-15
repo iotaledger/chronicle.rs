@@ -2,6 +2,6 @@
 **/*.rs.bk
 Cargo.lock
 examples/target
-permanode/logs
+chronicle/logs
 
 *config.ron
