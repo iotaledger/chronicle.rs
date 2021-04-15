@@ -9,6 +9,9 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
         _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
+        self.service.update_status(ServiceStatus::Running);
+        let event = BrokerEvent::Children(BrokerChild::Syncer(self.service.clone(), _status));
+        let _ = _supervisor.as_mut().expect("Syncer expected BrokerHandle").send(event);
         while let Some(event) = self.inbox.recv().await {
             match event {
                 SyncerEvent::Process => {

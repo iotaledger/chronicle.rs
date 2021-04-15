@@ -10,8 +10,10 @@ impl<H: PermanodeBrokerScope> Terminating<BrokerHandle<H>> for Syncer {
         _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
-        self.service.update_status(ServiceStatus::Stopping);
         info!("Syncer is terminating");
+        self.service.update_status(ServiceStatus::Stopping);
+        let event = BrokerEvent::Children(BrokerChild::Syncer(self.service.clone(), _status));
+        let _ = _supervisor.as_mut().expect("Syncer expected BrokerHandle").send(event);
         _status
     }
 }

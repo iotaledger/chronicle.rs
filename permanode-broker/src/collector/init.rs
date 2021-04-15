@@ -12,8 +12,13 @@ impl<H: PermanodeBrokerScope> Init<BrokerHandle<H>> for Collector {
             self.get_name(),
             self.default_keyspace.name()
         );
+        self.service.update_status(ServiceStatus::Initializing);
+        let event = BrokerEvent::Children(BrokerChild::Collector(self.service.clone()));
+        let _ = _supervisor
+            .as_mut()
+            .expect("Collector expected BrokerHandle")
+            .send(event);
         self.spawn_requester();
-
         status
     }
 }

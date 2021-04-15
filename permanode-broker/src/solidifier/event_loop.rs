@@ -11,6 +11,12 @@ impl<H: PermanodeBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
         _status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
+        self.service.update_status(ServiceStatus::Running);
+        let event = BrokerEvent::Children(BrokerChild::Solidifier(self.service.clone(), _status));
+        let _ = _supervisor
+            .as_mut()
+            .expect("Solidifier expected BrokerHandle")
+            .send(event);
         while let Some(event) = self.inbox.recv().await {
             match event {
                 SolidifierEvent::Message(full_message) => {
