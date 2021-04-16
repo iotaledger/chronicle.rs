@@ -1,8 +1,10 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use serde::{
     Deserialize,
     Serialize,
 };
-
 #[derive(Deserialize, Serialize, Clone)]
 pub enum SocketMsg<T> {
     General(T),
@@ -14,8 +16,8 @@ pub enum SocketMsg<T> {
 impl<T: Serialize> SocketMsg<T> {
     pub fn to_outgoing(&self) -> Result<String, String> {
         match self {
-            SocketMsg::General(v) => Err("No outgoing message for general commands".to_owned()),
-            SocketMsg::API(v) => {
+            SocketMsg::General(_) => Err("No outgoing message for general commands".to_owned()),
+            SocketMsg::API(_) => {
                 todo!()
             }
             SocketMsg::Broker(v) => {

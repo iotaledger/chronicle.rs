@@ -1,3 +1,5 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
 use super::*;
 
 /// A representation of the primary key for the `addresses` table

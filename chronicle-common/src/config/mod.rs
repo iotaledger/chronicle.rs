@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use anyhow::{
     anyhow,
@@ -6,7 +9,6 @@ use anyhow::{
 };
 pub use api::*;
 pub use broker::*;
-use log::error;
 use maplit::{
     hashmap,
     hashset,
@@ -25,23 +27,32 @@ mod api;
 mod broker;
 mod storage;
 
+/// The default config file path
 pub const CONFIG_PATH: &str = "./config.ron";
+/// The default historical config path
 pub const HISTORICAL_CONFIG_PATH: &str = "./historical_config";
-pub const CURRENT_VERSION: u32 = 0;
+/// The current config version.
+/// **Must be updated with each change to the config format.**
+const CURRENT_VERSION: u32 = 0;
 
+/// Versioned config. Tracks version between config changes so that it can be validated on load.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct VersionedConfig {
     version: u32,
     config: Config,
 }
 
+/// A variant of `VersionedConfig` which is used to deserialize
+/// a config file independent of its inner structure so the version can
+/// be validated.
 #[derive(Debug, Deserialize, Clone)]
-pub struct VersionedValue {
+struct VersionedValue {
     version: u32,
     config: Value,
 }
 
 impl VersionedConfig {
+    /// Wrap a config with the current version
     pub fn new(config: Config) -> Self {
         Self {
             version: CURRENT_VERSION,
@@ -49,31 +60,53 @@ impl VersionedConfig {
         }
     }
 
+    /// Load versioned config from a RON file. Will check the following paths in this order:
+    /// 1. Provided path
+    /// 2. Environment variable CONFIG_PATH
+    /// 3. Default config path: ./config.ron
     pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<Self> {
         VersionedValue::load(path)
     }
 
+    /// Load versioned config from a RON file without checking the version. Will check the
+    /// following paths in this order:
+    /// 1. Provided path
+    /// 2. Environment variable CONFIG_PATH
+    /// 3. Default config path: ./config.ron
     pub fn load_unchecked<P: Into<Option<String>>>(path: P) -> anyhow::Result<Self> {
-        let path = path
-            .into()
+        let opt_path = path.into();
+        let paths = vec![
+            opt_path.clone(),
+            std::env::var("CONFIG_PATH").ok(),
+            Some(CONFIG_PATH.to_string()),
+        ]
+        .into_iter();
+        for path in paths.filter_map(|v| v) {
+            match std::fs::File::open(Path::new(&path)) {
+                Ok(f) => return ron::de::from_reader(f).map_err(|e| anyhow!(e)),
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        continue;
+                    }
+                    _ => bail!(e.to_string()),
+                },
+            }
+        }
+        let path = opt_path
             .or_else(|| std::env::var("CONFIG_PATH").ok())
             .unwrap_or(CONFIG_PATH.to_string());
-        match std::fs::File::open(Path::new(&path)) {
-            Ok(f) => ron::de::from_reader(f).map_err(|e| anyhow!(e)),
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    let config: VersionedConfig = Config::default().try_into()?;
-                    config.save(path.clone())?;
-                    bail!(
-                        "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!",
-                        std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
-                    );
-                }
-                _ => bail!(e),
-            },
-        }
+        let config = Self::default();
+        config.save(path.clone())?;
+        bail!(
+            "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!",
+            std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
+        );
     }
 
+    /// Save versioned config to a RON file. Will use the first of the following possible locations:
+    /// 1. Provided path
+    /// 2. Environment variable CONFIG_PATH
+    /// 3. Default config path: ./config.ron
     pub fn save<P: Into<Option<String>>>(&self, path: P) -> anyhow::Result<()> {
         let path = path
             .into()
@@ -91,6 +124,7 @@ impl VersionedConfig {
         ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| anyhow!(e))
     }
 
+    /// Verify this config and its version are correct
     pub async fn verify(self) -> anyhow::Result<Config> {
         ensure!(
             self.version == CURRENT_VERSION,
@@ -103,34 +137,43 @@ impl VersionedConfig {
 }
 
 impl VersionedValue {
-    pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<VersionedConfig> {
-        let path = path
-            .into()
+    fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<VersionedConfig> {
+        let opt_path = path.into();
+        let paths = vec![
+            opt_path.clone(),
+            std::env::var("CONFIG_PATH").ok(),
+            Some(CONFIG_PATH.to_string()),
+        ]
+        .into_iter();
+        for path in paths.filter_map(|v| v) {
+            match std::fs::File::open(Path::new(&path)) {
+                Ok(mut f) => {
+                    let mut val = String::new();
+                    f.read_to_string(&mut val)?;
+                    return ron::de::from_str::<VersionedValue>(&val)
+                        .map_err(|e| anyhow!(e))
+                        .and_then(|v| {
+                            v.verify_version()
+                                .and_then(|_| ron::de::from_str::<VersionedConfig>(&val).map_err(|e| anyhow!(e)))
+                        });
+                }
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        continue;
+                    }
+                    _ => bail!(e.to_string()),
+                },
+            }
+        }
+        let path = opt_path
             .or_else(|| std::env::var("CONFIG_PATH").ok())
             .unwrap_or(CONFIG_PATH.to_string());
-        match std::fs::File::open(Path::new(&path)) {
-            Ok(mut f) => {
-                let mut val = String::new();
-                f.read_to_string(&mut val)?;
-                ron::de::from_str::<VersionedValue>(&val)
-                    .map_err(|e| anyhow!(e))
-                    .and_then(|v| {
-                        v.verify_version()
-                            .and_then(|_| ron::de::from_str::<VersionedConfig>(&val).map_err(|e| anyhow!(e)))
-                    })
-            }
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    let config: VersionedConfig = Config::default().try_into()?;
-                    config.save(path.clone())?;
-                    bail!(
-                        "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!", 
-                        std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
-                    );
-                }
-                _ => bail!(e),
-            },
-        }
+        let config: VersionedConfig = Config::default().try_into()?;
+        config.save(path.clone())?;
+        bail!(
+                "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!", 
+                std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
+            );
     }
 
     fn verify_version(self) -> anyhow::Result<()> {
@@ -156,12 +199,18 @@ impl Default for VersionedConfig {
     }
 }
 
+/// Chronicle application config
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Config {
+    /// The top-level command websocket listener address
     pub websocket_address: SocketAddr,
+    /// Scylla storage configuration
     pub storage_config: StorageConfig,
+    /// API configuration
     pub api_config: ApiConfig,
+    /// Broker configuration
     pub broker_config: BrokerConfig,
+    /// Historical config file path
     pub historical_config_path: String,
 }
 
@@ -178,14 +227,25 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Load unversioned config from a RON file.
+    /// The config must still be the correct version in order to deserialize correctly.
+    /// Will check the following paths in this order:
+    /// 1. Provided path
+    /// 2. Environment variable CONFIG_PATH
+    /// 3. Default config path: ./config.ron
     pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<Config> {
         VersionedConfig::load(path).map(|c| c.config)
     }
 
+    /// Save config to a RON file with the current version. Will use the first of the following possible locations:
+    /// 1. Provided path
+    /// 2. Environment variable CONFIG_PATH
+    /// 3. Default config path: ./config.ron
     pub fn save<P: Into<Option<String>>>(&self, path: P) -> anyhow::Result<()> {
         VersionedConfig::new(self.clone()).save(path)
     }
 
+    /// Verify this config
     pub async fn verify(mut self) -> anyhow::Result<Self> {
         self.storage_config.verify().await?;
         self.api_config.verify().await?;

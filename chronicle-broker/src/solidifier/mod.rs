@@ -21,6 +21,7 @@ use std::{
     },
     sync::atomic::Ordering,
 };
+
 mod event_loop;
 mod init;
 mod terminating;
@@ -41,8 +42,10 @@ builder!(SolidifierBuilder {
     collectors_count: u8
 });
 
+/// A milestone message payload
 pub struct MilestoneMessage(MessageId, Box<MilestonePayload>, Message, Option<MessageMetadata>);
 impl MilestoneMessage {
+    /// Create a new milestone message payload
     pub fn new(
         message_id: MessageId,
         milestone_payload: Box<MilestonePayload>,
@@ -52,33 +55,40 @@ impl MilestoneMessage {
         Self(message_id, milestone_payload, message, metadata)
     }
 }
+
+/// A "full" message payload, including both message and metadata
 #[derive(Debug, Deserialize, Serialize)]
 pub struct FullMessage(pub Message, pub MessageMetadata);
 
 impl FullMessage {
+    /// Create a new full message
     pub fn new(message: Message, metadata: MessageMetadata) -> Self {
         Self(message, metadata)
     }
+    /// Get the message ID
     pub fn message_id(&self) -> &MessageId {
         &self.1.message_id
     }
+    /// Get the message's metadata
     pub fn metadata(&self) -> &MessageMetadata {
         &self.1
     }
+    /// Get the message
     pub fn message(&self) -> &Message {
         &self.0
     }
-    pub fn ref_ms(&self) -> u32 {
-        self.1.referenced_by_milestone_index.unwrap()
+    /// Get the milestone index that references this
+    pub fn ref_ms(&self) -> Option<u32> {
+        self.1.referenced_by_milestone_index
     }
 }
 #[derive(Deserialize, Serialize)]
-pub struct MessageStatus {
+struct MessageStatus {
     in_messages: bool,
     in_database: bool,
 }
 
-pub struct InDatabase {
+struct InDatabase {
     milestone_index: u32,
     messages_len: usize,
     in_database: HashMap<MessageId, ()>,
@@ -116,6 +126,7 @@ impl From<&MilestoneData> for InDatabase {
     }
 }
 
+/// Milestone data
 #[derive(Deserialize, Serialize)]
 pub struct MilestoneData {
     milestone_index: u32,
@@ -127,11 +138,13 @@ pub struct MilestoneData {
 }
 
 impl MilestoneData {
+    /// Get the source this was created by
     pub fn created_by(&self) -> &CreatedBy {
         &self.created_by
     }
 }
 
+/// Created by sources
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(u8)]
 pub enum CreatedBy {
@@ -154,7 +167,7 @@ impl MilestoneData {
             created_by,
         }
     }
-    pub fn milestone_index(&self) -> u32 {
+    pub(crate) fn milestone_index(&self) -> u32 {
         self.milestone_index
     }
     fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
@@ -182,8 +195,10 @@ impl MilestoneData {
         self.complete
     }
 }
+
+/// Solidifier events
 pub enum SolidifierEvent {
-    // Milestone fullmessage;
+    /// Milestone fullmessage;
     Milestone(MilestoneMessage),
     /// Pushed or requested messages, that definitely belong to self solidifier
     Message(FullMessage),
@@ -197,8 +212,12 @@ pub enum SolidifierEvent {
     /// Shutdown the solidifier
     Shutdown,
 }
+
+/// Cql Results
 pub enum CqlResult {
+    /// Message was persisted or not
     PersistedMsg(MessageId, u32),
+    /// Milestone was synced or not
     SyncedMilestone(u32),
 }
 
@@ -249,7 +268,7 @@ impl Shutdown for SolidifierHandle {
     }
 }
 
-// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
+/// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier {
     service: Service,
     /// It's the chronicle id.
@@ -326,7 +345,7 @@ impl<H: ChronicleBrokerScope> AknShutdown<Solidifier> for BrokerHandle<H> {
     }
 }
 
-// Scylla worker implementation
+/// Scylla worker implementation
 #[derive(Clone)]
 pub struct AtomicSolidifierWorker<S, K, V>
 where
@@ -341,6 +360,7 @@ where
     retries: usize,
 }
 
+/// Atomic solidifier handle
 pub struct AtomicSolidifierHandle {
     pub(crate) handle: SolidifierHandle,
     pub(crate) milestone_index: u32,
@@ -348,6 +368,7 @@ pub struct AtomicSolidifierHandle {
     pub(crate) any_error: std::sync::atomic::AtomicBool,
 }
 impl AtomicSolidifierHandle {
+    /// Create a new Atomic solidifier handle
     pub fn new(
         handle: SolidifierHandle,
         milestone_index: u32,
@@ -368,6 +389,7 @@ where
     K: 'static + Send,
     V: 'static + Send,
 {
+    /// Create a new atomic solidifier worker with a handle and retries
     pub fn new(handle: std::sync::Arc<AtomicSolidifierHandle>, keyspace: S, key: K, value: V, retries: usize) -> Self {
         Self {
             handle,
@@ -377,6 +399,7 @@ where
             retries,
         }
     }
+    /// Create a new boxed atomic solidifier worker with a handle and retries
     pub fn boxed(
         handle: std::sync::Arc<AtomicSolidifierHandle>,
         keyspace: S,
@@ -452,6 +475,7 @@ impl Drop for AtomicSolidifierHandle {
     }
 }
 
+/// Solidifier worker
 #[derive(Clone)]
 pub struct SolidifierWorker<S, K, V>
 where
@@ -473,6 +497,7 @@ where
     K: 'static + Send,
     V: 'static + Send,
 {
+    /// Create a new solidifier worker with a handle and retries
     pub fn new(handle: SolidifierHandle, milestone_index: u32, keyspace: S, key: K, value: V, retries: u16) -> Self {
         Self {
             handle,
@@ -483,6 +508,7 @@ where
             retries,
         }
     }
+    /// Create a new boxed solidifier worker with a handle and retries
     pub fn boxed(
         handle: SolidifierHandle,
         milestone_index: u32,

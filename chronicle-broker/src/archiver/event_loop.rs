@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use chronicle_common::Wrapper;
 
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
@@ -45,7 +46,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                     if !milestone_data.created_by().eq(&CreatedBy::Syncer) {
                         self.milestones_data.push(Ascending::new(milestone_data));
                         while let Some(ms_data) = self.milestones_data.pop() {
-                            let ms_index = ms_data.get_ref().milestone_index();
+                            let ms_index = ms_data.milestone_index();
                             if next.eq(&ms_index) {
                                 self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
                                     .await

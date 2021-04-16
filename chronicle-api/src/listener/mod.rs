@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use application::*;
 use chronicle_common::get_config_async;

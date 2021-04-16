@@ -1,6 +1,8 @@
-use chronicle_common::Synckey;
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use chronicle_common::Synckey;
 
 impl Insert<MessageId, Message> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;

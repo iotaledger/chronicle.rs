@@ -75,14 +75,18 @@ impl Shutdown for ArchiverHandle {
         todo!()
     }
 }
-pub type UpperLimit = u32;
+type UpperLimit = u32;
+
+/// Archiver events
 pub enum ArchiverEvent {
+    /// Milestone data to be archived
     MilestoneData(MilestoneData, Option<UpperLimit>),
+    /// Close the milestone with given index
     Close(u32),
 }
 
 #[derive(Debug)]
-pub struct LogFile {
+struct LogFile {
     len: u64,
     filename: String,
     /// Included milestone data
@@ -150,17 +154,17 @@ impl LogFile {
         self.len += line.len() as u64;
         Ok(())
     }
-    pub fn len(&self) -> u64 {
+    fn len(&self) -> u64 {
         self.len
     }
-    pub fn set_finished(&mut self) {
+    fn set_finished(&mut self) {
         self.finished = true;
     }
-    pub fn milestones_range(&self) -> u32 {
+    fn milestones_range(&self) -> u32 {
         self.to_ms_index - self.from_ms_index
     }
 }
-// Archiver state
+/// Archiver state
 pub struct Archiver {
     service: Service,
     dir_path: PathBuf,
@@ -177,6 +181,7 @@ pub struct Archiver {
     inbox: ArchiverInbox,
 }
 impl Archiver {
+    /// Take the held archiver handle, leaving None in its place
     pub fn take_handle(&mut self) -> Option<ArchiverHandle> {
         self.handle.take()
     }

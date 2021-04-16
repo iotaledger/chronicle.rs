@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use bee_common::packable::Packable;
 pub use bee_ledger::types::{
@@ -264,6 +267,7 @@ impl ColumnDecoder for TransactionData {
     }
 }
 /// MessageMetadata storage object
+#[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MessageMetadata {
     #[serde(rename = "messageId")]
@@ -449,12 +453,22 @@ impl<T> DerefMut for Paged<T> {
     }
 }
 
+/// Wrapper for json data
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct JsonData<T> {
     data: T,
 }
-impl<T> JsonData<T> {
-    pub fn into_data(self) -> T {
+
+impl<T> Deref for JsonData<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T> Wrapper for JsonData<T> {
+    fn into_inner(self) -> Self::Target {
         self.data
     }
 }

@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use bee_rest_api::types::dtos::{
     OutputDto,
     PayloadDto,

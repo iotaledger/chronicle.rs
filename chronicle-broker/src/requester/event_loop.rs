@@ -1,9 +1,10 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use super::*;
+use chronicle_common::Wrapper;
 use serde_json::Value;
 
-use super::*;
 #[async_trait::async_trait]
 impl EventLoop<CollectorHandle> for Requester {
     async fn event_loop(
@@ -110,7 +111,7 @@ impl Requester {
                     .await
                     .map_err(|e| error!("Error deserializing milestone: {}", e));
                 if let Ok(milestone) = milestone {
-                    let milestone = milestone.into_data();
+                    let milestone = milestone.into_inner();
                     let message_id = MessageId::from_str(&milestone.message_id).expect("Expected message_id as string");
                     return self.request_message_and_metadata(message_id).await;
                 }
@@ -152,9 +153,9 @@ impl Requester {
                     .await
                     .map_err(|e| error!("Error deserializing metadata: {}", e));
                 if let (Ok(message), Ok(metadata)) = (message, metadata) {
-                    let message_dto = message.into_data();
+                    let message_dto = message.into_inner();
                     let message = Message::try_from(&message_dto).unwrap();
-                    let metadata = metadata.into_data();
+                    let metadata = metadata.into_inner();
                     if metadata.referenced_by_milestone_index.is_some() {
                         let full_message = FullMessage::new(message, metadata);
                         return Ok(full_message);

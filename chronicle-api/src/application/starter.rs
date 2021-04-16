@@ -1,9 +1,11 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use crate::listener::ListenerBuilder;
 #[cfg(feature = "rocket_listener")]
 use crate::listener::RocketListener;
 use anyhow::anyhow;
-use chronicle_common::CONFIG;
 
 #[async_trait]
 impl<H> Starter<H> for ChronicleAPIBuilder<H>

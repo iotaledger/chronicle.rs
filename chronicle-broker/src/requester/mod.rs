@@ -9,6 +9,7 @@ use bee_rest_api::types::{
     dtos::MessageDto,
     responses::MilestoneResponse,
 };
+use reqwest::Client;
 use std::{
     collections::VecDeque,
     convert::TryFrom,
@@ -17,12 +18,11 @@ use std::{
         DerefMut,
     },
 };
+use url::Url;
 
 mod event_loop;
 mod init;
 mod terminating;
-use reqwest::Client;
-use url::Url;
 // Requester builder
 builder!(RequesterBuilder {
     requester_id: u8,
@@ -31,7 +31,9 @@ builder!(RequesterBuilder {
     reqwest_client: Client,
     retries_per_endpoint: usize
 });
-pub type RequesterId = u8;
+pub(crate) type RequesterId = u8;
+
+/// Requester events
 pub enum RequesterEvent {
     /// Requesting MessageId in order to solidifiy u32 MilestoneIndex
     RequestFullMessage(MessageId, u32),
@@ -39,6 +41,7 @@ pub enum RequesterEvent {
     RequestMilestone(u32),
 }
 
+/// Requester handle
 #[derive(Clone)]
 pub struct RequesterHandle {
     pub(crate) id: RequesterId,
@@ -105,7 +108,7 @@ impl Shutdown for RequesterHandle {
     }
 }
 
-// Requester state
+/// Requester state
 pub struct Requester {
     service: Service,
     requester_id: u8,
