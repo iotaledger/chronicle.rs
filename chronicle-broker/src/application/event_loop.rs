@@ -66,6 +66,9 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                             BrokerChild::Collector(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
+                            BrokerChild::Importer(service) => {
+                                self.service.update_microservice(service.get_name(), service.clone());
+                            }
                             BrokerChild::Solidifier(service, status) => {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {

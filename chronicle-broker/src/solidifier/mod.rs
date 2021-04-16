@@ -196,6 +196,14 @@ impl MilestoneData {
     }
 }
 
+impl std::iter::IntoIterator for MilestoneData {
+    type Item = (MessageId, FullMessage);
+    type IntoIter = std::collections::hash_map::IntoIter<MessageId, FullMessage>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.messages.into_iter()
+    }
+}
+
 /// Solidifier events
 pub enum SolidifierEvent {
     /// Milestone fullmessage;

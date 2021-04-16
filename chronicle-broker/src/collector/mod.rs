@@ -5,6 +5,8 @@ use crate::{
     requester::*,
     solidifier::*,
 };
+use std::collections::VecDeque;
+
 use bee_message::{
     output::Output,
     payload::transaction::{
@@ -12,25 +14,26 @@ use bee_message::{
         TransactionPayload,
     },
 };
-use chronicle_common::config::StorageConfig;
-use lru::LruCache;
-use reqwest::Client;
-use std::{
-    collections::{
-        BinaryHeap,
-        VecDeque,
-    },
-    ops::{
-        Deref,
-        DerefMut,
-    },
+use std::collections::{
+    BinaryHeap,
+    HashSet,
 };
-use url::Url;
+
+use chronicle_common::config::{
+    PartitionConfig,
+    StorageConfig,
+};
+use lru::LruCache;
+use std::ops::{
+    Deref,
+    DerefMut,
+};
 
 mod event_loop;
 mod init;
 mod terminating;
-
+use reqwest::Client;
+use url::Url;
 // Collector builder
 builder!(CollectorBuilder {
     partition_id: u8,
@@ -47,7 +50,6 @@ builder!(CollectorBuilder {
     storage_config: StorageConfig
 });
 
-/// Collector events
 pub enum CollectorEvent {
     /// Requested Message and Metadata, u32 is the milestoneindex
     MessageAndMeta(RequesterId, u32, Option<MessageId>, Option<FullMessage>),
@@ -61,11 +63,9 @@ pub enum CollectorEvent {
     Shutdown,
 }
 
-/// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
     FullMessage(u8, u32, MessageId),
-    /// Ask for a milestone with the given index
     MilestoneMessage(u32),
 }
 
@@ -74,7 +74,6 @@ pub enum AskCollector {
 pub struct CollectorHandle {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
 }
-
 pub(crate) struct MessageIdPartitioner {
     count: u8,
 }
@@ -149,8 +148,8 @@ pub struct Collector {
     pending_requests: HashMap<MessageId, (u32, Message)>,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
+    partition_config: PartitionConfig,
     default_keyspace: ChronicleKeyspace,
-    storage_config: Option<StorageConfig>,
 }
 
 impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder {}
@@ -160,7 +159,7 @@ impl Builder for CollectorBuilder {
     type State = Collector;
     fn build(self) -> Self::State {
         let lru_cap = self.lru_capacity.unwrap_or(10000);
-        // Get the first keyspace or default to "chronicle"
+        // Get the first keyspace or default to "permanode"
         // In order to use multiple keyspaces, the user must
         // use filters to determine where records go
         let default_keyspace = ChronicleKeyspace::new(
@@ -172,8 +171,13 @@ impl Builder for CollectorBuilder {
                         .first()
                         .and_then(|keyspace| Some(keyspace.name.clone()))
                 })
-                .unwrap_or("chronicle".to_owned()),
+                .unwrap_or("permanode".to_owned()),
         );
+        let partition_config = self
+            .storage_config
+            .as_ref()
+            .map(|config| config.partition_config.clone())
+            .unwrap_or(PartitionConfig::default());
         Self::State {
             service: Service::new(),
             lru_msg: LruCache::new(lru_cap),
@@ -192,8 +196,8 @@ impl Builder for CollectorBuilder {
             pending_requests: HashMap::new(),
             api_endpoints: self.api_endpoints.unwrap(),
             reqwest_client: self.reqwest_client.unwrap(),
+            partition_config,
             default_keyspace,
-            storage_config: self.storage_config,
         }
         .set_name()
     }
