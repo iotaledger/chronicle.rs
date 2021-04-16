@@ -71,14 +71,18 @@ impl Shutdown for ArchiverHandle {
         todo!()
     }
 }
-pub type UpperLimit = u32;
+type UpperLimit = u32;
+
+/// Archiver events
 pub enum ArchiverEvent {
+    /// Milestone data to be archived
     MilestoneData(MilestoneData, Option<UpperLimit>),
+    /// Close the milestone with given index
     Close(u32),
 }
 
 #[derive(Debug)]
-pub struct LogFile {
+struct LogFile {
     len: u64,
     filename: String,
     /// Included milestone data
@@ -93,11 +97,7 @@ pub struct LogFile {
 }
 
 impl LogFile {
-    pub async fn create(
-        dir_path: &PathBuf,
-        milestone_index: u32,
-        opt_upper_limit: Option<u32>,
-    ) -> Result<LogFile, String> {
+    async fn create(dir_path: &PathBuf, milestone_index: u32, opt_upper_limit: Option<u32>) -> Result<LogFile, String> {
         let filename = format!("{}.part", milestone_index);
         let file_path = dir_path.join(&filename);
         let file: File = OpenOptions::new()
@@ -117,7 +117,7 @@ impl LogFile {
             finished: false,
         })
     }
-    pub async fn finish(&mut self, dir_path: &PathBuf) -> Result<(), std::io::Error> {
+    async fn finish(&mut self, dir_path: &PathBuf) -> Result<(), std::io::Error> {
         let new_file_name = format!("{}to{}.log", self.from_ms_index, self.to_ms_index);
         let new_file_path = dir_path.join(&new_file_name);
         let old_file_path = dir_path.join(&self.filename);
@@ -131,7 +131,7 @@ impl LogFile {
         };
         Ok(())
     }
-    pub async fn append_line(&mut self, line: &Vec<u8>) -> Result<(), String> {
+    async fn append_line(&mut self, line: &Vec<u8>) -> Result<(), String> {
         // append to the file
         if let Err(e) = self.file.write_all(line.as_ref()).await {
             self.maybe_corrupted = true;
@@ -145,17 +145,17 @@ impl LogFile {
         self.len += line.len() as u64;
         Ok(())
     }
-    pub fn len(&self) -> u64 {
+    fn len(&self) -> u64 {
         self.len
     }
-    pub fn set_finished(&mut self) {
+    fn set_finished(&mut self) {
         self.finished = true;
     }
-    pub fn milestones_range(&self) -> u32 {
+    fn milestones_range(&self) -> u32 {
         self.to_ms_index - self.from_ms_index
     }
 }
-// Archiver state
+/// Archiver state
 pub struct Archiver {
     service: Service,
     dir_path: PathBuf,
@@ -172,6 +172,7 @@ pub struct Archiver {
     inbox: ArchiverInbox,
 }
 impl Archiver {
+    /// Take the held archiver handle, leaving None in its place
     pub fn take_handle(&mut self) -> Option<ArchiverHandle> {
         self.handle.take()
     }

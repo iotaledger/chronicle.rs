@@ -5,8 +5,6 @@ use crate::{
     requester::*,
     solidifier::*,
 };
-use std::collections::VecDeque;
-
 use bee_message::{
     output::Output,
     payload::transaction::{
@@ -14,23 +12,25 @@ use bee_message::{
         TransactionPayload,
     },
 };
-use std::collections::{
-    BinaryHeap,
-    HashSet,
-};
-
 use chronicle_common::config::StorageConfig;
 use lru::LruCache;
-use std::ops::{
-    Deref,
-    DerefMut,
+use reqwest::Client;
+use std::{
+    collections::{
+        BinaryHeap,
+        VecDeque,
+    },
+    ops::{
+        Deref,
+        DerefMut,
+    },
 };
+use url::Url;
 
 mod event_loop;
 mod init;
 mod terminating;
-use reqwest::Client;
-use url::Url;
+
 // Collector builder
 builder!(CollectorBuilder {
     partition_id: u8,
@@ -47,6 +47,7 @@ builder!(CollectorBuilder {
     storage_config: StorageConfig
 });
 
+/// Collector events
 pub enum CollectorEvent {
     /// Requested Message and Metadata, u32 is the milestoneindex
     MessageAndMeta(RequesterId, u32, Option<MessageId>, Option<FullMessage>),
@@ -60,9 +61,11 @@ pub enum CollectorEvent {
     Shutdown,
 }
 
+/// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
     FullMessage(u8, u32, MessageId),
+    /// Ask for a milestone with the given index
     MilestoneMessage(u32),
 }
 
@@ -71,7 +74,8 @@ pub enum AskCollector {
 pub struct CollectorHandle {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
 }
-pub struct MessageIdPartitioner {
+
+pub(crate) struct MessageIdPartitioner {
     count: u8,
 }
 impl MessageIdPartitioner {
@@ -126,7 +130,7 @@ impl Shutdown for CollectorHandle {
     }
 }
 
-// collector state, each collector is basically LRU cache
+/// Collector state, each collector is basically LRU cache
 pub struct Collector {
     service: Service,
     partition_id: u8,

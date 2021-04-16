@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 #![warn(missing_docs)]
 //! # Chronicle
 use chronicle_api::application::*;
@@ -25,7 +28,6 @@ use scylla::{
     Worker,
     WorkerError,
 };
-use std::time::Duration;
 use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,

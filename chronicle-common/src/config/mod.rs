@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use anyhow::{
     anyhow,
@@ -22,15 +25,23 @@ mod api;
 mod broker;
 mod storage;
 
+/// The default config file path
 pub const CONFIG_PATH: &str = "./config.ron";
+/// The default historical config path
 pub const HISTORICAL_CONFIG_PATH: &str = "./historical_config";
 
+/// Chronicle application config
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Config {
+    /// The top-level command websocket listener address
     pub websocket_address: SocketAddr,
+    /// Scylla storage configuration
     pub storage_config: StorageConfig,
+    /// API configuration
     pub api_config: ApiConfig,
+    /// Broker configuration
     pub broker_config: BrokerConfig,
+    /// Historical config file path
     pub historical_config_path: String,
 }
 
@@ -47,27 +58,44 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Load config from a RON file. Will check the following paths in this order:
+    /// 1. Provided path
+    /// 2. Environment variable CONFIG_PATH
+    /// 3. Default config path: ./config.ron
     pub fn load<P: Into<Option<String>>>(path: P) -> anyhow::Result<Config> {
-        let path = path
-            .into()
+        let opt_path = path.into();
+        let paths = vec![
+            opt_path.clone(),
+            std::env::var("CONFIG_PATH").ok(),
+            Some(CONFIG_PATH.to_string()),
+        ]
+        .into_iter();
+        for path in paths.filter_map(|v| v) {
+            match std::fs::File::open(Path::new(&path)) {
+                Ok(f) => return ron::de::from_reader(f).map_err(|e| anyhow!(e)),
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        continue;
+                    }
+                    _ => bail!(e.to_string()),
+                },
+            }
+        }
+        let path = opt_path
             .or_else(|| std::env::var("CONFIG_PATH").ok())
             .unwrap_or(CONFIG_PATH.to_string());
-        match std::fs::File::open(Path::new(&path)) {
-            Ok(f) => ron::de::from_reader(f).map_err(|e| anyhow!(e)),
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    let config = Self::default();
-                    config.save(path.clone())?;
-                    bail!(
-                        "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!",
-                        std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
-                    );
-                }
-                _ => bail!(e.to_string()),
-            },
-        }
+        let config = Self::default();
+        config.save(path.clone())?;
+        bail!(
+            "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!",
+            std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
+        );
     }
 
+    /// Save config to a RON file. Will use the first of the following possible locations:
+    /// 1. Provided path
+    /// 2. Environment variable CONFIG_PATH
+    /// 3. Default config path: ./config.ron
     pub fn save<P: Into<Option<String>>>(&self, path: P) -> anyhow::Result<()> {
         let path = path
             .into()
@@ -84,6 +112,7 @@ impl Config {
         ron::ser::to_writer_pretty(f, self, ron::ser::PrettyConfig::default()).map_err(|e| anyhow!(e))
     }
 
+    /// Verify that the config is valid
     pub async fn verify(&mut self) -> Result<(), Cow<'static, str>> {
         self.storage_config.verify().await?;
         self.api_config.verify().await?;

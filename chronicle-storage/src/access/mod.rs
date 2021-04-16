@@ -1,6 +1,10 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 pub use crate::keyspaces::ChronicleKeyspace;
 use bee_common::packable::Packable;
 use bincode::Options;
+use chronicle_common::Wrapper;
 pub use delete::{
     Ed25519AddressPK,
     IndexationPK,
@@ -118,10 +122,29 @@ pub struct TTL<T> {
     ttl: u32,
 }
 
+impl<T> Deref for TTL<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T> Wrapper for TTL<T> {
+    fn into_inner(self) -> Self::Target {
+        self.inner
+    }
+}
+
 impl<T> TTL<T> {
     /// Creates a new time-to-live
     pub fn new(inner: T, ttl: u32) -> Self {
         Self { inner, ttl }
+    }
+
+    /// Get the time to live
+    pub fn time_to_live(&self) -> u32 {
+        self.ttl
     }
 }
 
@@ -146,7 +169,8 @@ impl Partition {
         &self.milestone_index
     }
 }
-/// An 'sync' table row
+/// A 'sync' table row
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
 pub struct SyncRecord {
     pub milestone_index: MilestoneIndex,
@@ -165,6 +189,7 @@ impl SyncRecord {
     }
 }
 /// An `addresses` table row
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
 pub struct AddressRecord {
     pub output_type: OutputType,
@@ -207,6 +232,7 @@ impl From<(OutputType, TransactionId, Index, Amount, Option<LedgerInclusionState
 }
 
 /// An `indexes` table row
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
 pub struct IndexationRecord {
     pub message_id: MessageId,
@@ -224,6 +250,7 @@ impl IndexationRecord {
 }
 
 /// A `parents` table row
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
 pub struct ParentRecord {
     pub message_id: MessageId,
@@ -241,13 +268,14 @@ impl ParentRecord {
 }
 
 /// A `transactions` table row
+#[allow(missing_docs)]
 #[derive(Clone)]
 pub struct TransactionRecord {
-    variant: TransactionVariant,
-    message_id: MessageId,
-    data: TransactionData,
-    inclusion_state: Option<LedgerInclusionState>,
-    milestone_index: Option<MilestoneIndex>,
+    pub variant: TransactionVariant,
+    pub message_id: MessageId,
+    pub data: TransactionData,
+    pub inclusion_state: Option<LedgerInclusionState>,
+    pub milestone_index: Option<MilestoneIndex>,
 }
 
 impl TransactionRecord {

@@ -21,7 +21,6 @@ use chronicle_common::{
     get_config,
     get_config_async,
     SyncRange,
-    CONFIG,
 };
 pub(crate) use chronicle_storage::access::*;
 pub(crate) use log::*;
@@ -76,7 +75,9 @@ builder!(
 pub enum ChronicleBrokerThrough {
     /// Shutdown json to gracefully shutdown broker app
     Shutdown,
+    /// Alter the topology of the broker app
     Topology(Topology),
+    /// Exit the broker app
     ExitProgram,
 }
 
@@ -145,17 +146,24 @@ pub enum BrokerEvent<T> {
 #[derive(Deserialize, Serialize, Debug)]
 /// Topology event
 pub enum Topology {
+    /// Add new MQTT Messages feed source
     AddMqttMessages(Url),
+    /// Add new MQTT Messages Referenced feed source
     AddMqttMessagesReferenced(Url),
+    /// Remove a MQTT Messages feed source
     RemoveMqttMessages(Url),
+    /// Remove a MQTT Messages Referenced feed source
     RemoveMqttMessagesReferenced(Url),
 }
 
 #[derive(Deserialize, Serialize)]
-// use ChronicleBroker to indicate to the msg is from/to ChronicleBroker
+/// Defines a message to/from the Broker or its children
 pub enum SocketMsg<T> {
+    /// A message to/from the Broker
     ChronicleBroker(T),
 }
+
+/// Representation of the database sync data
 #[derive(Debug, Clone)]
 pub struct SyncData {
     /// The completed(synced and logged) milestones data
@@ -167,13 +175,14 @@ pub struct SyncData {
 }
 
 impl SyncData {
-    pub fn take_lowest_gap(&mut self) -> Option<Range<u32>> {
+    pub(crate) fn take_lowest_gap(&mut self) -> Option<Range<u32>> {
         self.gaps.pop()
     }
-    pub fn take_lowest_unlogged(&mut self) -> Option<Range<u32>> {
+    #[allow(dead_code)]
+    pub(crate) fn take_lowest_unlogged(&mut self) -> Option<Range<u32>> {
         self.synced_but_unlogged.pop()
     }
-    pub fn take_lowest_gap_or_unlogged(&mut self) -> Option<Range<u32>> {
+    pub(crate) fn take_lowest_gap_or_unlogged(&mut self) -> Option<Range<u32>> {
         let lowest_gap = self.gaps.last();
         let lowest_unlogged = self.synced_but_unlogged.last();
         match (lowest_gap, lowest_unlogged) {
@@ -189,7 +198,7 @@ impl SyncData {
             _ => None,
         }
     }
-    pub fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
+    pub(crate) fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
         if let Some(mut pre_range) = self.take_lowest_gap_or_unlogged() {
             loop {
                 if let Some(next_range) = self.get_lowest_gap_or_unlogged() {

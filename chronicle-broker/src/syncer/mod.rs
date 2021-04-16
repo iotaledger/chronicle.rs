@@ -6,20 +6,18 @@ use crate::{
         ArchiverEvent,
         ArchiverHandle,
     },
-    collector::*,
     solidifier::{
-        FullMessage,
         MilestoneData,
         SolidifierEvent,
         SolidifierHandle,
     },
 };
-use tokio::sync::oneshot::Sender;
-
+use chronicle_common::Wrapper;
 use std::ops::{
     Deref,
     DerefMut,
 };
+use tokio::sync::oneshot::Sender;
 
 mod event_loop;
 mod init;
@@ -36,14 +34,21 @@ builder!(SyncerBuilder {
     inbox: SyncerInbox
 });
 
+/// Syncer events
 pub enum SyncerEvent {
+    /// Ask for sync data
     Ask(AskSyncer),
+    /// Process sync data
     Process,
+    /// Sync milestone data
     MilestoneData(MilestoneData),
+    /// Notify of an unreachable cluster
     Unreachable(u32),
+    /// Shutdown the syncer
     Shutdown,
 }
 
+/// Commands that can be given to the syncer
 #[derive(Debug)]
 pub enum AskSyncer {
     /// Complete Everything.
@@ -56,6 +61,7 @@ pub enum AskSyncer {
     UpdateSyncData,
 }
 
+/// Syncer handle
 #[derive(Clone)]
 pub struct SyncerHandle {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<SyncerEvent>,
@@ -99,12 +105,12 @@ impl Shutdown for SyncerHandle {
     where
         Self: Sized,
     {
-        self.send(SyncerEvent::Shutdown);
+        self.send(SyncerEvent::Shutdown).ok();
         None
     }
 }
 
-// Syncer state
+/// Syncer state
 pub struct Syncer {
     service: Service,
     sync_data: SyncData,
@@ -162,7 +168,7 @@ impl Builder for SyncerBuilder {
     }
 }
 #[derive(Debug)]
-pub enum Active {
+enum Active {
     Complete(std::ops::Range<u32>),
     FillGaps(std::ops::Range<u32>),
 }
@@ -183,20 +189,27 @@ impl<H: ChronicleBrokerScope> AknShutdown<Syncer> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Syncer, _status: Result<(), Need>) {}
 }
 
+/// ASC ordering wrapper
 pub struct Ascending<T> {
     inner: T,
 }
 
-impl<T> Ascending<T> {
-    pub fn into_inner(self) -> T {
-        self.inner
-    }
-    pub fn get_ref(&self) -> &T {
+impl<T> Deref for Ascending<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
+impl<T> Wrapper for Ascending<T> {
+    fn into_inner(self) -> Self::Target {
+        self.inner
+    }
+}
+
 impl Ascending<MilestoneData> {
+    /// Wrap milestone data with ASC ordering
     pub fn new(milestone_data: MilestoneData) -> Self {
         Self { inner: milestone_data }
     }

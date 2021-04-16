@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 #![warn(missing_docs)]
 //! # Chronicle Storage
 //! This crate provides the Chronicle interface with scylla.rs.

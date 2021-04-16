@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use log::warn;
 use paho_mqtt::{
@@ -11,18 +14,28 @@ use std::{
     net::SocketAddr,
 };
 use url::Url;
+
+/// Broker application config
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {
+    /// The websocket listener address
     pub websocket_address: SocketAddr,
+    /// MQTT addresses the broker will use as feed sources separated by type
     pub mqtt_brokers: HashMap<MqttType, HashSet<Url>>,
+    /// API endpoints the broker will use to request missing data
     pub api_endpoints: HashSet<Url>,
+    /// Desired range of milestone indexes to sync if missing
     pub sync_range: Option<SyncRange>,
+    /// Archive directory
     pub logs_dir: String,
 }
 
+/// Enumerated MQTT feed source type
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MqttType {
+    /// Receives Messages
     Messages,
+    /// Receives Referenced notifications
     MessagesReferenced,
 }
 

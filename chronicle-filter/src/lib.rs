@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use chronicle_storage::access::Message;
 use std::borrow::Cow;
 
@@ -8,6 +11,7 @@ pub struct FilterResponse {
     pub ttl: Option<usize>,
 }
 
+#[allow(unused_variables)]
 pub async fn filter_messages(message: &mut Message) -> FilterResponse {
     todo!()
 }

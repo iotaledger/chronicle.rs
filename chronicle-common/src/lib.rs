@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 #![warn(missing_docs)]
 //! Common code for Chronicle
 
@@ -23,12 +26,16 @@ use tokio::sync::RwLock;
 
 /// Configuration for the Chronicle application
 pub mod config;
+/// Metrics for prometheus integration
 pub mod metrics;
 use lazy_static::lazy_static;
 
+/// Defines a range of milestone indexes to be synced
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub struct SyncRange {
+    /// First milestone index (inclusive)
     pub from: u32,
+    /// Last milestone index (exclusive)
     pub to: u32,
 }
 impl Default for SyncRange {
@@ -39,10 +46,14 @@ impl Default for SyncRange {
         }
     }
 }
+
+/// Sync key
 #[derive(Clone, Copy)]
 pub struct Synckey;
 
+/// Defines a wrapper type which wraps a dereference-able inner value
 pub trait Wrapper: Deref {
+    /// Consume the wrapper and retrieve the inner type
     fn into_inner(self) -> Self::Target;
 }
 

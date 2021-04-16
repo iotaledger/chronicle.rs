@@ -115,7 +115,7 @@ impl Syncer {
             let upper_ms_limit = Some(self.initial_gap_end);
             // check if we could send the next expected milestone_index
             while let Some(ms_data) = self.milestones_data.pop() {
-                let ms_index = ms_data.get_ref().milestone_index();
+                let ms_index = ms_data.milestone_index();
                 if self.next.eq(&ms_index) {
                     // push it to archiver
                     let _ = self

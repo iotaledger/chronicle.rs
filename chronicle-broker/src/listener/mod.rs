@@ -20,11 +20,12 @@ pub struct ListenerHandle {
     abort_handle: AbortHandle,
 }
 impl ListenerHandle {
+    /// Create a new listener handle
     pub fn new(abort_handle: AbortHandle) -> Self {
         Self { abort_handle }
     }
 }
-// Listener state
+/// Listener state
 pub struct Listener {
     service: Service,
     tcp_listener: TcpListener,

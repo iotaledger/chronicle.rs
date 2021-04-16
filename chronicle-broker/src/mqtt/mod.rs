@@ -43,7 +43,7 @@ impl Shutdown for MqttHandle {
         None
     }
 }
-// Mqtt state
+/// Mqtt state
 pub struct Mqtt<T> {
     service: Service,
     url: Url,
@@ -61,8 +61,12 @@ impl<T> Mqtt<T> {
         self.service.clone()
     }
 }
+
+/// MQTT topics
 pub enum Topics {
+    /// Messages topic
     Messages,
+    /// Messages Referenced topic
     MessagesReferenced,
 }
 

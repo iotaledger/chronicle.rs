@@ -348,7 +348,7 @@ impl Solidifier {
     }
     fn handle_new_msg(&mut self, full_message: FullMessage) {
         // check what milestone_index referenced this message
-        let milestone_index = full_message.ref_ms();
+        let milestone_index = full_message.ref_ms().unwrap();
         let partitioner = &self.message_id_partitioner;
         let collector_handles = &self.collector_handles;
         let solidifier_id = self.partition_id;
