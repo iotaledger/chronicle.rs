@@ -6,11 +6,17 @@ use super::*;
 impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
     async fn event_loop(
         &mut self,
-        _status: Result<(), Need>,
+        status: Result<(), Need>,
         _supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
+        status?;
+        // check if it's already EOF and nothing to in_progress
+        if self.in_progress_milestones_data.is_empty() && self.eof {
+            warn!("Skipped already imported LogFile: {}", self.get_name());
+            return Ok(());
+        }
         self.service.update_status(ServiceStatus::Running);
-        let event = BrokerEvent::Children(BrokerChild::Importer(self.service.clone()));
+        let event = BrokerEvent::Children(BrokerChild::Importer(self.service.clone(), status));
         let _ = _supervisor
             .as_mut()
             .expect("Importer expected BrokerHandle")
@@ -26,10 +32,25 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
                             info!("Imported milestone data for milestone index: {}", milestone_index);
                             // check if we should process more
                             if !self.service.is_stopping() {
-                                // process_one_more
+                                // process one more
+                                if let Some(milestone_data) = self.next_milestone_data().await.map_err(|e| {
+                                    error!("Unable to fetch next milestone data. Error: {}", e);
+                                    Need::Abort
+                                })? {
+                                    let milestone_index = milestone_data.milestone_index();
+                                    let iter = self.insert_some_messages(milestone_index, milestone_data.into_iter());
+                                    self.in_progress_milestones_data.insert(milestone_index, iter);
+                                } else {
+                                    // no more milestone data.
+                                    if self.in_progress_milestones_data.is_empty() {
+                                        // shut it down
+                                        info!("Imported the LogFile: {}", self.get_name());
+                                        return Ok(());
+                                    }
+                                };
                             }
                         }
-                        Err(milestone_index) => {
+                        Err(_milestone_index) => {
                             // an outage in scylla so we abort
                             return Err(Need::Abort);
                         }
@@ -42,26 +63,12 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
                     let importer_handle = self.handle.clone().unwrap();
                     let keyspace = self.get_keyspace();
                     if !is_empty {
-                        let inherent_worker = MilestoneDataWorker::new(
-                            importer_handle,
-                            keyspace,
-                            milestone_index,
-                            self.retries_per_query,
-                        );
-                        for _ in 0..self.parallelism {
-                            if let Some((message_id, FullMessage(message, metadata))) = iter.next() {
-                                // Insert the message
-                                self.insert_message_with_metadata(&inherent_worker, message_id, message, metadata);
-                            } else {
-                                // break for loop
-                                break;
-                            }
-                        }
+                        iter = self.insert_some_messages(milestone_index, iter);
                     } else {
                         // insert it into sync table
                         let milestone_index = MilestoneIndex(milestone_index);
-                        let synced_by = Some(self.permanode_id);
-                        let logged_by = Some(self.permanode_id);
+                        let synced_by = Some(self.chronicle_id);
+                        let logged_by = Some(self.chronicle_id);
                         let synced_record = SyncRecord::new(milestone_index, synced_by, logged_by);
                         let worker =
                             SyncWorker::boxed(importer_handle, keyspace, synced_record, self.retries_per_query);
@@ -76,21 +83,24 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
                     self.in_progress_milestones_data.insert(milestone_index, iter);
                     // NOTE: we only delete it once we get Ok CqlResult
                 }
-                ImporterEvent::Shutdown => {}
+                ImporterEvent::Shutdown => {
+                    self.service.update_status(ServiceStatus::Stopping);
+                    self.handle.take();
+                }
             }
         }
-        Ok(())
+        status
     }
 }
 
 impl Importer {
-    fn get_keyspace(&self) -> ChronicleKeyspace {
+    pub(crate) fn get_keyspace(&self) -> ChronicleKeyspace {
         self.default_keyspace.clone()
     }
     fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
         self.partition_config.partition_id(milestone_index.0)
     }
-    fn insert_message_with_metadata<I: Inherent>(
+    pub(crate) fn insert_message_with_metadata<I: Inherent>(
         &mut self,
         inherent_worker: &I,
         message_id: MessageId,

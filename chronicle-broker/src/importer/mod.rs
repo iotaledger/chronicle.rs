@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
     application::*,
-    solidifier::FullMessage,
+    archiver::LogFile,
+    solidifier::{
+        FullMessage,
+        MilestoneData,
+    },
 };
 use chronicle_common::Synckey;
 use std::{
     collections::hash_map::IntoIter,
-    sync::atomic::{
-        AtomicBool,
-        Ordering,
-    },
+    sync::atomic::Ordering,
 };
 
 use bee_message::{
@@ -38,12 +39,10 @@ mod terminating;
 // Importer builder
 builder!(ImporterBuilder {
     file_path: PathBuf,
-    inserter_count: u8,
     retries_per_query: usize,
+    resume: bool,
     parallelism: u8,
-    permanode_id: u8,
-    partition_config: PartitionConfig,
-    storage_config: StorageConfig
+    chronicle_id: u8
 });
 
 pub enum ImporterEvent {
@@ -104,14 +103,18 @@ impl Shutdown for ImporterHandle {
 pub struct Importer {
     service: Service,
     file_path: PathBuf,
+    log_file: Option<LogFile>,
     default_keyspace: ChronicleKeyspace,
     partition_config: PartitionConfig,
     retries_per_query: usize,
-    permanode_id: u8,
+    chronicle_id: u8,
     parallelism: u8,
+    resume: bool,
+    sync_data: SyncData,
     in_progress_milestones_data: HashMap<u32, IntoIter<MessageId, FullMessage>>,
     handle: Option<ImporterHandle>,
     inbox: ImporterInbox,
+    eof: bool,
 }
 
 impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for ImporterBuilder {}
@@ -123,36 +126,34 @@ impl Builder for ImporterBuilder {
         // Get the first keyspace or default to "permanode"
         // In order to use multiple keyspaces, the user must
         // use filters to determine where records go
+        let config = chronicle_common::get_config();
         let default_keyspace = ChronicleKeyspace::new(
-            self.storage_config
-                .as_ref()
-                .and_then(|config| {
-                    config
-                        .keyspaces
-                        .first()
-                        .and_then(|keyspace| Some(keyspace.name.clone()))
-                })
+            config
+                .storage_config
+                .keyspaces
+                .first()
+                .and_then(|keyspace| Some(keyspace.name.clone()))
                 .unwrap_or("permanode".to_owned()),
         );
-        let partition_config = self
-            .storage_config
-            .as_ref()
-            .map(|config| config.partition_config.clone())
-            .unwrap_or(PartitionConfig::default());
+        let partition_config = config.storage_config.partition_config;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let handle = Some(ImporterHandle { tx });
         let inbox = ImporterInbox { rx };
         Self::State {
             service: Service::new(),
             file_path: self.file_path.unwrap(),
+            log_file: None,
             default_keyspace,
             partition_config,
             parallelism: self.parallelism.unwrap_or(10),
-            permanode_id: self.permanode_id.unwrap(),
+            chronicle_id: self.chronicle_id.unwrap(),
             in_progress_milestones_data: HashMap::new(),
             retries_per_query: self.retries_per_query.unwrap_or(10),
+            resume: self.resume.unwrap_or(true),
+            sync_data: SyncData::default(),
             handle,
             inbox,
+            eof: false,
         }
         .set_name()
     }
@@ -174,7 +175,7 @@ impl Name for Importer {
 impl<H: ChronicleBrokerScope> AknShutdown<Importer> for BrokerHandle<H> {
     async fn aknowledge_shutdown(self, mut _state: Importer, _status: Result<(), Need>) {
         _state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Importer(_state.service.clone()));
+        let event = BrokerEvent::Children(BrokerChild::Importer(_state.service.clone(), _status));
         let _ = self.send(event);
     }
 }
@@ -374,6 +375,7 @@ where
     }
 }
 
+/// MilestoneData worker
 pub struct MilestoneDataWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
@@ -400,7 +402,7 @@ where
     }
 }
 
-trait Inherent {
+pub(crate) trait Inherent {
     fn inherent_boxed<K, V>(&self, key: K, value: V) -> Box<dyn Worker>
     where
         ChronicleKeyspace: 'static + Insert<K, V> + Insert<Synckey, SyncRecord>,
