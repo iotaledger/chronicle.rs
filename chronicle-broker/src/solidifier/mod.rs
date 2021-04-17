@@ -156,6 +156,12 @@ pub enum CreatedBy {
     Syncer = 2,
 }
 
+impl From<CreatedBy> for u8 {
+    fn from(value: CreatedBy) -> u8 {
+        value as u8
+    }
+}
+
 impl MilestoneData {
     fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
