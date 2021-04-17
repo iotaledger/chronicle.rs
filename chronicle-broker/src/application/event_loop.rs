@@ -20,26 +20,44 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                 // ensure to drop handle
                                 self.handle.take();
                             }
-                            ChronicleBrokerThrough::Topology(topology) => match topology {
-                                Topology::AddMqttMessages(url) => {
-                                    if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
-                                        tokio::spawn(mqtt.start(self.handle.clone()));
+                            ChronicleBrokerThrough::Topology(topology) => {
+                                if self.service.is_stopping() {
+                                    // response that should not change the topology while is_stopping
+                                    error!("Not supposed to dynamiclly change the topology while broker service is_stopped");
+                                    let socket_msg = SocketMsg::ChronicleBroker(Err(topology));
+                                    self.response_to_sockets::<Result<Topology, Topology>>(&socket_msg)
+                                        .await;
+                                    continue;
+                                }
+                                match topology {
+                                    Topology::AddMqttMessages(url) => {
+                                        if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
+                                            tokio::spawn(mqtt.start(self.handle.clone()));
+                                        }
+                                    }
+                                    Topology::AddMqttMessagesReferenced(url) => {
+                                        if let Some(mqtt) =
+                                            self.add_mqtt(MessagesReferenced, MqttType::MessagesReferenced, url)
+                                        {
+                                            tokio::spawn(mqtt.start(self.handle.clone()));
+                                        }
+                                    }
+                                    Topology::RemoveMqttMessagesReferenced(url) => {
+                                        self.remove_mqtt::<MessagesReferenced>(MqttType::MessagesReferenced, url)
+                                    }
+                                    Topology::RemoveMqttMessages(url) => {
+                                        self.remove_mqtt::<Messages>(MqttType::Messages, url)
+                                    }
+                                    Topology::ImportLogFile(url) => {
+                                        if let Ok(file_path) = url.to_file_path() {
+                                            // build importer
+                                            self.spawn_importer(file_path);
+                                        } else {
+                                            // TODO impl download the file from the provided url
+                                        }
                                     }
                                 }
-                                Topology::AddMqttMessagesReferenced(url) => {
-                                    if let Some(mqtt) =
-                                        self.add_mqtt(MessagesReferenced, MqttType::MessagesReferenced, url)
-                                    {
-                                        tokio::spawn(mqtt.start(self.handle.clone()));
-                                    }
-                                }
-                                Topology::RemoveMqttMessagesReferenced(url) => {
-                                    self.remove_mqtt::<MessagesReferenced>(MqttType::MessagesReferenced, url)
-                                }
-                                Topology::RemoveMqttMessages(url) => {
-                                    self.remove_mqtt::<Messages>(MqttType::Messages, url)
-                                }
-                            },
+                            }
                             ChronicleBrokerThrough::ExitProgram => {
                                 supervisor.exit_program(false);
                             }
@@ -66,7 +84,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                             BrokerChild::Collector(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
-                            BrokerChild::Importer(service) => {
+                            BrokerChild::Importer(service, _status) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
                             BrokerChild::Solidifier(service, status) => {
@@ -265,6 +283,17 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             None
         }
     }
+
+    pub(crate) fn spawn_importer(&self, file_path: PathBuf) {
+        let importer = ImporterBuilder::new()
+            .file_path(file_path)
+            .retries_per_query(50) // TODO get it from config
+            .parallelism(25) // TODO get it from config
+            .chronicle_id(0) // TODO get it from config
+            .build();
+        tokio::spawn(importer.start(self.handle.clone()));
+    }
+
     pub(crate) async fn response_to_sockets<T: Serialize>(&mut self, msg: &SocketMsg<T>) {
         for socket in self.websockets.values_mut() {
             let j = serde_json::to_string(&msg).unwrap();
