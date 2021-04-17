@@ -126,108 +126,12 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
 
 impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
     pub(crate) async fn query_sync_table(&mut self) -> Result<(), Need> {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let _ = self
-            .default_keyspace
-            .select(&self.sync_range)
-            .consistency(Consistency::One)
-            .build()
-            .send_local(ValueWorker::boxed(
-                tx,
-                self.default_keyspace.clone(),
-                self.sync_range,
-                10,
-                std::marker::PhantomData,
-            ));
-        let select_response = rx.recv().await.unwrap();
-        match select_response {
-            Ok(opt_sync_rows) => {
-                if let Some(mut sync_rows) = opt_sync_rows {
-                    // Get the first row, note: the first row is always with the largest milestone_index
-                    let SyncRecord {
-                        milestone_index,
-                        logged_by,
-                        ..
-                    } = sync_rows.next().unwrap();
-                    // push missing row/gap (if any)
-                    self.process_gaps(self.sync_range.to, *milestone_index);
-                    self.process_rest(&logged_by, *milestone_index, &None);
-                    let mut pre_ms = milestone_index;
-                    let mut pre_lb = logged_by;
-                    // Generate and identify missing gaps in order to fill them
-                    while let Some(SyncRecord {
-                        milestone_index,
-                        logged_by,
-                        ..
-                    }) = sync_rows.next()
-                    {
-                        // check if there are any missings
-                        self.process_gaps(*pre_ms, *milestone_index);
-                        self.process_rest(&logged_by, *milestone_index, &pre_lb);
-                        pre_ms = milestone_index;
-                        pre_lb = logged_by;
-                    }
-                    // pre_ms is the most recent milestone we processed
-                    // it's also the lowest milestone index in the select response
-                    // so anything < pre_ms && anything >= (self.sync_range.from - 1)
-                    // (lower provided sync bound) are missing
-                    // push missing row/gap (if any)
-                    self.process_gaps(*pre_ms, self.sync_range.from - 1);
-                    Ok(())
-                } else {
-                    // Everything is missing as gaps
-                    self.process_gaps(self.sync_range.to, self.sync_range.from - 1);
-                    Ok(())
-                }
-            }
-            Err(e) => {
-                error!("Unable to query sync table: {}", e);
-                let reschedule_after = Need::RescheduleAfter(std::time::Duration::from_secs(5));
-                return Err(reschedule_after);
-            }
-        }
-    }
-
-    fn process_rest(&mut self, logged_by: &Option<u8>, milestone_index: u32, pre_lb: &Option<u8>) {
-        if logged_by.is_some() {
-            // process logged
-            let completed = &mut self.sync_data.completed;
-            Self::proceed(completed, milestone_index, pre_lb.is_some());
-        } else {
-            // process_unlogged
-            let unlogged = &mut self.sync_data.synced_but_unlogged;
-            Self::proceed(unlogged, milestone_index, pre_lb.is_none());
-        }
-    }
-    fn process_gaps(&mut self, pre_ms: u32, milestone_index: u32) {
-        let gap_start = milestone_index + 1;
-        if gap_start != pre_ms {
-            // create missing gap
-            let gap = Range {
-                start: gap_start,
-                end: pre_ms,
-            };
-            self.sync_data.gaps.push(gap);
-        }
-    }
-    fn proceed(ranges: &mut Vec<Range<u32>>, milestone_index: u32, check: bool) {
-        let end_ms = milestone_index + 1;
-        if let Some(Range { start, .. }) = ranges.last_mut() {
-            if check && *start == end_ms {
-                *start = milestone_index;
-            } else {
-                let range = Range {
-                    start: milestone_index,
-                    end: end_ms,
-                };
-                ranges.push(range)
-            }
-        } else {
-            let range = Range {
-                start: milestone_index,
-                end: end_ms,
-            };
-            ranges.push(range);
-        };
+        self.sync_data = SyncData::try_fetch(&self.default_keyspace, &self.sync_range, 10)
+            .await
+            .map_err(|e| {
+                error!("{}", e);
+                Need::Abort
+            })?;
+        Ok(())
     }
 }
