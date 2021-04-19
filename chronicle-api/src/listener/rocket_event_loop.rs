@@ -916,6 +916,7 @@ fn not_found() -> ListenerError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronicle_common::config::StorageConfig;
     use rocket::{
         http::{
             ContentType,
@@ -927,6 +928,7 @@ mod tests {
             LocalResponse,
         },
     };
+    use serde_json::Value;
 
     fn check_cors_headers(res: &LocalResponse) {
         assert_eq!(
@@ -968,22 +970,53 @@ mod tests {
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
-        let _body: ListenerResponse = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
-            .expect("Failed to deserialize Info Response!");
+        let body: SuccessBody<ListenerResponse> =
+            serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+                .expect("Failed to deserialize Info Response!");
+        match *body {
+            ListenerResponse::Info { .. } => (),
+            _ => panic!("Did not receive an info response!"),
+        }
+    }
+
+    #[rocket::async_test]
+    async fn service() {
+        let rocket = construct_rocket(rocket::ignite());
+        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+
+        let res = client.get("/api/service").dispatch().await;
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(res.content_type(), Some(ContentType::JSON));
+        check_cors_headers(&res);
+        let _body: Service = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+            .expect("Failed to deserialize Service Response!");
     }
 
     #[rocket::async_test]
     async fn get_message() {
-        let rocket = construct_rocket(rocket::ignite());
+        let storage_config = StorageConfig::default();
+        let keyspaces = storage_config
+            .keyspaces
+            .iter()
+            .cloned()
+            .map(|k| k.name)
+            .collect::<HashSet<_>>();
+        let rocket = construct_rocket(
+            rocket::ignite()
+                .manage(storage_config.partition_config.clone())
+                .manage(keyspaces),
+        );
         let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
 
         let res = client
-            .get("/api/chronicle/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
+            .get("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
             .dispatch()
             .await;
-        assert_eq!(res.status(), Status::Ok);
-        assert_eq!(res.content_type(), Some(ContentType::Plain));
+        assert_eq!(res.status(), Status::InternalServerError);
+        assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
-        assert_eq!(res.into_string().await, Some("NoRing".to_owned()));
+        let body: Value = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+            .expect("Failed to deserialize response!");
+        assert_eq!(body.get("message").and_then(Value::as_str), Some("Worker NoRing"));
     }
 }

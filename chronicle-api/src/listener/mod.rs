@@ -9,10 +9,14 @@ use rocket::{
     http::Status,
     Rocket,
 };
-use serde::Serialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     borrow::Cow,
     marker::PhantomData,
+    ops::Deref,
 };
 use thiserror::Error;
 
@@ -137,9 +141,17 @@ impl<T: APIEngine, H: ChronicleAPIScope> AknShutdown<Listener<T>> for ChronicleA
 }
 
 /// A success wrapper for API responses
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct SuccessBody<T> {
     data: T,
+}
+
+impl<T> Deref for SuccessBody<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
 }
 
 impl<T> SuccessBody<T> {
