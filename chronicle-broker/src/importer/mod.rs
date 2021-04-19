@@ -8,12 +8,6 @@ use crate::{
         MilestoneData,
     },
 };
-use chronicle_common::Synckey;
-use std::{
-    collections::hash_map::IntoIter,
-    sync::atomic::Ordering,
-};
-
 use bee_message::{
     output::Output,
     payload::transaction::{
@@ -21,15 +15,17 @@ use bee_message::{
         TransactionPayload,
     },
 };
-
-use chronicle_common::config::{
-    PartitionConfig,
-    StorageConfig,
+use chronicle_common::{
+    config::PartitionConfig,
+    Synckey,
 };
-
-use std::ops::{
-    Deref,
-    DerefMut,
+use std::{
+    collections::hash_map::IntoIter,
+    ops::{
+        Deref,
+        DerefMut,
+    },
+    sync::atomic::Ordering,
 };
 
 mod event_loop;
@@ -264,7 +260,7 @@ where
     fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::insert::handle_unprepared_error(
+                scylla::worker::handle_insert_unprepared_error(
                     &self,
                     &self.keyspace,
                     &self.key,
@@ -346,7 +342,7 @@ where
     fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::insert::handle_unprepared_error(
+                scylla::worker::handle_insert_unprepared_error(
                     &self,
                     &self.keyspace,
                     &Synckey,

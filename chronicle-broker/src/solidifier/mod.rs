@@ -437,7 +437,7 @@ where
     fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::insert::handle_unprepared_error(
+                scylla::worker::handle_insert_unprepared_error(
                     &self,
                     &self.keyspace,
                     &self.key,
@@ -537,7 +537,7 @@ where
     fn handle_error(mut self: Box<Self>, mut error: WorkerError, reporter: &Option<ReporterHandle>) {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::insert::handle_unprepared_error(
+                scylla::worker::handle_insert_unprepared_error(
                     &self,
                     &self.keyspace,
                     &self.key,
