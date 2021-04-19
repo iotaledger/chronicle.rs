@@ -71,6 +71,8 @@ impl Importer {
                                 "Skipping imported milestone data for milestone index: {}",
                                 milestone_index
                             );
+                        } else {
+                            scan_budget = 100;
                             tokio::task::yield_now().await;
                         }
                     } else {
