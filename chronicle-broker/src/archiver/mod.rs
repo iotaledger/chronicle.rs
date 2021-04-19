@@ -12,6 +12,7 @@ use anyhow::{
 };
 use std::{
     collections::BinaryHeap,
+    convert::TryFrom,
     ops::{
         Deref,
         DerefMut,
@@ -23,10 +24,12 @@ use tokio::{
         File,
         OpenOptions,
     },
-    io::AsyncWriteExt,
+    io::{
+        AsyncReadExt,
+        AsyncWriteExt,
+    },
     sync::oneshot::Receiver,
 };
-
 mod event_loop;
 mod init;
 mod terminating;
@@ -40,7 +43,7 @@ builder!(ArchiverBuilder {
     max_log_size: u64,
     oneshot: Receiver<u32>,
     solidifiers_count: u8,
-    db_insert_retries: usize,
+    retries_per_query: usize,
     dir_path: PathBuf
 });
 
@@ -72,7 +75,7 @@ impl Shutdown for ArchiverHandle {
     where
         Self: Sized,
     {
-        todo!()
+        None
     }
 }
 type UpperLimit = u32;
@@ -86,7 +89,8 @@ pub enum ArchiverEvent {
 }
 
 #[derive(Debug)]
-struct LogFile {
+/// Write ahead file which stores ordered milestones data by milestone index.
+pub struct LogFile {
     len: u64,
     filename: String,
     /// Included milestone data
@@ -101,6 +105,7 @@ struct LogFile {
 }
 
 impl LogFile {
+    /// Create a new Write-ahead-log file for a starting milestone index
     pub async fn create(
         dir_path: &PathBuf,
         milestone_index: u32,
@@ -125,6 +130,8 @@ impl LogFile {
             finished: false,
         })
     }
+
+    /// Complete a log file and save it to the given directory
     pub async fn finish(&mut self, dir_path: &PathBuf) -> anyhow::Result<()> {
         let new_file_name = format!("{}to{}.log", self.from_ms_index, self.to_ms_index);
         let new_file_path = dir_path.join(&new_file_name);
@@ -139,6 +146,8 @@ impl LogFile {
         };
         Ok(())
     }
+
+    /// Append a new line to the log file
     pub async fn append_line(&mut self, line: &Vec<u8>) -> anyhow::Result<()> {
         // append to the file
         if let Err(e) = self.file.write_all(line.as_ref()).await {
@@ -154,14 +163,75 @@ impl LogFile {
         self.len += line.len() as u64;
         Ok(())
     }
-    fn len(&self) -> u64 {
+    /// Fetch the next milestone data from the log file.
+    /// Note: this supposed to be used by importer
+    pub async fn next(&mut self) -> Result<Option<MilestoneData>, std::io::Error> {
+        if self.maybe_corrupted {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Cannot fetch next milestone data from maybe corrupted LogFile",
+            ));
+        }
+        if self.len == 0 {
+            self.finished = true;
+            return Ok(None);
+        }
+        let mut buf: [u8; 4] = [0; 4];
+        match self.file.read_exact(&mut buf).await {
+            Ok(n) => {
+                if n == 0 {
+                    self.finished = true;
+                    return Ok(None);
+                }
+                let milestone_data_len = u32::from_be_bytes(buf) as usize;
+                let mut milestone_data_buf: Vec<u8> = vec![0; milestone_data_len];
+                match self.file.read_exact(&mut milestone_data_buf).await {
+                    Ok(n) => {
+                        if n == 0 {
+                            self.maybe_corrupted = true;
+                            return Ok(None);
+                        }
+                        self.len -= 4;
+                        self.len -= milestone_data_len as u64;
+                        let milestone_data: MilestoneData =
+                            serde_json::from_slice(&milestone_data_buf).map_err(|e| {
+                                self.maybe_corrupted = true;
+                                let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
+                                std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
+                            })?;
+                        Ok(Some(milestone_data))
+                    }
+                    Err(err) => {
+                        self.maybe_corrupted = true;
+                        return Err(err);
+                    }
+                }
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    /// Get the file length
+    pub fn len(&self) -> u64 {
         self.len
     }
+
     fn set_finished(&mut self) {
         self.finished = true;
     }
-    fn milestones_range(&self) -> u32 {
+
+    /// Get the file milestone range
+    pub fn milestones_range(&self) -> u32 {
         self.to_ms_index - self.from_ms_index
+    }
+    /// Get the file starting milestone index
+    pub fn from_ms_index(&self) -> u32 {
+        self.from_ms_index
+    }
+
+    /// Get the file ending milestone index
+    pub fn to_ms_index(&self) -> u32 {
+        self.to_ms_index
     }
 }
 /// Archiver state
@@ -175,7 +245,7 @@ pub struct Archiver {
     milestones_data: BinaryHeap<Ascending<MilestoneData>>,
     oneshot: Option<tokio::sync::oneshot::Receiver<u32>>,
     keyspace: ChronicleKeyspace,
-    db_insert_retries: usize,
+    retries_per_query: usize,
     solidifiers_count: u8,
     handle: Option<ArchiverHandle>,
     inbox: ArchiverInbox,
@@ -207,7 +277,7 @@ impl Builder for ArchiverBuilder {
             solidifiers_count: self.solidifiers_count.unwrap(),
             milestones_data: std::collections::BinaryHeap::new(),
             oneshot: self.oneshot,
-            db_insert_retries: self.db_insert_retries.unwrap_or(10),
+            retries_per_query: self.retries_per_query.unwrap_or(10),
             handle,
             inbox,
         }
@@ -232,5 +302,34 @@ impl<H: ChronicleBrokerScope> AknShutdown<Archiver> for BrokerHandle<H> {
         _state.service.update_status(ServiceStatus::Stopped);
         let event = BrokerEvent::Children(BrokerChild::Archiver(_state.service.clone(), status));
         let _ = self.send(event);
+    }
+}
+impl TryFrom<PathBuf> for LogFile {
+    type Error = anyhow::Error;
+    fn try_from(file_path: PathBuf) -> Result<Self, Self::Error> {
+        if let Some(filename) = file_path.file_stem() {
+            let filename = filename
+                .to_str()
+                .ok_or(anyhow::anyhow!("Invalid filename!"))?
+                .to_owned();
+            let split = filename.split("to").collect::<Vec<_>>();
+            anyhow::ensure!(split.len() == 2, "Invalid filename!");
+            let (from_ms_index, to_ms_index) = (split[0].parse()?, split[1].parse()?);
+            let std_file = std::fs::OpenOptions::new().write(false).read(true).open(file_path)?;
+            let len = std_file.metadata()?.len();
+            let file = tokio::fs::File::from_std(std_file);
+            Ok(LogFile {
+                len,
+                filename,
+                from_ms_index,
+                to_ms_index,
+                upper_ms_limit: to_ms_index,
+                file,
+                maybe_corrupted: false,
+                finished: false,
+            })
+        } else {
+            anyhow::bail!("File path does not point to a file!");
+        }
     }
 }

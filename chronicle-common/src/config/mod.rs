@@ -276,7 +276,7 @@ mod test {
             websocket_address: ([127, 0, 0, 1], 8081).into(),
             storage_config: StorageConfig {
                 keyspaces: vec![KeyspaceConfig {
-                    name: "chronicle".to_string(),
+                    name: "permanode".to_string(),
                     data_centers: hashmap! {
                         "USA".to_string() => DatacenterConfig {
                             replication_factor: 2,

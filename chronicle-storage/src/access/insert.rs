@@ -285,7 +285,7 @@ impl Insert<Synckey, SyncRecord> for ChronicleKeyspace {
         }: &SyncRecord,
     ) -> T::Return {
         builder
-            .value(&"chronicle")
+            .value(&"permanode")
             .value(&milestone_index.0)
             .value(synced_by)
             .value(logged_by)

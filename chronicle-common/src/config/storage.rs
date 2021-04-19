@@ -93,7 +93,7 @@ pub struct KeyspaceConfig {
 impl Default for KeyspaceConfig {
     fn default() -> Self {
         Self {
-            name: "chronicle".to_string(),
+            name: "permanode".to_string(),
             data_centers: hashmap! {
                 "USA".to_string() => DatacenterConfig {
                     replication_factor: 2,

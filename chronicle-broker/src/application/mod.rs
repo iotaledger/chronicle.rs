@@ -3,6 +3,7 @@
 use crate::{
     archiver::*,
     collector::*,
+    importer::*,
     listener::*,
     mqtt::*,
     solidifier::*,
@@ -16,7 +17,7 @@ pub(crate) use bee_message::{
     Message,
     MessageId,
 };
-use chronicle_common::{
+pub(crate) use chronicle_common::{
     config::MqttType,
     get_config,
     get_config_async,
@@ -115,7 +116,7 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     syncer_handle: Option<SyncerHandle>,
 }
 
-/// SubEvent type, indicated the children
+/// SubEvent type, indicates the children
 pub enum BrokerChild {
     /// Used by Listener to keep broker up to date with its service
     Listener(Service),
@@ -129,6 +130,8 @@ pub enum BrokerChild {
     Archiver(Service, Result<(), Need>),
     /// Used by Syncer to keep Broker up to date with its service
     Syncer(Service, Result<(), Need>),
+    /// Used by Importer to keep Broker up to date with its service
+    Importer(Service, Result<(), Need>),
     /// Used by Websocket to keep Broker up to date with its service
     Websocket(Service, Option<WsTx>),
 }
@@ -154,6 +157,8 @@ pub enum Topology {
     RemoveMqttMessages(Url),
     /// Remove a MQTT Messages Referenced feed source
     RemoveMqttMessagesReferenced(Url),
+    /// Import a log file using the given url
+    ImportLogFile(Url),
 }
 
 #[derive(Deserialize, Serialize)]
@@ -164,7 +169,7 @@ pub enum SocketMsg<T> {
 }
 
 /// Representation of the database sync data
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SyncData {
     /// The completed(synced and logged) milestones data
     pub(crate) completed: Vec<Range<u32>>,
@@ -175,14 +180,77 @@ pub struct SyncData {
 }
 
 impl SyncData {
-    pub(crate) fn take_lowest_gap(&mut self) -> Option<Range<u32>> {
+    /// Try to fetch the sync data from the sync table for the provided keyspace and sync range
+    pub async fn try_fetch<S: 'static + Select<SyncRange, Iter<SyncRecord>>>(
+        keyspace: &S,
+        sync_range: &SyncRange,
+        retries: usize,
+    ) -> anyhow::Result<SyncData> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let _ = keyspace
+            .select(sync_range)
+            .consistency(Consistency::One)
+            .build()?
+            .send_local(ValueWorker::boxed(
+                tx,
+                keyspace.clone(),
+                sync_range.clone(),
+                retries,
+                std::marker::PhantomData,
+            ));
+        let select_response = rx
+            .recv()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Expected Rx inbox to receive the sync data response"))??;
+        let mut sync_data = SyncData::default();
+        if let Some(mut sync_rows) = select_response {
+            // Get the first row, note: the first row is always with the largest milestone_index
+            let SyncRecord {
+                milestone_index,
+                logged_by,
+                ..
+            } = sync_rows.next().unwrap();
+            // push missing row/gap (if any)
+            sync_data.process_gaps(sync_range.to, *milestone_index);
+            sync_data.process_rest(&logged_by, *milestone_index, &None);
+            let mut pre_ms = milestone_index;
+            let mut pre_lb = logged_by;
+            // Generate and identify missing gaps in order to fill them
+            while let Some(SyncRecord {
+                milestone_index,
+                logged_by,
+                ..
+            }) = sync_rows.next()
+            {
+                // check if there are any missings
+                sync_data.process_gaps(*pre_ms, *milestone_index);
+                sync_data.process_rest(&logged_by, *milestone_index, &pre_lb);
+                pre_ms = milestone_index;
+                pre_lb = logged_by;
+            }
+            // pre_ms is the most recent milestone we processed
+            // it's also the lowest milestone index in the select response
+            // so anything < pre_ms && anything >= (self.sync_range.from - 1)
+            // (lower provided sync bound) are missing
+            // push missing row/gap (if any)
+            sync_data.process_gaps(*pre_ms, sync_range.from - 1);
+            Ok(sync_data)
+        } else {
+            // Everything is missing as gaps
+            sync_data.process_gaps(sync_range.to, sync_range.from - 1);
+            Ok(sync_data)
+        }
+    }
+    /// Takes the lowest gap from the sync_data
+    pub fn take_lowest_gap(&mut self) -> Option<Range<u32>> {
         self.gaps.pop()
     }
-    #[allow(dead_code)]
-    pub(crate) fn take_lowest_unlogged(&mut self) -> Option<Range<u32>> {
+    /// Takes the lowest unlogged range from the sync_data
+    pub fn take_lowest_unlogged(&mut self) -> Option<Range<u32>> {
         self.synced_but_unlogged.pop()
     }
-    pub(crate) fn take_lowest_gap_or_unlogged(&mut self) -> Option<Range<u32>> {
+    /// Takes the lowest unlogged or gap from the sync_data
+    pub fn take_lowest_gap_or_unlogged(&mut self) -> Option<Range<u32>> {
         let lowest_gap = self.gaps.last();
         let lowest_unlogged = self.synced_but_unlogged.last();
         match (lowest_gap, lowest_unlogged) {
@@ -198,7 +266,8 @@ impl SyncData {
             _ => None,
         }
     }
-    pub(crate) fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
+    /// Takes the lowest uncomplete(mixed range for unlogged and gap) from the sync_data
+    pub fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
         if let Some(mut pre_range) = self.take_lowest_gap_or_unlogged() {
             loop {
                 if let Some(next_range) = self.get_lowest_gap_or_unlogged() {
@@ -232,6 +301,47 @@ impl SyncData {
             _ => None,
         }
     }
+    fn process_rest(&mut self, logged_by: &Option<u8>, milestone_index: u32, pre_lb: &Option<u8>) {
+        if logged_by.is_some() {
+            // process logged
+            Self::proceed(&mut self.completed, milestone_index, pre_lb.is_some());
+        } else {
+            // process_unlogged
+            let unlogged = &mut self.synced_but_unlogged;
+            Self::proceed(unlogged, milestone_index, pre_lb.is_none());
+        }
+    }
+    fn process_gaps(&mut self, pre_ms: u32, milestone_index: u32) {
+        let gap_start = milestone_index + 1;
+        if gap_start != pre_ms {
+            // create missing gap
+            let gap = Range {
+                start: gap_start,
+                end: pre_ms,
+            };
+            self.gaps.push(gap);
+        }
+    }
+    fn proceed(ranges: &mut Vec<Range<u32>>, milestone_index: u32, check: bool) {
+        let end_ms = milestone_index + 1;
+        if let Some(Range { start, .. }) = ranges.last_mut() {
+            if check && *start == end_ms {
+                *start = milestone_index;
+            } else {
+                let range = Range {
+                    start: milestone_index,
+                    end: end_ms,
+                };
+                ranges.push(range)
+            }
+        } else {
+            let range = Range {
+                start: milestone_index,
+                end: end_ms,
+            };
+            ranges.push(range);
+        };
+    }
 }
 /// implementation of the AppBuilder
 impl<H: ChronicleBrokerScope> AppBuilder<H> for ChronicleBrokerBuilder<H> {}
@@ -255,7 +365,7 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
                 .keyspaces
                 .first()
                 .and_then(|keyspace| Some(keyspace.name.clone()))
-                .unwrap_or("chronicle".to_owned()),
+                .unwrap_or("permanode".to_owned()),
         );
         let sync_range = config
             .broker_config
@@ -290,12 +400,11 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
     }
 }
 
-// TODO integrate well with other services;
 /// implementation of passthrough functionality
 impl<H: ChronicleBrokerScope> Passthrough<ChronicleBrokerThrough> for BrokerHandle<H> {
     fn launcher_status_change(&mut self, _service: &Service) {}
     fn app_status_change(&mut self, service: &Service) {
-        if service.is_running() && service.get_name().eq(&"Scylla") {
+        if service.is_running() && service.get_name() == "Scylla" {
             let _ = self.send(BrokerEvent::Scylla(service.clone()));
         }
     }

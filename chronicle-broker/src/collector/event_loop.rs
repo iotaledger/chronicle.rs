@@ -351,11 +351,7 @@ impl Collector {
     }
 
     fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
-        self.storage_config
-            .as_ref()
-            .map(|config| &config.partition_config)
-            .unwrap_or(&PartitionConfig::default())
-            .partition_id(milestone_index.0)
+        self.partition_config.partition_id(milestone_index.0)
     }
 
     fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) -> anyhow::Result<()> {

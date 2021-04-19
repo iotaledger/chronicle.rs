@@ -116,12 +116,11 @@ impl Archiver {
         mut opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
         let milestone_index = milestone_data.milestone_index();
-        let mut milestone_data_line = bincode::serialize(&milestone_data).unwrap();
-        milestone_data_line = bincode::serialize(&(milestone_data_line.len() as u32).to_be_bytes())
-            .unwrap()
-            .into_iter()
-            .chain(milestone_data_line)
-            .collect::<Vec<_>>();
+        let mut milestone_data_line = serde_json::to_string(&milestone_data).unwrap();
+        milestone_data_line.push('\n');
+        let mut line_length: Vec<u8> = u32::to_be_bytes(milestone_data_line.len() as u32).into();
+        line_length.extend(milestone_data_line.as_bytes());
+        let milestone_data_line = line_length;
         // check the logs files to find if any has already existing log file
         if let Some(log_file) = self
             .logs
@@ -130,7 +129,14 @@ impl Archiver {
         {
             // append milestone data to the log file if the file_size still less than max limit
             if (milestone_data_line.len() as u64) + log_file.len() < self.max_log_size {
-                Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace).await?;
+                Self::append(
+                    log_file,
+                    &milestone_data_line,
+                    milestone_index,
+                    &self.keyspace,
+                    self.retries_per_query,
+                )
+                .await?;
                 // check if now the log_file reached an upper limit to finish the file
                 if log_file.upper_ms_limit == log_file.to_ms_index {
                     self.cleanup.push(log_file.from_ms_index);
@@ -190,7 +196,14 @@ impl Archiver {
         opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
         let mut log_file = LogFile::create(&self.dir_path, milestone_index, opt_upper_limit).await?;
-        Self::append(&mut log_file, milestone_data_line, milestone_index, &self.keyspace).await?;
+        Self::append(
+            &mut log_file,
+            milestone_data_line,
+            milestone_index,
+            &self.keyspace,
+            self.retries_per_query,
+        )
+        .await?;
         // check if we hit an upper_ms_limit, as this is possible when the log_file only needs 1 milestone data.
         if log_file.upper_ms_limit == log_file.to_ms_index {
             // finish it
@@ -238,6 +251,7 @@ impl Archiver {
         milestone_data_line: &Vec<u8>,
         ms_index: u32,
         keyspace: &ChronicleKeyspace,
+        retries_per_query: usize,
     ) -> anyhow::Result<()> {
         log_file.append_line(&milestone_data_line).await?;
         // insert into the DB, without caring about the response
@@ -247,7 +261,12 @@ impl Archiver {
             .insert(&sync_key, &synced_record)
             .consistency(Consistency::One)
             .build()?
-            .send_local(InsertWorker::boxed(keyspace.clone(), sync_key, synced_record, 10));
+            .send_local(InsertWorker::boxed(
+                keyspace.clone(),
+                sync_key,
+                synced_record,
+                retries_per_query,
+            ));
         Ok(())
     }
     async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> anyhow::Result<()> {

@@ -371,7 +371,7 @@ impl Select<SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
     }
     fn bind_values<T: Values>(builder: T, sync_range: &SyncRange) -> T::Return {
         builder
-            .value(&"chronicle")
+            .value(&"permanode")
             .value(&sync_range.from)
             .value(&sync_range.to)
     }

@@ -156,6 +156,12 @@ pub enum CreatedBy {
     Syncer = 2,
 }
 
+impl From<CreatedBy> for u8 {
+    fn from(value: CreatedBy) -> u8 {
+        value as u8
+    }
+}
+
 impl MilestoneData {
     fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
@@ -193,6 +199,14 @@ impl MilestoneData {
     }
     fn is_complete(&self) -> bool {
         self.complete
+    }
+}
+
+impl std::iter::IntoIterator for MilestoneData {
+    type Item = (MessageId, FullMessage);
+    type IntoIter = std::collections::hash_map::IntoIter<MessageId, FullMessage>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.messages.into_iter()
     }
 }
 

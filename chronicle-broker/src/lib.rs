@@ -10,6 +10,8 @@ pub mod application;
 pub mod archiver;
 /// The collector, which gathers data from feeds and APIs on request
 pub mod collector;
+/// The importer, which enables to import write-ahead-logs
+pub mod importer;
 /// The listener, which receives incoming connections
 pub mod listener;
 /// MQTT handler

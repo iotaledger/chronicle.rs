@@ -13,25 +13,26 @@ use bee_message::{
         TransactionPayload,
     },
 };
-use chronicle_common::config::StorageConfig;
-use lru::LruCache;
-use reqwest::Client;
-use std::{
-    collections::{
-        BinaryHeap,
-        VecDeque,
-    },
-    ops::{
-        Deref,
-        DerefMut,
-    },
+use std::collections::{
+    BinaryHeap,
+    VecDeque,
 };
-use url::Url;
+
+use chronicle_common::config::{
+    PartitionConfig,
+    StorageConfig,
+};
+use lru::LruCache;
+use std::ops::{
+    Deref,
+    DerefMut,
+};
 
 mod event_loop;
 mod init;
 mod terminating;
-
+use reqwest::Client;
+use url::Url;
 // Collector builder
 builder!(CollectorBuilder {
     partition_id: u8,
@@ -75,7 +76,6 @@ pub enum AskCollector {
 pub struct CollectorHandle {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
 }
-
 pub(crate) struct MessageIdPartitioner {
     count: u8,
 }
@@ -150,8 +150,8 @@ pub struct Collector {
     pending_requests: HashMap<MessageId, (u32, Message)>,
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
+    partition_config: PartitionConfig,
     default_keyspace: ChronicleKeyspace,
-    storage_config: Option<StorageConfig>,
 }
 
 impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for CollectorBuilder {}
@@ -161,7 +161,7 @@ impl Builder for CollectorBuilder {
     type State = Collector;
     fn build(self) -> Self::State {
         let lru_cap = self.lru_capacity.unwrap_or(10000);
-        // Get the first keyspace or default to "chronicle"
+        // Get the first keyspace or default to "permanode"
         // In order to use multiple keyspaces, the user must
         // use filters to determine where records go
         let default_keyspace = ChronicleKeyspace::new(
@@ -173,8 +173,13 @@ impl Builder for CollectorBuilder {
                         .first()
                         .and_then(|keyspace| Some(keyspace.name.clone()))
                 })
-                .unwrap_or("chronicle".to_owned()),
+                .unwrap_or("permanode".to_owned()),
         );
+        let partition_config = self
+            .storage_config
+            .as_ref()
+            .map(|config| config.partition_config.clone())
+            .unwrap_or(PartitionConfig::default());
         Self::State {
             service: Service::new(),
             lru_msg: LruCache::new(lru_cap),
@@ -193,8 +198,8 @@ impl Builder for CollectorBuilder {
             pending_requests: HashMap::new(),
             api_endpoints: self.api_endpoints.unwrap(),
             reqwest_client: self.reqwest_client.unwrap(),
+            partition_config,
             default_keyspace,
-            storage_config: self.storage_config,
         }
         .set_name()
     }
