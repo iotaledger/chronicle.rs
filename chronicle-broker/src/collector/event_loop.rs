@@ -3,7 +3,6 @@
 
 use super::*;
 use bee_message::input::Input;
-use chronicle_common::config::PartitionConfig;
 use std::sync::Arc;
 
 #[async_trait::async_trait]

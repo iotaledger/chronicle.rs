@@ -10,7 +10,7 @@ edition = "2018"
 chronicle = { path = "../chronicle" }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-broker = { path = "../chronicle-broker" }
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "error-handling" }
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "main" }
 clap = { version = "2.33", features = ["yaml"] }
 tokio = "1.2"
 tokio-tungstenite = "0.14"

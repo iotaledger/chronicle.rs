@@ -15,7 +15,7 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {
         if let Some(supervisor) = supervisor {
             self.service.update_status(ServiceStatus::Initializing);
             let event = BrokerEvent::Children(BrokerChild::Importer(self.service.clone(), Ok(())));
-            supervisor.send(event);
+            supervisor.send(event).ok();
             let log_file = LogFile::try_from(self.file_path.clone()).map_err(|e| {
                 error!("Unable to create LogFile. Error: {}", e);
                 Need::Abort

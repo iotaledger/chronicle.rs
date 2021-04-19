@@ -275,7 +275,7 @@ where
                     &self.value,
                     id,
                     reporter,
-                );
+                )?;
                 return Ok(());
             }
         }
@@ -363,7 +363,7 @@ where
                     &self.synced_record,
                     id,
                     reporter,
-                );
+                )?;
                 return Ok(());
             }
         }
