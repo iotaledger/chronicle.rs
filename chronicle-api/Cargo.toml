@@ -1,6 +1,6 @@
 [package]
 name = "chronicle-api"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["Alex Coats <alexandcoats@gmail.com>"]
 edition = "2018"
 
@@ -11,9 +11,9 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "main" }
-scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "main" }
-backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "main"}
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1" }
+scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1" }
+backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1"}
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 serde = { version = "1.0", features = ["derive"] }

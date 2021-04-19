@@ -1,6 +1,6 @@
 [package]
 name = "chronicle"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["IOTA Stiftung"]
 edition = "2018"
 license = "APACHE 2.0"
@@ -16,8 +16,8 @@ name = "chronicle"
 path = "src/main.rs"
 
 [dependencies]
-backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "main"}
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "main" }
+backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1"}
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1" }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-storage = { path = "../chronicle-storage" }
