@@ -48,7 +48,7 @@ pub struct Mqtt<T> {
     service: Service,
     url: Url,
     stream_capacity: usize,
-    collectors_count: u8,
+    collector_count: u8,
     collectors_handles: HashMap<u8, CollectorHandle>,
     partitioner: MessageIdPartitioner,
     handle: Option<MqttHandle>,
@@ -133,13 +133,13 @@ impl<T: Topic> Builder for MqttBuilder<T> {
     type State = Mqtt<T>;
     fn build(self) -> Self::State {
         let collectors_handles = self.collectors_handles.expect("Expected collectors handles");
-        let collectors_count = collectors_handles.len() as u8;
+        let collector_count = collectors_handles.len() as u8;
         Self::State {
             service: Service::new(),
             url: self.url.unwrap(),
-            collectors_count,
+            collector_count,
             collectors_handles,
-            partitioner: MessageIdPartitioner::new(collectors_count),
+            partitioner: MessageIdPartitioner::new(collector_count),
             stream_capacity: self.stream_capacity.unwrap_or(10000),
             handle: None,
             inbox: None,

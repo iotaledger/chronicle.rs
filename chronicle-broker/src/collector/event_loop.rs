@@ -24,7 +24,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     self.adjust_heap(requester_id);
                     if let Some(FullMessage(message, metadata)) = opt_full_msg {
                         let message_id = message_id.expect("Expected message_id in requester response");
-                        let partition_id = (try_ms_index % (self.collectors_count as u32)) as u8;
+                        let partition_id = (try_ms_index % (self.collector_count as u32)) as u8;
                         let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
                         // check if the requested message actually belongs to the expected milestone_index
                         if ref_ms.eq(&try_ms_index) {
@@ -95,7 +95,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         continue;
                     }
                     let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
-                    let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
+                    let _partition_id = (ref_ms % (self.collector_count as u32)) as u8;
                     let message_id = metadata.message_id;
                     // set the ref_ms to be the most recent ref_ms
                     self.ref_ms.0 = *ref_ms;
@@ -132,7 +132,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 // check if we have to close it
                                 if !requested_by_this_ms.eq(&*ref_ms) {
                                     // close it
-                                    let solidifier_id = (requested_by_this_ms % (self.collectors_count as u32)) as u8;
+                                    let solidifier_id = (requested_by_this_ms % (self.collector_count as u32)) as u8;
                                     self.push_close_to_solidifier(solidifier_id, message_id, requested_by_this_ms);
                                 }
                             }
@@ -147,7 +147,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     self.push_fullmsg_to_solidifier(_partition_id, message.clone(), metadata.clone())
                                 } else {
                                     // close it
-                                    let solidifier_id = (requested_by_this_ms % (self.collectors_count as u32)) as u8;
+                                    let solidifier_id = (requested_by_this_ms % (self.collector_count as u32)) as u8;
                                     self.push_close_to_solidifier(solidifier_id, message_id, requested_by_this_ms);
                                 }
                                 cached_msg = Some(message);
@@ -216,7 +216,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                                     // close pre_ms_index(old_ms) as it's greater than what we have atm
                                                     // (try_ms_index).
                                                     assert!(!old_ms.eq(&try_ms_index));
-                                                    let solidifier_id = (old_ms % (self.collectors_count as u32)) as u8;
+                                                    let solidifier_id = (old_ms % (self.collector_count as u32)) as u8;
                                                     self.push_close_to_solidifier(solidifier_id, message_id, old_ms);
                                                 }
                                             } else {
@@ -259,7 +259,7 @@ impl Collector {
     /// Send an error event to the solidifier for a given milestone index
     fn send_err_solidifiy(&self, try_ms_index: u32) {
         // inform solidifier
-        let solidifier_id = (try_ms_index % (self.collectors_count as u32)) as u8;
+        let solidifier_id = (try_ms_index % (self.collector_count as u32)) as u8;
         let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap();
         let _ = solidifier_handle.send(SolidifierEvent::Solidify(Err(try_ms_index)));
     }
@@ -279,7 +279,7 @@ impl Collector {
     }
     /// Get the cloned solidifier handle
     fn clone_solidifier_handle(&self, milestone_index: u32) -> SolidifierHandle {
-        let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
+        let solidifier_id = (milestone_index % (self.collector_count as u32)) as u8;
         self.solidifier_handles.get(&solidifier_id).unwrap().clone()
     }
     /// Request the milestone message of a given milestone index
@@ -379,7 +379,7 @@ impl Collector {
             ledger_inclusion_state = meta.ledger_inclusion_state.clone();
             self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
             let milestone_index = *self.est_ms;
-            let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
+            let solidifier_id = (milestone_index % (self.collector_count as u32)) as u8;
             let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap().clone();
             let inherent_worker =
                 AtomicWorker::new(solidifier_handle, milestone_index, *message_id, self.confirmed_retries);
@@ -491,7 +491,7 @@ impl Collector {
                 let parents_check = message.parents().eq(milestone.essence().parents());
                 if metadata.is_some() && parents_check {
                     // push to the right solidifier
-                    let solidifier_id = (ms_index.0 % (self.collectors_count as u32)) as u8;
+                    let solidifier_id = (ms_index.0 % (self.collector_count as u32)) as u8;
                     if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
                         let ms_message =
                             MilestoneMessage::new(*message_id, milestone.clone(), message.clone(), metadata);

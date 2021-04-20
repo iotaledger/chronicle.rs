@@ -41,7 +41,7 @@ builder!(CollectorBuilder {
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     reqwest_client: Client,
     api_endpoints: VecDeque<Url>,
-    collectors_count: u8,
+    collector_count: u8,
     requester_count: u8,
     confirmed_retries: usize,
     unconfirmed_retries: usize,
@@ -138,7 +138,7 @@ pub struct Collector {
     /// The partition id
     partition_id: u8,
     /// The collector count
-    collectors_count: u8,
+    collector_count: u8,
     /// The requester count
     requester_count: u8,
     /// The binary heap stores the requester handles
@@ -211,7 +211,7 @@ impl Builder for CollectorBuilder {
             solidifier_handles: self.solidifier_handles.expect("Collector expected solidifier handles"),
             confirmed_retries: self.confirmed_retries.unwrap_or(100),
             unconfirmed_retries: self.unconfirmed_retries.unwrap_or(10),
-            collectors_count: self.collectors_count.unwrap(),
+            collector_count: self.collector_count.unwrap(),
             requester_count: self.requester_count.unwrap_or(10),
             handle: self.handle,
             inbox: self.inbox.unwrap(),
