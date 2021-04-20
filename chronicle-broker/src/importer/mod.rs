@@ -3,28 +3,16 @@
 use crate::{
     application::*,
     archiver::LogFile,
-    solidifier::{
-        FullMessage,
-        MilestoneData,
-    },
+    solidifier::{FullMessage, MilestoneData},
 };
 use bee_message::{
     output::Output,
-    payload::transaction::{
-        Essence,
-        TransactionPayload,
-    },
+    payload::transaction::{Essence, TransactionPayload},
 };
-use chronicle_common::{
-    config::PartitionConfig,
-    Synckey,
-};
+use chronicle_common::{config::PartitionConfig, Synckey};
 use std::{
     collections::hash_map::IntoIter,
-    ops::{
-        Deref,
-        DerefMut,
-    },
+    ops::{Deref, DerefMut},
     sync::atomic::Ordering,
 };
 
@@ -101,25 +89,39 @@ impl Shutdown for ImporterHandle {
 }
 /// Importer state
 pub struct Importer {
+    /// The importer service
     service: Service,
+    /// The file path of the importer
     file_path: PathBuf,
+    /// The log file
     log_file: Option<LogFile>,
+    /// The default Chronicle keyspace
     default_keyspace: ChronicleKeyspace,
+    /// The partition configuration
     partition_config: PartitionConfig,
+    /// The number of retires per query
     retries_per_query: usize,
+    /// The chronicle id
     chronicle_id: u8,
+    /// The number of parallelism
     parallelism: u8,
+    /// The resume flag
     resume: bool,
+    /// The database sync data
     sync_data: SyncData,
+    /// The map from the milestones to the data in progress
     in_progress_milestones_data: HashMap<u32, IntoIter<MessageId, FullMessage>>,
+    /// The importer handle
     handle: Option<ImporterHandle>,
+    /// The importer inbox to receive events
     inbox: ImporterInbox,
+    /// The flag of end of file
     eof: bool,
 }
 
 impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for ImporterBuilder {}
 
-/// implementation of builder
+/// Implementation of builder
 impl Builder for ImporterBuilder {
     type State = Importer;
     fn build(self) -> Self::State {
@@ -159,7 +161,7 @@ impl Builder for ImporterBuilder {
     }
 }
 
-/// impl name of the Importer
+/// Implement `Name` trait of the Importer
 impl Name for Importer {
     fn set_name(mut self) -> Self {
         let name = format!("{}", self.file_path.to_str().unwrap());
@@ -180,7 +182,7 @@ impl<H: ChronicleBrokerScope> AknShutdown<Importer> for BrokerHandle<H> {
     }
 }
 
-// Scylla worker implementation
+/// Scylla worker implementation for the importer
 #[derive(Clone)]
 pub struct AtomicImporterWorker<S, K, V>
 where
@@ -195,14 +197,20 @@ where
     retries: usize,
 }
 
+/// An atomic importer handle
 pub struct AtomicImporterHandle<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
+    /// The importer handle
     pub(crate) handle: ImporterHandle,
+    /// The keyspace
     pub(crate) keyspace: S,
+    /// The milestone index
     pub(crate) milestone_index: u32,
+    /// The atomic flag to indicate any error
     pub(crate) any_error: std::sync::atomic::AtomicBool,
+    /// The number of retires
     pub(crate) retries: usize,
 }
 
@@ -210,6 +218,8 @@ impl<S> AtomicImporterHandle<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
+    /// Create a new atomic importer handle with an importer handle, a keyspace, a milestone index, an atomic error
+    /// indicator, and a number of retires
     pub fn new(
         handle: ImporterHandle,
         keyspace: S,
@@ -232,6 +242,8 @@ where
     K: 'static + Send,
     V: 'static + Send,
 {
+    /// Create a new atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a number of
+    /// retries
     pub fn new(handle: std::sync::Arc<AtomicImporterHandle<S>>, keyspace: S, key: K, value: V, retries: usize) -> Self {
         Self {
             handle,
@@ -241,6 +253,8 @@ where
             retries,
         }
     }
+    /// Create a new boxed atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a number
+    /// of retries
     pub fn boxed(
         handle: std::sync::Arc<AtomicImporterHandle<S>>,
         keyspace: S,
@@ -311,14 +325,19 @@ where
     }
 }
 
+/// A sync worker for the importer
 #[derive(Clone)]
 pub struct SyncWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
+    /// The importer handle
     handle: ImporterHandle,
+    /// The keyspace
     keyspace: S,
+    /// The `sync` table row
     synced_record: SyncRecord,
+    /// The number of retries
     retries: usize,
 }
 
@@ -326,6 +345,7 @@ impl<S> SyncWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
+    /// Create a new sync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a number of retries
     pub fn new(handle: ImporterHandle, keyspace: S, synced_record: SyncRecord, retries: usize) -> Self {
         Self {
             handle,
@@ -334,11 +354,13 @@ where
             retries,
         }
     }
+    ///  Create a new boxed ync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a number of retries
     pub fn boxed(handle: ImporterHandle, keyspace: S, synced_record: SyncRecord, retries: usize) -> Box<Self> {
         Box::new(Self::new(handle, keyspace, synced_record, retries))
     }
 }
 
+/// Implement the Scylla `Worker` trait
 impl<S> Worker for SyncWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
@@ -386,13 +408,16 @@ where
     }
 }
 
-/// MilestoneData worker
+/// A milestone data worker
 pub struct MilestoneDataWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
+    /// The arced atomic importer handle for a given keyspace
     arc_handle: std::sync::Arc<AtomicImporterHandle<S>>,
+    /// The keyspace
     keyspace: S,
+    /// The number of retries
     retries: usize,
 }
 
@@ -400,6 +425,7 @@ impl<S> MilestoneDataWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
+    /// Create a new milestone data worker with an importer handle, a keyspace, a milestone index, and a number of retries
     fn new(importer_handle: ImporterHandle, keyspace: S, milestone_index: u32, retries: usize) -> Self {
         let any_error = std::sync::atomic::AtomicBool::new(false);
         let atomic_handle =
@@ -413,6 +439,7 @@ where
     }
 }
 
+/// The inherent trait to return a boxed worker for a given key/value pair
 pub(crate) trait Inherent {
     fn inherent_boxed<K, V>(&self, key: K, value: V) -> Box<dyn Worker>
     where
@@ -421,6 +448,8 @@ pub(crate) trait Inherent {
         V: 'static + Send + Clone;
 }
 
+/// Implement the `Inherent` trait for the milestone data worker, so we can get the actomic importer worker
+/// which contanis the atomic importer handle of the milestone data worker
 impl Inherent for MilestoneDataWorker<ChronicleKeyspace> {
     fn inherent_boxed<K, V>(&self, key: K, value: V) -> Box<dyn Worker>
     where
