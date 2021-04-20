@@ -14,9 +14,6 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
         let _ = _supervisor.as_mut().expect("Syncer expected BrokerHandle").send(event);
         while let Some(event) = self.inbox.recv().await {
             match event {
-                SyncerEvent::Process => {
-                    self.process_more();
-                }
                 SyncerEvent::Ask(ask) => {
                     // Don't accept ask events when there is something already in progress.
                     if let None = self.active {
@@ -36,7 +33,8 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
                                 }
                             }
                             AskSyncer::UpdateSyncData => {
-                                todo!("Updating the sync data is not implemented yet")
+                                info!("Trying to update the sync data");
+                                self.update_sync().await;
                             }
                         }
                     } else {
@@ -64,6 +62,22 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
 }
 
 impl Syncer {
+    async fn update_sync(&mut self) {
+        if self.eof {
+            if let Some(sync_range) = self.sync_range.as_ref() {
+                // try to fetch and update sync_data
+                if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, sync_range, 10).await {
+                    info!("Updated the sync data");
+                    self.sync_data = sync_data;
+                    self.eof = false;
+                    self.complete_or_fillgaps();
+                } else {
+                    self.schedule_update_sync_data();
+                }
+            }
+        }
+    }
+
     pub(crate) async fn handle_milestone_data(&mut self, milestone_data: MilestoneData) {
         self.pending -= 1;
         self.milestones_data.push(Ascending::new(milestone_data));
@@ -104,14 +118,9 @@ impl Syncer {
             // tell archiver to finish the logfile
             let _ = self.archiver_handle.send(ArchiverEvent::Close(next));
             // set the first ask request
-            match self.first_ask.take() {
-                Some(AskSyncer::Complete) => {
-                    self.complete();
-                }
-                Some(AskSyncer::FillGaps) => self.fill_gaps(),
-                _ => {}
-            }
+            self.complete_or_fillgaps();
         } else if !self.highest.eq(&0) && !self.skip {
+            self.try_solidify_one_more();
             let upper_ms_limit = Some(self.initial_gap_end);
             // check if we could send the next expected milestone_index
             while let Some(ms_data) = self.milestones_data.pop() {
@@ -160,6 +169,15 @@ impl Syncer {
             self.skip = false;
         }
     }
+    fn complete_or_fillgaps(&mut self) {
+        match self.first_ask.as_ref() {
+            Some(AskSyncer::Complete) => {
+                self.complete();
+            }
+            Some(AskSyncer::FillGaps) => self.fill_gaps(),
+            _ => {}
+        }
+    }
     fn close_log_file(&mut self) {
         let created_log_file = self.initial_gap_start != self.next;
         if self.prev_closed_log_filename != self.initial_gap_start && created_log_file {
@@ -174,11 +192,27 @@ impl Syncer {
             self.prev_closed_log_filename = 0;
         }
     }
+    fn try_solidify_one_more(&mut self) {
+        match self.active.as_mut().unwrap() {
+            Active::Complete(ref mut range) => {
+                if let Some(milestone_index) = range.next() {
+                    Self::request_solidify(self.solidifier_count, &self.solidifier_handles, milestone_index);
+                    self.pending += 1;
+                }
+            }
+            Active::FillGaps(ref mut range) => {
+                if let Some(milestone_index) = range.next() {
+                    Self::request_solidify(self.solidifier_count, &self.solidifier_handles, milestone_index);
+                    self.pending += 1;
+                }
+            }
+        };
+    }
     pub(crate) fn process_more(&mut self) {
         if let Some(ref mut active) = self.active {
             match active {
                 Active::Complete(range) => {
-                    for _ in 0..self.solidifier_count {
+                    for _ in 0..self.parallelism {
                         if let Some(milestone_index) = range.next() {
                             Self::request_solidify(self.solidifier_count, &self.solidifier_handles, milestone_index);
                             // update pending
@@ -197,7 +231,7 @@ impl Syncer {
                     }
                 }
                 Active::FillGaps(range) => {
-                    for _ in 0..self.solidifier_count {
+                    for _ in 0..self.parallelism {
                         if let Some(milestone_index) = range.next() {
                             Self::request_solidify(self.solidifier_count, &self.solidifier_handles, milestone_index);
                             // update pending
@@ -218,8 +252,20 @@ impl Syncer {
             }
         } else {
             self.eof = true;
-            info!("SyncData reached EOF")
+            info!("SyncData reached EOF");
+            self.schedule_update_sync_data();
         }
+    }
+    fn schedule_update_sync_data(&self) {
+        info!("Scheduling update sync after: {:?}", self.update_sync_data_every);
+        let update_sync_data_every = self.update_sync_data_every;
+        let handle = self.handle.clone();
+        let update_sync = async move {
+            tokio::time::sleep(update_sync_data_every).await;
+            let ask = AskSyncer::UpdateSyncData;
+            let _ = handle.send(SyncerEvent::Ask(ask));
+        };
+        tokio::spawn(update_sync);
     }
     fn request_solidify(
         solidifier_count: u8,
@@ -265,11 +311,13 @@ impl Syncer {
                     self.active.replace(Active::Complete(gap));
                     self.trigger_process_more();
                 } else {
-                    info!("There are no more gaps neither unlogged in the current sync data")
+                    info!("There are no more gaps neither unlogged in the current sync data");
+                    self.trigger_process_more();
                 }
             }
         } else {
             info!("There are no more gaps neither unlogged in the current sync data");
+            self.trigger_process_more();
         }
     }
     pub(crate) fn fill_gaps(&mut self) {

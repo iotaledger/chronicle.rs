@@ -21,6 +21,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let (one, recv) = tokio::sync::oneshot::channel();
             let syncer_builder = SyncerBuilder::new()
                 .sync_data(self.sync_data.clone())
+                .parallelism(10) // todo fetch this from config
                 .handle(syncer_handle.clone())
                 .oneshot(one)
                 .inbox(syncer_inbox);
@@ -76,6 +77,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let syncer = syncer_builder
                 .solidifier_handles(self.solidifier_handles.clone())
                 .archiver_handle(archiver_handle.unwrap())
+                .sync_range(self.sync_range)
                 .first_ask(AskSyncer::Complete)
                 .build();
             tokio::spawn(syncer.start(self.handle.clone()));

@@ -33,11 +33,6 @@ pub use bee_message::{
     Message,
     MessageId,
 };
-pub use bee_snapshot::info::SnapshotInfo;
-pub use bee_tangle::{
-    flags::Flags,
-    unconfirmed_message::UnconfirmedMessage,
-};
 use std::{
     io::Cursor,
     ops::{
