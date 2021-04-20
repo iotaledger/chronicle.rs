@@ -13,12 +13,15 @@ use crate::{
     },
 };
 use chronicle_common::Wrapper;
-use std::ops::{
-    Deref,
-    DerefMut,
+use chronicle_storage::keyspaces::ChronicleKeyspace;
+use std::{
+    ops::{
+        Deref,
+        DerefMut,
+    },
+    time::Duration,
 };
 use tokio::sync::oneshot::Sender;
-
 mod event_loop;
 mod init;
 mod terminating;
@@ -26,7 +29,10 @@ mod terminating;
 // Syncer builder
 builder!(SyncerBuilder {
     sync_data: SyncData,
+    update_sync_data_every: Duration,
+    sync_range: SyncRange,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
+    parallelism: u8,
     archiver_handle: ArchiverHandle,
     first_ask: AskSyncer,
     oneshot: Sender<u32>,
@@ -38,8 +44,6 @@ builder!(SyncerBuilder {
 pub enum SyncerEvent {
     /// Ask for sync data
     Ask(AskSyncer),
-    /// Process sync data
-    Process,
     /// Sync milestone data
     MilestoneData(MilestoneData),
     /// Notify of an unreachable cluster
@@ -114,8 +118,12 @@ impl Shutdown for SyncerHandle {
 pub struct Syncer {
     service: Service,
     sync_data: SyncData,
+    update_sync_data_every: Duration,
+    keyspace: ChronicleKeyspace,
+    sync_range: Option<SyncRange>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     solidifier_count: u8,
+    parallelism: u8,
     active: Option<Active>,
     first_ask: Option<AskSyncer>,
     archiver_handle: ArchiverHandle,
@@ -142,12 +150,26 @@ impl Builder for SyncerBuilder {
         let solidifier_handles = self.solidifier_handles.unwrap();
         let solidifier_count = solidifier_handles.len() as u8;
         let sync_data = self.sync_data.unwrap();
-
+        let config = chronicle_common::get_config();
+        let keyspace = ChronicleKeyspace::new(
+            config
+                .storage_config
+                .keyspaces
+                .first()
+                .and_then(|keyspace| Some(keyspace.name.clone()))
+                .unwrap_or("permanode".to_owned()),
+        );
         Self::State {
             service: Service::new(),
             sync_data,
             solidifier_handles,
             solidifier_count,
+            sync_range: self.sync_range,
+            keyspace,
+            update_sync_data_every: self
+                .update_sync_data_every
+                .unwrap_or(std::time::Duration::from_secs(60 * 60)),
+            parallelism: self.parallelism.unwrap_or(solidifier_count),
             active: None,
             first_ask: self.first_ask,
             archiver_handle: self.archiver_handle.unwrap(),
