@@ -24,6 +24,7 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
+    /// Spawn a number of collector requester handles
     fn spawn_requester(&mut self) {
         for id in 0..self.requester_count {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();

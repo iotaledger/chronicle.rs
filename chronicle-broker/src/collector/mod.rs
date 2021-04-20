@@ -1,32 +1,16 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use crate::{
-    application::*,
-    requester::*,
-    solidifier::*,
-};
+use crate::{application::*, requester::*, solidifier::*};
 use anyhow::bail;
 use bee_message::{
     output::Output,
-    payload::transaction::{
-        Essence,
-        TransactionPayload,
-    },
+    payload::transaction::{Essence, TransactionPayload},
 };
-use std::collections::{
-    BinaryHeap,
-    VecDeque,
-};
+use std::collections::{BinaryHeap, VecDeque};
 
-use chronicle_common::config::{
-    PartitionConfig,
-    StorageConfig,
-};
+use chronicle_common::config::{PartitionConfig, StorageConfig};
 use lru::LruCache;
-use std::ops::{
-    Deref,
-    DerefMut,
-};
+use std::ops::{Deref, DerefMut};
 
 mod event_loop;
 mod init;
@@ -133,24 +117,44 @@ impl Shutdown for CollectorHandle {
 
 /// Collector state, each collector is basically LRU cache
 pub struct Collector {
+    /// The service of the collector metics
     service: Service,
+    /// The partition id
     partition_id: u8,
+    /// The collector count
     collectors_count: u8,
+    /// The requester count
     requester_count: u8,
+    /// The binary heap stores the requester handles
     requester_handles: BinaryHeap<RequesterHandle>,
+    /// The estimated milestone index
     est_ms: MilestoneIndex,
+    /// The referenced milestone index
     ref_ms: MilestoneIndex,
+    /// The LRU cache from message id to (milestone index, message) pair
     lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
+    /// The LRU cache from message id to message metadata
     lru_msg_ref: LruCache<MessageId, MessageMetadata>,
+    /// The collector handle
     handle: Option<CollectorHandle>,
+    /// The collector inbox to receive collector events
     inbox: CollectorInbox,
+    /// The hashmap from a partition id to the corresponding solidifier handle
     solidifier_handles: HashMap<u8, SolidifierHandle>,
+    /// The number of confirmed retires
     confirmed_retries: usize,
+    /// The number of unconfirmed retries
     unconfirmed_retries: usize,
+    /// The hashmap to facilitate the recording the pending requests, which maps from
+    /// a message id to the corresponding (milestone index, message) pair
     pending_requests: HashMap<MessageId, (u32, Message)>,
+    /// The double ended queue stores the api endpoints
     api_endpoints: VecDeque<Url>,
+    /// The http client
     reqwest_client: Client,
+    /// The partition configure
     partition_config: PartitionConfig,
+    /// The `Chronicle` keyspace
     default_keyspace: ChronicleKeyspace,
 }
 
@@ -205,7 +209,7 @@ impl Builder for CollectorBuilder {
     }
 }
 
-/// impl name of the Collector
+/// Implement the `Name` trait of the `Collector`
 impl Name for Collector {
     fn set_name(mut self) -> Self {
         let name = format!("Collector_{}", self.partition_id);
