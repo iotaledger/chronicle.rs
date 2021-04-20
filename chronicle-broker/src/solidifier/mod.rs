@@ -40,7 +40,7 @@ builder!(SolidifierBuilder {
     gap_start: u32,
     retries: u16,
     collector_handles: HashMap<u8, CollectorHandle>,
-    collectors_count: u8
+    collector_count: u8
 });
 
 /// A milestone message payload
@@ -295,7 +295,7 @@ pub struct Solidifier {
     lru_in_database: lru::LruCache<u32, ()>,
     unreachable: lru::LruCache<u32, ()>,
     collector_handles: HashMap<u8, CollectorHandle>,
-    collectors_count: u8,
+    collector_count: u8,
     syncer_handle: SyncerHandle,
     archiver_handle: ArchiverHandle,
     message_id_partitioner: MessageIdPartitioner,
@@ -313,7 +313,7 @@ impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for SolidifierBuilde
 impl Builder for SolidifierBuilder {
     type State = Solidifier;
     fn build(self) -> Self::State {
-        let collectors_count = self.collectors_count.unwrap();
+        let collector_count = self.collector_count.unwrap();
         Self::State {
             service: Service::new(),
             partition_id: self.partition_id.unwrap(),
@@ -324,10 +324,10 @@ impl Builder for SolidifierBuilder {
             unreachable: lru::LruCache::new(100),
             milestones_data: HashMap::new(),
             collector_handles: self.collector_handles.unwrap(),
-            collectors_count,
+            collector_count,
             syncer_handle: self.syncer_handle.unwrap(),
             archiver_handle: self.archiver_handle.unwrap(),
-            message_id_partitioner: MessageIdPartitioner::new(collectors_count),
+            message_id_partitioner: MessageIdPartitioner::new(collector_count),
             first: None,
             gap_start: self.gap_start.unwrap(),
             expected: 0,

@@ -21,6 +21,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let (one, recv) = tokio::sync::oneshot::channel();
             let syncer_builder = SyncerBuilder::new()
                 .sync_data(self.sync_data.clone())
+                .parallelism(10) // todo fetch this from config
                 .handle(syncer_handle.clone())
                 .oneshot(one)
                 .inbox(syncer_inbox);
@@ -28,7 +29,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let mut archiver = ArchiverBuilder::new()
                 .dir_path(self.logs_dir_path.clone())
                 .keyspace(self.default_keyspace.clone())
-                .solidifiers_count(self.collectors_count)
+                .solidifiers_count(self.collector_count)
                 .oneshot(recv)
                 .build();
             let archiver_handle = archiver.take_handle();
@@ -38,14 +39,14 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let mut solidifier_builders: Vec<SolidifierBuilder> = Vec::new();
             let reqwest_client = reqwest::Client::new();
             let config = get_config_async().await;
-            for partition_id in 0..self.collectors_count {
+            for partition_id in 0..self.collector_count {
                 // create collector_builder
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 let collector_handle = CollectorHandle { tx };
                 let collector_inbox = CollectorInbox { rx };
                 self.collector_handles.insert(partition_id, collector_handle.clone());
                 let collector_builder = CollectorBuilder::new()
-                    .collectors_count(self.collectors_count)
+                    .collector_count(self.collector_count)
                     .handle(collector_handle)
                     .inbox(collector_inbox)
                     .api_endpoints(config.broker_config.api_endpoints.iter().cloned().collect())
@@ -60,7 +61,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
                 let solidifier_inbox = SolidifierInbox { rx };
                 self.solidifier_handles.insert(partition_id, solidifier_handle.clone());
                 let solidifier_builder = SolidifierBuilder::new()
-                    .collectors_count(self.collectors_count)
+                    .collector_count(self.collector_count)
                     .syncer_handle(syncer_handle.clone())
                     .archiver_handle(archiver_handle.clone().unwrap())
                     .gap_start(gap_start)
@@ -76,6 +77,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let syncer = syncer_builder
                 .solidifier_handles(self.solidifier_handles.clone())
                 .archiver_handle(archiver_handle.unwrap())
+                .sync_range(self.sync_range)
                 .first_ask(AskSyncer::Complete)
                 .build();
             tokio::spawn(syncer.start(self.handle.clone()));

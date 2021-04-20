@@ -117,11 +117,9 @@ impl Archiver {
         mut opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
         let milestone_index = milestone_data.milestone_index();
-        let mut milestone_data_line = serde_json::to_string(&milestone_data).unwrap();
-        milestone_data_line.push('\n');
-        let mut line_length: Vec<u8> = u32::to_be_bytes(milestone_data_line.len() as u32).into();
-        line_length.extend(milestone_data_line.as_bytes());
-        let milestone_data_line = line_length;
+        let mut milestone_data_json = serde_json::to_string(&milestone_data).unwrap();
+        milestone_data_json.push('\n');
+        let milestone_data_line: Vec<u8> = milestone_data_json.into();
         // check the logs files to find if any has already existing log file
         if let Some(log_file) = self
             .logs

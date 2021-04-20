@@ -7,8 +7,8 @@ use futures::SinkExt;
 
 #[async_trait]
 impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
-    async fn event_loop(&mut self, mut _status: Result<(), Need>, supervisor: &mut Option<H>) -> Result<(), Need> {
-        _status?;
+    async fn event_loop(&mut self, mut status: Result<(), Need>, supervisor: &mut Option<H>) -> Result<(), Need> {
+        status?;
         if let Some(ref mut supervisor) = supervisor {
             self.service.update_status(ServiceStatus::Running);
             while let Some(event) = self.inbox.recv().await {
@@ -67,7 +67,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                         }
                     },
                     BrokerEvent::Scylla(service) => {
-                        if let Err(Need::Restart) = _status.as_ref() {
+                        if let Err(Need::Restart) = status.as_ref() {
                             if service.is_running() {
                                 // ask for restart, but first drop the handle to ensure we start with empty event_loop
                                 self.handle.take();
@@ -87,43 +87,43 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                             BrokerChild::Importer(service, _status) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
-                            BrokerChild::Solidifier(service, status) => {
+                            BrokerChild::Solidifier(service, solidifier_status) => {
                                 // Handle abort
-                                if let Err(Need::Abort) = status {
+                                if let Err(Need::Abort) = solidifier_status {
                                     if service.is_stopped() {
                                         // Pause broker app (is_stopping but awaitting on its event loop till scylla is
                                         // running)
                                         self.shutdown(supervisor, false).await;
-                                        _status = Err(Need::Restart);
+                                        status = Err(Need::Restart);
                                     }
                                 }
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
-                            BrokerChild::Syncer(service, status) => {
+                            BrokerChild::Syncer(service, syncer_status) => {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {
                                     if service.is_stopped() {
                                         // update status only if is not restarting
-                                        if let Err(Need::Restart) = _status.as_ref() {
+                                        if let Err(Need::Restart) = status.as_ref() {
                                         } else {
                                             // Abort broker app
                                             self.shutdown(supervisor, true).await;
-                                            _status = status;
+                                            status = syncer_status;
                                         }
                                     }
                                 }
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
-                            BrokerChild::Archiver(service, status) => {
+                            BrokerChild::Archiver(service, archiver_status) => {
                                 // Handle abort
                                 if let Err(Need::Abort) = status {
                                     if service.is_stopped() {
                                         // update status only if is not restarting
-                                        if let Err(Need::Restart) = _status.as_ref() {
+                                        if let Err(Need::Restart) = status.as_ref() {
                                         } else {
                                             // Abort broker app
                                             self.shutdown(supervisor, true).await;
-                                            _status = status;
+                                            status = archiver_status;
                                         }
                                     }
                                 }
@@ -213,7 +213,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                     }
                 }
             }
-            _status
+            status
         } else {
             Err(Need::Abort)
         }

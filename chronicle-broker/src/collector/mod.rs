@@ -42,7 +42,7 @@ builder!(CollectorBuilder {
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     reqwest_client: Client,
     api_endpoints: VecDeque<Url>,
-    collectors_count: u8,
+    collector_count: u8,
     requester_count: u8,
     confirmed_retries: usize,
     unconfirmed_retries: usize,
@@ -134,24 +134,44 @@ impl Shutdown for CollectorHandle {
 
 /// Collector state, each collector is basically LRU cache
 pub struct Collector {
+    /// The service of the collector metics
     service: Service,
+    /// The partition id
     partition_id: u8,
-    collectors_count: u8,
+    /// The collector count
+    collector_count: u8,
+    /// The requester count
     requester_count: u8,
+    /// The binary heap stores the requester handles
     requester_handles: BinaryHeap<RequesterHandle>,
+    /// The estimated milestone index
     est_ms: MilestoneIndex,
+    /// The referenced milestone index
     ref_ms: MilestoneIndex,
+    /// The LRU cache from message id to (milestone index, message) pair
     lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
+    /// The LRU cache from message id to message metadata
     lru_msg_ref: LruCache<MessageId, MessageMetadata>,
+    /// The collector handle
     handle: Option<CollectorHandle>,
+    /// The collector inbox to receive collector events
     inbox: CollectorInbox,
+    /// The hashmap from a partition id to the corresponding solidifier handle
     solidifier_handles: HashMap<u8, SolidifierHandle>,
+    /// The number of confirmed retires
     confirmed_retries: usize,
+    /// The number of unconfirmed retries
     unconfirmed_retries: usize,
+    /// The hashmap to facilitate the recording the pending requests, which maps from
+    /// a message id to the corresponding (milestone index, message) pair
     pending_requests: HashMap<MessageId, (u32, Message)>,
+    /// The double ended queue stores the api endpoints
     api_endpoints: VecDeque<Url>,
+    /// The http client
     reqwest_client: Client,
+    /// The partition configure
     partition_config: PartitionConfig,
+    /// The `Chronicle` keyspace
     default_keyspace: ChronicleKeyspace,
 }
 
@@ -192,7 +212,7 @@ impl Builder for CollectorBuilder {
             solidifier_handles: self.solidifier_handles.expect("Collector expected solidifier handles"),
             confirmed_retries: self.confirmed_retries.unwrap_or(100),
             unconfirmed_retries: self.unconfirmed_retries.unwrap_or(10),
-            collectors_count: self.collectors_count.unwrap(),
+            collector_count: self.collector_count.unwrap(),
             requester_count: self.requester_count.unwrap_or(10),
             handle: self.handle,
             inbox: self.inbox.unwrap(),
@@ -206,7 +226,7 @@ impl Builder for CollectorBuilder {
     }
 }
 
-/// impl name of the Collector
+/// Implement the `Name` trait of the `Collector`
 impl Name for Collector {
     fn set_name(mut self) -> Self {
         let name = format!("Collector_{}", self.partition_id);

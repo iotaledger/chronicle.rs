@@ -63,7 +63,7 @@ builder!(
     ChronicleBrokerBuilder<H> {
         listener_handle: ListenerHandle,
         reschedule_after: Duration,
-        collectors_count: u8
+        collector_count: u8
 });
 
 #[derive(Deserialize, Serialize)]
@@ -99,7 +99,7 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     listener_handle: Option<ListenerHandle>,
     mqtt_handles: HashMap<String, MqttHandle>,
     asked_to_shutdown: HashMap<String, ()>,
-    collectors_count: u8,
+    collector_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
     logs_dir_path: PathBuf,
@@ -380,7 +380,7 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
             listener_handle: self.listener_handle,
             mqtt_handles: HashMap::new(),
             asked_to_shutdown: HashMap::new(),
-            collectors_count: self.collectors_count.unwrap_or(10),
+            collector_count: self.collector_count.unwrap_or(10),
             collector_handles: HashMap::new(),
             solidifier_handles: HashMap::new(),
             syncer_handle: None,

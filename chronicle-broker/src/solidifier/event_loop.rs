@@ -161,8 +161,8 @@ impl Solidifier {
             warn!("Not supposed to receive solidify request from syncer on an existing milestone data, unless this is an expected race condition");
         } else {
             // Asking any collector (as we don't know the message id of the milestone)
-            // however, we use milestone_index % collectors_count to have unfirom distribution.
-            // note: solidifier_id/partition_id is actually = milestone_index % collectors_count;
+            // however, we use milestone_index % collector_count to have unfirom distribution.
+            // note: solidifier_id/partition_id is actually = milestone_index % collector_count;
             // as both solidifiers and collectors have the same count.
             // this event should be enough to spark the solidification process
             let ask_collector = AskCollector::MilestoneMessage(milestone_index);
@@ -406,7 +406,7 @@ impl Solidifier {
                 // as it's the first observed message/milestone which we want to ensure it's solid.
 
                 Self::request_milestone_message(collector_handles, solidifier_id, milestone_index);
-                self.expected = milestone_index + (self.collectors_count as u32);
+                self.expected = milestone_index + (self.collector_count as u32);
 
                 // Create the first entry using syncer
                 let milestone_data = self
@@ -443,7 +443,7 @@ impl Solidifier {
 
             // Insert anything in between(belongs to self solidifier_id) as Expected
             for expected in self.expected..milestone_index {
-                let id = (expected % self.collectors_count as u32) as u8;
+                let id = (expected % self.collector_count as u32) as u8;
                 if id.eq(&self.partition_id) {
                     error!(
                         "solidifier_id: {}, expected: {}, but got: {}",
@@ -465,7 +465,7 @@ impl Solidifier {
                 }
             }
             // set it as recent expected
-            self.expected = milestone_index + (self.collectors_count as u32);
+            self.expected = milestone_index + (self.collector_count as u32);
             info!(
                 "solidifier_id: {}, set new expected {}",
                 self.partition_id, self.expected

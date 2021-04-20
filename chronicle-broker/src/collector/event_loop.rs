@@ -30,7 +30,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     self.adjust_heap(requester_id);
                     if let Some(FullMessage(message, metadata)) = opt_full_msg {
                         let message_id = message_id.expect("Expected message_id in requester response");
-                        let partition_id = (try_ms_index % (self.collectors_count as u32)) as u8;
+                        let partition_id = (try_ms_index % (self.collector_count as u32)) as u8;
                         let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
                         // check if the requested message actually belongs to the expected milestone_index
                         if ref_ms.eq(&try_ms_index) {
@@ -101,7 +101,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         continue;
                     }
                     let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
-                    let _partition_id = (ref_ms % (self.collectors_count as u32)) as u8;
+                    let _partition_id = (ref_ms % (self.collector_count as u32)) as u8;
                     let message_id = metadata.message_id;
                     // set the ref_ms to be the most recent ref_ms
                     self.ref_ms.0 = *ref_ms;
@@ -138,7 +138,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 // check if we have to close it
                                 if !requested_by_this_ms.eq(&*ref_ms) {
                                     // close it
-                                    let solidifier_id = (requested_by_this_ms % (self.collectors_count as u32)) as u8;
+                                    let solidifier_id = (requested_by_this_ms % (self.collector_count as u32)) as u8;
                                     self.push_close_to_solidifier(solidifier_id, message_id, requested_by_this_ms);
                                 }
                             }
@@ -153,7 +153,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     self.push_fullmsg_to_solidifier(_partition_id, message.clone(), metadata.clone())
                                 } else {
                                     // close it
-                                    let solidifier_id = (requested_by_this_ms % (self.collectors_count as u32)) as u8;
+                                    let solidifier_id = (requested_by_this_ms % (self.collector_count as u32)) as u8;
                                     self.push_close_to_solidifier(solidifier_id, message_id, requested_by_this_ms);
                                 }
                                 cached_msg = Some(message);
@@ -222,7 +222,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                                     // close pre_ms_index(old_ms) as it's greater than what we have atm
                                                     // (try_ms_index).
                                                     assert!(!old_ms.eq(&try_ms_index));
-                                                    let solidifier_id = (old_ms % (self.collectors_count as u32)) as u8;
+                                                    let solidifier_id = (old_ms % (self.collector_count as u32)) as u8;
                                                     self.push_close_to_solidifier(solidifier_id, message_id, old_ms);
                                                 }
                                             } else {
@@ -262,12 +262,14 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
 }
 
 impl Collector {
+    /// Send an error event to the solidifier for a given milestone index
     fn send_err_solidifiy(&self, try_ms_index: u32) {
         // inform solidifier
-        let solidifier_id = (try_ms_index % (self.collectors_count as u32)) as u8;
+        let solidifier_id = (try_ms_index % (self.collector_count as u32)) as u8;
         let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap();
         let _ = solidifier_handle.send(SolidifierEvent::Solidify(Err(try_ms_index)));
     }
+    /// Process the pending requests for a given milestone index
     fn process_pending_requests(&mut self, milestone_index: u32) {
         self.pending_requests = std::mem::take(&mut self.pending_requests)
             .into_iter()
@@ -281,10 +283,12 @@ impl Collector {
             })
             .collect();
     }
+    /// Get the cloned solidifier handle
     fn clone_solidifier_handle(&self, milestone_index: u32) -> SolidifierHandle {
-        let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
+        let solidifier_id = (milestone_index % (self.collector_count as u32)) as u8;
         self.solidifier_handles.get(&solidifier_id).unwrap().clone()
     }
+    /// Request the milestone message of a given milestone index
     fn request_milestone_message(&mut self, milestone_index: u32) {
         let remote_url = self.api_endpoints.pop_back().unwrap();
         self.api_endpoints.push_front(remote_url.clone());
@@ -292,11 +296,14 @@ impl Collector {
             requester_handle.send_event(RequesterEvent::RequestMilestone(milestone_index))
         }; // else collector is shutting down
     }
+    /// Request the full message (i.e., including both message and metadata) of a given message id and
+    /// a milestone index
     fn request_full_message(&mut self, message_id: MessageId, try_ms_index: u32) {
         if let Some(mut requester_handle) = self.requester_handles.peek_mut() {
             requester_handle.send_event(RequesterEvent::RequestFullMessage(message_id, try_ms_index))
         }; // else collector is shutting down
     }
+    /// Adjust (refresh) the binary heap which stores the requester handels
     fn adjust_heap(&mut self, requester_id: RequesterId) {
         self.requester_handles = self
             .requester_handles
@@ -311,7 +318,7 @@ impl Collector {
             })
             .collect();
     }
-
+    /// Clean up the message and message_id with the wrong estimated milestone index
     fn clean_up_wrong_est_msg(
         &mut self,
         message_id: &MessageId,
@@ -333,6 +340,7 @@ impl Collector {
         }
         Ok(())
     }
+    /// Push the full message (both the message and message metadata) to a given partiion of the solidifier
     fn push_fullmsg_to_solidifier(&self, partition_id: u8, message: Message, metadata: MessageMetadata) {
         if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
             let full_message = FullMessage::new(message, metadata);
@@ -340,25 +348,29 @@ impl Collector {
             let _ = solidifier_handle.send(full_msg_event);
         };
     }
+    /// Push a `Close` message_id (which doesn't belong to all solidifiers with a given milestone index) to the
+    /// solidifier
     fn push_close_to_solidifier(&self, partition_id: u8, message_id: MessageId, try_ms_index: u32) {
         if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
             let full_msg_event = SolidifierEvent::Close(message_id, try_ms_index);
             let _ = solidifier_handle.send(full_msg_event);
         };
     }
+    /// Get the `Chronicle` keyspace of a message
     #[cfg(feature = "filter")]
     fn get_keyspace_for_message(&self, message: &mut Message) -> ChronicleKeyspace {
         let res = futures::executor::block_on(chronicle_filter::filter_messages(message));
         ChronicleKeyspace::new(res.keyspace.into_owned())
     }
+    /// Get the Chronicle keyspace
     fn get_keyspace(&self) -> ChronicleKeyspace {
         self.default_keyspace.clone()
     }
-
+    /// Get the partition id of a given milestone index
     fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
         self.partition_config.partition_id(milestone_index.0)
     }
-
+    /// Insert the message id and message to the table
     fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) -> anyhow::Result<()> {
         // Check if metadata already exist in the cache
         let ledger_inclusion_state;
@@ -373,7 +385,7 @@ impl Collector {
             ledger_inclusion_state = meta.ledger_inclusion_state.clone();
             self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
             let milestone_index = *self.est_ms;
-            let solidifier_id = (milestone_index % (self.collectors_count as u32)) as u8;
+            let solidifier_id = (milestone_index % (self.collector_count as u32)) as u8;
             let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap().clone();
             let inherent_worker =
                 AtomicWorker::new(solidifier_handle, milestone_index, *message_id, self.confirmed_retries);
@@ -429,6 +441,7 @@ impl Collector {
         };
         Ok(())
     }
+    /// Insert the parents' message ids of a given message id to the table
     fn insert_parents<I: Inherent>(
         &self,
         inherent_worker: &I,
@@ -484,7 +497,7 @@ impl Collector {
                 let parents_check = message.parents().eq(milestone.essence().parents());
                 if metadata.is_some() && parents_check {
                     // push to the right solidifier
-                    let solidifier_id = (ms_index.0 % (self.collectors_count as u32)) as u8;
+                    let solidifier_id = (ms_index.0 % (self.collector_count as u32)) as u8;
                     if let Some(solidifier_handle) = self.solidifier_handles.get(&solidifier_id) {
                         let ms_message =
                             MilestoneMessage::new(*message_id, milestone.clone(), message.clone(), metadata);
@@ -505,6 +518,7 @@ impl Collector {
         }
         Ok(())
     }
+    /// Insert the `Indexation` of a given message id to the table
     fn insert_index<I: Inherent>(
         &self,
         inherent_worker: &I,
@@ -522,6 +536,7 @@ impl Collector {
         let partition = Partition::new(partition_id, *milestone_index);
         self.insert(inherent_worker, &self.get_keyspace(), hint, partition)
     }
+    /// Insert the message metadata to the table
     fn insert_message_metadata(&self, metadata: MessageMetadata) -> anyhow::Result<()> {
         let message_id = metadata.message_id;
         let inherent_worker = SimpleWorker { retries: 5 };
@@ -537,6 +552,7 @@ impl Collector {
             metadata.ledger_inclusion_state.clone(),
         )
     }
+    /// Insert the message with the associated metadata of a given message id to the table
     #[allow(unused_mut)]
     fn insert_message_with_metadata(
         &mut self,
@@ -574,6 +590,7 @@ impl Collector {
         // store message and metadata
         self.insert(&inherent_worker, &keyspace, message_id, message_tuple)
     }
+    /// Insert the transaction to the table
     fn insert_transaction<I: Inherent>(
         &mut self,
         inherent_worker: &I,
@@ -672,6 +689,7 @@ impl Collector {
         };
         Ok(())
     }
+    /// Insert the `InputData` to the table
     fn insert_input<I: Inherent>(
         &self,
         inherent_worker: &I,
@@ -687,6 +705,7 @@ impl Collector {
         let transaction_record = TransactionRecord::input(*message_id, input_data, inclusion_state, milestone_index);
         self.insert(inherent_worker, &self.get_keyspace(), input_id, transaction_record)
     }
+    /// Insert the `UnlockData` to the table
     fn insert_unlock<I: Inherent>(
         &self,
         inherent_worker: &I,
@@ -702,6 +721,7 @@ impl Collector {
         let transaction_record = TransactionRecord::unlock(*message_id, unlock_data, inclusion_state, milestone_index);
         self.insert(inherent_worker, &self.get_keyspace(), utxo_id, transaction_record)
     }
+    /// Insert the `Output` to the table
     fn insert_output<I: Inherent>(
         &self,
         inherent_worker: &I,
@@ -717,6 +737,7 @@ impl Collector {
         let transaction_record = TransactionRecord::output(*message_id, output, inclusion_state, milestone_index);
         self.insert(inherent_worker, &self.get_keyspace(), output_id, transaction_record)
     }
+    /// Insert the `Address` to the table
     fn insert_address<I: Inherent>(
         &self,
         inherent_worker: &I,
@@ -766,6 +787,7 @@ impl Collector {
             }
         }
     }
+    /// The low-level insert function to insert a key/value pair through an inherent worker
     fn insert<I, S, K, V>(&self, inherent_worker: &I, keyspace: &S, key: K, value: V) -> anyhow::Result<()>
     where
         I: Inherent,
@@ -778,7 +800,7 @@ impl Collector {
         insert_req.send_local(worker);
         Ok(())
     }
-
+    /// Delete the `Parents` of a given message id in the table
     fn delete_parents(
         &self,
         message_id: &MessageId,
@@ -792,6 +814,7 @@ impl Collector {
         }
         Ok(())
     }
+    /// Delete the `Indexation` of a given message id in the table
     fn delete_indexation(
         &self,
         message_id: &MessageId,
@@ -802,6 +825,7 @@ impl Collector {
         let index_pk = IndexationPK::new(indexation, partition_id, milestone_index, *message_id);
         self.delete(index_pk)
     }
+    /// Delete the transaction partitioned rows of a given message id in the table
     fn delete_transaction_partitioned_rows(
         &self,
         message_id: &MessageId,
@@ -820,6 +844,7 @@ impl Collector {
         }
         Ok(())
     }
+    /// Delete the `Address` with a given `TransactionId` and the corresponding index in the table
     fn delete_address(
         &self,
         output: &Output,
@@ -869,6 +894,7 @@ impl Collector {
         }
         Ok(())
     }
+    /// Delete the key in the `Chronicle` keyspace
     fn delete<K, V>(&self, key: K) -> anyhow::Result<()>
     where
         ChronicleKeyspace: Delete<K, V>,
@@ -886,12 +912,17 @@ impl Collector {
     }
 }
 
+/// An atomic solidifier worker
 pub struct AtomicWorker {
+    /// The arced atomic solidifier handle
     arc_handle: Arc<AtomicSolidifierHandle>,
+    /// The number of retires
     retries: usize,
 }
 
 impl AtomicWorker {
+    /// Create a new atomic solidifier worker with a solidifier handle, an milestone index, a message id, and a number
+    /// of retries
     fn new(solidifier_handle: SolidifierHandle, milestone_index: u32, message_id: MessageId, retries: usize) -> Self {
         let any_error = std::sync::atomic::AtomicBool::new(false);
         let atomic_handle = AtomicSolidifierHandle::new(solidifier_handle, milestone_index, message_id, any_error);
@@ -899,10 +930,14 @@ impl AtomicWorker {
         Self { arc_handle, retries }
     }
 }
+
+/// A simple worker with only a field which specifies the number of retires
 pub struct SimpleWorker {
+    /// The number of retires
     retries: usize,
 }
 
+/// The inherent trait to return a boxed worker for a given key/value pair in a keyspace
 trait Inherent {
     fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
     where
@@ -911,6 +946,7 @@ trait Inherent {
         V: 'static + Send + Clone;
 }
 
+/// Implement the `Inherent` trait for the simple worker
 impl Inherent for SimpleWorker {
     fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
     where
@@ -922,6 +958,7 @@ impl Inherent for SimpleWorker {
     }
 }
 
+/// Implement the `Inherent` trait for the atomic solidifier worker
 impl Inherent for AtomicWorker {
     fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
     where
