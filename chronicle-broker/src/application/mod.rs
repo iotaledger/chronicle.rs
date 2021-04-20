@@ -48,11 +48,6 @@ use std::{
     time::Duration,
 };
 
-pub use tokio::{
-    spawn,
-    sync::mpsc,
-};
-
 mod event_loop;
 mod init;
 mod starter;

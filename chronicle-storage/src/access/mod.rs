@@ -8,6 +8,19 @@ use anyhow::{
     ensure,
 };
 use bee_common::packable::Packable;
+use bee_message::{
+    address::Ed25519Address,
+    milestone::Milestone,
+    prelude::{
+        MilestoneIndex,
+        MilestonePayload,
+        Output,
+        OutputId,
+        TransactionId,
+    },
+    Message,
+    MessageId,
+};
 use bincode::Options;
 use chronicle_common::Wrapper;
 pub use delete::{

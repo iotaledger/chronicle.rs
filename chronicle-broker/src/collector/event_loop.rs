@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use bee_message::input::Input;
+use bee_message::{
+    address::Address,
+    input::Input,
+    parents::Parents,
+    payload::Payload,
+    prelude::TransactionId,
+};
 use std::sync::Arc;
 
 #[async_trait::async_trait]

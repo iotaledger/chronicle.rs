@@ -10,6 +10,7 @@ use crate::{
         SyncerHandle,
     },
 };
+use bee_message::prelude::MilestonePayload;
 use serde::{
     Deserialize,
     Serialize,

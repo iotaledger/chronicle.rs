@@ -3,40 +3,15 @@
 
 use super::*;
 use bee_common::packable::Packable;
-pub use bee_ledger::types::{
-    Balance,
-    OutputDiff,
-    Unspent,
-};
-pub use bee_message::{
-    ledger_index::LedgerIndex,
-    milestone::Milestone,
+use bee_message::{
     prelude::{
-        Address,
-        ConsumedOutput,
-        CreatedOutput,
-        Ed25519Address,
-        Input,
-        MilestoneIndex,
-        MilestonePayload,
         Output,
-        OutputId,
-        Parents,
-        Payload,
         TransactionId,
         TreasuryInput,
         UnlockBlock,
         UtxoInput,
-        HASHED_INDEX_LENGTH,
     },
-    solid_entry_point::SolidEntryPoint,
-    Message,
     MessageId,
-};
-pub use bee_snapshot::info::SnapshotInfo;
-pub use bee_tangle::{
-    flags::Flags,
-    unconfirmed_message::UnconfirmedMessage,
 };
 use std::{
     io::Cursor,
@@ -339,8 +314,10 @@ impl ColumnEncoder for TransactionData {
 /// A result struct which holds a retrieved output as well as all associated unlock blocks
 #[derive(Debug, Clone)]
 pub struct OutputRes {
+    /// The created output's message id
+    pub message_id: MessageId,
     /// The output
-    pub output: CreatedOutput,
+    pub output: Output,
     /// Zero or more unlock blocks for this output.
     /// Only one can be valid, which indicates the output `is_spent`.
     pub unlock_blocks: Vec<UnlockRes>,

@@ -11,30 +11,21 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1" }
-scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1" }
-backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1"}
-bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
+scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1.1" }
+backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1.1"}
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "7803ea0" }
+bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_repr = "0.1"
 async-trait = "0.1"
-env_logger = "0.8"
 log = "0.4"
-http = "0.2"
 rocket = { git = "https://github.com/SergioBenitez/Rocket.git", rev = "e4c2324", optional = true }
-rand = "0.8"
 hex = "0.4"
 futures = "0.3"
 anyhow = "1.0"
 thiserror = "1.0"
 bincode = "1.3"
-
-[dependencies.iota-crypto]
-git = "https://github.com/iotaledger/crypto.rs"
-rev = "c3bf565"
-features = ["ed25519", "blake2b"]
+tokio = "1.5"
 
 [dependencies.rocket_contrib]
 git = "https://github.com/SergioBenitez/Rocket.git"
@@ -42,22 +33,6 @@ rev = "e4c2324"
 default-features = false
 optional = true
 features = ["json"]
-
-[dependencies.tokio]
-version = "1.4"
-default-features = false
-features = [
-    "io-std",
-    "fs",
-    "macros",
-    "sync",
-    "net",
-    "io-util",
-    "time",
-    "rt-multi-thread",
-    "signal",
-    "full"
-]
 
 [features]
 default = ["rocket_listener"]

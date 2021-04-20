@@ -259,7 +259,7 @@ impl RowsDecoder<OutputId, OutputRes> for ChronicleKeyspace {
             Self::Row::rows_iter(decoder)?.map(|row| row.into_inner())
         {
             match transaction_data {
-                TransactionData::Output(o) => output = Some(CreatedOutput::new(message_id, o)),
+                TransactionData::Output(o) => output = Some((message_id, o)),
                 TransactionData::Unlock(u) => unlock_blocks.push(UnlockRes {
                     message_id,
                     block: u.unlock_block,
@@ -268,7 +268,11 @@ impl RowsDecoder<OutputId, OutputRes> for ChronicleKeyspace {
                 _ => (),
             }
         }
-        Ok(output.map(|output| OutputRes { output, unlock_blocks }))
+        Ok(output.map(|output| OutputRes {
+            message_id: output.0,
+            output: output.1,
+            unlock_blocks,
+        }))
     }
 }
 

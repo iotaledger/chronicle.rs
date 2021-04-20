@@ -1,6 +1,16 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use bee_message::{
+    address::Address,
+    input::Input,
+    payload::Payload,
+    prelude::{
+        MilestoneIndex,
+        TransactionId,
+    },
+};
+
 use super::*;
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {

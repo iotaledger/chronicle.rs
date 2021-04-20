@@ -12,6 +12,7 @@ use bee_message::{
         Essence,
         TransactionPayload,
     },
+    prelude::MilestoneIndex,
 };
 use std::collections::{
     BinaryHeap,

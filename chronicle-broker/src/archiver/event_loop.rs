@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use bee_message::prelude::MilestoneIndex;
 use chronicle_common::Wrapper;
 
 #[async_trait::async_trait]

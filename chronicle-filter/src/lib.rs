@@ -1,7 +1,6 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-
-use chronicle_storage::access::Message;
+use bee_message::Message;
 use std::borrow::Cow;
 
 pub struct FilterResponse {

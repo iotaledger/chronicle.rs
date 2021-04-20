@@ -1,6 +1,13 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use bee_message::{
+    prelude::{
+        MilestoneIndex,
+        OutputId,
+    },
+    Message,
+};
 use bee_rest_api::types::dtos::{
     OutputDto,
     PayloadDto,
@@ -9,14 +16,10 @@ use chronicle_storage::access::{
     AddressRecord,
     IndexationRecord,
     LedgerInclusionState,
-    Message,
     MessageMetadata,
-    MilestoneIndex,
-    OutputId,
     ParentRecord,
     Partitioned,
 };
-use scylla_cql::TryInto;
 use serde::{
     Deserialize,
     Serialize,
@@ -177,7 +180,7 @@ impl TryFrom<Message> for ListenerResponse {
         Ok(ListenerResponse::Message {
             network_id: message.network_id().to_string(),
             parents: message.parents().iter().map(|p| p.to_string()).collect(),
-            payload: message.payload().as_ref().map(TryInto::try_into).transpose()?,
+            payload: message.payload().as_ref().map(Into::into),
             nonce: message.nonce().to_string(),
         })
     }

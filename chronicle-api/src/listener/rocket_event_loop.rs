@@ -4,6 +4,17 @@
 use super::*;
 use crate::responses::*;
 use anyhow::anyhow;
+use bee_message::{
+    milestone::Milestone,
+    prelude::{
+        Ed25519Address,
+        Message,
+        MessageId,
+        MilestoneIndex,
+        OutputId,
+        TransactionId,
+    },
+};
 use chronicle_common::{
     config::PartitionConfig,
     metrics::{
@@ -20,13 +31,8 @@ use chronicle_common::{
 };
 use chronicle_storage::{
     access::{
-        Ed25519Address,
         GetSelectRequest,
-        MessageId,
         MessageMetadata,
-        Milestone,
-        MilestoneIndex,
-        OutputId,
         OutputRes,
         PartitionId,
         Partitioned,
@@ -856,15 +862,11 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
         is_spent
     };
     Ok(ListenerResponse::Output {
-        message_id: output_data.output.message_id().to_string(),
+        message_id: output_data.message_id.to_string(),
         transaction_id: output_id.transaction_id().to_string(),
         output_index: output_id.index(),
         is_spent,
-        output: output_data
-            .output
-            .inner()
-            .try_into()
-            .map_err(|e: String| ListenerError::Other(anyhow!(e)))?,
+        output: output_data.output.borrow().into(),
     })
 }
 
