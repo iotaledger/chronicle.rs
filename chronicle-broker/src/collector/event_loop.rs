@@ -342,7 +342,8 @@ impl Collector {
             let _ = solidifier_handle.send(full_msg_event);
         };
     }
-    /// Push a `Close` message_id (which doesn't belong to all solidifiers with a given milestone index) to the solidifier
+    /// Push a `Close` message_id (which doesn't belong to all solidifiers with a given milestone index) to the
+    /// solidifier
     fn push_close_to_solidifier(&self, partition_id: u8, message_id: MessageId, try_ms_index: u32) {
         if let Some(solidifier_handle) = self.solidifier_handles.get(&partition_id) {
             let full_msg_event = SolidifierEvent::Close(message_id, try_ms_index);

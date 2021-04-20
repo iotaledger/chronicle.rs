@@ -1,16 +1,32 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use crate::{application::*, requester::*, solidifier::*};
+use crate::{
+    application::*,
+    requester::*,
+    solidifier::*,
+};
 use anyhow::bail;
 use bee_message::{
     output::Output,
-    payload::transaction::{Essence, TransactionPayload},
+    payload::transaction::{
+        Essence,
+        TransactionPayload,
+    },
 };
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::{
+    BinaryHeap,
+    VecDeque,
+};
 
-use chronicle_common::config::{PartitionConfig, StorageConfig};
+use chronicle_common::config::{
+    PartitionConfig,
+    StorageConfig,
+};
 use lru::LruCache;
-use std::ops::{Deref, DerefMut};
+use std::ops::{
+    Deref,
+    DerefMut,
+};
 
 mod event_loop;
 mod init;

@@ -3,16 +3,28 @@
 use crate::{
     application::*,
     archiver::LogFile,
-    solidifier::{FullMessage, MilestoneData},
+    solidifier::{
+        FullMessage,
+        MilestoneData,
+    },
 };
 use bee_message::{
     output::Output,
-    payload::transaction::{Essence, TransactionPayload},
+    payload::transaction::{
+        Essence,
+        TransactionPayload,
+    },
 };
-use chronicle_common::{config::PartitionConfig, Synckey};
+use chronicle_common::{
+    config::PartitionConfig,
+    Synckey,
+};
 use std::{
     collections::hash_map::IntoIter,
-    ops::{Deref, DerefMut},
+    ops::{
+        Deref,
+        DerefMut,
+    },
     sync::atomic::Ordering,
 };
 
@@ -253,8 +265,8 @@ where
             retries,
         }
     }
-    /// Create a new boxed atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a number
-    /// of retries
+    /// Create a new boxed atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a
+    /// number of retries
     pub fn boxed(
         handle: std::sync::Arc<AtomicImporterHandle<S>>,
         keyspace: S,
@@ -345,7 +357,8 @@ impl<S> SyncWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
-    /// Create a new sync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a number of retries
+    /// Create a new sync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a number of
+    /// retries
     pub fn new(handle: ImporterHandle, keyspace: S, synced_record: SyncRecord, retries: usize) -> Self {
         Self {
             handle,
@@ -354,7 +367,8 @@ where
             retries,
         }
     }
-    ///  Create a new boxed ync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a number of retries
+    ///  Create a new boxed ync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a
+    /// number of retries
     pub fn boxed(handle: ImporterHandle, keyspace: S, synced_record: SyncRecord, retries: usize) -> Box<Self> {
         Box::new(Self::new(handle, keyspace, synced_record, retries))
     }
@@ -425,7 +439,8 @@ impl<S> MilestoneDataWorker<S>
 where
     S: 'static + Insert<Synckey, SyncRecord>,
 {
-    /// Create a new milestone data worker with an importer handle, a keyspace, a milestone index, and a number of retries
+    /// Create a new milestone data worker with an importer handle, a keyspace, a milestone index, and a number of
+    /// retries
     fn new(importer_handle: ImporterHandle, keyspace: S, milestone_index: u32, retries: usize) -> Self {
         let any_error = std::sync::atomic::AtomicBool::new(false);
         let atomic_handle =
