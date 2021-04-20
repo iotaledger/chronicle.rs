@@ -25,7 +25,7 @@ lru = "0.6"
 rand = "0.8"
 url = { version = "2.2", features = ["serde"] }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "7803ea0" }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
 hex = "0.4"
 anyhow = "1.0"

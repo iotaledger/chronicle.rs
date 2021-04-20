@@ -13,7 +13,7 @@ chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1.1" }
 backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1.1"}
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", rev = "7803ea0" }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
