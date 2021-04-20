@@ -63,7 +63,10 @@ impl Importer {
             loop {
                 if let Some(milestone_data) = log_file.next().await? {
                     let milestone_index = milestone_data.milestone_index();
-                    if self.resume && self.sync_data.completed.iter().any(|r| r.contains(&milestone_index)) {
+                    // check if the milestone_index is within the provided import range
+                    let not_in_import_range = !self.import_range.contains(&milestone_index);
+                    let resume = self.resume && self.sync_data.completed.iter().any(|r| r.contains(&milestone_index));
+                    if resume || not_in_import_range {
                         // skip this synced milestone data
                         if scan_budget > 0 {
                             scan_budget -= 1;

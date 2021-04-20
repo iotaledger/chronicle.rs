@@ -24,6 +24,7 @@ use std::{
     ops::{
         Deref,
         DerefMut,
+        Range,
     },
     sync::atomic::Ordering,
 };
@@ -37,6 +38,7 @@ builder!(ImporterBuilder {
     file_path: PathBuf,
     retries_per_query: usize,
     resume: bool,
+    import_range: Range<u32>,
     parallelism: u8,
     chronicle_id: u8
 });
@@ -106,6 +108,7 @@ pub struct Importer {
     chronicle_id: u8,
     parallelism: u8,
     resume: bool,
+    import_range: Range<u32>,
     sync_data: SyncData,
     in_progress_milestones_data: HashMap<u32, IntoIter<MessageId, FullMessage>>,
     handle: Option<ImporterHandle>,
@@ -135,6 +138,10 @@ impl Builder for ImporterBuilder {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let handle = Some(ImporterHandle { tx });
         let inbox = ImporterInbox { rx };
+        let import_range = self.import_range.unwrap_or(Range {
+            start: 1,
+            end: i32::MAX as u32,
+        });
         Self::State {
             service: Service::new(),
             file_path: self.file_path.unwrap(),
@@ -146,6 +153,7 @@ impl Builder for ImporterBuilder {
             in_progress_milestones_data: HashMap::new(),
             retries_per_query: self.retries_per_query.unwrap_or(10),
             resume: self.resume.unwrap_or(true),
+            import_range,
             sync_data: SyncData::default(),
             handle,
             inbox,
