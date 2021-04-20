@@ -15,7 +15,10 @@ use std::{
     },
     path::PathBuf,
 };
-use tokio::io::AsyncBufReadExt;
+use tokio::io::{
+    AsyncBufReadExt,
+    BufReader,
+};
 
 use tokio::{
     fs::{
@@ -96,7 +99,7 @@ pub struct LogFile {
     /// NotIncluded (yet) milestone data
     to_ms_index: u32,
     upper_ms_limit: u32,
-    file: File,
+    file: BufReader<File>,
     /// Identifier if it had io error
     maybe_corrupted: bool,
     finished: bool,
@@ -118,7 +121,7 @@ impl LogFile {
             from_ms_index: milestone_index,
             to_ms_index: milestone_index,
             upper_ms_limit: opt_upper_limit.unwrap_or(u32::MAX),
-            file,
+            file: BufReader::new(file),
             maybe_corrupted: false,
             finished: false,
         })
@@ -131,7 +134,7 @@ impl LogFile {
             self.maybe_corrupted = true;
             return Err(e);
         };
-        if let Err(e) = self.file.sync_all().await {
+        if let Err(e) = self.file.get_mut().sync_all().await {
             self.maybe_corrupted = true;
             return Err(e);
         };
@@ -164,38 +167,25 @@ impl LogFile {
             self.finished = true;
             return Ok(None);
         }
-        let mut buf: [u8; 4] = [0; 4];
-        match self.file.read_exact(&mut buf).await {
+        let mut milestone_data_line: String = String::new();
+        match self.file.read_line(&mut milestone_data_line).await {
             Ok(n) => {
                 if n == 0 {
                     self.finished = true;
                     return Ok(None);
                 }
-                let milestone_data_len = u32::from_be_bytes(buf) as usize;
-                let mut milestone_data_buf: Vec<u8> = vec![0; milestone_data_len];
-                match self.file.read_exact(&mut milestone_data_buf).await {
-                    Ok(n) => {
-                        if n == 0 {
-                            self.maybe_corrupted = true;
-                            return Ok(None);
-                        }
-                        self.len -= 4;
-                        self.len -= milestone_data_len as u64;
-                        let milestone_data: MilestoneData =
-                            serde_json::from_slice(&milestone_data_buf).map_err(|e| {
-                                self.maybe_corrupted = true;
-                                let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
-                                std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
-                            })?;
-                        Ok(Some(milestone_data))
-                    }
-                    Err(err) => {
-                        self.maybe_corrupted = true;
-                        return Err(err);
-                    }
-                }
+                let milestone_data: MilestoneData = serde_json::from_str(&milestone_data_line).map_err(|e| {
+                    self.maybe_corrupted = true;
+                    let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
+                })?;
+                self.len -= milestone_data_line.len() as u64;
+                Ok(Some(milestone_data))
             }
-            Err(err) => return Err(err),
+            Err(err) => {
+                self.maybe_corrupted = true;
+                return Err(err);
+            }
         }
     }
 
@@ -305,7 +295,7 @@ impl TryFrom<PathBuf> for LogFile {
                 from_ms_index,
                 to_ms_index,
                 upper_ms_limit: to_ms_index,
-                file,
+                file: BufReader::new(file),
                 maybe_corrupted: false,
                 finished: false,
             })
