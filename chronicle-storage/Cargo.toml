@@ -14,7 +14,6 @@ path = "src/lib.rs"
 chronicle-common = { path = "../chronicle-common" }
 scylla = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
 scylla-cql = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "scylla" }
-bee-tangle = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-ledger = { git = "https://github.com/iotaledger/bee.git", rev = "2825bf5" }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 async-trait = "0.1.42"
