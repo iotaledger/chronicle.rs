@@ -20,13 +20,13 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
         supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         status?;
-        // check if it's already EOF and nothing to in_progress
+        // check if it's already EOF and nothing to progress
         if self.in_progress_milestones_data.is_empty() && self.eof {
             warn!("Skipped already imported LogFile: {}", self.get_name());
             return Ok(());
         }
         self.service.update_status(ServiceStatus::Running);
-        let event = BrokerEvent::Children(BrokerChild::Importer(self.service.clone(), status));
+        let event = BrokerEvent::Children(BrokerChild::Importer(self.service.clone(), status, self.parallelism));
         if let Some(supervisor) = supervisor {
             supervisor.send(event).ok();
             while let Some(event) = self.inbox.recv().await {
@@ -38,13 +38,29 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
                                 let iter = self.in_progress_milestones_data.remove(&milestone_index).unwrap();
                                 assert!(iter.len() == 0);
                                 info!("Imported milestone data for milestone index: {}", milestone_index);
+                                let ms_bytes_size = self
+                                    .in_progress_milestones_data_bytes_size
+                                    .remove(&milestone_index)
+                                    .unwrap();
+                                let skipped = false;
+                                Self::imported(
+                                    supervisor,
+                                    self.from_ms,
+                                    self.to_ms,
+                                    self.log_file_size,
+                                    milestone_index,
+                                    ms_bytes_size,
+                                    skipped,
+                                );
                                 // check if we should process more
                                 if !self.service.is_stopping() {
                                     // process one more
-                                    if let Some(milestone_data) = self.next_milestone_data().await.map_err(|e| {
-                                        error!("Unable to fetch next milestone data. Error: {}", e);
-                                        Need::Abort
-                                    })? {
+                                    if let Some(milestone_data) =
+                                        self.next_milestone_data(supervisor).await.map_err(|e| {
+                                            error!("Unable to fetch next milestone data. Error: {}", e);
+                                            Need::Abort
+                                        })?
+                                    {
                                         let milestone_index = milestone_data.milestone_index();
                                         let mut iter = milestone_data.into_iter();
                                         self.insert_some_messages(milestone_index, &mut iter)

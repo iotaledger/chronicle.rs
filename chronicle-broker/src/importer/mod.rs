@@ -21,6 +21,7 @@ use chronicle_common::{
 };
 use std::{
     collections::hash_map::IntoIter,
+    net::SocketAddr,
     ops::{
         Deref,
         DerefMut,
@@ -109,6 +110,12 @@ pub struct Importer {
     file_path: PathBuf,
     /// The log file
     log_file: Option<LogFile>,
+    /// LogFile total_size,
+    log_file_size: u64,
+    /// from milestone index
+    from_ms: u32,
+    /// to milestone index
+    to_ms: u32,
     /// The default Chronicle keyspace
     default_keyspace: ChronicleKeyspace,
     /// The partition configuration
@@ -125,8 +132,9 @@ pub struct Importer {
     import_range: Range<u32>,
     /// The database sync data
     sync_data: SyncData,
-    /// The map from the milestones to the data in progress
+    /// In progress milestones data
     in_progress_milestones_data: HashMap<u32, IntoIter<MessageId, FullMessage>>,
+    in_progress_milestones_data_bytes_size: HashMap<u32, usize>,
     /// The importer handle
     handle: Option<ImporterHandle>,
     /// The importer inbox to receive events
@@ -165,11 +173,15 @@ impl Builder for ImporterBuilder {
             service: Service::new(),
             file_path: self.file_path.unwrap(),
             log_file: None,
+            log_file_size: 0,
+            from_ms: 0,
+            to_ms: 0,
             default_keyspace,
             partition_config,
             parallelism: self.parallelism.unwrap_or(10),
             chronicle_id: self.chronicle_id.unwrap(),
             in_progress_milestones_data: HashMap::new(),
+            in_progress_milestones_data_bytes_size: HashMap::new(),
             retries_per_query: self.retries_per_query.unwrap_or(10),
             resume: self.resume.unwrap_or(true),
             import_range,
@@ -196,9 +208,10 @@ impl Name for Importer {
 
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> AknShutdown<Importer> for BrokerHandle<H> {
-    async fn aknowledge_shutdown(self, mut _state: Importer, _status: Result<(), Need>) {
-        _state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Importer(_state.service.clone(), _status));
+    async fn aknowledge_shutdown(self, mut state: Importer, status: Result<(), Need>) {
+        let parallelism = state.parallelism;
+        state.service.update_status(ServiceStatus::Stopped);
+        let event = BrokerEvent::Children(BrokerChild::Importer(state.service.clone(), status, parallelism));
         let _ = self.send(event);
     }
 }

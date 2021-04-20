@@ -13,6 +13,21 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
             self.service.update_status(ServiceStatus::Running);
             while let Some(event) = self.inbox.recv().await {
                 match event {
+                    BrokerEvent::Importer(importer_session) => match importer_session {
+                        ImporterSession::ProgressBar {
+                            log_file_size,
+                            from_ms,
+                            to_ms,
+                            milestone_index,
+                            ms_bytes_size,
+                            skipped,
+                        } => {
+                            todo!("respond to all ws sockets")
+                        }
+                        ImporterSession::Finish { from_ms, to_ms, msg } => {
+                            todo!("respond to all ws sockets")
+                        }
+                    },
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
                         Ok(my_event) => match my_event {
                             ChronicleBrokerThrough::Shutdown => {
@@ -48,13 +63,8 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                     Topology::RemoveMqttMessages(url) => {
                                         self.remove_mqtt::<Messages>(MqttType::Messages, url)
                                     }
-                                    Topology::ImportLogFile(url) => {
-                                        if let Ok(file_path) = url.to_file_path() {
-                                            // build importer
-                                            self.spawn_importer(file_path);
-                                        } else {
-                                            // TODO impl download the file from the provided url
-                                        }
+                                    Topology::Import { .. } => {
+                                        self.handle_import(topology).await;
                                     }
                                 }
                             }
@@ -84,8 +94,18 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                             BrokerChild::Collector(service) => {
                                 self.service.update_microservice(service.get_name(), service.clone());
                             }
-                            BrokerChild::Importer(service, _status) => {
-                                self.service.update_microservice(service.get_name(), service.clone());
+                            BrokerChild::Importer(service, _status, parallelism) => {
+                                if service.is_stopped() {
+                                    self.service.delete_microservice(&service.get_name());
+                                    // return parallelism
+                                    self.parallelism_points += parallelism;
+                                    // check if there are any pending
+                                    if let Some(import_topology) = self.pending_imports.pop() {
+                                        self.handle_import(import_topology).await;
+                                    }
+                                } else {
+                                    self.service.update_microservice(service.get_name(), service.clone());
+                                }
                             }
                             BrokerChild::Solidifier(service, solidifier_status) => {
                                 // Handle abort
@@ -283,17 +303,94 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             None
         }
     }
-
-    pub(crate) fn spawn_importer(&self, file_path: PathBuf) {
-        let importer = ImporterBuilder::new()
+    async fn handle_import(&mut self, import_topology: Topology) {
+        if let Topology::Import {
+            ref path,
+            ref resume,
+            ref import_range,
+        } = import_topology
+        {
+            // check if we have enough parallelism points
+            if self.parallelism_points == 0 {
+                // add it to pending list
+                self.pending_imports.push(import_topology);
+                return ();
+            }
+            if let Some(path_str) = path.to_str() {
+                if path.is_file() {
+                    // ensure importer is not already active
+                    if self.service.microservices.get(&path_str.to_owned()).is_none() {
+                        // build importer
+                        self.spawn_importer(path.clone(), *resume, import_range.clone(), self.parallelism_points);
+                    } else {
+                        // TODO tell CLI
+                    }
+                } else if path.is_dir() {
+                    self.spawn_importers(path.clone(), *resume, import_range.clone()).await;
+                } else {
+                    // TODO Tell cli
+                }
+            };
+        }
+    }
+    pub(crate) fn spawn_importer(
+        &mut self,
+        file_path: PathBuf,
+        resume: bool,
+        import_range: Option<Range<u32>>,
+        parallelism: u8,
+    ) {
+        let mut importer_builder = ImporterBuilder::new();
+        if let Some(import_range) = import_range {
+            importer_builder = importer_builder.import_range(import_range);
+        };
+        let importer = importer_builder
             .file_path(file_path)
+            .resume(resume)
+            .parallelism(parallelism)
             .retries_per_query(50) // TODO get it from config
-            .parallelism(25) // TODO get it from config
             .chronicle_id(0) // TODO get it from config
             .build();
+        let service = Service::new();
+        self.service.update_microservice(importer.get_name(), service);
         tokio::spawn(importer.start(self.handle.clone()));
     }
-
+    async fn spawn_importers(&mut self, path: PathBuf, resume: bool, import_range: Option<Range<u32>>) {
+        let mut import_files = Vec::new();
+        if let Ok(mut dir_entry) = tokio::fs::read_dir(&path).await {
+            while let Ok(Some(p)) = dir_entry.next_entry().await {
+                let file_path = p.path();
+                if file_path.is_file() {
+                    import_files.push(file_path);
+                }
+            }
+        };
+        let import_files_len = import_files.len();
+        if import_files_len == 0 {
+            // TODO respond to CLI no logfiles in the provided dir
+            return ();
+        }
+        if self.parallelism_points as usize > import_files_len {
+            self.parallelism_points = (self.parallelism_points as usize / import_files_len) as u8;
+            for file_path in import_files {
+                self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points)
+            }
+            self.parallelism_points = 0;
+        } else {
+            let file_path = import_files.pop().unwrap();
+            self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points);
+            self.parallelism_points = 0;
+            // convert any remaining into pending_imports
+            for file_path in import_files {
+                let topology = Topology::Import {
+                    path: file_path,
+                    resume,
+                    import_range: import_range.clone(),
+                };
+                self.pending_imports.push(topology);
+            }
+        }
+    }
     pub(crate) async fn response_to_sockets<T: Serialize>(&mut self, msg: &SocketMsg<T>) {
         for socket in self.websockets.values_mut() {
             let j = serde_json::to_string(&msg).unwrap();

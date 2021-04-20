@@ -57,12 +57,13 @@ mod terminating;
 pub trait ChronicleBrokerScope: LauncherSender<ChronicleBrokerBuilder<Self>> {}
 impl<H: LauncherSender<ChronicleBrokerBuilder<H>>> ChronicleBrokerScope for H {}
 
-// Scylla builder
+// Broker builder
 builder!(
     #[derive(Clone)]
     ChronicleBrokerBuilder<H> {
         listener_handle: ListenerHandle,
         reschedule_after: Duration,
+        parallelism: u8,
         collector_count: u8
 });
 
@@ -99,6 +100,9 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     listener_handle: Option<ListenerHandle>,
     mqtt_handles: HashMap<String, MqttHandle>,
     asked_to_shutdown: HashMap<String, ()>,
+    parallelism: u8,
+    parallelism_points: u8,
+    pending_imports: Vec<Topology>,
     collector_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
@@ -125,20 +129,50 @@ pub enum BrokerChild {
     Archiver(Service, Result<(), Need>),
     /// Used by Syncer to keep Broker up to date with its service
     Syncer(Service, Result<(), Need>),
-    /// Used by Importer to keep Broker up to date with its service
-    Importer(Service, Result<(), Need>),
+    /// Used by Importer to keep Broker up to date with its service, u8 is parallelism
+    Importer(Service, Result<(), Need>, u8),
     /// Used by Websocket to keep Broker up to date with its service
     Websocket(Service, Option<WsTx>),
 }
 
 /// Event type of the broker Application
 pub enum BrokerEvent<T> {
+    /// Importer Session
+    Importer(ImporterSession),
     /// It's the passthrough event, which the scylla application will receive from
     Passthrough(T),
     /// Used by broker children to push their service
     Children(BrokerChild),
     /// Used by Scylla to keep Broker up to date with scylla status
     Scylla(Service),
+}
+
+/// Enum used by importer to keep the sockets up to date with most recent progress.
+pub enum ImporterSession {
+    /// Create/update progress bar state
+    ProgressBar {
+        /// Total size of the logfile
+        log_file_size: u64,
+        /// LogFile start range
+        from_ms: u32,
+        /// LogFile end range
+        to_ms: u32,
+        /// milestone data bytes size
+        ms_bytes_size: usize,
+        /// Milestone index
+        milestone_index: u32,
+        /// Identify whether it skipped/resume the milestone_index or imported.
+        skipped: bool,
+    },
+    /// Finish the progress bar with message
+    Finish {
+        /// LogFile start range
+        from_ms: u32,
+        /// LogFile end range
+        to_ms: u32,
+        /// Finish the progress bar using this msg.
+        msg: String,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -153,7 +187,14 @@ pub enum Topology {
     /// Remove a MQTT Messages Referenced feed source
     RemoveMqttMessagesReferenced(Url),
     /// Import a log file using the given url
-    ImportLogFile(Url),
+    Import {
+        /// File or dir path which supposed to contain LogFiles
+        path: PathBuf,
+        /// Resume the importing process
+        resume: bool,
+        /// Provide optional import range
+        import_range: Option<Range<u32>>,
+    },
 }
 
 #[derive(Deserialize, Serialize)]
@@ -374,6 +415,7 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
         };
         let logs_dir_path =
             PathBuf::from_str(&config.broker_config.logs_dir).expect("Failed to parse configured logs path!");
+        let parallelism = self.parallelism.unwrap_or(20);
         ChronicleBroker::<H> {
             service: Service::new(),
             websockets: HashMap::new(),
@@ -384,6 +426,9 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
             collector_handles: HashMap::new(),
             solidifier_handles: HashMap::new(),
             syncer_handle: None,
+            parallelism,
+            parallelism_points: parallelism,
+            pending_imports: Vec::new(),
             logs_dir_path,
             handle,
             inbox,

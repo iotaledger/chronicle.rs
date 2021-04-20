@@ -26,7 +26,6 @@ use tokio::{
     },
     io::{
         AsyncBufReadExt,
-        AsyncReadExt,
         AsyncWriteExt,
         BufReader,
     },
