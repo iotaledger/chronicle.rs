@@ -174,6 +174,13 @@ pub enum ImporterSession {
         /// Finish the progress bar using this msg.
         msg: String,
     },
+    /// Return error
+    PathError {
+        /// Invalid dir or file path
+        path: PathBuf,
+        /// Useful debug message
+        msg: String,
+    },
 }
 
 /// Topology event

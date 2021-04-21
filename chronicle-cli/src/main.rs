@@ -357,6 +357,9 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                         ImporterSession::Finish { from_ms, to_ms, msg } => {
                                             println!("Finished importing {}..{}: {}", from_ms, to_ms, msg);
                                         }
+                                        ImporterSession::PathError { path, msg } => {
+                                            println!("ErrorPath, path: {:?}, msg: {:?}", path, msg);
+                                        }
                                     }
                                 }
                             }
