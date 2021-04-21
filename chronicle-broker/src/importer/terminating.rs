@@ -24,6 +24,12 @@ impl<H: ChronicleBrokerScope> Terminating<BrokerHandle<H>> for Importer {
             };
             let event = BrokerEvent::Importer(importer_session);
             supervisor.as_mut().expect("Expected BrokerHandle").send(event).ok();
+        } else {
+            let event = BrokerEvent::Importer(ImporterSession::PathError {
+                path: self.file_path.clone(),
+                msg: "Invalid LogFile path".into(),
+            });
+            supervisor.as_mut().expect("Expected BrokerHandle").send(event).ok();
         }
         self.service.update_status(ServiceStatus::Stopping);
         let event = BrokerEvent::Children(BrokerChild::Importer(self.service.clone(), status, self.parallelism));

@@ -13,21 +13,10 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
             self.service.update_status(ServiceStatus::Running);
             while let Some(event) = self.inbox.recv().await {
                 match event {
-                    BrokerEvent::Importer(importer_session) => match importer_session {
-                        ImporterSession::ProgressBar {
-                            log_file_size,
-                            from_ms,
-                            to_ms,
-                            milestone_index,
-                            ms_bytes_size,
-                            skipped,
-                        } => {
-                            todo!("respond to all ws sockets")
-                        }
-                        ImporterSession::Finish { from_ms, to_ms, msg } => {
-                            todo!("respond to all ws sockets")
-                        }
-                    },
+                    BrokerEvent::Importer(importer_session) => {
+                        let socket_msg = SocketMsg::ChronicleBroker(importer_session);
+                        self.response_to_sockets(&socket_msg).await;
+                    }
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
                         Ok(my_event) => match my_event {
                             ChronicleBrokerThrough::Shutdown => {
@@ -316,44 +305,55 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 self.pending_imports.push(import_topology);
                 return ();
             }
-            if let Some(path_str) = path.to_str() {
-                if path.is_file() {
-                    // ensure importer is not already active
-                    if self.service.microservices.get(&path_str.to_owned()).is_none() {
-                        // build importer
-                        self.spawn_importer(path.clone(), *resume, import_range.clone(), self.parallelism_points);
-                    } else {
-                        // TODO tell CLI
-                    }
-                } else if path.is_dir() {
-                    self.spawn_importers(path.clone(), *resume, import_range.clone()).await;
-                } else {
-                    // TODO Tell cli
-                }
-            };
+            if path.is_file() {
+                // build importer
+                self.spawn_importer(path.clone(), *resume, import_range.clone(), self.parallelism_points)
+                    .await;
+            } else if path.is_dir() {
+                self.spawn_importers(path.clone(), *resume, import_range.clone()).await;
+            } else {
+                let event = ImporterSession::PathError {
+                    path: path.clone(),
+                    msg: "Invalid path".into(),
+                };
+                let socket_msg = SocketMsg::ChronicleBroker(event);
+                self.response_to_sockets(&socket_msg).await;
+            }
         }
     }
-    pub(crate) fn spawn_importer(
+    async fn spawn_importer(
         &mut self,
         file_path: PathBuf,
         resume: bool,
         import_range: Option<Range<u32>>,
         parallelism: u8,
     ) {
-        let mut importer_builder = ImporterBuilder::new();
-        if let Some(import_range) = import_range {
-            importer_builder = importer_builder.import_range(import_range);
-        };
-        let importer = importer_builder
-            .file_path(file_path)
-            .resume(resume)
-            .parallelism(parallelism)
-            .retries_per_query(50) // TODO get it from config
-            .chronicle_id(0) // TODO get it from config
-            .build();
-        let service = Service::new();
-        self.service.update_microservice(importer.get_name(), service);
-        tokio::spawn(importer.start(self.handle.clone()));
+        if let Some(path_str) = file_path.to_str() {
+            if self.service.microservices.get(&path_str.to_owned()).is_some() {
+                return ();
+            }
+            let mut importer_builder = ImporterBuilder::new();
+            if let Some(import_range) = import_range {
+                importer_builder = importer_builder.import_range(import_range);
+            };
+            let importer = importer_builder
+                .file_path(file_path)
+                .resume(resume)
+                .parallelism(parallelism)
+                .retries_per_query(50) // TODO get it from config
+                .chronicle_id(0) // TODO get it from config
+                .build();
+            let service = Service::new();
+            self.service.update_microservice(importer.get_name(), service);
+            tokio::spawn(importer.start(self.handle.clone()));
+        } else {
+            let event = ImporterSession::PathError {
+                path: file_path,
+                msg: "Unable to convert path to string".into(),
+            };
+            let socket_msg = SocketMsg::ChronicleBroker(event);
+            self.response_to_sockets(&socket_msg).await;
+        }
     }
     async fn spawn_importers(&mut self, path: PathBuf, resume: bool, import_range: Option<Range<u32>>) {
         let mut import_files = Vec::new();
@@ -367,18 +367,26 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
         };
         let import_files_len = import_files.len();
         if import_files_len == 0 {
-            // TODO respond to CLI no logfiles in the provided dir
+            let event = ImporterSession::PathError {
+                path,
+                msg: "No LogFiles in the provided path".into(),
+            };
+            let socket_msg = SocketMsg::ChronicleBroker(event);
+            self.response_to_sockets(&socket_msg).await;
             return ();
         }
         if self.parallelism_points as usize > import_files_len {
             self.parallelism_points = (self.parallelism_points as usize / import_files_len) as u8;
             for file_path in import_files {
                 self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points)
+                    .await
             }
             self.parallelism_points = 0;
         } else {
-            let file_path = import_files.pop().unwrap();
-            self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points);
+            // unwrap is safe
+            let file_path = import_files.pop().expect("Expected import file");
+            self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points)
+                .await;
             self.parallelism_points = 0;
             // convert any remaining into pending_imports
             for file_path in import_files {
