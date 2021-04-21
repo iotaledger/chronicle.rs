@@ -127,15 +127,18 @@ async fn handle_message(msg: Message, tx: &mut SplitSink<WebSocket, Message>) ->
                                 }
                             }
                         }
-                        // Get the response if there is one
-                        if let Some(res) = stream.next().await {
+                        // Get the responses
+                        while let Some(res) = stream.next().await {
+                            log::debug!("Response to websocket: {:?}", res);
                             // Send the response back to the original peer
                             match res.map(|msg| msg.to_text().map(String::from)).and_then(|r| r) {
                                 Ok(msg) => {
                                     tx.send(warp::ws::Message::text(msg)).await.ok();
                                 }
                                 Err(e) => {
-                                    tx.send(warp::ws::Message::text(e.to_string())).await.ok();
+                                    tx.send(warp::ws::Message::close_with(500 as u16, e.to_string()))
+                                        .await
+                                        .ok();
                                 }
                             }
                         }

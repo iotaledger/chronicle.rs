@@ -148,6 +148,7 @@ pub enum BrokerEvent<T> {
 }
 
 /// Enum used by importer to keep the sockets up to date with most recent progress.
+#[derive(Deserialize, Serialize, Debug)]
 pub enum ImporterSession {
     /// Create/update progress bar state
     ProgressBar {
@@ -175,8 +176,8 @@ pub enum ImporterSession {
     },
 }
 
-#[derive(Deserialize, Serialize, Debug)]
 /// Topology event
+#[derive(Deserialize, Serialize, Debug)]
 pub enum Topology {
     /// Add new MQTT Messages feed source
     AddMqttMessages(Url),

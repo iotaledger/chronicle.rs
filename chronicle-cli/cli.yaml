@@ -67,12 +67,19 @@ subcommands:
             short: n
             long: noconnect
             help: Skip trying to connect to the running service and just update the config
-            conflicts_with:
-              - list
   - brokers:
       about: Manage Chronicle brokers
       settings:
         - ArgRequiredElseHelp
+      args:
+        - list:
+            short: l
+            long: list
+            help: List the running brokers
+        - skip-connection:
+            short: n
+            long: noconnect
+            help: Skip trying to connect to the running service and just update the config
       subcommands:
         - add:
             short: a
@@ -93,29 +100,27 @@ subcommands:
                   value_name: ENDPOINT_ADDRESSES
                   required: false
                   multiple: true
-                  help: The TCP endpoint addresses and port which will be used to fetch missing messages (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
-              - skip-connection:
-                  short: n
-                  long: noconnect
-                  help: Skip trying to connect to the running service and just update the config
+                  help: The endpoint addresses which will be used to fetch missing messages (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
         - remove:
             short: r
             about: Remove the broker instance with the given id
             settings:
               - ArgRequiredElseHelp
             args:
-              - id:
+              - mqtt-address:
+                  short: m
                   takes_value: true
-                  value_name: ID
+                  value_name: MQTT_ADDRESSES
                   required: true
-                  help: The unique ID of the broker
-              - skip-connection:
-                  short: n
-                  long: noconnect
-                  help: Skip trying to connect to the running service and just update the config
-        - list:
-            short: l
-            about: List the running brokers
+                  multiple: true
+                  help: The MQTT addresses to remove (ex. tcp://api.hornet-0.testnet.chrysalis2.com:1883)
+              - endpoint-address:
+                  short: e
+                  takes_value: true
+                  value_name: ENDPOINT_ADDRESSES
+                  required: false
+                  multiple: true
+                  help: The endpoint addresses to remove (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
   - archive:
       about: Manage archived milestones
       settings:
@@ -127,11 +132,16 @@ subcommands:
             args:
               - directory:
                   short: d
+                  long: dir
                   takes_value: true
+                  required: true
                   value_name: DIR
                   help: The directory containing archive files to import. Defaults to the configured output directory.
               - range:
                   short: r
+                  long: range
                   takes_value: true
                   value_name: RANGE
-                  help: The range of milestone indexes to import. Defaults to the configured range.
+                  help: >-
+                    The range of milestone indexes to import. Defaults to the configured range. 
+                    Can be any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).

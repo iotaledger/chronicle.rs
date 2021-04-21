@@ -4,11 +4,15 @@ use anyhow::{
     anyhow,
     bail,
 };
+use backstage::Service;
 use chronicle::{
     ConfigCommand,
     SocketMsg,
 };
-use chronicle_broker::application::ChronicleBrokerThrough;
+use chronicle_broker::application::{
+    ChronicleBrokerThrough,
+    ImporterSession,
+};
 use chronicle_common::config::{
     MqttType,
     VersionedConfig,
@@ -18,9 +22,19 @@ use clap::{
     App,
     ArgMatches,
 };
-use futures::SinkExt;
+use futures::{
+    SinkExt,
+    StreamExt,
+};
+use regex::Regex;
 use scylla::application::ScyllaThrough;
-use std::process::Command;
+use std::{
+    path::{
+        Path,
+        PathBuf,
+    },
+    process::Command,
+};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::Message,
@@ -128,9 +142,6 @@ async fn nodes<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     if !matches.is_present("skip-connection") {
         let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
 
-        if matches.is_present("list") {
-            todo!("Print list of nodes");
-        }
         if let Some(address) = add_address {
             let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla::application::Topology::AddNode(address)));
             let message = Message::text(serde_json::to_string(&message)?);
@@ -143,6 +154,9 @@ async fn nodes<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             let message = Message::text(serde_json::to_string(&message)?);
             stream.send(message).await?;
         }
+        if matches.is_present("list") {
+            todo!("Print list of nodes");
+        }
     } else {
         if let Some(address) = add_address {
             config.storage_config.nodes.insert(address);
@@ -151,6 +165,12 @@ async fn nodes<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         if let Some(address) = rem_address {
             config.storage_config.nodes.remove(&address);
             config.save(None).expect("Failed to save config!");
+        }
+        if matches.is_present("list") {
+            println!("Configured Nodes:");
+            config.storage_config.nodes.iter().for_each(|n| {
+                println!("\t{}", n);
+            });
         }
     }
     Ok(())
@@ -202,13 +222,65 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             }
         }
         ("remove", Some(subcommand)) => {
-            let id = subcommand.value_of("id").ok_or_else(|| anyhow!("No id provided!"))?;
-            todo!("Send message");
-        }
-        ("list", Some(subcommand)) => {
-            todo!("List brokers");
+            let mqtt_addresses = subcommand
+                .values_of("mqtt-address")
+                .ok_or_else(|| anyhow!("No mqtt addresses received!"))?
+                .map(|mqtt_address| Ok(Url::parse(mqtt_address)?))
+                .filter_map(|r: anyhow::Result<Url>| r.ok());
+            let endpoint_addresses = subcommand.values_of("endpoint-address");
+            // TODO add endpoints
+
+            if !matches.is_present("skip-connection") {
+                let mut messages = Vec::new();
+                for mqtt_address in mqtt_addresses.clone() {
+                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
+                        ChronicleBrokerThrough::Topology(chronicle_broker::application::Topology::RemoveMqttMessages(
+                            mqtt_address.clone(),
+                        )),
+                    ))?));
+                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
+                        ChronicleBrokerThrough::Topology(
+                            chronicle_broker::application::Topology::RemoveMqttMessagesReferenced(mqtt_address),
+                        ),
+                    ))?));
+                }
+                let (mut stream, _) =
+                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+                for message in messages.drain(..) {
+                    stream.send(message).await?;
+                }
+            } else {
+                config.broker_config.mqtt_brokers.get_mut(&MqttType::Messages).map(|m| {
+                    mqtt_addresses.clone().for_each(|u| {
+                        m.remove(&u);
+                    })
+                });
+                config
+                    .broker_config
+                    .mqtt_brokers
+                    .get_mut(&MqttType::MessagesReferenced)
+                    .map(|m| {
+                        mqtt_addresses.for_each(|u| {
+                            m.remove(&u);
+                        })
+                    });
+                config.save(None).expect("Failed to save config!");
+            }
         }
         _ => (),
+    }
+    if matches.is_present("list") {
+        if !matches.is_present("skip-connection") {
+            todo!("List brokers");
+        } else {
+            println!("Configured MQTT Addresses:");
+            config.broker_config.mqtt_brokers.iter().for_each(|(ty, s)| {
+                println!("\t{:?}", ty);
+                for url in s.iter() {
+                    println!("\t\t{}", url);
+                }
+            });
+        }
     }
     Ok(())
 }
@@ -217,9 +289,92 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     let config = VersionedConfig::load(None)?.verify().await?;
     match matches.subcommand() {
         ("import", Some(subcommand)) => {
-            let dir = subcommand.value_of("directory");
+            let dir = subcommand
+                .value_of("directory")
+                .ok_or_else(|| anyhow!("No file directory provided!"))?;
+            let mut path = PathBuf::from(dir);
+            if path.is_relative() {
+                path = Path::new(&config.broker_config.logs_dir).join(path);
+            }
+            let (is_url, is_file) = Url::parse(dir)
+                .map(|url| (true, Path::new(url.path()).extension().is_some()))
+                .unwrap_or_else(|_| (false, path.extension().is_some()));
             let range = subcommand.value_of("range");
-            todo!("Send message");
+            let range = match range {
+                Some(s) => {
+                    let matches = Regex::new(r"(\d+)\D+(\d+)")?
+                        .captures(s)
+                        .ok_or_else(|| anyhow!("Malformatted range!"));
+                    matches.and_then(|c| {
+                        let start = c.get(1).unwrap().as_str().parse::<u32>()?;
+                        let end = c.get(2).unwrap().as_str().parse::<u32>()?;
+                        Ok(start..end)
+                    })?
+                }
+                _ => 0..u32::MAX,
+            };
+            println!(
+                "Path: {}, is_url: {}, is_file: {}, range: {:?}",
+                if is_url { dir.into() } else { path.to_string_lossy() },
+                is_url,
+                is_file,
+                range
+            );
+            if is_url {
+                panic!("URL imports are not currently supported!");
+            }
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+            stream
+                .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
+                    ChronicleBrokerThrough::Topology(chronicle_broker::application::Topology::Import {
+                        path,
+                        resume: false,
+                        import_range: Some(range),
+                    }),
+                ))?))
+                .await?;
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    Ok(msg) => {
+                        println!("Message from Chronicle: {:?}", msg);
+                        match msg {
+                            Message::Text(ref s) => {
+                                if let Ok(service) = serde_json::from_str::<Service>(s) {
+                                    println!("Broker status: {:?}", service.service_status());
+                                } else if let Ok(session) = serde_json::from_str::<ImporterSession>(s) {
+                                    match session {
+                                        ImporterSession::ProgressBar {
+                                            log_file_size,
+                                            from_ms,
+                                            to_ms,
+                                            ms_bytes_size,
+                                            milestone_index,
+                                            skipped,
+                                        } => {
+                                            // TODO display progress bars
+                                            println!("Completed {}", milestone_index);
+                                        }
+                                        ImporterSession::Finish { from_ms, to_ms, msg } => {
+                                            println!("Finished importing {}..{}: {}", from_ms, to_ms, msg);
+                                        }
+                                    }
+                                }
+                            }
+                            Message::Close(c) => {
+                                if let Some(c) = c {
+                                    println!("Closed connection: {}", c);
+                                }
+                                break;
+                            }
+                            _ => (),
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error received from Chronicle: {}", e);
+                        break;
+                    }
+                }
+            }
         }
         _ => (),
     }
