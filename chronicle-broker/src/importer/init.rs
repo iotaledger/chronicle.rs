@@ -22,9 +22,9 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {
             })?;
             let from = log_file.from_ms_index();
             let to = log_file.to_ms_index();
-            let log_file_size = log_file.len();
+            self.log_file_size = log_file.len();
             let importer_session = ImporterSession::ProgressBar {
-                log_file_size,
+                log_file_size: self.log_file_size,
                 from_ms: from,
                 to_ms: to,
                 ms_bytes_size: 0,
