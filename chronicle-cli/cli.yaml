@@ -134,7 +134,6 @@ subcommands:
                   short: d
                   long: dir
                   takes_value: true
-                  required: true
                   value_name: DIR
                   help: The directory containing archive files to import. Defaults to the configured output directory.
               - range:

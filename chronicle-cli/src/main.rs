@@ -289,9 +289,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     let config = VersionedConfig::load(None)?.verify().await?;
     match matches.subcommand() {
         ("import", Some(subcommand)) => {
-            let dir = subcommand
-                .value_of("directory")
-                .ok_or_else(|| anyhow!("No file directory provided!"))?;
+            let dir = subcommand.value_of("directory").unwrap_or("");
             let mut path = PathBuf::from(dir);
             if path.is_relative() {
                 path = Path::new(&config.broker_config.logs_dir).join(path);
@@ -336,31 +334,42 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             while let Some(msg) = stream.next().await {
                 match msg {
                     Ok(msg) => {
-                        println!("Message from Chronicle: {:?}", msg);
                         match msg {
                             Message::Text(ref s) => {
-                                if let Ok(service) = serde_json::from_str::<Service>(s) {
-                                    println!("Broker status: {:?}", service.service_status());
-                                } else if let Ok(session) = serde_json::from_str::<ImporterSession>(s) {
-                                    match session {
-                                        ImporterSession::ProgressBar {
-                                            log_file_size,
-                                            from_ms,
-                                            to_ms,
-                                            ms_bytes_size,
-                                            milestone_index,
-                                            skipped,
-                                        } => {
-                                            // TODO display progress bars
-                                            println!("Completed {}", milestone_index);
+                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
+                                    if let Some(service_json) = json.get("ChronicleBroker").cloned() {
+                                        if let Ok(service) = serde_json::from_value::<Service>(service_json.clone()) {
+                                            println!("Broker status: {:?}", service.service_status());
+                                        } else if let Ok(session) =
+                                            serde_json::from_value::<ImporterSession>(service_json.clone())
+                                        {
+                                            match session {
+                                                ImporterSession::ProgressBar {
+                                                    log_file_size,
+                                                    from_ms,
+                                                    to_ms,
+                                                    ms_bytes_size,
+                                                    milestone_index,
+                                                    skipped,
+                                                } => {
+                                                    // TODO display progress bars
+                                                    println!("Completed {}", milestone_index);
+                                                }
+                                                ImporterSession::Finish { from_ms, to_ms, msg } => {
+                                                    println!("Finished importing {}..{}: {}", from_ms, to_ms, msg);
+                                                }
+                                                ImporterSession::PathError { path, msg } => {
+                                                    println!("ErrorPath, path: {:?}, msg: {:?}", path, msg);
+                                                }
+                                            }
+                                        } else {
+                                            println!("Unknown Json message from Chronicle: {:?}", service_json);
                                         }
-                                        ImporterSession::Finish { from_ms, to_ms, msg } => {
-                                            println!("Finished importing {}..{}: {}", from_ms, to_ms, msg);
-                                        }
-                                        ImporterSession::PathError { path, msg } => {
-                                            println!("ErrorPath, path: {:?}, msg: {:?}", path, msg);
-                                        }
+                                    } else {
+                                        println!("Json message from Chronicle: {:?}", json);
                                     }
+                                } else {
+                                    println!("Text message from Chronicle: {:?}", msg);
                                 }
                             }
                             Message::Close(c) => {
