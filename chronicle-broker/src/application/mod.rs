@@ -99,10 +99,12 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     websockets: HashMap<String, WsTx>,
     listener_handle: Option<ListenerHandle>,
     mqtt_handles: HashMap<String, MqttHandle>,
+    importer_handles: HashMap<String, ImporterHandle>,
     asked_to_shutdown: HashMap<String, ()>,
     parallelism: u8,
     parallelism_points: u8,
     pending_imports: Vec<Topology>,
+    in_progress_importers: usize,
     collector_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
@@ -181,6 +183,8 @@ pub enum ImporterSession {
         /// Useful debug message
         msg: String,
     },
+    /// Close session
+    Close,
 }
 
 /// Topology event
@@ -423,12 +427,13 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
         };
         let logs_dir_path =
             PathBuf::from_str(&config.broker_config.logs_dir).expect("Failed to parse configured logs path!");
-        let parallelism = self.parallelism.unwrap_or(20);
+        let parallelism = self.parallelism.unwrap_or(25);
         ChronicleBroker::<H> {
             service: Service::new(),
             websockets: HashMap::new(),
             listener_handle: self.listener_handle,
             mqtt_handles: HashMap::new(),
+            importer_handles: HashMap::new(),
             asked_to_shutdown: HashMap::new(),
             collector_count: self.collector_count.unwrap_or(10),
             collector_handles: HashMap::new(),
@@ -437,6 +442,7 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
             parallelism,
             parallelism_points: parallelism,
             pending_imports: Vec::new(),
+            in_progress_importers: 0,
             logs_dir_path,
             handle,
             inbox,

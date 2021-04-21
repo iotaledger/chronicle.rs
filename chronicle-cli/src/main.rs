@@ -26,6 +26,11 @@ use futures::{
     SinkExt,
     StreamExt,
 };
+use indicatif::{
+    MultiProgress,
+    ProgressBar,
+    ProgressStyle,
+};
 use regex::Regex;
 use scylla::application::ScyllaThrough;
 use std::{
@@ -331,6 +336,14 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                     }),
                 ))?))
                 .await?;
+            let multi_progress_bar = MultiProgress::new();
+            let sty = ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {bytes}/{total_bytes} {msg}")
+                .progress_chars("##-");
+            let mut active_progress_bars: std::collections::HashMap<(u32, u32), ProgressBar> =
+                std::collections::HashMap::new();
+            let r = multi_progress_bar.join_and_clear();
+            println!("{:?}", r);
             while let Some(msg) = stream.next().await {
                 match msg {
                     Ok(msg) => {
@@ -352,15 +365,49 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                     milestone_index,
                                                     skipped,
                                                 } => {
-                                                    // TODO display progress bars
-                                                    println!("Completed {}", milestone_index);
+                                                    if let Some(pb) = active_progress_bars.get_mut(&(from_ms, to_ms)) {
+                                                        // advnace the pb
+                                                        let skipped_or_imported;
+                                                        if skipped {
+                                                            skipped_or_imported = "skipped"
+                                                        } else {
+                                                            skipped_or_imported = "imported"
+                                                        }
+                                                        pb.set_message(&format!(
+                                                            "{} #{}",
+                                                            skipped_or_imported, milestone_index
+                                                        ));
+                                                        pb.inc(ms_bytes_size as u64);
+                                                    } else {
+                                                        // create new one
+                                                        let pb =
+                                                            multi_progress_bar.add(ProgressBar::new(log_file_size));
+                                                        pb.set_style(sty.clone());
+                                                        // advnace the pb
+                                                        let skipped_or_imported;
+                                                        if skipped {
+                                                            skipped_or_imported = "skipped"
+                                                        } else {
+                                                            skipped_or_imported = "imported"
+                                                        }
+                                                        pb.set_message(&format!(
+                                                            "{} #{}",
+                                                            skipped_or_imported, milestone_index
+                                                        ));
+                                                        pb.inc(ms_bytes_size as u64);
+                                                        active_progress_bars.insert((from_ms, to_ms), pb);
+                                                    }
                                                 }
                                                 ImporterSession::Finish { from_ms, to_ms, msg } => {
-                                                    println!("Finished importing {}..{}: {}", from_ms, to_ms, msg);
+                                                    if let Some(pb) = active_progress_bars.remove(&(from_ms, to_ms)) {
+                                                        let m = format!("{}..{} {}", from_ms, to_ms, msg);
+                                                        pb.finish_with_message(&m);
+                                                    }
                                                 }
                                                 ImporterSession::PathError { path, msg } => {
                                                     println!("ErrorPath, path: {:?}, msg: {:?}", path, msg);
                                                 }
+                                                ImporterSession::Close => break,
                                             }
                                         } else {
                                             println!("Unknown Json message from Chronicle: {:?}", service_json);

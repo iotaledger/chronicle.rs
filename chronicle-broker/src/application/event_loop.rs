@@ -54,6 +54,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                     }
                                     Topology::Import { .. } => {
                                         self.handle_import(topology).await;
+                                        self.try_close_importer_session().await;
                                     }
                                 }
                             }
@@ -85,6 +86,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                             }
                             BrokerChild::Importer(service, _status, parallelism) => {
                                 if service.is_stopped() {
+                                    self.in_progress_importers -= 1;
                                     self.service.delete_microservice(&service.get_name());
                                     // return parallelism
                                     self.parallelism_points += parallelism;
@@ -92,6 +94,8 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                     if let Some(import_topology) = self.pending_imports.pop() {
                                         self.handle_import(import_topology).await;
                                     }
+                                    // check if we finished all in_progress_importers
+                                    self.try_close_importer_session().await;
                                 } else {
                                     self.service.update_microservice(service.get_name(), service.clone());
                                 }
@@ -321,6 +325,13 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             }
         }
     }
+    async fn try_close_importer_session(&mut self) {
+        if self.in_progress_importers == 0 {
+            let event = ImporterSession::Close;
+            let socket_msg = SocketMsg::ChronicleBroker(event);
+            self.response_to_sockets(&socket_msg).await;
+        }
+    }
     async fn spawn_importer(
         &mut self,
         file_path: PathBuf,
@@ -343,10 +354,15 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 .retries_per_query(50) // TODO get it from config
                 .chronicle_id(0) // TODO get it from config
                 .build();
+            let handle = importer.clone_handle().expect("Expected existing importer handle");
+            self.importer_handles.insert(importer.get_name(), handle);
             let service = Service::new();
             self.service.update_microservice(importer.get_name(), service);
             tokio::spawn(importer.start(self.handle.clone()));
+            self.in_progress_importers += 1;
+            self.parallelism_points -= parallelism;
         } else {
+            self.parallelism_points += parallelism;
             let event = ImporterSession::PathError {
                 path: file_path,
                 msg: "Unable to convert path to string".into(),
@@ -376,18 +392,16 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             return ();
         }
         if self.parallelism_points as usize > import_files_len {
-            self.parallelism_points = (self.parallelism_points as usize / import_files_len) as u8;
+            let parallelism = (self.parallelism_points as usize / import_files_len) as u8;
             for file_path in import_files {
-                self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points)
+                self.spawn_importer(file_path, resume, import_range.clone(), parallelism)
                     .await
             }
-            self.parallelism_points = 0;
         } else {
             // unwrap is safe
             let file_path = import_files.pop().expect("Expected import file");
             self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points)
                 .await;
-            self.parallelism_points = 0;
             // convert any remaining into pending_imports
             for file_path in import_files {
                 let topology = Topology::Import {
@@ -443,6 +457,11 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             // shutdown syncer
             if let Some(syncer) = self.syncer_handle.take() {
                 syncer.shutdown();
+            }
+            // shutdown importers
+            for (importer_name, importer_handle) in self.importer_handles.drain() {
+                info!("Shutting down importer: {}", importer_name);
+                importer_handle.shutdown();
             }
             // drop self handler
             if drop_handle {

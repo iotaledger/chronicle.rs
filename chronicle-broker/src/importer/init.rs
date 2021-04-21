@@ -23,6 +23,8 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {
             let from = log_file.from_ms_index();
             let to = log_file.to_ms_index();
             self.log_file_size = log_file.len();
+            self.from_ms = from;
+            self.to_ms = to;
             let importer_session = ImporterSession::ProgressBar {
                 log_file_size: self.log_file_size,
                 from_ms: from,
@@ -31,7 +33,6 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {
                 milestone_index: 0,
                 skipped: true,
             };
-            supervisor.send(BrokerEvent::Importer(importer_session)).ok();
             // fetch sync data from the keyspace
             if self.resume {
                 let sync_range = SyncRange { from, to };
@@ -47,6 +48,7 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {
                 error!("Unable to init importing process. Error: {}", e);
                 Need::Abort
             })?;
+            supervisor.send(BrokerEvent::Importer(importer_session)).ok();
             status
         } else {
             Err(Need::Abort)

@@ -194,6 +194,12 @@ impl Builder for ImporterBuilder {
     }
 }
 
+impl Importer {
+    pub(crate) fn clone_handle(&self) -> Option<ImporterHandle> {
+        self.handle.clone()
+    }
+
+}
 /// Implement `Name` trait of the Importer
 impl Name for Importer {
     fn set_name(mut self) -> Self {
