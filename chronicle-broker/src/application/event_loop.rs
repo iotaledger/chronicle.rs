@@ -303,6 +303,10 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             ref import_range,
         } = import_topology
         {
+            // don't do anything if the service is shutting down
+            if self.service.is_stopping() {
+                return ();
+            }
             // check if we have enough parallelism points
             if self.parallelism_points == 0 {
                 // add it to pending list
@@ -339,6 +343,10 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
         import_range: Option<Range<u32>>,
         parallelism: u8,
     ) {
+        // don't do anything if the service is shutting down
+        if self.service.is_stopping() {
+            return ();
+        }
         if let Some(path_str) = file_path.to_str() {
             if self.service.microservices.get(&path_str.to_owned()).is_some() {
                 return ();

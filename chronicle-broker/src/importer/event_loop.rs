@@ -16,7 +16,7 @@ use super::*;
 impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
     async fn event_loop(
         &mut self,
-        status: Result<(), Need>,
+        mut status: Result<(), Need>,
         supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         status?;
@@ -113,6 +113,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
                     ImporterEvent::Shutdown => {
                         self.service.update_status(ServiceStatus::Stopping);
                         self.handle.take();
+                        status = Err(Need::Abort);
                     }
                 }
             }
