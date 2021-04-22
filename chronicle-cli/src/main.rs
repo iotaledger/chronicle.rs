@@ -33,6 +33,16 @@ use indicatif::{
 use regex::Regex;
 use scylla::application::ScyllaThrough;
 use std::{
+    fs::{
+        File,
+        OpenOptions,
+    },
+    io::{
+        BufRead,
+        BufReader,
+        BufWriter,
+        Write,
+    },
     path::{
         Path,
         PathBuf,
@@ -433,7 +443,123 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 }
             }
         }
+        ("cleanup", Some(_subcommand)) => cleanup_archive().await?,
         _ => (),
     }
+    Ok(())
+}
+
+async fn cleanup_archive() -> anyhow::Result<()> {
+    let config = VersionedConfig::load(None)?.verify().await?;
+    let mut last_log = Option::<(usize, usize, PathBuf)>::default();
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})")
+        .progress_chars("##-");
+    let pb = ProgressBar::new(0).with_style(style);
+    pb.println("Gathering log files...");
+    let mut paths = glob::glob(&format!("{}/*to*.log", config.broker_config.logs_dir))
+        .unwrap()
+        .filter_map(|v| match v {
+            Ok(path) => {
+                let file_name = path.file_stem().unwrap();
+                let mut split = file_name.to_str().unwrap().split("to");
+                let (start, end) = (
+                    split.next().unwrap().parse::<usize>().unwrap(),
+                    split.next().unwrap().parse::<usize>().unwrap(),
+                );
+                Some((start, end, path))
+            }
+            Err(_) => None,
+        })
+        .collect::<Vec<_>>();
+    pb.inc_length(paths.len() as u64);
+    paths.sort_unstable_by_key(|&(s, _, _)| s);
+    pb.println("Merging...");
+    for (start, end, path) in paths {
+        // There is a gap
+        if last_log.is_some() && last_log.as_ref().unwrap().1 != start {
+            // pb.println(format!(
+            //    "Gap between {} and {}",
+            //    last_log.as_ref().unwrap().2.to_string_lossy(),
+            //    path.to_string_lossy()
+            //));
+            // pb.println(format!("Saving {} as dest file", path.to_string_lossy()));
+            last_log = Some((start, end, path.clone()));
+        } else {
+            // Start a new merge
+            if last_log.is_none() {
+                // pb.println(format!("Saving {} as dest file", path.to_string_lossy()));
+                last_log = Some((start, end, path.clone()));
+            // Merge this file into the last one
+            } else {
+                let (last_start, last_end, last_path) = last_log.as_ref().unwrap();
+                let to_file = OpenOptions::new().append(true).open(last_path).unwrap();
+                let to_file_len = to_file.metadata().unwrap().len();
+                let mut to_file = BufWriter::new(to_file);
+                let mut from_file = BufReader::new(File::open(&path).unwrap());
+                let mut line = String::new();
+                let mut new_end = *last_end - 1;
+                while let Ok(read) = from_file.read_line(&mut line) {
+                    new_end += 1;
+                    if read == 0 {
+                        // pb.println(format!("Drained source file: {}", path.to_string_lossy()));
+                        let new_path = last_path
+                            .parent()
+                            .unwrap()
+                            .join(Path::new(&format!("{}to{}.log", last_start, new_end)));
+                        // Save to_file with new end
+                        to_file.flush()?;
+                        drop(to_file);
+                        std::fs::rename(last_path, &new_path)?;
+                        // Remove the depleted file
+                        std::fs::remove_file(path)?;
+                        last_log = Some((*last_start, new_end, new_path));
+                        break;
+                    } else if read as u64 + to_file_len <= chronicle_broker::archiver::MAX_LOG_SIZE {
+                        to_file.write(std::mem::take(&mut line).as_bytes())?;
+                    } else {
+                        // pb.println("Reached max file size. Saving...");
+                        // Save to_file with new end
+                        to_file.flush()?;
+                        drop(to_file);
+                        std::fs::rename(
+                            last_path,
+                            last_path
+                                .parent()
+                                .unwrap()
+                                .join(Path::new(&format!("{}to{}.log", last_start, new_end))),
+                        )?;
+
+                        if new_end != end {
+                            // Need to create an entirely new file
+                            let new_path = path
+                                .parent()
+                                .unwrap()
+                                .join(Path::new(&format!("{}to{}.log", new_end, end)));
+                            let mut new_file = BufWriter::new(File::create(&new_path)?);
+                            new_file.write(std::mem::take(&mut line).as_bytes())?;
+                            // Write the rest of the source file to the new location
+                            while let Ok(read) = from_file.read_line(&mut line) {
+                                if read == 0 {
+                                    break;
+                                } else {
+                                    new_file.write(std::mem::take(&mut line).as_bytes())?;
+                                }
+                            }
+                            // Delete the source file
+                            std::fs::remove_file(path)?;
+                            last_log = Some((new_end, end, new_path));
+                        } else {
+                            std::fs::remove_file(path)?;
+                            last_log = None;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        pb.inc(1);
+    }
+    pb.finish();
     Ok(())
 }

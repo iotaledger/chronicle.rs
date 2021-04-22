@@ -144,3 +144,6 @@ subcommands:
                   help: >-
                     The range of milestone indexes to import. Defaults to the configured range. 
                     Can be any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
+        - cleanup:
+            short: c
+            about: Cleanup log file directory to normalize the file sizes.
