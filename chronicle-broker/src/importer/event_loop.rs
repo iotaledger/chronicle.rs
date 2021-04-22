@@ -83,6 +83,9 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Importer {
                         }
                     }
                     ImporterEvent::ProcessMore(milestone_index) => {
+                        if self.service.is_stopping() {
+                            continue;
+                        }
                         // extract the remaining milestone data iterator
                         let mut iter = self.in_progress_milestones_data.remove(&milestone_index).unwrap();
                         let is_empty = iter.len() == 0;
