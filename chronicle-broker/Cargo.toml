@@ -13,7 +13,7 @@ chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-filter = { path = "../chronicle-filter", optional = true }
 backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1.1"}
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1.1" }
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1.2" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4"

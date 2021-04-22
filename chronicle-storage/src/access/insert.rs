@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use chronicle_common::Synckey;
 
 impl Insert<MessageId, Message> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;

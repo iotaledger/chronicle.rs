@@ -22,7 +22,11 @@ use bee_message::{
     MessageId,
 };
 use bincode::Options;
-use chronicle_common::Wrapper;
+use chronicle_common::{
+    SyncRange,
+    Synckey,
+    Wrapper,
+};
 pub use delete::{
     Ed25519AddressPK,
     IndexationPK,

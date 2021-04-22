@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1.1"}
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1.1" }
+scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1.2" }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-storage = { path = "../chronicle-storage" }

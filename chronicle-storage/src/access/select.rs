@@ -3,7 +3,7 @@
 
 use super::*;
 use chronicle_common::SyncRange;
-use scylla_cql::Row;
+use scylla::access::Row;
 use std::{
     collections::{
         hash_map::Entry,

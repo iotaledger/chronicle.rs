@@ -5,12 +5,12 @@ use super::*;
 /// A representation of the primary key for the `addresses` table
 #[derive(Clone)]
 pub struct Ed25519AddressPK {
-    address: Ed25519Address,
-    partition_id: u16,
-    milestone_index: MilestoneIndex,
-    output_type: u8,
-    transaction_id: TransactionId,
-    index: u16,
+    pub(crate) address: Ed25519Address,
+    pub(crate) partition_id: u16,
+    pub(crate) milestone_index: MilestoneIndex,
+    pub(crate) output_type: u8,
+    pub(crate) transaction_id: TransactionId,
+    pub(crate) index: u16,
 }
 
 impl Ed25519AddressPK {
@@ -68,10 +68,10 @@ impl Delete<Ed25519AddressPK, AddressRecord> for ChronicleKeyspace {
 /// A representation of the primary key for the `indexes` table
 #[derive(Clone)]
 pub struct IndexationPK {
-    indexation: Indexation,
-    partition_id: u16,
-    milestone_index: MilestoneIndex,
-    message_id: MessageId,
+    pub(crate) indexation: Indexation,
+    pub(crate) partition_id: u16,
+    pub(crate) milestone_index: MilestoneIndex,
+    pub(crate) message_id: MessageId,
 }
 impl IndexationPK {
     /// Creates a new indexes primary key
@@ -120,10 +120,10 @@ impl Delete<IndexationPK, IndexationRecord> for ChronicleKeyspace {
 /// A representation of the primary key for the `parents` table
 #[derive(Clone)]
 pub struct ParentPK {
-    parent_id: MessageId,
-    partition_id: u16,
-    milestone_index: MilestoneIndex,
-    message_id: MessageId,
+    pub(crate) parent_id: MessageId,
+    pub(crate) partition_id: u16,
+    pub(crate) milestone_index: MilestoneIndex,
+    pub(crate) message_id: MessageId,
 }
 impl ParentPK {
     /// Creates a new parents primary key

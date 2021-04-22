@@ -4,7 +4,6 @@ use anyhow::{
     anyhow,
     bail,
 };
-use backstage::Service;
 use chronicle::{
     ConfigCommand,
     SocketMsg,
@@ -326,6 +325,14 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             if is_url {
                 panic!("URL imports are not currently supported!");
             }
+            let sty = ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
+                )
+                .progress_chars("##-");
+            let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
+            let pb = ProgressBar::new(0);
+            pb.set_style(sty.clone());
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
             stream
                 .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
@@ -336,14 +343,6 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                     }),
                 ))?))
                 .await?;
-            let sty = ProgressStyle::default_bar()
-                .template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
-                )
-                .progress_chars("##-");
-            let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
-            let pb = ProgressBar::new(0);
-            pb.set_style(sty.clone());
             while let Some(msg) = stream.next().await {
                 match msg {
                     Ok(msg) => {
@@ -364,7 +363,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                     skipped,
                                                 } => {
                                                     if let Some(()) = active_progress_bars.get_mut(&(from_ms, to_ms)) {
-                                                        // advnace the pb
+                                                        // advance the pb
                                                         let skipped_or_imported;
                                                         if skipped {
                                                             skipped_or_imported = "skipped"
@@ -379,7 +378,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                         pb.inc(ms_bytes_size as u64);
                                                     } else {
                                                         pb.inc_length(log_file_size);
-                                                        // advnace the pb
+                                                        // advance the pb
                                                         let skipped_or_imported;
                                                         if skipped {
                                                             skipped_or_imported = "skipped"
