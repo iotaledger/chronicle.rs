@@ -337,7 +337,9 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 ))?))
                 .await?;
             let sty = ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {bytes}/{total_bytes} {msg} ({eta})")
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
+                )
                 .progress_chars("##-");
             let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
             let pb = ProgressBar::new(0);
@@ -349,9 +351,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                             Message::Text(ref s) => {
                                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
                                     if let Some(service_json) = json.get("ChronicleBroker").cloned() {
-                                        if let Ok(_service) = serde_json::from_value::<Service>(service_json.clone()) {
-                                            // println!("Broker status: {:?}", service.service_status());
-                                        } else if let Ok(session) =
+                                        if let Ok(session) =
                                             serde_json::from_value::<ImporterSession>(service_json.clone())
                                         {
                                             match session {
@@ -371,10 +371,11 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                         } else {
                                                             skipped_or_imported = "imported"
                                                         }
-                                                        pb.set_message(&format!(
-                                                            "{} #{}",
-                                                            skipped_or_imported, milestone_index
-                                                        ));
+                                                        let m = format!(
+                                                            "{}to{}.log: {} #{}",
+                                                            from_ms, to_ms, skipped_or_imported, milestone_index
+                                                        );
+                                                        pb.set_message(&m);
                                                         pb.inc(ms_bytes_size as u64);
                                                     } else {
                                                         pb.inc_length(log_file_size);
@@ -385,30 +386,30 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                         } else {
                                                             skipped_or_imported = "imported"
                                                         }
-                                                        pb.set_message(&format!(
-                                                            "{} #{}",
-                                                            skipped_or_imported, milestone_index
-                                                        ));
+                                                        let m = format!(
+                                                            "{}to{}.log: {} #{}",
+                                                            from_ms, to_ms, skipped_or_imported, milestone_index
+                                                        );
+                                                        pb.set_message(&m);
                                                         pb.inc(ms_bytes_size as u64);
                                                         active_progress_bars.insert((from_ms, to_ms), ());
                                                     }
                                                 }
                                                 ImporterSession::Finish { from_ms, to_ms, msg } => {
                                                     if let Some(()) = active_progress_bars.remove(&(from_ms, to_ms)) {
-                                                        let m = format!("{}..{} {}", from_ms, to_ms, msg);
+                                                        let m = format!("LogFile: {}to{}.log {}", from_ms, to_ms, msg);
                                                         pb.set_message(&m);
+                                                        pb.println(m);
                                                     }
                                                 }
                                                 ImporterSession::PathError { path, msg } => {
-                                                    println!("ErrorPath, path: {:?}, msg: {:?}", path, msg);
+                                                    pb.println(format!("ErrorPath: {:?}, msg: {:?}", path, msg))
                                                 }
                                                 ImporterSession::Close => {
                                                     pb.finish_with_message("done");
                                                     break;
                                                 }
                                             }
-                                        } else {
-                                            println!("Unknown Json message from Chronicle: {:?}", service_json);
                                         }
                                     } else {
                                         println!("Json message from Chronicle: {:?}", json);
