@@ -40,9 +40,17 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let reqwest_client = reqwest::Client::new();
             let config = get_config_async().await;
             for partition_id in 0..self.collector_count {
+                // create requesters senders
+                let mut requesters_senders = Vec::new();
+                let mut requesters_channels = Vec::new();
+                for _ in 0..config.broker_config.requester_count {
+                    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                    requesters_senders.push(tx.clone());
+                    requesters_channels.push((tx, rx));
+                }
                 // create collector_builder
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                let collector_handle = CollectorHandle { tx };
+                let collector_handle = CollectorHandle { tx, requesters_senders };
                 let collector_inbox = CollectorInbox { rx };
                 self.collector_handles.insert(partition_id, collector_handle.clone());
                 let collector_builder = CollectorBuilder::new()
@@ -52,6 +60,8 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
                     .api_endpoints(config.broker_config.api_endpoints.iter().cloned().collect())
                     .storage_config(config.storage_config.clone())
                     .reqwest_client(reqwest_client.clone())
+                    .retries_per_query(config.broker_config.retries_per_query)
+                    .requesters_channels(requesters_channels)
                     .partition_id(partition_id);
 
                 collector_builders.push(collector_builder);

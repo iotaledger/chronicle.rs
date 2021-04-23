@@ -23,6 +23,10 @@ use url::Url;
 mod event_loop;
 mod init;
 mod terminating;
+
+pub type RequesterSender = tokio::sync::mpsc::UnboundedSender<RequesterEvent>;
+pub type RequesterReceiver = tokio::sync::mpsc::UnboundedReceiver<RequesterEvent>;
+
 // Requester builder
 builder!(RequesterBuilder {
     requester_id: u8,
@@ -39,6 +43,16 @@ pub enum RequesterEvent {
     RequestFullMessage(MessageId, u32),
     /// Requesting Milestone for u32 milestone index;
     RequestMilestone(u32),
+    /// RequesterTopology event, to update the api endpoints
+    Topology(RequesterTopology),
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Requester topology used by admins to add/remove IOTA api endpoints
+pub enum RequesterTopology {
+    /// Add new Api Endpoint
+    AddEndpoint(Url),
+    /// Remove existing Api Endpoint
+    RemoveEndpoint(Url),
 }
 
 /// Requester handle

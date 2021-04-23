@@ -6,6 +6,7 @@ use crate::{
     importer::*,
     listener::*,
     mqtt::*,
+    requester::*,
     solidifier::*,
     syncer::*,
     websocket::*,
@@ -207,6 +208,8 @@ pub enum Topology {
         /// Provide optional import range
         import_range: Option<Range<u32>>,
     },
+    /// AddEndpoint
+    Requesters(RequesterTopology),
 }
 
 #[derive(Deserialize, Serialize)]
