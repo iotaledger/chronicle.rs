@@ -59,7 +59,8 @@ impl Builder for AppsBuilder {
         let chronicle_api_builder = ChronicleAPIBuilder::new();
         let chronicle_broker_builder = ChronicleBrokerBuilder::new()
             .collector_count(broker_config.collector_count)
-            .parallelism(broker_config.parallelism);
+            .parallelism(broker_config.parallelism)
+            .complete_gaps_interval_secs(broker_config.complete_gaps_interval_secs);
         let scylla_builder = ScyllaBuilder::new()
             .listen_address(storage_config.listen_address.to_string())
             .thread_count(match storage_config.thread_count {

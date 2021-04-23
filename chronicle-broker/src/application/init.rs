@@ -88,6 +88,8 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
                 .solidifier_handles(self.solidifier_handles.clone())
                 .archiver_handle(archiver_handle.unwrap())
                 .sync_range(self.sync_range)
+                .parallelism(self.parallelism)
+                .update_sync_data_every(self.complete_gaps_interval)
                 .first_ask(AskSyncer::Complete)
                 .build();
             tokio::spawn(syncer.start(self.handle.clone()));

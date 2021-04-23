@@ -38,8 +38,8 @@ pub struct BrokerConfig {
     pub parallelism: u8,
     /// Desired range of milestone indexes to sync if missing
     pub sync_range: Option<SyncRange>,
-    /// Complete gaps interval
-    pub complete_gaps_interval: std::time::Duration,
+    /// Complete gaps interval in seconds
+    pub complete_gaps_interval_secs: u64,
     /// Archive directory
     pub logs_dir: String,
 }
@@ -61,7 +61,7 @@ impl Default for BrokerConfig {
             parallelism: 25,
             retries_per_endpoint: 5,
             retries_per_query: 100,
-            complete_gaps_interval: std::time::Duration::from_secs(60 * 60),
+            complete_gaps_interval_secs: 60 * 60,
             websocket_address: ([127, 0, 0, 1], 9000).into(),
             mqtt_brokers: hashmap! {
                 MqttType::Messages => hashset![

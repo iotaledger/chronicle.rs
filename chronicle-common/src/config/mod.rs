@@ -300,7 +300,7 @@ mod test {
                 parallelism: 25,
                 retries_per_endpoint: 5,
                 retries_per_query: 100,
-                complete_gaps_interval: std::time::Duration::from_secs(60 * 60),
+                complete_gaps_interval_secs: 3600,
                 websocket_address: ([127, 0, 0, 1], 9000).into(),
                 mqtt_brokers: hashmap! {
                     MqttType::Messages => hashset![
