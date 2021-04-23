@@ -31,7 +31,10 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     if let Some(FullMessage(message, metadata)) = opt_full_msg {
                         let message_id = message_id.expect("Expected message_id in requester response");
                         let partition_id = (try_ms_index % (self.collector_count as u32)) as u8;
-                        let ref_ms = metadata.referenced_by_milestone_index.as_ref().unwrap();
+                        let ref_ms = metadata
+                            .referenced_by_milestone_index
+                            .as_ref()
+                            .expect("Expected referenced_by_milestone_index");
                         // check if the requested message actually belongs to the expected milestone_index
                         if ref_ms.eq(&try_ms_index) {
                             // push full message to solidifier;
@@ -383,12 +386,11 @@ impl Collector {
         if let Some(meta) = self.lru_msg_ref.get(message_id) {
             metadata = Some(meta.clone());
             ledger_inclusion_state = meta.ledger_inclusion_state.clone();
-            self.est_ms = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
-            let milestone_index = *self.est_ms;
-            let solidifier_id = (milestone_index % (self.collector_count as u32)) as u8;
+            let milestone_index = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
+            let solidifier_id = (*milestone_index % (self.collector_count as u32)) as u8;
             let solidifier_handle = self.solidifier_handles.get(&solidifier_id).unwrap().clone();
             let inherent_worker =
-                AtomicWorker::new(solidifier_handle, milestone_index, *message_id, self.confirmed_retries);
+                AtomicWorker::new(solidifier_handle, *milestone_index, *message_id, self.retries_per_query);
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
             self.insert(&inherent_worker, &keyspace, *message_id, message_tuple)?;
@@ -397,7 +399,7 @@ impl Collector {
                 &inherent_worker,
                 &message_id,
                 &message.parents(),
-                self.est_ms,
+                milestone_index,
                 ledger_inclusion_state.clone(),
             )?;
             // insert payload (if any)
@@ -407,7 +409,7 @@ impl Collector {
                     &message_id,
                     &message,
                     &payload,
-                    self.est_ms,
+                    milestone_index,
                     ledger_inclusion_state,
                     metadata,
                 )?;
@@ -415,7 +417,9 @@ impl Collector {
         } else {
             metadata = None;
             ledger_inclusion_state = None;
-            let inherent_worker = SimpleWorker { retries: 5 };
+            let inherent_worker = SimpleWorker {
+                retries: self.retries_per_query,
+            };
             // store message only
             self.insert(&inherent_worker, &keyspace, *message_id, message.clone())?;
             // Insert parents/children
@@ -539,7 +543,9 @@ impl Collector {
     /// Insert the message metadata to the table
     fn insert_message_metadata(&self, metadata: MessageMetadata) -> anyhow::Result<()> {
         let message_id = metadata.message_id;
-        let inherent_worker = SimpleWorker { retries: 5 };
+        let inherent_worker = SimpleWorker {
+            retries: self.retries_per_query,
+        };
         // store message and metadata
         self.insert(&inherent_worker, &self.get_keyspace(), message_id, metadata.clone())?;
         // Insert parents/children
@@ -565,7 +571,7 @@ impl Collector {
         #[cfg(not(feature = "filter"))]
         let keyspace = self.get_keyspace();
         let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms);
-        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.confirmed_retries);
+        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries_per_query);
         // Insert parents/children
         self.insert_parents(
             &inherent_worker,
@@ -906,7 +912,7 @@ impl Collector {
             .delete(&key)
             .consistency(Consistency::One)
             .build()?;
-        let worker = DeleteWorker::boxed(self.default_keyspace.clone(), key, self.confirmed_retries);
+        let worker = DeleteWorker::boxed(self.default_keyspace.clone(), key, self.retries_per_query);
         delete_req.send_local(worker);
         Ok(())
     }
