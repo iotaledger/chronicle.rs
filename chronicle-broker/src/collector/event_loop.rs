@@ -16,11 +16,11 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
-        _supervisor: &mut Option<BrokerHandle<H>>,
+        supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
         self.service.update_status(ServiceStatus::Running);
         let event = BrokerEvent::Children(BrokerChild::Collector(self.service.clone()));
-        let _ = _supervisor
+        let _ = supervisor
             .as_mut()
             .expect("Collector expected BrokerHandle")
             .send(event);
@@ -250,13 +250,27 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         }
                     }
                 }
-                CollectorEvent::Shutdown => {
-                    // To shutdown the collector we simply drop the handle
-                    self.handle.take();
-                    // drop heap
-                    self.requester_handles.drain().for_each(|h| {
-                        h.shutdown();
-                    });
+                CollectorEvent::Internal(internal) => {
+                    match internal {
+                        Internal::Service(microservice) => {
+                            self.service.update_microservice(microservice.get_name(), microservice);
+                            if self.requester_count as usize == self.service.microservices.len() {
+                                let event = BrokerEvent::Children(BrokerChild::Collector(self.service.clone()));
+                                let _ = supervisor
+                                    .as_mut()
+                                    .expect("Collector expected BrokerHandle")
+                                    .send(event);
+                            }
+                        }
+                        Internal::Shutdown => {
+                            // To shutdown the collector we simply drop the handle
+                            self.handle.take();
+                            // drop heap
+                            self.requester_handles.drain().for_each(|h| {
+                                h.shutdown();
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -517,7 +531,7 @@ impl Collector {
             }
             // remaining payload types
             e => {
-                error!("impl insert for remaining payloads, {:?}", e)
+                warn!("Skipping unsupported payload variant: {:?}", e);
             }
         }
         Ok(())

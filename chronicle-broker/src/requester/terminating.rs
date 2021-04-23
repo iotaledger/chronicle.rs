@@ -8,9 +8,11 @@ impl Terminating<CollectorHandle> for Requester {
     async fn terminating(
         &mut self,
         _status: Result<(), Need>,
-        _supervisor: &mut Option<CollectorHandle>,
+        supervisor: &mut Option<CollectorHandle>,
     ) -> Result<(), Need> {
-        self.service.update_status(ServiceStatus::Stopping);
+        self.service.update_status(ServiceStatus::Initializing);
+        let event = CollectorEvent::Internal(Internal::Service(self.service.clone()));
+        let _ = supervisor.as_mut().expect("Expected Collector handle").send(event);
         _status
     }
 }

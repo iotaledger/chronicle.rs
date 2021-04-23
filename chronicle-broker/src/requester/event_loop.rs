@@ -11,9 +11,12 @@ impl EventLoop<CollectorHandle> for Requester {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
-        _supervisor: &mut Option<CollectorHandle>,
+        supervisor: &mut Option<CollectorHandle>,
     ) -> Result<(), Need> {
-        let collector_handle = _supervisor.as_mut().expect("Requester expected collector handle");
+        let collector_handle = supervisor.as_mut().expect("Requester expected collector handle");
+        self.service.update_status(ServiceStatus::Running);
+        let event = CollectorEvent::Internal(Internal::Service(self.service.clone()));
+        let _ = collector_handle.send(event);
         while let Some(event) = self.inbox.recv().await {
             match event {
                 RequesterEvent::RequestFullMessage(message_id, try_ms_index) => {
@@ -26,12 +29,16 @@ impl EventLoop<CollectorHandle> for Requester {
                 }
                 RequesterEvent::Topology(topology) => match topology {
                     RequesterTopology::AddEndpoint(url) => {
+                        info!("Trying to AddEndpoint: {}", url);
                         if self.api_endpoints.iter().all(|u| u != &url) {
+                            info!("AddedEndpoint: {}", url);
                             self.api_endpoints.push_front(url);
                         }
                     }
                     RequesterTopology::RemoveEndpoint(url) => {
+                        info!("Trying to RemoveEndpoint: {}", url);
                         if let Some(p) = self.api_endpoints.iter().position(|u| u == &url) {
+                            info!("RemovedEndpoint: {}", url);
                             self.api_endpoints.remove(p);
                         }
                     }
@@ -155,8 +162,6 @@ impl Requester {
         remote_url: &Url,
         message_id: MessageId,
     ) -> Result<FullMessage, ()> {
-        // let remote_url = self.api_endpoints.pop_back().unwrap();
-        // self.api_endpoints.push_front(remote_url.clone());
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
         let message_response = self

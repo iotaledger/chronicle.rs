@@ -24,7 +24,9 @@ mod event_loop;
 mod init;
 mod terminating;
 
+/// Requester Tokio handle
 pub type RequesterSender = tokio::sync::mpsc::UnboundedSender<RequesterEvent>;
+/// Requester Tokio inbox
 pub type RequesterReceiver = tokio::sync::mpsc::UnboundedReceiver<RequesterEvent>;
 
 // Requester builder
@@ -139,7 +141,7 @@ impl Builder for RequesterBuilder {
     type State = Requester;
     fn build(self) -> Self::State {
         let api_endpoints = self.api_endpoints.unwrap();
-        // we retry up to 5 times per api endpoint for a given request
+        // we retry up to N times per api endpoint for a given request
         let retries_per_endpoint = self.retries_per_endpoint.unwrap_or(5);
         let retries = api_endpoints.len() * retries_per_endpoint;
         Self::State {

@@ -62,9 +62,12 @@ pub enum CollectorEvent {
     /// Ask requests from solidifier(s)
     Ask(AskCollector),
     /// Shutdown the collector
+    Internal(Internal),
+}
+pub enum Internal {
+    Service(Service),
     Shutdown,
 }
-
 /// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
@@ -137,7 +140,7 @@ impl Shutdown for CollectorHandle {
     where
         Self: Sized,
     {
-        let shutdown_event = CollectorEvent::Shutdown;
+        let shutdown_event = CollectorEvent::Internal(Internal::Shutdown);
         self.send(shutdown_event).ok();
         None
     }
