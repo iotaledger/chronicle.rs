@@ -191,7 +191,7 @@ pub enum SocketMsg<T> {
 }
 
 /// Representation of the database sync data
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SyncData {
     /// The completed(synced and logged) milestones data
     pub(crate) completed: Vec<Range<u32>>,

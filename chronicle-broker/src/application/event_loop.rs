@@ -56,7 +56,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                         self.handle_import(topology).await;
                                         self.try_close_importer_session().await;
                                     }
-                                    Topology::Requesters(requester_topology) => {
+                                    super::Topology::Requesters(requester_topology) => {
                                         match requester_topology {
                                             RequesterTopology::AddEndpoint(ref url) => {
                                                 // todo verfiy the url

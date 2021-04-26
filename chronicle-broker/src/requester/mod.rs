@@ -4,6 +4,7 @@ use super::{
     collector::{
         CollectorEvent,
         CollectorHandle,
+        Internal,
     },
     solidifier::FullMessage,
     *,

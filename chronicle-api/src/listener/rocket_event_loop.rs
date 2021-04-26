@@ -15,6 +15,7 @@ use bee_message::{
         TransactionId,
     },
 };
+use chronicle_broker::application::SyncData;
 use chronicle_common::{
     config::PartitionConfig,
     metrics::{
@@ -28,6 +29,7 @@ use chronicle_common::{
         RESPONSE_CODE_COLLECTOR,
         RESPONSE_TIME_COLLECTOR,
     },
+    SyncRange,
 };
 use chronicle_storage::{
     access::{
@@ -122,6 +124,7 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
                 info,
                 metrics,
                 service,
+                sync,
                 get_message,
                 get_message_metadata,
                 get_message_children,
@@ -285,6 +288,18 @@ async fn metrics() -> Result<String, ListenerError> {
 #[get("/service")]
 async fn service() -> Json<Service> {
     Json(SERVICE.read().await.clone())
+}
+
+#[get("/<keyspace>/sync")]
+async fn sync(keyspaces: State<'_, HashSet<String>>, keyspace: String) -> Result<Json<SyncData>, ListenerError> {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let keyspace = ChronicleKeyspace::new(keyspace);
+    SyncData::try_fetch(&keyspace, &SyncRange::default(), 3)
+        .await
+        .map(|s| Json(s))
+        .map_err(|e| ListenerError::Other(e.into()))
 }
 
 async fn query<V, S, K>(

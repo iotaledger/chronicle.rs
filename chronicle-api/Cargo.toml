@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
+chronicle-broker = { path = "../chronicle-broker" }
 scylla-rs = "0.1"
 backstage = "0.1"
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
