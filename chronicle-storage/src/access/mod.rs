@@ -45,7 +45,6 @@ use scylla_rs::{
         Row,
         Rows,
         RowsDecoder,
-        Statements,
         TokenEncoder,
         Values,
         VoidDecoder,

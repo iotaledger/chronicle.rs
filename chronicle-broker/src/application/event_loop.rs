@@ -283,16 +283,17 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
         };
     }
     pub(crate) fn add_mqtt<T: Topic>(&mut self, topic: T, mqtt_type: MqttType, url: Url) -> Option<Mqtt<T>> {
+        let config = get_config();
         let mqtt = MqttBuilder::new()
             .collectors_handles(self.collector_handles.clone())
             .topic(topic)
             .url(url.clone())
+            .stream_capacity(config.broker_config.mqtt_stream_capacity)
             .build();
         let microservice = mqtt.clone_service();
         let microservice_name = microservice.get_name();
         if let None = self.service.microservices.get(&microservice_name) {
             self.service.update_microservice(microservice_name, microservice);
-            let config = get_config();
             let mut new_config = config.clone();
             if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
                 list.insert(url);

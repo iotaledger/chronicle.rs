@@ -1,5 +1,5 @@
 (
-    version: 0,
+    version: 1,
     config: (
         websocket_address: "127.0.0.1:8081",
         storage_config: (
@@ -37,6 +37,7 @@
             parallelism: 25,
             complete_gaps_interval_secs: 3600,
             websocket_address: "127.0.0.1:9000",
+            mqtt_stream_capacity: 10000,
             mqtt_brokers: {
                 Messages: [
                     "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
@@ -55,7 +56,8 @@
                 from: 1,
                 to: 2147483647,
             )),
-            logs_dir: "chronicle/logs/",
+            logs_dir: Some("chronicle/logs/"),
+            max_log_size: Some(4*1024*1024*1024),
         ),
         historical_config_path: "./historical_config",
     ),

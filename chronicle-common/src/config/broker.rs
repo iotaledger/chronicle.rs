@@ -22,6 +22,8 @@ pub struct BrokerConfig {
     pub websocket_address: SocketAddr,
     /// MQTT addresses the broker will use as feed sources separated by type
     pub mqtt_brokers: HashMap<MqttType, HashSet<Url>>,
+    /// Mqtt stream capacity
+    pub mqtt_stream_capacity: usize,
     /// API endpoints the broker will use to request missing data
     pub api_endpoints: HashSet<Url>,
     /// Retries per api endpoint.
@@ -41,7 +43,9 @@ pub struct BrokerConfig {
     /// Complete gaps interval in seconds
     pub complete_gaps_interval_secs: u64,
     /// Archive directory
-    pub logs_dir: String,
+    pub logs_dir: Option<String>,
+    /// The maximum log file size
+    pub max_log_size: Option<u64>,
 }
 
 /// Enumerated MQTT feed source type
@@ -63,6 +67,7 @@ impl Default for BrokerConfig {
             retries_per_query: 100,
             complete_gaps_interval_secs: 60 * 60,
             websocket_address: ([127, 0, 0, 1], 9000).into(),
+            mqtt_stream_capacity: 10000,
             mqtt_brokers: hashmap! {
                 MqttType::Messages => hashset![
                     url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap(),
@@ -79,7 +84,8 @@ impl Default for BrokerConfig {
             ]
             .into(),
             sync_range: Some(Default::default()),
-            logs_dir: "chronicle/logs/".to_owned(),
+            logs_dir: Some("chronicle/logs/".to_owned()),
+            max_log_size: Some(4 * 1024 * 1024 * 1024),
         }
     }
 }

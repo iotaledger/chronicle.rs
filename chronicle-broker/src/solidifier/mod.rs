@@ -142,7 +142,6 @@ pub struct MilestoneData {
     milestone: Option<Box<MilestonePayload>>,
     messages: HashMap<MessageId, FullMessage>,
     pending: HashMap<MessageId, ()>,
-    complete: bool,
     created_by: CreatedBy,
 }
 
@@ -178,7 +177,6 @@ impl MilestoneData {
             milestone: None,
             messages: HashMap::new(),
             pending: HashMap::new(),
-            complete: false,
             created_by,
         }
     }
@@ -202,12 +200,6 @@ impl MilestoneData {
     }
     fn pending(&self) -> &HashMap<MessageId, ()> {
         &self.pending
-    }
-    fn set_completed(&mut self) {
-        self.complete = true;
-    }
-    fn is_complete(&self) -> bool {
-        self.complete
     }
 }
 
@@ -305,7 +297,7 @@ pub struct Solidifier {
     collector_handles: HashMap<u8, CollectorHandle>,
     collector_count: u8,
     syncer_handle: SyncerHandle,
-    archiver_handle: ArchiverHandle,
+    archiver_handle: Option<ArchiverHandle>,
     message_id_partitioner: MessageIdPartitioner,
     first: Option<u32>,
     gap_start: u32,
@@ -334,7 +326,7 @@ impl Builder for SolidifierBuilder {
             collector_handles: self.collector_handles.unwrap(),
             collector_count,
             syncer_handle: self.syncer_handle.unwrap(),
-            archiver_handle: self.archiver_handle.unwrap(),
+            archiver_handle: self.archiver_handle,
             message_id_partitioner: MessageIdPartitioner::new(collector_count),
             first: None,
             gap_start: self.gap_start.unwrap(),

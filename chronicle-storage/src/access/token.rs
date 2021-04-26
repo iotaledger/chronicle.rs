@@ -52,13 +52,13 @@ impl ComputeToken<Hint> for ChronicleKeyspace {
 }
 
 impl ComputeToken<SyncRange> for ChronicleKeyspace {
-    fn token(key: &SyncRange) -> i64 {
+    fn token(_: &SyncRange) -> i64 {
         "permanode".get_token()
     }
 }
 
 impl ComputeToken<Synckey> for ChronicleKeyspace {
-    fn token(key: &Synckey) -> i64 {
+    fn token(_: &Synckey) -> i64 {
         "permanode".get_token()
     }
 }

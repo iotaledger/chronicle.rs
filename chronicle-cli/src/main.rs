@@ -26,7 +26,6 @@ use futures::{
     StreamExt,
 };
 use indicatif::{
-    MultiProgress,
     ProgressBar,
     ProgressStyle,
 };
@@ -306,7 +305,9 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             let dir = subcommand.value_of("directory").unwrap_or("");
             let mut path = PathBuf::from(dir);
             if path.is_relative() {
-                path = Path::new(&config.broker_config.logs_dir).join(path);
+                if let Some(logs_dir) = config.broker_config.logs_dir.as_ref() {
+                    path = Path::new(&logs_dir).join(path);
+                }
             }
             let (is_url, is_file) = Url::parse(dir)
                 .map(|url| (true, Path::new(url.path()).extension().is_some()))
@@ -451,13 +452,20 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
 
 async fn cleanup_archive() -> anyhow::Result<()> {
     let config = VersionedConfig::load(None)?.verify().await?;
+    let logs_dir;
+    if let Some(dir) = config.broker_config.logs_dir.as_ref() {
+        logs_dir = dir;
+    } else {
+        println!("No LogsDir in the config, Chronicle is running without archiver");
+        return Ok(());
+    }
     let mut last_log = Option::<(usize, usize, PathBuf)>::default();
     let style = ProgressStyle::default_bar()
         .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})")
         .progress_chars("##-");
     let pb = ProgressBar::new(0).with_style(style);
     pb.println("Gathering log files...");
-    let mut paths = glob::glob(&format!("{}/*to*.log", config.broker_config.logs_dir))
+    let mut paths = glob::glob(&format!("{}/*to*.log", logs_dir))
         .unwrap()
         .filter_map(|v| match v {
             Ok(path) => {

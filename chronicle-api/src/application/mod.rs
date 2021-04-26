@@ -55,13 +55,13 @@ impl<H: ChronicleAPIScope> Clone for ChronicleAPISender<H> {
 }
 
 impl<H: ChronicleAPIScope> Passthrough<ChronicleAPIThrough> for ChronicleAPISender<H> {
-    fn passthrough(&mut self, event: ChronicleAPIThrough, from_app_name: String) {}
+    fn passthrough(&mut self, _event: ChronicleAPIThrough, _from_app_name: String) {}
 
-    fn app_status_change(&mut self, service: &Service) {}
+    fn app_status_change(&mut self, _service: &Service) {}
 
-    fn launcher_status_change(&mut self, service: &Service) {}
+    fn launcher_status_change(&mut self, _service: &Service) {}
 
-    fn service(&mut self, service: &Service) {}
+    fn service(&mut self, _service: &Service) {}
 }
 
 impl<H: ChronicleAPIScope> Shutdown for ChronicleAPISender<H> {

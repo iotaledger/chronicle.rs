@@ -80,7 +80,7 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     collector_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
-    logs_dir_path: PathBuf,
+    logs_dir_path: Option<PathBuf>,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
     default_keyspace: ChronicleKeyspace,
@@ -399,8 +399,12 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
             synced_but_unlogged: Vec::new(),
             gaps: Vec::new(),
         };
-        let logs_dir_path =
-            PathBuf::from_str(&config.broker_config.logs_dir).expect("Failed to parse configured logs path!");
+        let logs_dir_path;
+        if let Some(logs_dir) = config.broker_config.logs_dir {
+            logs_dir_path = Some(PathBuf::from_str(&logs_dir).expect("Failed to parse configured logs path!"));
+        } else {
+            logs_dir_path = None;
+        }
         let parallelism = self.parallelism.unwrap_or(25);
         ChronicleBroker::<H> {
             service: Service::new(),
