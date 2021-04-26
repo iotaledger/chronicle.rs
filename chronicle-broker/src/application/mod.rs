@@ -13,6 +13,7 @@ use crate::{
     websocket::*,
 };
 use async_trait::async_trait;
+use chronicle_common::config::BrokerConfig;
 use std::{
     ops::Range,
     str::FromStr,
@@ -160,7 +161,7 @@ pub enum ImporterSession {
 }
 
 /// Topology event
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum Topology {
     /// Add new MQTT Messages feed source
     AddMqttMessages(Url),

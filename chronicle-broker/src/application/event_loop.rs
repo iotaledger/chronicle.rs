@@ -24,7 +24,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                 // ensure to drop handle
                                 self.handle.take();
                             }
-                            ChronicleBrokerThrough::Topology(topology) => {
+                            ChronicleBrokerThrough::Topology(mut topology) => {
                                 if self.service.is_stopping() {
                                     // response that should not change the topology while is_stopping
                                     error!("Not supposed to dynamiclly change the topology while broker service is_stopped");
@@ -56,13 +56,33 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                         self.handle_import(topology).await;
                                         self.try_close_importer_session().await;
                                     }
-                                    super::Topology::Requesters(requester_topology) => {
+                                    super::Topology::Requesters(ref mut requester_topology) => {
                                         match requester_topology {
                                             RequesterTopology::AddEndpoint(ref url) => {
-                                                // todo verfiy the url
-                                                self.collector_handles.values().for_each(|h| {
-                                                    h.send_requester_topology(requester_topology.clone());
-                                                });
+                                                let reqwest_client = reqwest::Client::new();
+                                                if let Some(url) = BrokerConfig::adjust_api_endpoint(url.clone()) {
+                                                    if let Err(e) =
+                                                        BrokerConfig::verify_endpoint(&reqwest_client, &url).await
+                                                    {
+                                                        error!("{}", e);
+                                                        let socket_msg =
+                                                            super::SocketMsg::ChronicleBroker(Err(topology.clone()));
+                                                        self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
+                                                    } else {
+                                                        *requester_topology =
+                                                            RequesterTopology::AddEndpoint(url.clone());
+                                                        self.collector_handles.values().for_each(|h| {
+                                                            h.send_requester_topology(requester_topology.clone());
+                                                        });
+                                                        let socket_msg =
+                                                            super::SocketMsg::ChronicleBroker(Ok(topology.clone()));
+                                                        self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
+                                                    }
+                                                } else {
+                                                    let socket_msg =
+                                                        super::SocketMsg::ChronicleBroker(Err(topology.clone()));
+                                                    self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
+                                                };
                                             }
                                             RequesterTopology::RemoveEndpoint(_) => {
                                                 self.collector_handles.values().for_each(|h| {

@@ -107,51 +107,59 @@ impl BrokerConfig {
         self.api_endpoints = self
             .api_endpoints
             .drain()
-            .filter_map(|endpoint| {
-                let path = endpoint.as_str();
-                if path.is_empty() {
-                    warn!("Empty endpoint provided!");
-                    return None;
-                }
-                if !path.ends_with("/") {
-                    warn!("Endpoint provided without trailing slash: {}", endpoint);
-                    let new_endpoint = format!("{}/", path).parse();
-                    if let Ok(new_endpoint) = new_endpoint {
-                        return Some(new_endpoint);
-                    } else {
-                        warn!("Could not append trailing slash!");
-                        return None;
-                    }
-                }
-                Some(endpoint)
-            })
+            .filter_map(|endpoint| Self::adjust_api_endpoint(endpoint))
             .collect();
         for endpoint in self.api_endpoints.iter() {
-            let res = client
-                .get(
-                    endpoint
-                        .join("info")
-                        .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?,
-                )
-                .send()
-                .await
-                .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?;
-            if !res.status().is_success() {
-                let url = res.url().clone();
-                let err = res.json::<Value>().await;
-                bail!(
-                    "Error verifying endpoint \"{}\"\nRequest URL: \"{}\"\nResult: {:#?}",
-                    endpoint,
-                    url,
-                    err
-                );
-            }
+            Self::verify_endpoint(&client, endpoint).await?
         }
         let sync_range = self.sync_range.get_or_insert_with(|| SyncRange::default());
         if sync_range.from == 0 || sync_range.to == 0 {
             bail!("Error verifying sync from/to, zero provided!\nPlease provide non-zero milestone index");
         } else if sync_range.from >= sync_range.to {
             bail!("Error verifying sync from/to, greater or equal provided!\nPlease provide lower \"Sync range from\" milestone index");
+        }
+        Ok(())
+    }
+    /// Adjust IOTA api endpoint url and ensure it's correct or return None otherwise
+    pub fn adjust_api_endpoint(endpoint: Url) -> Option<Url> {
+        let path = endpoint.as_str();
+        if path.is_empty() {
+            warn!("Empty endpoint provided!");
+            return None;
+        }
+        if !path.ends_with("/") {
+            warn!("Endpoint provided without trailing slash: {}", endpoint);
+            let new_endpoint = format!("{}/", path).parse();
+            if let Ok(new_endpoint) = new_endpoint {
+                return Some(new_endpoint);
+            } else {
+                warn!("Could not append trailing slash!");
+                return None;
+            }
+        }
+        Some(endpoint)
+    }
+
+    /// Verify if the IOTA api endpoint is active and correct
+    pub async fn verify_endpoint(client: &Client, endpoint: &Url) -> anyhow::Result<()> {
+        let res = client
+            .get(
+                endpoint
+                    .join("info")
+                    .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?,
+            )
+            .send()
+            .await
+            .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?;
+        if !res.status().is_success() {
+            let url = res.url().clone();
+            let err = res.json::<Value>().await;
+            bail!(
+                "Error verifying endpoint \"{}\"\nRequest URL: \"{}\"\nResult: {:#?}",
+                endpoint,
+                url,
+                err
+            );
         }
         Ok(())
     }
