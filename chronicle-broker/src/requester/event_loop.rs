@@ -11,9 +11,12 @@ impl EventLoop<CollectorHandle> for Requester {
     async fn event_loop(
         &mut self,
         _status: Result<(), Need>,
-        _supervisor: &mut Option<CollectorHandle>,
+        supervisor: &mut Option<CollectorHandle>,
     ) -> Result<(), Need> {
-        let collector_handle = _supervisor.as_mut().expect("Requester expected collector handle");
+        let collector_handle = supervisor.as_mut().expect("Requester expected collector handle");
+        self.service.update_status(ServiceStatus::Running);
+        let event = CollectorEvent::Internal(Internal::Service(self.service.clone()));
+        let _ = collector_handle.send(event);
         while let Some(event) = self.inbox.recv().await {
             match event {
                 RequesterEvent::RequestFullMessage(message_id, try_ms_index) => {
@@ -24,6 +27,22 @@ impl EventLoop<CollectorHandle> for Requester {
                     self.request_milestone_message_with_retries(collector_handle, milestone_index)
                         .await;
                 }
+                RequesterEvent::Topology(topology) => match topology {
+                    RequesterTopology::AddEndpoint(url) => {
+                        info!("Trying to AddEndpoint: {}", url);
+                        if self.api_endpoints.iter().all(|u| u != &url) {
+                            info!("AddedEndpoint: {}", url);
+                            self.api_endpoints.push_front(url);
+                        }
+                    }
+                    RequesterTopology::RemoveEndpoint(url) => {
+                        info!("Trying to RemoveEndpoint: {}", url);
+                        if let Some(p) = self.api_endpoints.iter().position(|u| u == &url) {
+                            info!("RemovedEndpoint: {}", url);
+                            self.api_endpoints.remove(p);
+                        }
+                    }
+                },
             }
         }
         Ok(())
@@ -41,15 +60,22 @@ impl Requester {
         let mut retries = self.retries;
         loop {
             if retries > 0 {
-                if let Ok(full_message) = self.request_message_and_metadata(message_id).await {
-                    self.respond_to_collector(collector_handle, try_ms_index, Some(message_id), Some(full_message));
-                    break;
+                if let Some(remote_url) = self.api_endpoints.pop_back() {
+                    if let Ok(full_message) = self.request_message_and_metadata(&remote_url, message_id).await {
+                        self.respond_to_collector(collector_handle, try_ms_index, Some(message_id), Some(full_message));
+                        self.api_endpoints.push_front(remote_url);
+                        break;
+                    } else {
+                        retries -= 1;
+                        // keep retrying, but yield to keep the system responsive
+                        tokio::task::yield_now().await;
+                        self.api_endpoints.push_front(remote_url);
+                        continue;
+                    }
                 } else {
-                    retries -= 1;
-                    // keep retrying, but yield to keep the system responsive
-                    tokio::task::yield_now().await;
-                    continue;
-                }
+                    self.respond_to_collector(collector_handle, try_ms_index, None, None);
+                    break;
+                };
             } else {
                 self.respond_to_collector(collector_handle, try_ms_index, None, None);
                 break;
@@ -64,20 +90,27 @@ impl Requester {
         let mut retries = self.retries;
         loop {
             if retries > 0 {
-                if let Ok(full_message) = self.request_milestone_message(milestone_index).await {
-                    self.respond_to_collector(
-                        collector_handle,
-                        milestone_index,
-                        Some(full_message.metadata().message_id),
-                        Some(full_message),
-                    );
-                    break;
+                if let Some(remote_url) = self.api_endpoints.pop_back() {
+                    if let Ok(full_message) = self.request_milestone_message(&remote_url, milestone_index).await {
+                        self.respond_to_collector(
+                            collector_handle,
+                            milestone_index,
+                            Some(full_message.metadata().message_id),
+                            Some(full_message),
+                        );
+                        self.api_endpoints.push_front(remote_url);
+                        break;
+                    } else {
+                        retries -= 1;
+                        // keep retrying, but yield to keep the system responsive
+                        tokio::task::yield_now().await;
+                        self.api_endpoints.push_front(remote_url);
+                        continue;
+                    }
                 } else {
-                    retries -= 1;
-                    // keep retrying, but yield to keep the system responsive
-                    tokio::task::yield_now().await;
-                    continue;
-                }
+                    self.respond_to_collector(collector_handle, milestone_index, None, None);
+                    break;
+                };
             } else {
                 self.respond_to_collector(collector_handle, milestone_index, None, None);
                 break;
@@ -95,9 +128,7 @@ impl Requester {
             CollectorEvent::MessageAndMeta(self.requester_id, ms_index, opt_message_id, opt_full_message);
         let _ = collector_handle.send(collector_event);
     }
-    async fn request_milestone_message(&mut self, milestone_index: u32) -> Result<FullMessage, ()> {
-        let remote_url = self.api_endpoints.pop_back().unwrap();
-        self.api_endpoints.push_front(remote_url.clone());
+    async fn request_milestone_message(&mut self, remote_url: &Url, milestone_index: u32) -> Result<FullMessage, ()> {
         let get_milestone_url = remote_url.join(&format!("milestones/{}", milestone_index)).unwrap();
         let milestone_response = self
             .reqwest_client
@@ -114,7 +145,7 @@ impl Requester {
                 if let Ok(milestone) = milestone {
                     let milestone = milestone.into_inner();
                     let message_id = MessageId::from_str(&milestone.message_id).expect("Expected message_id as string");
-                    return self.request_message_and_metadata(message_id).await;
+                    return self.request_message_and_metadata(remote_url, message_id).await;
                 }
             } else {
                 if !milestone_response.status().is_success() {
@@ -126,9 +157,11 @@ impl Requester {
         }
         Err(())
     }
-    async fn request_message_and_metadata(&mut self, message_id: MessageId) -> Result<FullMessage, ()> {
-        let remote_url = self.api_endpoints.pop_back().unwrap();
-        self.api_endpoints.push_front(remote_url.clone());
+    async fn request_message_and_metadata(
+        &mut self,
+        remote_url: &Url,
+        message_id: MessageId,
+    ) -> Result<FullMessage, ()> {
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
         let message_response = self

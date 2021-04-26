@@ -27,14 +27,14 @@ impl Collector {
     /// Spawn a number of collector requester handles
     fn spawn_requester(&mut self) {
         for id in 0..self.requester_count {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, rx) = self.requesters_channels.pop().expect("Expected requester channels");
             let inbox = RequesterInbox { rx };
             let reqwest_client = self.reqwest_client.clone();
             let requester = RequesterBuilder::new()
                 .inbox(inbox)
                 .requester_id(id)
                 .api_endpoints(self.api_endpoints.iter().cloned().collect())
-                .retries_per_endpoint(5)
+                .retries_per_endpoint(self.retries_per_endpoint)
                 .reqwest_client(reqwest_client)
                 .build();
             let (abort_handle, abort_registration) = futures::future::AbortHandle::new_pair();

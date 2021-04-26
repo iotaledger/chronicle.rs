@@ -45,8 +45,9 @@ builder!(CollectorBuilder {
     api_endpoints: VecDeque<Url>,
     collector_count: u8,
     requester_count: u8,
-    confirmed_retries: usize,
-    unconfirmed_retries: usize,
+    retries_per_query: usize,
+    retries_per_endpoint: usize,
+    requesters_channels: Vec<(RequesterSender, RequesterReceiver)>,
     handle: CollectorHandle,
     storage_config: StorageConfig
 });
@@ -62,9 +63,12 @@ pub enum CollectorEvent {
     /// Ask requests from solidifier(s)
     Ask(AskCollector),
     /// Shutdown the collector
+    Internal(Internal),
+}
+pub enum Internal {
+    Service(Service),
     Shutdown,
 }
-
 /// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
@@ -77,6 +81,16 @@ pub enum AskCollector {
 #[derive(Clone)]
 pub struct CollectorHandle {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<CollectorEvent>,
+    pub(crate) requesters_senders: Vec<RequesterSender>,
+}
+
+impl CollectorHandle {
+    pub(crate) fn send_requester_topology(&self, requester_topology: RequesterTopology) {
+        self.requesters_senders.iter().for_each(|r| {
+            let event = RequesterEvent::Topology(requester_topology.clone());
+            r.send(event);
+        });
+    }
 }
 pub(crate) struct MessageIdPartitioner {
     count: u8,
@@ -127,7 +141,7 @@ impl Shutdown for CollectorHandle {
     where
         Self: Sized,
     {
-        let shutdown_event = CollectorEvent::Shutdown;
+        let shutdown_event = CollectorEvent::Internal(Internal::Shutdown);
         self.send(shutdown_event).ok();
         None
     }
@@ -159,10 +173,13 @@ pub struct Collector {
     inbox: CollectorInbox,
     /// The hashmap from a partition id to the corresponding solidifier handle
     solidifier_handles: HashMap<u8, SolidifierHandle>,
-    /// The number of confirmed retires
-    confirmed_retries: usize,
-    /// The number of unconfirmed retries
-    unconfirmed_retries: usize,
+    /// All requester channels
+    requesters_channels: Vec<(RequesterSender, RequesterReceiver)>,
+    /// The number of retries per query
+    retries_per_query: usize,
+    /// The total number of retries per endpoint
+    /// NOTE: used by requester
+    retries_per_endpoint: usize,
     /// The hashmap to facilitate the recording the pending requests, which maps from
     /// a message id to the corresponding (milestone index, message) pair
     pending_requests: HashMap<MessageId, (u32, Message)>,
@@ -211,10 +228,13 @@ impl Builder for CollectorBuilder {
             est_ms: MilestoneIndex(0),
             ref_ms: MilestoneIndex(0),
             solidifier_handles: self.solidifier_handles.expect("Collector expected solidifier handles"),
-            confirmed_retries: self.confirmed_retries.unwrap_or(100),
-            unconfirmed_retries: self.unconfirmed_retries.unwrap_or(10),
+            retries_per_query: self.retries_per_query.unwrap_or(100),
+            retries_per_endpoint: self.retries_per_endpoint.unwrap_or(5),
             collector_count: self.collector_count.unwrap(),
             requester_count: self.requester_count.unwrap_or(10),
+            requesters_channels: self
+                .requesters_channels
+                .expect("Collector expected requesters channels"),
             handle: self.handle,
             inbox: self.inbox.unwrap(),
             pending_requests: HashMap::new(),

@@ -26,6 +26,12 @@ use url::Url;
 mod event_loop;
 mod init;
 mod terminating;
+
+/// Requester Tokio handle
+pub type RequesterSender = tokio::sync::mpsc::UnboundedSender<RequesterEvent>;
+/// Requester Tokio inbox
+pub type RequesterReceiver = tokio::sync::mpsc::UnboundedReceiver<RequesterEvent>;
+
 // Requester builder
 builder!(RequesterBuilder {
     requester_id: u8,
@@ -42,6 +48,16 @@ pub enum RequesterEvent {
     RequestFullMessage(MessageId, u32),
     /// Requesting Milestone for u32 milestone index;
     RequestMilestone(u32),
+    /// RequesterTopology event, to update the api endpoints
+    Topology(RequesterTopology),
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Requester topology used by admins to add/remove IOTA api endpoints
+pub enum RequesterTopology {
+    /// Add new Api Endpoint
+    AddEndpoint(Url),
+    /// Remove existing Api Endpoint
+    RemoveEndpoint(Url),
 }
 
 /// Requester handle
@@ -128,7 +144,7 @@ impl Builder for RequesterBuilder {
     type State = Requester;
     fn build(self) -> Self::State {
         let api_endpoints = self.api_endpoints.unwrap();
-        // we retry up to 5 times per api endpoint for a given request
+        // we retry up to N times per api endpoint for a given request
         let retries_per_endpoint = self.retries_per_endpoint.unwrap_or(5);
         let retries = api_endpoints.len() * retries_per_endpoint;
         Self::State {

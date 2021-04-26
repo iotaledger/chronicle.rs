@@ -39,9 +39,14 @@ impl Builder for AppsBuilder {
     type State = Apps;
 
     fn build(self) -> Self::State {
-        let storage_config = get_config().storage_config;
+        let config = get_config();
+        let storage_config = config.storage_config;
+        let broker_config = config.broker_config;
         let chronicle_api_builder = ChronicleAPIBuilder::new();
-        let chronicle_broker_builder = ChronicleBrokerBuilder::new();
+        let chronicle_broker_builder = ChronicleBrokerBuilder::new()
+            .collector_count(broker_config.collector_count)
+            .parallelism(broker_config.parallelism)
+            .complete_gaps_interval_secs(broker_config.complete_gaps_interval_secs);
         let scylla_builder = ScyllaBuilder::new()
             .listen_address(storage_config.listen_address.to_string())
             .thread_count(match storage_config.thread_count {

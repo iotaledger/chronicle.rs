@@ -171,7 +171,7 @@ impl VersionedValue {
         let config: VersionedConfig = Config::default().try_into()?;
         config.save(path.clone())?;
         bail!(
-                "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!", 
+                "Config file was not found! Saving a default config file at {}. Please edit it and restart the application!",
                 std::fs::canonicalize(&path).map(|p| p.to_string_lossy().into_owned()).unwrap_or(path)
             );
     }
@@ -295,6 +295,12 @@ mod test {
             },
             api_config: ApiConfig {},
             broker_config: BrokerConfig {
+                collector_count: 10,
+                requester_count: 10,
+                parallelism: 25,
+                retries_per_endpoint: 5,
+                retries_per_query: 100,
+                complete_gaps_interval_secs: 3600,
                 websocket_address: ([127, 0, 0, 1], 9000).into(),
                 mqtt_brokers: hashmap! {
                     MqttType::Messages => hashset![

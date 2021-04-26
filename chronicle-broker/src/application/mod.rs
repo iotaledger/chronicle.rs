@@ -7,6 +7,7 @@ use crate::{
     importer::*,
     listener::*,
     mqtt::*,
+    requester::*,
     solidifier::*,
     syncer::*,
     websocket::*,
@@ -32,7 +33,7 @@ builder!(
     #[derive(Clone)]
     ChronicleBrokerBuilder<H> {
         listener_handle: ListenerHandle,
-        reschedule_after: Duration,
+        complete_gaps_interval_secs: u64,
         parallelism: u8,
         collector_count: u8
 });
@@ -72,6 +73,7 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     importer_handles: HashMap<String, ImporterHandle>,
     asked_to_shutdown: HashMap<String, ()>,
     parallelism: u8,
+    complete_gaps_interval: Duration,
     parallelism_points: u8,
     pending_imports: Vec<Topology>,
     in_progress_importers: usize,
@@ -177,6 +179,8 @@ pub enum Topology {
         /// Provide optional import range
         import_range: Option<Range<u32>>,
     },
+    /// AddEndpoint
+    Requesters(RequesterTopology),
 }
 
 #[derive(Deserialize, Serialize)]
@@ -419,6 +423,7 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
             default_keyspace,
             sync_range,
             sync_data,
+            complete_gaps_interval: Duration::from_secs(self.complete_gaps_interval_secs.unwrap()),
         }
         .set_name()
     }

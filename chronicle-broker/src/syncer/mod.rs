@@ -209,7 +209,11 @@ impl Name for Syncer {
 
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> AknShutdown<Syncer> for BrokerHandle<H> {
-    async fn aknowledge_shutdown(self, mut _state: Syncer, _status: Result<(), Need>) {}
+    async fn aknowledge_shutdown(self, mut state: Syncer, status: Result<(), Need>) {
+        state.service.update_status(ServiceStatus::Stopped);
+        let event = BrokerEvent::Children(BrokerChild::Syncer(state.service.clone(), status));
+        let _ = self.send(event);
+    }
 }
 
 /// ASC ordering wrapper

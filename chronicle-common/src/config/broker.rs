@@ -24,8 +24,22 @@ pub struct BrokerConfig {
     pub mqtt_brokers: HashMap<MqttType, HashSet<Url>>,
     /// API endpoints the broker will use to request missing data
     pub api_endpoints: HashSet<Url>,
+    /// Retries per api endpoint.
+    pub retries_per_endpoint: usize,
+    /// Retries per scylla query.
+    pub retries_per_query: usize,
+    /// Defines the total number of concurrent collectors and solidifiers
+    pub collector_count: u8,
+    /// Defines the total number of concurrent requester per collector
+    pub requester_count: u8,
+    /// Used by Importer(s) and Syncer:
+    /// - Importer(s) uses this to define the maximum number of concurrent milestone data and messages
+    /// - Syncer(worker which fills gaps) uses this to define the maximum number of solidify requests/milestone data.
+    pub parallelism: u8,
     /// Desired range of milestone indexes to sync if missing
     pub sync_range: Option<SyncRange>,
+    /// Complete gaps interval in seconds
+    pub complete_gaps_interval_secs: u64,
     /// Archive directory
     pub logs_dir: String,
 }
@@ -42,6 +56,12 @@ pub enum MqttType {
 impl Default for BrokerConfig {
     fn default() -> Self {
         Self {
+            collector_count: 10,
+            requester_count: 10,
+            parallelism: 25,
+            retries_per_endpoint: 5,
+            retries_per_query: 100,
+            complete_gaps_interval_secs: 60 * 60,
             websocket_address: ([127, 0, 0, 1], 9000).into(),
             mqtt_brokers: hashmap! {
                 MqttType::Messages => hashset![

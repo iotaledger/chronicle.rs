@@ -56,6 +56,21 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                         self.handle_import(topology).await;
                                         self.try_close_importer_session().await;
                                     }
+                                    Topology::Requesters(requester_topology) => {
+                                        match requester_topology {
+                                            RequesterTopology::AddEndpoint(ref url) => {
+                                                // todo verfiy the url
+                                                self.collector_handles.values().for_each(|h| {
+                                                    h.send_requester_topology(requester_topology.clone());
+                                                });
+                                            }
+                                            RequesterTopology::RemoveEndpoint(_) => {
+                                                self.collector_handles.values().for_each(|h| {
+                                                    h.send_requester_topology(requester_topology.clone());
+                                                });
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             ChronicleBrokerThrough::ExitProgram => {

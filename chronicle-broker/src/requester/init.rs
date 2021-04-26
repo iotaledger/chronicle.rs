@@ -5,7 +5,10 @@ use super::*;
 
 #[async_trait::async_trait]
 impl Init<CollectorHandle> for Requester {
-    async fn init(&mut self, status: Result<(), Need>, _supervisor: &mut Option<CollectorHandle>) -> Result<(), Need> {
+    async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<CollectorHandle>) -> Result<(), Need> {
+        self.service.update_status(ServiceStatus::Initializing);
+        let event = CollectorEvent::Internal(Internal::Service(self.service.clone()));
+        let _ = supervisor.as_mut().expect("Expected Collector handle").send(event);
         status
     }
 }

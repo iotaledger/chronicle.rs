@@ -30,6 +30,12 @@
         ),
         api_config: (),
         broker_config: (
+            retries_per_endpoint: 5,
+            retries_per_query: 100,
+            collector_count: 10,
+            requester_count: 10,
+            parallelism: 25,
+            complete_gaps_interval_secs: 3600,
             websocket_address: "127.0.0.1:9000",
             mqtt_brokers: {
                 Messages: [
