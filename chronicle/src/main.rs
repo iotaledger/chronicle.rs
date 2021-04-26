@@ -99,9 +99,10 @@ async fn chronicle(apps: Apps) {
         .await
         .future(|apps| async {
             let storage_config = get_config_async().await.storage_config;
+            let uniform_rf = storage_config.try_get_uniform_rf().expect("Expected Unifrom RF");
             debug!("Adding nodes: {:?}", storage_config.nodes);
             let ws = format!("ws://{}/", storage_config.listen_address);
-            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
+            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), uniform_rf)
                 .await
                 .ok();
             init_database().await.ok();
