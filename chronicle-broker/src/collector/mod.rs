@@ -65,8 +65,11 @@ pub enum CollectorEvent {
     /// Shutdown the collector
     Internal(Internal),
 }
+/// Internal sub enum event
 pub enum Internal {
+    /// Service variant used by Requester(s)
     Service(Service),
+    /// Used by supervisor(Broker) to shutdown the collector
     Shutdown,
 }
 /// Messages for asking the collector for missing data
@@ -88,7 +91,7 @@ impl CollectorHandle {
     pub(crate) fn send_requester_topology(&self, requester_topology: RequesterTopology) {
         self.requesters_senders.iter().for_each(|r| {
             let event = RequesterEvent::Topology(requester_topology.clone());
-            r.send(event);
+            r.send(event).ok();
         });
     }
 }

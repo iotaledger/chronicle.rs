@@ -33,7 +33,7 @@ pub const CONFIG_PATH: &str = "./config.ron";
 pub const HISTORICAL_CONFIG_PATH: &str = "./historical_config";
 /// The current config version.
 /// **Must be updated with each change to the config format.**
-const CURRENT_VERSION: u32 = 0;
+const CURRENT_VERSION: u32 = 1;
 
 /// Versioned config. Tracks version between config changes so that it can be validated on load.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
@@ -302,6 +302,7 @@ mod test {
                 retries_per_query: 100,
                 complete_gaps_interval_secs: 3600,
                 websocket_address: ([127, 0, 0, 1], 9000).into(),
+                mqtt_stream_capacity: 10000,
                 mqtt_brokers: hashmap! {
                     MqttType::Messages => hashset![
                         url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap(),
@@ -318,7 +319,8 @@ mod test {
                 ]
                 .into(),
                 sync_range: Some(SyncRange::default()),
-                logs_dir: "chronicle/logs/".to_owned(),
+                logs_dir: Some("chronicle/logs/".to_owned()),
+                max_log_size: Some(4 * 1024 * 1024 * 1024),
             },
             historical_config_path: HISTORICAL_CONFIG_PATH.to_owned(),
         };
