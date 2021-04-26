@@ -81,7 +81,7 @@ To run Chronicle, you need the following:
     You can install these packages for Debian based distros, using the following command:
 
     ```bash
-    sudo apt-get install build-essential gcc make cmake cmake-gui cmake-curses-gui
+    sudo apt-get install build-essential gcc make cmake cmake-gui cmake-curses-gui pkg-config openssl libssl-dev
     ```
     For other Linux distros, please refer to your package manager to install the build-essential pkgs
 
