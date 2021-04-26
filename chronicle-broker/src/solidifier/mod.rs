@@ -142,7 +142,6 @@ pub struct MilestoneData {
     milestone: Option<Box<MilestonePayload>>,
     messages: HashMap<MessageId, FullMessage>,
     pending: HashMap<MessageId, ()>,
-    complete: bool,
     created_by: CreatedBy,
 }
 
@@ -178,7 +177,6 @@ impl MilestoneData {
             milestone: None,
             messages: HashMap::new(),
             pending: HashMap::new(),
-            complete: false,
             created_by,
         }
     }
@@ -202,12 +200,6 @@ impl MilestoneData {
     }
     fn pending(&self) -> &HashMap<MessageId, ()> {
         &self.pending
-    }
-    fn set_completed(&mut self) {
-        self.complete = true;
-    }
-    fn is_complete(&self) -> bool {
-        self.complete
     }
 }
 

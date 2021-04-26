@@ -25,6 +25,7 @@ pub mod syncer;
 /// Websocket command router
 pub mod websocket;
 
+#[allow(unused)]
 use anyhow::{
     anyhow,
     bail,

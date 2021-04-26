@@ -26,7 +26,6 @@ use futures::{
     StreamExt,
 };
 use indicatif::{
-    MultiProgress,
     ProgressBar,
     ProgressStyle,
 };

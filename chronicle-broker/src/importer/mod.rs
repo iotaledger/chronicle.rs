@@ -296,7 +296,9 @@ where
 {
     /// Create a new atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a number of
     /// retries
-    pub fn new(handle: std::sync::Arc<AtomicImporterHandle<S>>, keyspace: S, key: K, value: V, retries: usize) -> Self {
+    pub fn new(handle: std::sync::Arc<AtomicImporterHandle<S>>, key: K, value: V) -> Self {
+        let keyspace = handle.keyspace.clone();
+        let retries = handle.retries;
         Self {
             handle,
             keyspace,
@@ -307,14 +309,8 @@ where
     }
     /// Create a new boxed atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a
     /// number of retries
-    pub fn boxed(
-        handle: std::sync::Arc<AtomicImporterHandle<S>>,
-        keyspace: S,
-        key: K,
-        value: V,
-        retries: usize,
-    ) -> Box<Self> {
-        Box::new(Self::new(handle, keyspace, key, value, retries))
+    pub fn boxed(handle: std::sync::Arc<AtomicImporterHandle<S>>, key: K, value: V) -> Box<Self> {
+        Box::new(Self::new(handle, key, value))
     }
 }
 
@@ -455,10 +451,6 @@ where
 {
     /// The arced atomic importer handle for a given keyspace
     arc_handle: std::sync::Arc<AtomicImporterHandle<S>>,
-    /// The keyspace
-    keyspace: S,
-    /// The number of retries
-    retries: usize,
 }
 
 impl<S> MilestoneDataWorker<S>
@@ -472,11 +464,7 @@ where
         let atomic_handle =
             AtomicImporterHandle::new(importer_handle, keyspace.clone(), milestone_index, any_error, retries);
         let arc_handle = std::sync::Arc::new(atomic_handle);
-        Self {
-            arc_handle,
-            retries,
-            keyspace,
-        }
+        Self { arc_handle }
     }
 }
 
@@ -498,6 +486,6 @@ impl Inherent for MilestoneDataWorker<ChronicleKeyspace> {
         K: 'static + Send + Clone,
         V: 'static + Send + Clone,
     {
-        AtomicImporterWorker::boxed(self.arc_handle.clone(), self.keyspace.clone(), key, value, self.retries)
+        AtomicImporterWorker::boxed(self.arc_handle.clone(), key, value)
     }
 }

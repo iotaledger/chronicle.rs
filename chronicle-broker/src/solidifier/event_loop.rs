@@ -502,7 +502,6 @@ impl Solidifier {
         let milestone_exist = milestone_data.milestone_exist();
         if no_pending_left && milestone_exist {
             // milestone data is complete now
-            milestone_data.set_completed();
             info!("{} is solid", index);
             return true;
         }
