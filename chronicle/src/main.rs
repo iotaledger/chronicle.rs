@@ -13,22 +13,8 @@ use chronicle_common::{
     get_history_mut,
     metrics::*,
 };
-use chronicle_storage::access::{
-    ChronicleKeyspace,
-    Query,
-    Statements,
-};
-use scylla::{
-    access::{
-        send_local,
-        Consistency,
-        Keyspace,
-        ReporterHandle,
-    },
-    application::*,
-    Worker,
-    WorkerError,
-};
+use chronicle_storage::access::ChronicleKeyspace;
+use scylla_rs::prelude::*;
 use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,

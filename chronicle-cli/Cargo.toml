@@ -7,11 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-backstage = { git = "https://github.com/iotaledger/backstage.git", tag = "0.1.1"}
+backstage = "0.1"
 chronicle = { path = "../chronicle" }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-broker = { path = "../chronicle-broker" }
-scylla = { git = "https://github.com/iotaledger/scylla.rs.git", tag = "0.1.2" }
+scylla-rs = "0.1"
 clap = { version = "2.33", features = ["yaml"] }
 tokio = "1.5"
 tokio-tungstenite = "0.14"

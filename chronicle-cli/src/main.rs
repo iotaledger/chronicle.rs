@@ -31,7 +31,7 @@ use indicatif::{
     ProgressStyle,
 };
 use regex::Regex;
-use scylla::application::ScyllaThrough;
+use scylla_rs::prelude::ScyllaThrough;
 use std::{
     fs::{
         File,
@@ -121,7 +121,7 @@ async fn process() -> anyhow::Result<()> {
             let config = VersionedConfig::load(None)?.verify().await?;
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
             let message = Message::text(serde_json::to_string(&SocketMsg::Scylla(ScyllaThrough::Topology(
-                scylla::application::Topology::BuildRing(1),
+                scylla_rs::prelude::Topology::BuildRing(1),
             )))?);
             stream.send(message).await?;
         }
@@ -157,12 +157,12 @@ async fn nodes<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
 
         if let Some(address) = add_address {
-            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla::application::Topology::AddNode(address)));
+            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla_rs::prelude::Topology::AddNode(address)));
             let message = Message::text(serde_json::to_string(&message)?);
             stream.send(message).await?;
         }
         if let Some(address) = rem_address {
-            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla::application::Topology::RemoveNode(
+            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla_rs::prelude::Topology::RemoveNode(
                 address,
             )));
             let message = Message::text(serde_json::to_string(&message)?);

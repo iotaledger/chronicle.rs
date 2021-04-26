@@ -32,4 +32,4 @@ pub mod responses;
 extern crate rocket;
 
 use async_trait::async_trait;
-use backstage::*;
+use scylla_rs::prelude::*;

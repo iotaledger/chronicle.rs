@@ -1,7 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use crate::{
-    application::*,
+use super::{
+    application::SyncData,
     archiver::{
         ArchiverEvent,
         ArchiverHandle,
@@ -11,6 +11,7 @@ use crate::{
         SolidifierEvent,
         SolidifierHandle,
     },
+    *,
 };
 use chronicle_common::Wrapper;
 use chronicle_storage::keyspaces::ChronicleKeyspace;

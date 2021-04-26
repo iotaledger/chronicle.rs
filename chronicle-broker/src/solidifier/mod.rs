@@ -1,14 +1,22 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    application::*,
-    archiver::*,
-    collector::*,
+use super::{
+    archiver::{
+        ArchiverEvent,
+        ArchiverHandle,
+    },
+    collector::{
+        AskCollector,
+        CollectorEvent,
+        CollectorHandle,
+        MessageIdPartitioner,
+    },
     syncer::{
         SyncerEvent,
         SyncerHandle,
     },
+    *,
 };
 use bee_message::prelude::MilestonePayload;
 use serde::{
@@ -442,14 +450,7 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::handle_insert_unprepared_error(
-                    &self,
-                    &self.keyspace,
-                    &self.key,
-                    &self.value,
-                    id,
-                    reporter,
-                )?;
+                handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
             } else {
                 self.handle.any_error.store(true, Ordering::Relaxed);
             }
@@ -561,14 +562,7 @@ where
         );
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::handle_insert_unprepared_error(
-                    &self,
-                    &self.keyspace,
-                    &self.key,
-                    &self.value,
-                    id,
-                    reporter,
-                )?;
+                handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
             }
         } else if self.retries > 0 {
             self.retries -= 1;

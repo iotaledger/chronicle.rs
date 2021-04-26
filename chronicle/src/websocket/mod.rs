@@ -8,7 +8,7 @@ use chronicle_common::{
     get_history_mut_async,
     Persist,
 };
-use scylla::application::ScyllaThrough;
+use scylla_rs::prelude::ScyllaThrough;
 use serde::{
     Deserialize,
     Serialize,

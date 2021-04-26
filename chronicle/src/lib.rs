@@ -25,7 +25,7 @@ impl<T: Serialize> SocketMsg<T> {
                     .map_err(|e| e.to_string())
             }
             SocketMsg::Scylla(v) => {
-                serde_json::to_string(&scylla::application::SocketMsg::Scylla(v)).map_err(|e| e.to_string())
+                serde_json::to_string(&scylla_rs::prelude::SocketMsg::Scylla(v)).map_err(|e| e.to_string())
             }
         }
     }

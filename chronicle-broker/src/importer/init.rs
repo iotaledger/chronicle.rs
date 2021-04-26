@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use anyhow::anyhow;
 
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {

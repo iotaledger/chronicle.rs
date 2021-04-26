@@ -1,7 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::application::*;
+use super::*;
 use futures::{
     stream::{
         SplitSink,
@@ -15,6 +15,7 @@ pub(crate) use tokio_tungstenite::{
     tungstenite::Message,
     WebSocketStream,
 };
+
 mod event_loop;
 mod init;
 mod terminating;

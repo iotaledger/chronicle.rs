@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use scylla_cql::TokenEncoder;
 
 impl ComputeToken<MessageId> for ChronicleKeyspace {
     fn token(key: &MessageId) -> i64 {

@@ -31,7 +31,6 @@ use chronicle_common::{
 };
 use chronicle_storage::{
     access::{
-        GetSelectRequest,
         MessageMetadata,
         OutputRes,
         PartitionId,
@@ -59,10 +58,6 @@ use rocket::{
     State,
 };
 use rocket_contrib::json::Json;
-use scylla_cql::{
-    Consistency,
-    TryInto,
-};
 use std::{
     borrow::Borrow,
     collections::{
@@ -70,6 +65,7 @@ use std::{
         HashSet,
         VecDeque,
     },
+    convert::TryInto,
     io::Cursor,
     path::PathBuf,
     str::FromStr,

@@ -1,13 +1,21 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
+use super::*;
 use crate::{
-    application::*,
+    application::{
+        BrokerChild,
+        BrokerEvent,
+        BrokerHandle,
+        ChronicleBrokerScope,
+        SyncData,
+    },
     archiver::LogFile,
     solidifier::{
         FullMessage,
         MilestoneData,
     },
 };
+use application::ImporterSession;
 use bee_message::{
     output::Output,
     payload::transaction::{
@@ -19,14 +27,19 @@ use chronicle_common::{
     config::PartitionConfig,
     Synckey,
 };
+use chronicle_storage::access::SyncRecord;
+use scylla_rs::{
+    app::worker::handle_insert_unprepared_error,
+    prelude::stage::ReporterHandle,
+};
 use std::{
     collections::hash_map::IntoIter,
-    net::SocketAddr,
     ops::{
         Deref,
         DerefMut,
         Range,
     },
+    path::PathBuf,
     sync::atomic::Ordering,
 };
 
@@ -321,14 +334,7 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::handle_insert_unprepared_error(
-                    &self,
-                    &self.keyspace,
-                    &self.key,
-                    &self.value,
-                    id,
-                    reporter,
-                )?;
+                handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
                 return Ok(());
             }
         }
@@ -419,14 +425,7 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::handle_insert_unprepared_error(
-                    &self,
-                    &self.keyspace,
-                    &Synckey,
-                    &self.synced_record,
-                    id,
-                    reporter,
-                )?;
+                handle_insert_unprepared_error(&self, &self.keyspace, &Synckey, &self.synced_record, id, reporter)?;
                 return Ok(());
             }
         }
