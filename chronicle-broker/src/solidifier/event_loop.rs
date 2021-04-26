@@ -199,10 +199,6 @@ impl Solidifier {
         Ok(())
     }
     fn push_to_logger(&mut self, milestone_index: u32) -> anyhow::Result<()> {
-        info!(
-            "solidifier_id: {}, is pushing the milestone data for index: {}, to Logger",
-            self.partition_id, milestone_index
-        );
         // Remove milestoneData from self state and pass it to archiver
         let milestone_data = self.milestones_data.remove(&milestone_index).unwrap();
         // Update in_database
@@ -215,8 +211,14 @@ impl Solidifier {
             // Insert record into sync table
             self.handle_in_database(milestone_index)?;
         }
-        let archiver_event = ArchiverEvent::MilestoneData(milestone_data, None);
-        let _ = self.archiver_handle.send(archiver_event);
+        if let Some(archiver_handle) = self.archiver_handle.as_ref() {
+            info!(
+                "solidifier_id: {}, is pushing the milestone data for index: {}, to Logger",
+                self.partition_id, milestone_index
+            );
+            let archiver_event = ArchiverEvent::MilestoneData(milestone_data, None);
+            let _ = archiver_handle.send(archiver_event);
+        };
         Ok(())
     }
     fn push_to_syncer(&mut self, milestone_index: u32) -> anyhow::Result<()> {

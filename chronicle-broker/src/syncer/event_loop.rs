@@ -87,15 +87,13 @@ impl Syncer {
             self.highest = milestone_data.milestone_index();
             let mut next = self.highest + 1;
             // push it to archiver
-            let _ = self
-                .archiver_handle
-                .send(ArchiverEvent::MilestoneData(milestone_data, None));
+            self.try_send_to_archiver(ArchiverEvent::MilestoneData(milestone_data, None));
             // push the rest
             while let Some(ms_data) = self.milestones_data.pop() {
                 let milestone_data = ms_data.into_inner();
                 let ms_index = milestone_data.milestone_index();
                 if next != ms_index {
-                    let _ = self.archiver_handle.send(ArchiverEvent::Close(next));
+                    self.try_send_to_archiver(ArchiverEvent::Close(next));
                     // identify self.highest as glitch.
                     // eventually we will fill up this glitch
                     warn!(
@@ -109,14 +107,12 @@ impl Syncer {
                 }
                 next = ms_index + 1;
                 // push it to archiver
-                let _ = self
-                    .archiver_handle
-                    .send(ArchiverEvent::MilestoneData(milestone_data, None));
+                self.try_send_to_archiver(ArchiverEvent::MilestoneData(milestone_data, None));
             }
             // push the start point to archiver
-            let _ = self.oneshot.take().unwrap().send(next);
+            let _ = self.oneshot.take().expect("Expected oneshot channel").send(next);
             // tell archiver to finish the logfile
-            let _ = self.archiver_handle.send(ArchiverEvent::Close(next));
+            let _ = self.try_send_to_archiver(ArchiverEvent::Close(next));
             // set the first ask request
             self.complete_or_fillgaps();
         } else if !self.highest.eq(&0) && !self.skip {
@@ -127,9 +123,8 @@ impl Syncer {
                 let ms_index = ms_data.milestone_index();
                 if self.next.eq(&ms_index) {
                     // push it to archiver
-                    let _ = self
-                        .archiver_handle
-                        .send(ArchiverEvent::MilestoneData(ms_data.into_inner(), upper_ms_limit));
+                    let _ =
+                        self.try_send_to_archiver(ArchiverEvent::MilestoneData(ms_data.into_inner(), upper_ms_limit));
                     self.next += 1;
                 } else {
                     // put it back and then break
@@ -178,15 +173,22 @@ impl Syncer {
             _ => {}
         }
     }
+    fn try_send_to_archiver(&self, archiver_event: ArchiverEvent) {
+        if let Some(archiver_handle) = self.archiver_handle.as_ref() {
+            let _ = archiver_handle.send(archiver_event);
+        }
+    }
     fn close_log_file(&mut self) {
         let created_log_file = self.initial_gap_start != self.next;
         if self.prev_closed_log_filename != self.initial_gap_start && created_log_file {
-            info!(
-                "Informing Archiver to close {}.part, and should be renamed to: {}to{}.log",
-                self.initial_gap_start, self.initial_gap_start, self.next
-            );
-            // We should close any part file related to the current gap
-            let _ = self.archiver_handle.send(ArchiverEvent::Close(self.next));
+            if let Some(archiver_handle) = self.archiver_handle.as_ref() {
+                info!(
+                    "Informing Archiver to close {}.part, and should be renamed to: {}to{}.log",
+                    self.initial_gap_start, self.initial_gap_start, self.next
+                );
+                // We should close any part file related to the current gap
+                let _ = archiver_handle.send(ArchiverEvent::Close(self.next));
+            };
             self.prev_closed_log_filename = self.initial_gap_start;
         } else {
             self.prev_closed_log_filename = 0;
