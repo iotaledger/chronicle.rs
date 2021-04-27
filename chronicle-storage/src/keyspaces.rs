@@ -1,7 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-pub use scylla::access::Keyspace;
+pub use scylla_rs::prelude::Keyspace;
 use std::borrow::Cow;
 
 /// The Chronicle keyspace

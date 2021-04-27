@@ -32,7 +32,25 @@ pub use delete::{
     IndexationPK,
     ParentPK,
 };
-pub use scylla::access::*;
+use scylla_rs::{
+    cql::{
+        ColumnDecoder,
+        ColumnEncoder,
+        ColumnValue,
+        Decoder,
+        Frame,
+        Iter,
+        PreparedStatement,
+        QueryStatement,
+        Row,
+        Rows,
+        RowsDecoder,
+        TokenEncoder,
+        Values,
+        VoidDecoder,
+    },
+    prelude::*,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -88,11 +106,11 @@ impl<T> Record<T> {
 
     /// Creates an iterator over a set of records
     /// by decoding database rows using the `Row` impl
-    pub fn rows_iter(decoder: Decoder) -> anyhow::Result<scylla::access::Iter<Self>>
+    pub fn rows_iter(decoder: Decoder) -> anyhow::Result<Iter<Self>>
     where
-        Self: scylla::access::Row,
+        Self: Row,
     {
-        scylla::access::Iter::<Self>::new(decoder)
+        Iter::<Self>::new(decoder)
     }
 }
 

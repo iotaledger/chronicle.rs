@@ -1,7 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use crate::{
-    application::*,
+use super::{
+    application::SyncData,
     archiver::{
         ArchiverEvent,
         ArchiverHandle,
@@ -11,6 +11,7 @@ use crate::{
         SolidifierEvent,
         SolidifierHandle,
     },
+    *,
 };
 use chronicle_common::Wrapper;
 use chronicle_storage::keyspaces::ChronicleKeyspace;
@@ -126,7 +127,7 @@ pub struct Syncer {
     parallelism: u8,
     active: Option<Active>,
     first_ask: Option<AskSyncer>,
-    archiver_handle: ArchiverHandle,
+    archiver_handle: Option<ArchiverHandle>,
     milestones_data: std::collections::BinaryHeap<Ascending<MilestoneData>>,
     highest: u32,
     pending: u32,
@@ -172,7 +173,7 @@ impl Builder for SyncerBuilder {
             parallelism: self.parallelism.unwrap_or(solidifier_count),
             active: None,
             first_ask: self.first_ask,
-            archiver_handle: self.archiver_handle.unwrap(),
+            archiver_handle: self.archiver_handle,
             milestones_data: std::collections::BinaryHeap::new(),
             highest: 0,
             pending: solidifier_count as u32,

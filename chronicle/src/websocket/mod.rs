@@ -8,7 +8,7 @@ use chronicle_common::{
     get_history_mut_async,
     Persist,
 };
-use scylla::application::ScyllaThrough;
+use scylla_rs::prelude::ScyllaThrough;
 use serde::{
     Deserialize,
     Serialize,
@@ -92,13 +92,13 @@ impl<H: WebsocketScope> Clone for WebsocketSender<H> {
 }
 
 impl<H: WebsocketScope> Passthrough<WebsocketThrough> for WebsocketSender<H> {
-    fn passthrough(&mut self, event: WebsocketThrough, from_app_name: String) {}
+    fn passthrough(&mut self, _event: WebsocketThrough, _from_app_name: String) {}
 
-    fn app_status_change(&mut self, service: &Service) {}
+    fn app_status_change(&mut self, _service: &Service) {}
 
-    fn launcher_status_change(&mut self, service: &Service) {}
+    fn launcher_status_change(&mut self, _service: &Service) {}
 
-    fn service(&mut self, service: &Service) {}
+    fn service(&mut self, _service: &Service) {}
 }
 
 pub enum WebsocketEvent<T> {

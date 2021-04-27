@@ -22,6 +22,8 @@ pub struct BrokerConfig {
     pub websocket_address: SocketAddr,
     /// MQTT addresses the broker will use as feed sources separated by type
     pub mqtt_brokers: HashMap<MqttType, HashSet<Url>>,
+    /// Mqtt stream capacity
+    pub mqtt_stream_capacity: usize,
     /// API endpoints the broker will use to request missing data
     pub api_endpoints: HashSet<Url>,
     /// Retries per api endpoint.
@@ -41,7 +43,9 @@ pub struct BrokerConfig {
     /// Complete gaps interval in seconds
     pub complete_gaps_interval_secs: u64,
     /// Archive directory
-    pub logs_dir: String,
+    pub logs_dir: Option<String>,
+    /// The maximum log file size
+    pub max_log_size: Option<u64>,
 }
 
 /// Enumerated MQTT feed source type
@@ -63,6 +67,7 @@ impl Default for BrokerConfig {
             retries_per_query: 100,
             complete_gaps_interval_secs: 60 * 60,
             websocket_address: ([127, 0, 0, 1], 9000).into(),
+            mqtt_stream_capacity: 10000,
             mqtt_brokers: hashmap! {
                 MqttType::Messages => hashset![
                     url::Url::parse("tcp://api.hornet-0.testnet.chrysalis2.com:1883").unwrap(),
@@ -79,7 +84,8 @@ impl Default for BrokerConfig {
             ]
             .into(),
             sync_range: Some(Default::default()),
-            logs_dir: "chronicle/logs/".to_owned(),
+            logs_dir: Some("chronicle/logs/".to_owned()),
+            max_log_size: Some(4 * 1024 * 1024 * 1024),
         }
     }
 }
@@ -101,51 +107,59 @@ impl BrokerConfig {
         self.api_endpoints = self
             .api_endpoints
             .drain()
-            .filter_map(|endpoint| {
-                let path = endpoint.as_str();
-                if path.is_empty() {
-                    warn!("Empty endpoint provided!");
-                    return None;
-                }
-                if !path.ends_with("/") {
-                    warn!("Endpoint provided without trailing slash: {}", endpoint);
-                    let new_endpoint = format!("{}/", path).parse();
-                    if let Ok(new_endpoint) = new_endpoint {
-                        return Some(new_endpoint);
-                    } else {
-                        warn!("Could not append trailing slash!");
-                        return None;
-                    }
-                }
-                Some(endpoint)
-            })
+            .filter_map(|endpoint| Self::adjust_api_endpoint(endpoint))
             .collect();
         for endpoint in self.api_endpoints.iter() {
-            let res = client
-                .get(
-                    endpoint
-                        .join("info")
-                        .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?,
-                )
-                .send()
-                .await
-                .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?;
-            if !res.status().is_success() {
-                let url = res.url().clone();
-                let err = res.json::<Value>().await;
-                bail!(
-                    "Error verifying endpoint \"{}\"\nRequest URL: \"{}\"\nResult: {:#?}",
-                    endpoint,
-                    url,
-                    err
-                );
-            }
+            Self::verify_endpoint(&client, endpoint).await?
         }
         let sync_range = self.sync_range.get_or_insert_with(|| SyncRange::default());
         if sync_range.from == 0 || sync_range.to == 0 {
             bail!("Error verifying sync from/to, zero provided!\nPlease provide non-zero milestone index");
         } else if sync_range.from >= sync_range.to {
             bail!("Error verifying sync from/to, greater or equal provided!\nPlease provide lower \"Sync range from\" milestone index");
+        }
+        Ok(())
+    }
+    /// Adjust IOTA api endpoint url and ensure it's correct or return None otherwise
+    pub fn adjust_api_endpoint(endpoint: Url) -> Option<Url> {
+        let path = endpoint.as_str();
+        if path.is_empty() {
+            warn!("Empty endpoint provided!");
+            return None;
+        }
+        if !path.ends_with("/") {
+            warn!("Endpoint provided without trailing slash: {}", endpoint);
+            let new_endpoint = format!("{}/", path).parse();
+            if let Ok(new_endpoint) = new_endpoint {
+                return Some(new_endpoint);
+            } else {
+                warn!("Could not append trailing slash!");
+                return None;
+            }
+        }
+        Some(endpoint)
+    }
+
+    /// Verify if the IOTA api endpoint is active and correct
+    pub async fn verify_endpoint(client: &Client, endpoint: &Url) -> anyhow::Result<()> {
+        let res = client
+            .get(
+                endpoint
+                    .join("info")
+                    .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?,
+            )
+            .send()
+            .await
+            .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?;
+        if !res.status().is_success() {
+            let url = res.url().clone();
+            let err = res.json::<Value>().await;
+            bail!(
+                "Error verifying endpoint \"{}\"\nRequest URL: \"{}\"\nResult: {:#?}",
+                endpoint,
+                url,
+                err
+            );
         }
         Ok(())
     }

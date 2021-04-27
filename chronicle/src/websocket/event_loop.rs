@@ -11,7 +11,7 @@ use futures::{
     StreamExt,
 };
 use log::error;
-use scylla::application::Topology;
+use scylla_rs::prelude::Topology;
 use serde_json::Value;
 use tokio_tungstenite::connect_async;
 use url::Url;

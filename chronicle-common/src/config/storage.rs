@@ -71,6 +71,13 @@ impl Default for StorageConfig {
 impl StorageConfig {
     /// Verify that the storage config is valid
     pub async fn verify(&mut self) -> anyhow::Result<()> {
+        if self
+            .keyspaces
+            .iter()
+            .any(|k| k.data_centers.iter().any(|dc| dc.1.replication_factor == 0))
+        {
+            bail!("replication_factor must be greater than zero, ensure your config is correct");
+        }
         if self.reporter_count.eq(&0) {
             bail!("reporter_count must be greater than zero, ensure your config is correct");
         }
@@ -105,12 +112,25 @@ impl Default for KeyspaceConfig {
         }
     }
 }
+impl StorageConfig {
+    /// Try to get the uniform replication factor, which is the lowest rf in all keyspace across all dc
+    pub fn try_get_uniform_rf(&self) -> Option<u8> {
+        // collect all data_centers from all keyspaces
+        let mut replication_factors = Vec::new();
+        self.keyspaces.iter().for_each(|k| {
+            for (_, data_center_config) in k.data_centers.iter() {
+                replication_factors.push(data_center_config.replication_factor)
+            }
+        });
+        replication_factors.iter().min().and_then(|e| Some(*e))
+    }
+}
 
 /// Configuration for a scylla datacenter
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct DatacenterConfig {
     /// The scylla replication factor for this datacenter
-    pub replication_factor: usize,
+    pub replication_factor: u8,
 }
 
 /// The partition config. Defaults to using 1000 partitions and a chunk size of 60480.
@@ -126,7 +146,7 @@ impl Default for PartitionConfig {
     fn default() -> Self {
         PartitionConfig {
             partition_count: 1000,
-            milestone_chunk_size: 60480,
+            milestone_chunk_size: 8640,
         }
     }
 }

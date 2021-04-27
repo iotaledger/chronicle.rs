@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use scylla_cql::TokenEncoder;
 
 impl ComputeToken<MessageId> for ChronicleKeyspace {
     fn token(key: &MessageId) -> i64 {
@@ -53,13 +52,13 @@ impl ComputeToken<Hint> for ChronicleKeyspace {
 }
 
 impl ComputeToken<SyncRange> for ChronicleKeyspace {
-    fn token(key: &SyncRange) -> i64 {
+    fn token(_: &SyncRange) -> i64 {
         "permanode".get_token()
     }
 }
 
 impl ComputeToken<Synckey> for ChronicleKeyspace {
-    fn token(key: &Synckey) -> i64 {
+    fn token(_: &Synckey) -> i64 {
         "permanode".get_token()
     }
 }

@@ -1,16 +1,19 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    application::*,
-    collector::*,
+use super::{
+    collector::{
+        CollectorEvent,
+        CollectorHandle,
+        MessageIdPartitioner,
+    },
+    *,
 };
 use futures::stream::StreamExt;
 use std::{
     collections::HashMap,
     time::Duration,
 };
-pub(crate) use url::Url;
 
 mod event_loop;
 mod init;
@@ -48,12 +51,11 @@ pub struct Mqtt<T> {
     service: Service,
     url: Url,
     stream_capacity: usize,
-    collector_count: u8,
     collectors_handles: HashMap<u8, CollectorHandle>,
     partitioner: MessageIdPartitioner,
     handle: Option<MqttHandle>,
     inbox: Option<MqttInbox>,
-    topic: T,
+    _topic: T,
 }
 
 impl<T> Mqtt<T> {
@@ -137,13 +139,12 @@ impl<T: Topic> Builder for MqttBuilder<T> {
         Self::State {
             service: Service::new(),
             url: self.url.unwrap(),
-            collector_count,
             collectors_handles,
             partitioner: MessageIdPartitioner::new(collector_count),
             stream_capacity: self.stream_capacity.unwrap_or(10000),
             handle: None,
             inbox: None,
-            topic: self.topic.unwrap(),
+            _topic: self.topic.unwrap(),
         }
         .set_name()
     }

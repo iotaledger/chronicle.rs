@@ -1,14 +1,22 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    application::*,
-    archiver::*,
-    collector::*,
+use super::{
+    archiver::{
+        ArchiverEvent,
+        ArchiverHandle,
+    },
+    collector::{
+        AskCollector,
+        CollectorEvent,
+        CollectorHandle,
+        MessageIdPartitioner,
+    },
     syncer::{
         SyncerEvent,
         SyncerHandle,
     },
+    *,
 };
 use bee_message::prelude::MilestonePayload;
 use serde::{
@@ -110,11 +118,6 @@ impl InDatabase {
         self.in_database.insert(message_id, ());
     }
     fn check_if_all_in_database(&self) -> bool {
-        if self.messages_len.eq(&0) && self.in_database.len().eq(&0) {
-            panic!("Not supposed to be zero, milestone_index: {}", self.milestone_index);
-        } else if self.messages_len > 0 && self.in_database.len().eq(&0) {
-            println!("milestone index: {}, len: {} ", self.milestone_index, self.messages_len);
-        }
         self.messages_len == self.in_database.len()
     }
 }
@@ -134,7 +137,6 @@ pub struct MilestoneData {
     milestone: Option<Box<MilestonePayload>>,
     messages: HashMap<MessageId, FullMessage>,
     pending: HashMap<MessageId, ()>,
-    complete: bool,
     created_by: CreatedBy,
 }
 
@@ -170,7 +172,6 @@ impl MilestoneData {
             milestone: None,
             messages: HashMap::new(),
             pending: HashMap::new(),
-            complete: false,
             created_by,
         }
     }
@@ -194,12 +195,6 @@ impl MilestoneData {
     }
     fn pending(&self) -> &HashMap<MessageId, ()> {
         &self.pending
-    }
-    fn set_completed(&mut self) {
-        self.complete = true;
-    }
-    fn is_complete(&self) -> bool {
-        self.complete
     }
 }
 
@@ -297,7 +292,7 @@ pub struct Solidifier {
     collector_handles: HashMap<u8, CollectorHandle>,
     collector_count: u8,
     syncer_handle: SyncerHandle,
-    archiver_handle: ArchiverHandle,
+    archiver_handle: Option<ArchiverHandle>,
     message_id_partitioner: MessageIdPartitioner,
     first: Option<u32>,
     gap_start: u32,
@@ -326,7 +321,7 @@ impl Builder for SolidifierBuilder {
             collector_handles: self.collector_handles.unwrap(),
             collector_count,
             syncer_handle: self.syncer_handle.unwrap(),
-            archiver_handle: self.archiver_handle.unwrap(),
+            archiver_handle: self.archiver_handle,
             message_id_partitioner: MessageIdPartitioner::new(collector_count),
             first: None,
             gap_start: self.gap_start.unwrap(),
@@ -442,14 +437,7 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::handle_insert_unprepared_error(
-                    &self,
-                    &self.keyspace,
-                    &self.key,
-                    &self.value,
-                    id,
-                    reporter,
-                )?;
+                handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
             } else {
                 self.handle.any_error.store(true, Ordering::Relaxed);
             }
@@ -561,14 +549,7 @@ where
         );
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                scylla::worker::handle_insert_unprepared_error(
-                    &self,
-                    &self.keyspace,
-                    &self.key,
-                    &self.value,
-                    id,
-                    reporter,
-                )?;
+                handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
             }
         } else if self.retries > 0 {
             self.retries -= 1;

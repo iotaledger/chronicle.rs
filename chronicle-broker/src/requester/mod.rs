@@ -1,9 +1,13 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use crate::{
-    application::*,
-    collector::*,
+use super::{
+    collector::{
+        CollectorEvent,
+        CollectorHandle,
+        Internal,
+    },
     solidifier::FullMessage,
+    *,
 };
 use bee_rest_api::types::{
     dtos::MessageDto,

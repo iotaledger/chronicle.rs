@@ -1,5 +1,6 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
+use super::*;
 use crate::{
     archiver::*,
     collector::*,
@@ -12,37 +13,7 @@ use crate::{
     websocket::*,
 };
 use async_trait::async_trait;
-pub(crate) use backstage::*;
-pub(crate) use bee_common::packable::Packable;
-pub(crate) use bee_message::{
-    Message,
-    MessageId,
-};
-pub(crate) use chronicle_common::{
-    config::MqttType,
-    get_config,
-    get_config_async,
-    SyncRange,
-};
-pub(crate) use chronicle_storage::access::*;
-pub(crate) use log::*;
-pub(crate) use paho_mqtt::{
-    AsyncClient,
-    CreateOptionsBuilder,
-};
-use serde::{
-    Deserialize,
-    Serialize,
-};
-pub(crate) use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    ops::{
-        Deref,
-        DerefMut,
-    },
-    path::PathBuf,
-};
+use chronicle_common::config::BrokerConfig;
 use std::{
     ops::Range,
     str::FromStr,
@@ -110,7 +81,7 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     collector_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
     solidifier_handles: HashMap<u8, SolidifierHandle>,
-    logs_dir_path: PathBuf,
+    logs_dir_path: Option<PathBuf>,
     handle: Option<BrokerHandle<H>>,
     inbox: BrokerInbox<H>,
     default_keyspace: ChronicleKeyspace,
@@ -190,7 +161,7 @@ pub enum ImporterSession {
 }
 
 /// Topology event
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum Topology {
     /// Add new MQTT Messages feed source
     AddMqttMessages(Url),
@@ -221,7 +192,7 @@ pub enum SocketMsg<T> {
 }
 
 /// Representation of the database sync data
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SyncData {
     /// The completed(synced and logged) milestones data
     pub(crate) completed: Vec<Range<u32>>,
@@ -429,8 +400,12 @@ impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
             synced_but_unlogged: Vec::new(),
             gaps: Vec::new(),
         };
-        let logs_dir_path =
-            PathBuf::from_str(&config.broker_config.logs_dir).expect("Failed to parse configured logs path!");
+        let logs_dir_path;
+        if let Some(logs_dir) = config.broker_config.logs_dir {
+            logs_dir_path = Some(PathBuf::from_str(&logs_dir).expect("Failed to parse configured logs path!"));
+        } else {
+            logs_dir_path = None;
+        }
         let parallelism = self.parallelism.unwrap_or(25);
         ChronicleBroker::<H> {
             service: Service::new(),

@@ -14,7 +14,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
             while let Some(event) = self.inbox.recv().await {
                 match event {
                     BrokerEvent::Importer(importer_session) => {
-                        let socket_msg = SocketMsg::ChronicleBroker(importer_session);
+                        let socket_msg = super::SocketMsg::ChronicleBroker(importer_session);
                         self.response_to_sockets(&socket_msg).await;
                     }
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
@@ -24,45 +24,65 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                 // ensure to drop handle
                                 self.handle.take();
                             }
-                            ChronicleBrokerThrough::Topology(topology) => {
+                            ChronicleBrokerThrough::Topology(mut topology) => {
                                 if self.service.is_stopping() {
                                     // response that should not change the topology while is_stopping
                                     error!("Not supposed to dynamiclly change the topology while broker service is_stopped");
-                                    let socket_msg = SocketMsg::ChronicleBroker(Err(topology));
-                                    self.response_to_sockets::<Result<Topology, Topology>>(&socket_msg)
+                                    let socket_msg = super::SocketMsg::ChronicleBroker(Err(topology));
+                                    self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg)
                                         .await;
                                     continue;
                                 }
                                 match topology {
-                                    Topology::AddMqttMessages(url) => {
+                                    super::Topology::AddMqttMessages(url) => {
                                         if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
                                             tokio::spawn(mqtt.start(self.handle.clone()));
                                         }
                                     }
-                                    Topology::AddMqttMessagesReferenced(url) => {
+                                    super::Topology::AddMqttMessagesReferenced(url) => {
                                         if let Some(mqtt) =
                                             self.add_mqtt(MessagesReferenced, MqttType::MessagesReferenced, url)
                                         {
                                             tokio::spawn(mqtt.start(self.handle.clone()));
                                         }
                                     }
-                                    Topology::RemoveMqttMessagesReferenced(url) => {
+                                    super::Topology::RemoveMqttMessagesReferenced(url) => {
                                         self.remove_mqtt::<MessagesReferenced>(MqttType::MessagesReferenced, url)
                                     }
-                                    Topology::RemoveMqttMessages(url) => {
+                                    super::Topology::RemoveMqttMessages(url) => {
                                         self.remove_mqtt::<Messages>(MqttType::Messages, url)
                                     }
-                                    Topology::Import { .. } => {
+                                    super::Topology::Import { .. } => {
                                         self.handle_import(topology).await;
                                         self.try_close_importer_session().await;
                                     }
-                                    Topology::Requesters(requester_topology) => {
+                                    super::Topology::Requesters(ref mut requester_topology) => {
                                         match requester_topology {
                                             RequesterTopology::AddEndpoint(ref url) => {
-                                                // todo verfiy the url
-                                                self.collector_handles.values().for_each(|h| {
-                                                    h.send_requester_topology(requester_topology.clone());
-                                                });
+                                                let reqwest_client = reqwest::Client::new();
+                                                if let Some(url) = BrokerConfig::adjust_api_endpoint(url.clone()) {
+                                                    if let Err(e) =
+                                                        BrokerConfig::verify_endpoint(&reqwest_client, &url).await
+                                                    {
+                                                        error!("{}", e);
+                                                        let socket_msg =
+                                                            super::SocketMsg::ChronicleBroker(Err(topology.clone()));
+                                                        self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
+                                                    } else {
+                                                        *requester_topology =
+                                                            RequesterTopology::AddEndpoint(url.clone());
+                                                        self.collector_handles.values().for_each(|h| {
+                                                            h.send_requester_topology(requester_topology.clone());
+                                                        });
+                                                        let socket_msg =
+                                                            super::SocketMsg::ChronicleBroker(Ok(topology.clone()));
+                                                        self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
+                                                    }
+                                                } else {
+                                                    let socket_msg =
+                                                        super::SocketMsg::ChronicleBroker(Err(topology.clone()));
+                                                    self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
+                                                };
                                             }
                                             RequesterTopology::RemoveEndpoint(_) => {
                                                 self.collector_handles.values().for_each(|h| {
@@ -232,9 +252,9 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                         }
                         if is_not_websocket_child {
                             // response to all websocket
-                            let socket_msg = SocketMsg::ChronicleBroker(self.service.clone());
+                            let socket_msg = super::SocketMsg::ChronicleBroker(self.service.clone());
                             self.response_to_sockets(&socket_msg).await;
-                            let SocketMsg::ChronicleBroker(service) = socket_msg;
+                            let super::SocketMsg::ChronicleBroker(service) = socket_msg;
                             // Inform launcher with status change
                             supervisor.status_change(service);
                         }
@@ -283,16 +303,17 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
         };
     }
     pub(crate) fn add_mqtt<T: Topic>(&mut self, topic: T, mqtt_type: MqttType, url: Url) -> Option<Mqtt<T>> {
+        let config = get_config();
         let mqtt = MqttBuilder::new()
             .collectors_handles(self.collector_handles.clone())
             .topic(topic)
             .url(url.clone())
+            .stream_capacity(config.broker_config.mqtt_stream_capacity)
             .build();
         let microservice = mqtt.clone_service();
         let microservice_name = microservice.get_name();
         if let None = self.service.microservices.get(&microservice_name) {
             self.service.update_microservice(microservice_name, microservice);
-            let config = get_config();
             let mut new_config = config.clone();
             if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
                 list.insert(url);
@@ -311,8 +332,8 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             None
         }
     }
-    async fn handle_import(&mut self, import_topology: Topology) {
-        if let Topology::Import {
+    async fn handle_import(&mut self, import_topology: super::Topology) {
+        if let super::Topology::Import {
             ref path,
             ref resume,
             ref import_range,
@@ -339,7 +360,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                     path: path.clone(),
                     msg: "Invalid path".into(),
                 };
-                let socket_msg = SocketMsg::ChronicleBroker(event);
+                let socket_msg = super::SocketMsg::ChronicleBroker(event);
                 self.response_to_sockets(&socket_msg).await;
             }
         }
@@ -347,7 +368,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
     async fn try_close_importer_session(&mut self) {
         if self.in_progress_importers == 0 {
             let event = ImporterSession::Close;
-            let socket_msg = SocketMsg::ChronicleBroker(event);
+            let socket_msg = super::SocketMsg::ChronicleBroker(event);
             self.response_to_sockets(&socket_msg).await;
         }
     }
@@ -390,7 +411,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 path: file_path,
                 msg: "Unable to convert path to string".into(),
             };
-            let socket_msg = SocketMsg::ChronicleBroker(event);
+            let socket_msg = super::SocketMsg::ChronicleBroker(event);
             self.response_to_sockets(&socket_msg).await;
         }
     }
@@ -410,7 +431,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 path,
                 msg: "No LogFiles in the provided path".into(),
             };
-            let socket_msg = SocketMsg::ChronicleBroker(event);
+            let socket_msg = super::SocketMsg::ChronicleBroker(event);
             self.response_to_sockets(&socket_msg).await;
             return ();
         }
@@ -427,7 +448,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 .await;
             // convert any remaining into pending_imports
             for file_path in import_files {
-                let topology = Topology::Import {
+                let topology = super::Topology::Import {
                     path: file_path,
                     resume,
                     import_range: import_range.clone(),
@@ -436,7 +457,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             }
         }
     }
-    pub(crate) async fn response_to_sockets<T: Serialize>(&mut self, msg: &SocketMsg<T>) {
+    pub(crate) async fn response_to_sockets<T: Serialize>(&mut self, msg: &super::SocketMsg<T>) {
         for socket in self.websockets.values_mut() {
             let j = serde_json::to_string(&msg).unwrap();
             let m = crate::websocket::Message::text(j);
