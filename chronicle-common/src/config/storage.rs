@@ -146,7 +146,7 @@ impl Default for PartitionConfig {
     fn default() -> Self {
         PartitionConfig {
             partition_count: 1000,
-            milestone_chunk_size: 60480,
+            milestone_chunk_size: 8640,
         }
     }
 }

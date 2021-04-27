@@ -25,7 +25,7 @@
             ],
             partition_config: (
                 partition_count: 1000,
-                milestone_chunk_size: 60480,
+                milestone_chunk_size: 8640,
             ),
         ),
         api_config: (),
