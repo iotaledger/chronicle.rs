@@ -1,0 +1,59 @@
+(
+    version: 0,
+    config: (
+        websocket_address: "127.0.0.1:8081",
+        storage_config: (
+            keyspaces: [
+                (
+                    name: "chronicle_test",
+                    data_centers: {
+                        "datacenter1": (
+                            replication_factor: 1,
+                        ),
+                    },
+                ),
+            ],
+            listen_address: "127.0.0.1:8080",
+            thread_count: Count(2),
+            reporter_count: 2,
+            local_datacenter: "datacenter1",
+            nodes: [
+                "172.17.0.2:9042",
+            ],
+            partition_config: (
+                partition_count: 1000,
+                milestone_chunk_size: 60480,
+            ),
+        ),
+        api_config: (),
+        broker_config: (
+            retries_per_endpoint: 5,
+            retries_per_query: 100,
+            collector_count: 10,
+            requester_count: 10,
+            parallelism: 25,
+            complete_gaps_interval_secs: 3600,
+            websocket_address: "127.0.0.1:9000",
+            mqtt_brokers: {
+                Messages: [
+                    "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
+                    "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
+                ],
+                MessagesReferenced: [
+                    "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
+                    "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
+                ],
+            },
+            api_endpoints: [
+                "https://api.hornet-0.testnet.chrysalis2.com/api/v1",
+                "https://api.hornet-1.testnet.chrysalis2.com/api/v1",
+            ],
+            sync_range: Some((
+                from: 1,
+                to: 2147483647,
+            )),
+            logs_dir: "chronicle_test/logs/",
+        ),
+        historical_config_path: "./historical_test_config",
+    ),
+)
