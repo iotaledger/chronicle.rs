@@ -75,7 +75,7 @@ pub enum Internal {
 /// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
-    FullMessage(u8, u32, MessageId),
+    FullMessage(u8, u32, MessageId, CreatedBy),
     /// Ask for a milestone with the given index
     MilestoneMessage(u32),
 }

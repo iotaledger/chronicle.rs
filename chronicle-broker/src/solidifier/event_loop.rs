@@ -173,6 +173,10 @@ impl Solidifier {
             // insert empty entry
             self.milestones_data
                 .insert(milestone_index, MilestoneData::new(milestone_index, CreatedBy::Syncer));
+            // insert empty entry for in_database
+            self.in_database
+                .entry(milestone_index)
+                .or_insert_with(|| InDatabase::new(milestone_index));
         }
     }
     fn close_message_id(&mut self, milestone_index: u32, message_id: &MessageId) -> anyhow::Result<()> {
@@ -332,6 +336,7 @@ impl Solidifier {
                     solidifier_id,
                     milestone_index,
                     *parent_id,
+                    *milestone_data.created_by(),
                 );
                 // Add it to pending
                 milestone_data.pending.insert(*parent_id, ());
@@ -344,11 +349,17 @@ impl Solidifier {
         solidifier_id: u8,
         milestone_index: u32,
         parent_id: MessageId,
+        created_by: CreatedBy,
     ) {
         // Request it from collector
         let collector_id = partitioner.partition_id(&parent_id);
         if let Some(collector_handle) = collectors_handles.get(&collector_id) {
-            let ask_event = CollectorEvent::Ask(AskCollector::FullMessage(solidifier_id, milestone_index, parent_id));
+            let ask_event = CollectorEvent::Ask(AskCollector::FullMessage(
+                solidifier_id,
+                milestone_index,
+                parent_id,
+                created_by,
+            ));
             let _ = collector_handle.send(ask_event);
         }
     }
@@ -502,7 +513,11 @@ impl Solidifier {
         let milestone_exist = milestone_data.milestone_exist();
         if no_pending_left && milestone_exist {
             // milestone data is complete now
-            info!("{} is solid", index);
+            info!(
+                "{} is solid, with total messages: {}",
+                index,
+                milestone_data.messages().len()
+            );
             return true;
         }
         false
