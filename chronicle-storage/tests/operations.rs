@@ -22,18 +22,11 @@ use core::marker::PhantomData;
 
 use chronicle_common::config::*;
 use chronicle_storage::{
-    access::{
-        Consistency,
-        Ed25519AddressPK,
-        GetDeleteRequest,
-    },
+    access::Ed25519AddressPK,
     keyspaces::ChronicleKeyspace,
 };
 
-use scylla::{
-    access::*,
-    application::*,
-};
+use scylla_rs::prelude::*;
 use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,

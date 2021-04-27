@@ -1,6 +1,6 @@
-use chronicle_storage::{
-    access::Keyspace,
-    keyspaces::ChronicleKeyspace,
+use chronicle_storage::keyspaces::{
+    ChronicleKeyspace,
+    Keyspace,
 };
 
 #[test]
