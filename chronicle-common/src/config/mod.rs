@@ -320,7 +320,7 @@ mod test {
                 .into(),
                 sync_range: Some(SyncRange::default()),
                 logs_dir: Some("chronicle/logs/".to_owned()),
-                max_log_size: Some(4 * 1024 * 1024 * 1024),
+                max_log_size: Some(4294967296),
             },
             historical_config_path: HISTORICAL_CONFIG_PATH.to_owned(),
         };
