@@ -1,18 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use bee_message::{
-    address::Ed25519Address,
-    parents::Parents,
-    prelude::{
-        MilestoneIndex,
-        TransactionId,
-    },
-    Message,
-    MessageBuilder,
-    MessageId,
-};
-use bee_pow::providers::miner::Miner;
+use bee_message::Message;
 use chronicle_storage::access::{
     AddressRecord,
     Paged,
@@ -26,12 +15,20 @@ use chronicle_storage::{
     keyspaces::ChronicleKeyspace,
 };
 
+use bee_test::rand::{
+    address::rand_ed25519_address,
+    message::{
+        rand_message,
+        rand_message_id,
+    },
+    milestone::rand_milestone_index,
+    transaction::rand_transaction_id,
+};
 use scylla_rs::prelude::*;
 use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,
 };
-
 const CONFIG_TEST_PATH: &str = "../fixtures/config.test.ron";
 
 // launcher
@@ -239,7 +236,7 @@ pub async fn init_scylla_application() {
     );
 }
 
-// #[tokio::test]
+#[tokio::test]
 pub async fn test_insert_select_delete() {
     // Init Scylla Application
     init_scylla_application().await;
@@ -247,12 +244,8 @@ pub async fn test_insert_select_delete() {
     // Insert rows
     let keyspace = ChronicleKeyspace::new("chronicle_test".to_owned());
 
-    let key = MessageId::new([0; 32]);
-    let value = MessageBuilder::<Miner>::new()
-        .with_network_id(0)
-        .with_parents(Parents::new(vec![MessageId::new([1; 32]), MessageId::new([2; 32])]).unwrap())
-        .finish()
-        .unwrap();
+    let key = rand_message_id();
+    let value = rand_message();
 
     let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
     let worker = BatchWorker::boxed(sender.clone());
@@ -296,9 +289,11 @@ pub async fn test_insert_select_delete() {
     }
 
     // Insert (Partiitoned, AddressRecord) pair
-    let ed_address = Ed25519Address::new([3; 32]);
-    let key = Partitioned::new(ed_address, 0, 0);
-    let value = AddressRecord::new(0, TransactionId::new([4; 32]), 0, 0, None);
+    let ed_address = rand_ed25519_address();
+    let milestone_index = rand_milestone_index();
+    let key = Partitioned::new(ed_address, 0, milestone_index.0);
+    let transaction_id = rand_transaction_id();
+    let value = AddressRecord::new(0, transaction_id, 0, 0, None);
 
     let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
     let worker = BatchWorker::boxed(sender.clone());
@@ -347,7 +342,7 @@ pub async fn test_insert_select_delete() {
     }
 
     // Delete (Partiitoned, AddressRecord) pair
-    let key = Ed25519AddressPK::new(ed_address, 0, MilestoneIndex::new(0), 0, TransactionId::new([4; 32]), 0);
+    let key = Ed25519AddressPK::new(ed_address, 0, milestone_index, 0, transaction_id, 0);
 
     let delete_req = keyspace
         .delete_query::<AddressRecord>(&key)
