@@ -187,7 +187,8 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                 }
                 CollectorEvent::Ask(ask) => {
                     match ask {
-                        AskCollector::FullMessage(solidifier_id, try_ms_index, message_id) => {
+                        AskCollector::FullMessage(solidifier_id, try_ms_index, message_id, created_by) => {
+                            let mut message_tuple = None;
                             if let Some((_, message)) = self.lru_msg.get(&message_id) {
                                 if let Some(metadata) = self.lru_msg_ref.get(&message_id) {
                                     // metadata exist means we already pushed the full message to the solidifier,
@@ -199,6 +200,11 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                             let full_message = FullMessage::new(message.clone(), metadata.clone());
                                             let full_msg_event = SolidifierEvent::Message(full_message);
                                             let _ = solidifier_handle.send(full_msg_event);
+                                        }
+                                        // make sure to insert the message if it's requested from syncer
+                                        if created_by == CreatedBy::Syncer {
+                                            self.ref_ms.0 = try_ms_index;
+                                            message_tuple = Some((message.clone(), metadata.clone()));
                                         }
                                     }
                                 } else {
@@ -224,7 +230,6 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                                     *pre_ms_index = try_ms_index;
                                                     // close pre_ms_index(old_ms) as it's greater than what we have atm
                                                     // (try_ms_index).
-                                                    assert!(!old_ms.eq(&try_ms_index));
                                                     let solidifier_id = (old_ms % (self.collector_count as u32)) as u8;
                                                     self.push_close_to_solidifier(solidifier_id, message_id, old_ms);
                                                 }
@@ -242,6 +247,14 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                 }
                             } else {
                                 self.request_full_message(message_id, try_ms_index);
+                            }
+                            // insert the message if requested by syncer to ensure it gets cql responses for all the
+                            // requested messages
+                            if let Some((message, metadata)) = message_tuple.take() {
+                                self.insert_message_with_metadata(message_id.clone(), message, metadata)
+                                    .unwrap_or_else(|e| {
+                                        error!("{}", e);
+                                    });
                             }
                         }
                         AskCollector::MilestoneMessage(milestone_index) => {

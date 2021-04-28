@@ -34,10 +34,13 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
         while let Some(event) = self.inbox.rx.recv().await {
             match event {
                 ArchiverEvent::Close(milestone_index) => {
-                    self.close_log_file(milestone_index).await.map_err(|e| {
-                        error!("{}", e);
-                        Need::Abort
-                    })?;
+                    // to prevent overlap, we ensure to only close syncer milestone_index when it's less than next
+                    if milestone_index < next {
+                        self.close_log_file(milestone_index).await.map_err(|e| {
+                            error!("{}", e);
+                            Need::Abort
+                        })?;
+                    }
                 }
                 ArchiverEvent::MilestoneData(milestone_data, opt_upper_limit) => {
                     info!(
@@ -83,13 +86,16 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                             }
                         }
                     } else {
-                        // handle syncer milestone data;
-                        self.handle_milestone_data(milestone_data, opt_upper_limit)
-                            .await
-                            .map_err(|e| {
-                                error!("{}", e);
-                                Need::Abort
-                            })?;
+                        // to prevent overlap, we ensure to only handle syncer milestone_data when it's less than next
+                        if milestone_data.milestone_index() < next {
+                            // handle syncer milestone data;
+                            self.handle_milestone_data(milestone_data, opt_upper_limit)
+                                .await
+                                .map_err(|e| {
+                                    error!("{}", e);
+                                    Need::Abort
+                                })?;
+                        }
                     }
                 }
             }

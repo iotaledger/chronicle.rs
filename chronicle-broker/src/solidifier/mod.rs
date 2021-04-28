@@ -98,6 +98,7 @@ struct MessageStatus {
 }
 
 struct InDatabase {
+    #[allow(unused)]
     milestone_index: u32,
     messages_len: usize,
     in_database: HashMap<MessageId, ()>,

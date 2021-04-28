@@ -349,11 +349,13 @@ impl Syncer {
                     self.active.replace(Active::FillGaps(gap));
                     self.trigger_process_more();
                 } else {
-                    info!("There are no more gaps in the current sync data")
+                    info!("There are no more gaps in the current sync data");
+                    self.trigger_process_more();
                 }
             }
         } else {
             info!("There are no more gaps in the current sync data");
+            self.trigger_process_more();
         }
     }
 }

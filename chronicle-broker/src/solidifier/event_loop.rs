@@ -134,7 +134,8 @@ impl Solidifier {
                     );
                     let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
                 } else {
-                    // there is a glitch in the new incoming data, however the archiver will take care of that.
+                    // there is a glitch in the new incoming data, however the archiver and syncer will take care of
+                    // that.
                     warn!(
                         "Solidifier id: {}, failed to solidify new incoming milestone data for index: {}",
                         self.partition_id, milestone_index
@@ -144,6 +145,16 @@ impl Solidifier {
         }
     }
     fn handle_solidify(&mut self, milestone_index: u32) {
+        // open solidify requests only for less than the expected
+        if milestone_index >= self.expected {
+            warn!(
+                "SolidifierId: {}, cannot open solidify request for milestone_index: {} >= expected: {}",
+                self.partition_id, milestone_index, self.expected
+            );
+            // tell syncer to skip this atm
+            let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
+            return ();
+        }
         // remove it from unreachable (if we already tried to solidify it before)
         self.unreachable.pop(&milestone_index);
         info!(
@@ -152,13 +163,11 @@ impl Solidifier {
         );
         // this is request from syncer in order for solidifier to collect,
         // the milestone data for the provided milestone index.
-        if let Some(ms_data) = self.milestones_data.get_mut(&milestone_index) {
-            // Give the ownership of this ms_data to syncer
-            // This happens when the syncer tries to solidify a milestone data for new incoming data;
-            // no need to ask collector, because we already requested it, and we still awaiting for a response
-            // NOTE: this likely will never happen
-            ms_data.created_by = CreatedBy::Syncer;
+        if let Some(_ms_data) = self.milestones_data.get_mut(&milestone_index) {
+            // NOTE: this likely will never happens
             warn!("Not supposed to receive solidify request from syncer on an existing milestone data, unless this is an expected race condition");
+            // tell syncer to skip this atm
+            let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
         } else {
             // Asking any collector (as we don't know the message id of the milestone)
             // however, we use milestone_index % collector_count to have unfirom distribution.
@@ -173,6 +182,10 @@ impl Solidifier {
             // insert empty entry
             self.milestones_data
                 .insert(milestone_index, MilestoneData::new(milestone_index, CreatedBy::Syncer));
+            // insert empty entry for in_database
+            self.in_database
+                .entry(milestone_index)
+                .or_insert_with(|| InDatabase::new(milestone_index));
         }
     }
     fn close_message_id(&mut self, milestone_index: u32, message_id: &MessageId) -> anyhow::Result<()> {
@@ -332,6 +345,7 @@ impl Solidifier {
                     solidifier_id,
                     milestone_index,
                     *parent_id,
+                    *milestone_data.created_by(),
                 );
                 // Add it to pending
                 milestone_data.pending.insert(*parent_id, ());
@@ -344,11 +358,17 @@ impl Solidifier {
         solidifier_id: u8,
         milestone_index: u32,
         parent_id: MessageId,
+        created_by: CreatedBy,
     ) {
         // Request it from collector
         let collector_id = partitioner.partition_id(&parent_id);
         if let Some(collector_handle) = collectors_handles.get(&collector_id) {
-            let ask_event = CollectorEvent::Ask(AskCollector::FullMessage(solidifier_id, milestone_index, parent_id));
+            let ask_event = CollectorEvent::Ask(AskCollector::FullMessage(
+                solidifier_id,
+                milestone_index,
+                parent_id,
+                created_by,
+            ));
             let _ = collector_handle.send(ask_event);
         }
     }
@@ -502,7 +522,11 @@ impl Solidifier {
         let milestone_exist = milestone_data.milestone_exist();
         if no_pending_left && milestone_exist {
             // milestone data is complete now
-            info!("{} is solid", index);
+            info!(
+                "{} is solid, with total messages: {}",
+                index,
+                milestone_data.messages().len()
+            );
             return true;
         }
         false
