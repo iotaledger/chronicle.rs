@@ -236,7 +236,7 @@ pub async fn init_scylla_application() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 pub async fn test_insert_select_delete() {
     // Init Scylla Application
     init_scylla_application().await;
