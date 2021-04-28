@@ -57,7 +57,7 @@
                 to: 2147483647,
             )),
             logs_dir: Some("chronicle/logs/"),
-            max_log_size: Some(4*1024*1024*1024),
+            max_log_size: Some(4294967296),
         ),
         historical_config_path: "./historical_config",
     ),
