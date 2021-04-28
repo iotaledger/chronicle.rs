@@ -239,7 +239,7 @@ pub async fn init_scylla_application() {
     );
 }
 
-#[tokio::test]
+// #[tokio::test]
 pub async fn test_insert_select_delete() {
     // Init Scylla Application
     init_scylla_application().await;

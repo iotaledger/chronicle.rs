@@ -14,11 +14,11 @@
                 ),
             ],
             listen_address: "127.0.0.1:8080",
-            thread_count: Count(2),
+            thread_count: CoreMultiple(1),
             reporter_count: 2,
             local_datacenter: "datacenter1",
             nodes: [
-                "172.17.0.2:9042",
+                "172.17.0.2:19042",
             ],
             partition_config: (
                 partition_count: 1000,
@@ -54,6 +54,7 @@
                 to: 2147483647,
             )),
             logs_dir: Some("chronicle/test_logs/"),
+            max_log_size: Some(4294967296),
         ),
         historical_config_path: "./historical_test_config",
     ),
