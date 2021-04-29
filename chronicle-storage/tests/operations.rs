@@ -5,39 +5,29 @@ use bee_message::{
     milestone::Milestone,
     prelude::MilestonePayload,
 };
-use bee_test::rand::{
-    bytes::{
-        rand_bytes,
-        rand_bytes_32,
-    },
-    parents::rand_parents,
-};
+use bee_test::rand::parents::rand_parents;
 use chronicle_common::{
     SyncRange,
     Synckey,
 };
-use chronicle_storage::access::SyncRecord;
+use chronicle_storage::access::{
+    IndexationPK,
+    ParentPK,
+    SyncRecord,
+};
 // use bee_message::prelude::MilestonePayload;
 use bee_message::{
     prelude::{
-        Input,
         MilestoneIndex,
         MilestonePayloadEssence,
         Output,
-        OutputId,
-        TreasuryInput,
     },
     Message,
     MessageId,
 };
 use bee_test::rand::{
     address::rand_address,
-    milestone::{
-        rand_milestone,
-        rand_milestone_id,
-    },
     output::{
-        rand_ledger_treasury_output,
         rand_output_id,
         rand_signature_locked_single_output,
     },
@@ -51,7 +41,6 @@ use chronicle_storage::{
         HintVariant,
         Indexation,
         IndexationRecord,
-        InputData,
         MessageMetadata,
         OutputRes,
         Paged,
@@ -74,14 +63,10 @@ use bee_test::rand::{
         rand_message_id,
         rand_message_ids,
     },
-    metadata::rand_message_metadata,
     milestone::rand_milestone_index,
     transaction::rand_transaction_id,
 };
-use rand::{
-    thread_rng,
-    Rng,
-};
+use rand::Rng;
 use scylla_rs::prelude::*;
 use tokio::sync::mpsc::{
     unbounded_channel,
@@ -295,16 +280,16 @@ async fn init_scylla_application() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_operations() {
+async fn test_insert_select() {
     // Init Scylla Application
     init_scylla_application().await;
 
     insert_select_message_id_and_message().await;
     insert_select_message_id_and_message_metadata().await;
     insert_select_message_id_and_messsage_message_metadata().await;
-    insert_select_ed25519_address_and_address_record().await;
-    insert_select_indexation_and_indexation_record().await;
-    insert_select_message_id_and_parent_record().await;
+    insert_select_delete_ed25519_address_and_address_record().await;
+    insert_select_delete_indexation_and_indexation_record().await;
+    insert_select_delete_message_id_and_parent_record().await;
 
     // Error to fix!
     // insert_select_transaction_id_index_and_transaction_record().await;
@@ -496,7 +481,7 @@ async fn insert_select_message_id_and_messsage_message_metadata() {
     }
 }
 
-async fn insert_select_ed25519_address_and_address_record() {
+async fn insert_select_delete_ed25519_address_and_address_record() {
     // Insert row
     let keyspace = ChronicleKeyspace::new("chronicle_test".to_owned());
     let ed_address = rand_ed25519_address();
@@ -530,7 +515,7 @@ async fn insert_select_ed25519_address_and_address_record() {
         .unwrap();
     let (sender, mut inbox) =
         unbounded_channel::<Result<Option<Paged<VecDeque<Partitioned<AddressRecord>>>>, WorkerError>>();
-    let worker = ValueWorker::new(sender, keyspace.clone(), key, 0, PhantomData);
+    let worker = ValueWorker::new(sender, keyspace.clone(), key.clone(), 0, PhantomData);
     let worker = Box::new(worker);
     request.send_local(worker);
     if let Some(msg) = inbox.recv().await {
@@ -558,16 +543,59 @@ async fn insert_select_ed25519_address_and_address_record() {
         panic!("Could not verify if keyspace was created!")
     }
 
-    // Delete row
+    // Delete
+    let key_delete = Ed25519AddressPK::new(ed_address, 0, milestone_index, 0, transaction_id, 0);
+
+    let delete_req = keyspace
+        .delete_query::<AddressRecord>(&key_delete)
+        .consistency(Consistency::One)
+        .build()
+        .unwrap();
+    let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
+    let worker = BatchWorker::boxed(sender.clone());
+    delete_req.send_local(worker);
+    if let Some(msg) = inbox.recv().await {
+        match msg {
+            Ok(_) => println!("(Ed25519AddressPK, AddressRecord) has been deleted successfully"),
+            Err(e) => panic!("Inbox recv() worker error: {}", e),
+        }
+    } else {
+        panic!("Could not verify if keyspace was created!")
+    }
+
+    // Select the deleted row again
+    let request = keyspace
+        .select::<Paged<VecDeque<Partitioned<AddressRecord>>>>(&key)
+        .consistency(Consistency::One)
+        .paging_state(&None)
+        .build()
+        .unwrap();
+
+    let (sender, mut inbox) =
+        unbounded_channel::<Result<Option<Paged<VecDeque<Partitioned<AddressRecord>>>>, WorkerError>>();
+    let worker = ValueWorker::new(sender, keyspace.clone(), key, 0, PhantomData);
+    let worker = Box::new(worker);
+
+    request.send_local(worker);
+
+    if let Some(msg) = inbox.recv().await {
+        match msg {
+            Ok(res) => assert_eq!((*res.unwrap()).pop_front().is_none(), true),
+            Err(e) => panic!("Inbox recv() worker error: {}", e),
+        }
+    } else {
+        panic!("Could not verify if keyspace was created!")
+    }
 }
 
-pub async fn insert_select_indexation_and_indexation_record() {
+pub async fn insert_select_delete_indexation_and_indexation_record() {
     // Insert row
     let keyspace = ChronicleKeyspace::new("chronicle_test".to_owned());
     let indexation = Indexation("indexation_test".to_string());
     let milestone_index = rand_milestone_index();
-    let key = Partitioned::new(indexation, 0, milestone_index.0);
-    let value = IndexationRecord::new(rand_message_id(), None);
+    let message_id = rand_message_id();
+    let key = Partitioned::new(indexation.clone(), 0, milestone_index.0);
+    let value = IndexationRecord::new(message_id, None);
     let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
     let worker = BatchWorker::boxed(sender.clone());
     let insert_req = keyspace
@@ -594,7 +622,7 @@ pub async fn insert_select_indexation_and_indexation_record() {
         .unwrap();
     let (sender, mut inbox) =
         unbounded_channel::<Result<Option<Paged<VecDeque<Partitioned<IndexationRecord>>>>, WorkerError>>();
-    let worker = ValueWorker::new(sender, keyspace.clone(), key, 0, PhantomData);
+    let worker = ValueWorker::new(sender, keyspace.clone(), key.clone(), 0, PhantomData);
     let worker = Box::new(worker);
     request.send_local(worker);
     if let Some(msg) = inbox.recv().await {
@@ -614,15 +642,56 @@ pub async fn insert_select_indexation_and_indexation_record() {
     } else {
         panic!("Could not verify if keyspace was created!")
     }
+
+    // Delete
+    let key_delete = IndexationPK::new(indexation, 0, milestone_index, message_id);
+    let delete_req = keyspace
+        .delete_query::<IndexationRecord>(&key_delete)
+        .consistency(Consistency::One)
+        .build()
+        .unwrap();
+    let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
+    let worker = BatchWorker::boxed(sender.clone());
+    delete_req.send_local(worker);
+    if let Some(msg) = inbox.recv().await {
+        match msg {
+            Ok(_) => println!("(IndexationPK, IndexationRecord>) has been deleted successfully"),
+            Err(e) => panic!("Inbox recv() worker error: {}", e),
+        }
+    } else {
+        panic!("Could not verify if keyspace was created!")
+    }
+
+    // Select the deleted row again
+    let request = keyspace
+        .select::<Paged<VecDeque<Partitioned<IndexationRecord>>>>(&key)
+        .consistency(Consistency::One)
+        .paging_state(&None)
+        .build()
+        .unwrap();
+    let (sender, mut inbox) =
+        unbounded_channel::<Result<Option<Paged<VecDeque<Partitioned<IndexationRecord>>>>, WorkerError>>();
+    let worker = ValueWorker::new(sender, keyspace.clone(), key, 0, PhantomData);
+    let worker = Box::new(worker);
+    request.send_local(worker);
+    if let Some(msg) = inbox.recv().await {
+        match msg {
+            Ok(res) => assert_eq!((*res.unwrap()).pop_front().is_none(), true),
+            Err(e) => panic!("Inbox recv() worker error: {}", e),
+        }
+    } else {
+        panic!("Could not verify if keyspace was created!")
+    }
 }
 
-pub async fn insert_select_message_id_and_parent_record() {
+pub async fn insert_select_delete_message_id_and_parent_record() {
     // Insert row
     let keyspace = ChronicleKeyspace::new("chronicle_test".to_owned());
     let message_id = rand_message_id();
+    let parent_message_id = rand_message_id();
     let milestone_index = rand_milestone_index();
     let key = Partitioned::new(message_id, 0, milestone_index.0);
-    let value = ParentRecord::new(rand_message_id(), None);
+    let value = ParentRecord::new(parent_message_id, None);
     let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
     let worker = BatchWorker::boxed(sender.clone());
     let insert_req = keyspace
@@ -649,7 +718,7 @@ pub async fn insert_select_message_id_and_parent_record() {
         .unwrap();
     let (sender, mut inbox) =
         unbounded_channel::<Result<Option<Paged<VecDeque<Partitioned<ParentRecord>>>>, WorkerError>>();
-    let worker = ValueWorker::new(sender, keyspace.clone(), key, 0, PhantomData);
+    let worker = ValueWorker::new(sender, keyspace.clone(), key.clone(), 0, PhantomData);
     let worker = Box::new(worker);
     request.send_local(worker);
     if let Some(msg) = inbox.recv().await {
@@ -664,6 +733,46 @@ pub async fn insert_select_message_id_and_parent_record() {
                     value.ledger_inclusion_state
                 );
             }
+            Err(e) => panic!("Inbox recv() worker error: {}", e),
+        }
+    } else {
+        panic!("Could not verify if keyspace was created!")
+    }
+
+    // Delete
+    let key_delete = ParentPK::new(message_id, 0, milestone_index, parent_message_id);
+    let delete_req = keyspace
+        .delete_query::<ParentRecord>(&key_delete)
+        .consistency(Consistency::One)
+        .build()
+        .unwrap();
+    let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
+    let worker = BatchWorker::boxed(sender.clone());
+    delete_req.send_local(worker);
+    if let Some(msg) = inbox.recv().await {
+        match msg {
+            Ok(_) => println!("(ParentPK, ParentRecord>) has been deleted successfully"),
+            Err(e) => panic!("Inbox recv() worker error: {}", e),
+        }
+    } else {
+        panic!("Could not verify if keyspace was created!")
+    }
+
+    // Select the deleted row again
+    let request = keyspace
+        .select::<Paged<VecDeque<Partitioned<ParentRecord>>>>(&key)
+        .consistency(Consistency::One)
+        .paging_state(&None)
+        .build()
+        .unwrap();
+    let (sender, mut inbox) =
+        unbounded_channel::<Result<Option<Paged<VecDeque<Partitioned<ParentRecord>>>>, WorkerError>>();
+    let worker = ValueWorker::new(sender, keyspace.clone(), key, 0, PhantomData);
+    let worker = Box::new(worker);
+    request.send_local(worker);
+    if let Some(msg) = inbox.recv().await {
+        match msg {
+            Ok(res) => assert_eq!((*res.unwrap()).pop_front().is_none(), true),
             Err(e) => panic!("Inbox recv() worker error: {}", e),
         }
     } else {
