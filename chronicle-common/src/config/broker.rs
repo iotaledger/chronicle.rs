@@ -34,6 +34,8 @@ pub struct BrokerConfig {
     pub collector_count: u8,
     /// Defines the total number of concurrent requester per collector
     pub requester_count: u8,
+    /// The api endpoint request maximum timeout
+    pub request_timeout_secs: u64,
     /// Used by Importer(s) and Syncer:
     /// - Importer(s) uses this to define the maximum number of concurrent milestone data and messages
     /// - Syncer(worker which fills gaps) uses this to define the maximum number of solidify requests/milestone data.
@@ -62,6 +64,7 @@ impl Default for BrokerConfig {
         Self {
             collector_count: 10,
             requester_count: 10,
+            request_timeout_secs: 5,
             parallelism: 25,
             retries_per_endpoint: 5,
             retries_per_query: 100,

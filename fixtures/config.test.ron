@@ -1,5 +1,5 @@
 (
-    version: 1,
+    version: 2,
     config: (
         websocket_address: "127.0.0.1:8081",
         storage_config: (
@@ -31,6 +31,7 @@
             retries_per_query: 100,
             collector_count: 10,
             requester_count: 10,
+            request_timeout_secs: 5,
             parallelism: 25,
             complete_gaps_interval_secs: 3600,
             websocket_address: "127.0.0.1:9000",

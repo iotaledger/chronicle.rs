@@ -33,7 +33,7 @@ pub const CONFIG_PATH: &str = "./config.ron";
 pub const HISTORICAL_CONFIG_PATH: &str = "./historical_config";
 /// The current config version.
 /// **Must be updated with each change to the config format.**
-const CURRENT_VERSION: u32 = 1;
+const CURRENT_VERSION: u32 = 2;
 
 /// Versioned config. Tracks version between config changes so that it can be validated on load.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
@@ -297,6 +297,7 @@ mod test {
             broker_config: BrokerConfig {
                 collector_count: 10,
                 requester_count: 10,
+                request_timeout_secs: 5,
                 parallelism: 25,
                 retries_per_endpoint: 5,
                 retries_per_query: 100,

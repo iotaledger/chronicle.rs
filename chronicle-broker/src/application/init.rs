@@ -50,9 +50,9 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             let mut collector_builders: Vec<CollectorBuilder> = Vec::new();
             let mut solidifier_builders: Vec<SolidifierBuilder> = Vec::new();
             let reqwest_client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(config.broker_config.request_timeout_secs))
                 .build()
-                .unwrap();
+                .expect("Expected reqwest client to build correctly");
             for partition_id in 0..self.collector_count {
                 // create requesters senders
                 let mut requesters_senders = Vec::new();
