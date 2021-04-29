@@ -49,7 +49,10 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
             }
             let mut collector_builders: Vec<CollectorBuilder> = Vec::new();
             let mut solidifier_builders: Vec<SolidifierBuilder> = Vec::new();
-            let reqwest_client = reqwest::Client::new();
+            let reqwest_client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap();
             for partition_id in 0..self.collector_count {
                 // create requesters senders
                 let mut requesters_senders = Vec::new();
@@ -66,6 +69,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
                 self.collector_handles.insert(partition_id, collector_handle.clone());
                 let collector_builder = CollectorBuilder::new()
                     .collector_count(self.collector_count)
+                    .requester_count(config.broker_config.requester_count)
                     .handle(collector_handle)
                     .inbox(collector_inbox)
                     .api_endpoints(config.broker_config.api_endpoints.iter().cloned().collect())

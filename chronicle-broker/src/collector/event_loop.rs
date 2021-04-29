@@ -320,8 +320,6 @@ impl Collector {
     }
     /// Request the milestone message of a given milestone index
     fn request_milestone_message(&mut self, milestone_index: u32) {
-        let remote_url = self.api_endpoints.pop_back().unwrap();
-        self.api_endpoints.push_front(remote_url.clone());
         if let Some(mut requester_handle) = self.requester_handles.peek_mut() {
             requester_handle.send_event(RequesterEvent::RequestMilestone(milestone_index))
         }; // else collector is shutting down
