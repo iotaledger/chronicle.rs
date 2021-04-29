@@ -3,24 +3,16 @@
 
 use bee_message::{
     milestone::Milestone,
-    prelude::MilestonePayload,
-};
-use bee_test::rand::parents::rand_parents;
-use chronicle_common::{
-    SyncRange,
-    Synckey,
-};
-use chronicle_storage::access::{
-    IndexationPK,
-    ParentPK,
-    SyncRecord,
-};
-// use bee_message::prelude::MilestonePayload;
-use bee_message::{
     prelude::{
+        Ed25519Signature,
         MilestoneIndex,
+        MilestonePayload,
         MilestonePayloadEssence,
         Output,
+        SignatureUnlock,
+        TreasuryInput,
+        UnlockBlock,
+        UtxoInput,
     },
     Message,
     MessageId,
@@ -31,8 +23,13 @@ use bee_test::rand::{
         rand_output_id,
         rand_signature_locked_single_output,
     },
+    parents::rand_parents,
 };
-use chronicle_common::config::*;
+use chronicle_common::{
+    config::*,
+    SyncRange,
+    Synckey,
+};
 use chronicle_storage::{
     access::{
         AddressRecord,
@@ -40,21 +37,28 @@ use chronicle_storage::{
         Hint,
         HintVariant,
         Indexation,
+        IndexationPK,
         IndexationRecord,
+        InputData,
         MessageMetadata,
         OutputRes,
         Paged,
+        ParentPK,
         ParentRecord,
         Partition,
         PartitionId,
         Partitioned,
+        SyncRecord,
         TransactionData,
         TransactionRecord,
         TransactionVariant,
     },
     keyspaces::ChronicleKeyspace,
 };
-use core::marker::PhantomData;
+use core::{
+    convert::TryInto,
+    marker::PhantomData,
+};
 
 use bee_test::rand::{
     address::rand_ed25519_address,
@@ -63,7 +67,10 @@ use bee_test::rand::{
         rand_message_id,
         rand_message_ids,
     },
-    milestone::rand_milestone_index,
+    milestone::{
+        rand_milestone_id,
+        rand_milestone_index,
+    },
     transaction::rand_transaction_id,
 };
 use rand::Rng;
@@ -292,9 +299,10 @@ async fn test_insert_select() {
     insert_select_delete_message_id_and_parent_record().await;
 
     // Error to fix!
-    // insert_select_transaction_id_index_and_transaction_record().await;
+    insert_select_transaction_id_index_and_transaction_record().await;
     // Error to fix!
-    // insert_select_output_id_and_transaction_record().await;
+    insert_select_output_id_and_transaction_record().await;
+
     insert_select_hint_and_partition().await;
     insert_milestone_index_and_message_id_milestone_payload().await;
     insert_sync_key_and_sync_record().await;
@@ -783,14 +791,23 @@ pub async fn insert_select_delete_message_id_and_parent_record() {
 pub async fn insert_select_transaction_id_index_and_transaction_record() {
     let mut rng = rand::thread_rng();
 
+    let ed25519_public_key = "1da5ddd11ba3f961acab68fafee3177d039875eaa94ac5fdbff8b53f0c50bfb9";
+    let ed25519_signature = "c6a40edf9a089f42c18f4ebccb35fe4b578d93b879e99b87f63573324a710d3456b03fb6d1fcc027e6401cbd9581f790ee3ed7a3f68e9c225fcb9f1cd7b7110d";
+    let pub_key_bytes: [u8; 32] = hex::decode(ed25519_public_key).unwrap().try_into().unwrap();
+    let sig_bytes: [u8; 64] = hex::decode(ed25519_signature).unwrap().try_into().unwrap();
+    let sig = Ed25519Signature::new(pub_key_bytes, sig_bytes);
+
     // Insert row
     let keyspace = ChronicleKeyspace::new("chronicle_test".to_owned());
     let message_id = rand_message_id();
     let key = (rand_transaction_id(), rng.gen());
+    let utxo_input = UtxoInput::new(rand_transaction_id(), 0).unwrap();
+    let input_data = InputData::utxo(utxo_input, UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)));
     let value = TransactionRecord {
-        variant: TransactionVariant::Output,
+        variant: TransactionVariant::Input,
         message_id: message_id,
-        data: TransactionData::Output(Output::SignatureLockedSingle(rand_signature_locked_single_output())),
+        // data: TransactionData::Input(InputData::Treasury(TreasuryInput::new(rand_milestone_id()))),
+        data: TransactionData::Input(input_data),
         inclusion_state: None,
         milestone_index: None,
     };
