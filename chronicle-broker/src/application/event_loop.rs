@@ -149,7 +149,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                             }
                             BrokerChild::Syncer(service, syncer_status) => {
                                 // Handle abort
-                                if let Err(Need::Abort) = status {
+                                if let Err(Need::Abort) = syncer_status {
                                     if service.is_stopped() {
                                         // update status only if is not restarting
                                         if let Err(Need::Restart) = status.as_ref() {
@@ -164,7 +164,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                             }
                             BrokerChild::Archiver(service, archiver_status) => {
                                 // Handle abort
-                                if let Err(Need::Abort) = status {
+                                if let Err(Need::Abort) = archiver_status {
                                     if service.is_stopped() {
                                         // update status only if is not restarting
                                         if let Err(Need::Restart) = status.as_ref() {
