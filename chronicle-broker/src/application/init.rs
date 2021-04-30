@@ -76,6 +76,7 @@ impl<H: ChronicleBrokerScope> Init<H> for ChronicleBroker<H> {
                     .storage_config(config.storage_config.clone())
                     .reqwest_client(reqwest_client.clone())
                     .retries_per_query(config.broker_config.retries_per_query)
+                    .retries_per_endpoint(config.broker_config.retries_per_endpoint)
                     .requesters_channels(requesters_channels)
                     .partition_id(partition_id);
 
