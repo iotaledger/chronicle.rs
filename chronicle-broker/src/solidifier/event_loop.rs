@@ -411,6 +411,12 @@ impl Solidifier {
         Ok(())
     }
     fn insert_new_entry_or_not(&mut self, milestone_index: u32, full_message: FullMessage) {
+        // do not insert new entry for unreachable milestone_index atm
+        // this happens when we get one or few solidify_failures so we deleted an active milestone_data that still
+        // getting new messages which will reinvoke insert_new_entry_or_not
+        if self.unreachable.get(&milestone_index).is_some() {
+            return ();
+        }
         let partitioner = &self.message_id_partitioner;
         let collector_handles = &self.collector_handles;
         let solidifier_id = self.partition_id;
