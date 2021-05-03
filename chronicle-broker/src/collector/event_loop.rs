@@ -43,8 +43,6 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         } else {
                             // close the request
                             self.push_close_to_solidifier(partition_id, message_id, try_ms_index);
-                            // Don't proceed, we continue to next iteration of the event_loop
-                            continue;
                         }
                         // set the ref_ms to be the current requested message ref_ms
                         self.ref_ms.0 = *ref_ms;

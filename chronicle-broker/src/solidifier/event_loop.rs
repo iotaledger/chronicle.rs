@@ -163,9 +163,12 @@ impl Solidifier {
         );
         // this is request from syncer in order for solidifier to collect,
         // the milestone data for the provided milestone index.
-        if let Some(_ms_data) = self.milestones_data.get_mut(&milestone_index) {
+        if let Some(ms_data) = self.milestones_data.get_mut(&milestone_index) {
             // NOTE: this likely will never happens
-            warn!("Not supposed to receive solidify request from syncer on an existing milestone data, unless this is an expected race condition");
+            warn!(
+                "Received solidify request on an existing milestone data: index: {} created_by: {:?}, pending: {}, messages: {}, milestone_exist: {}, unless this is an expected race condition",
+                milestone_index, ms_data.created_by(), ms_data.pending().len(), ms_data.messages().len(), ms_data.milestone_exist(),
+            );
             // tell syncer to skip this atm
             let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
         } else {
@@ -457,6 +460,10 @@ impl Solidifier {
                 .milestones_data
                 .entry(milestone_index)
                 .or_insert_with(|| MilestoneData::new(milestone_index, CreatedBy::Incoming));
+            // check if the full_message has MilestonePayload
+            if let Some(bee_message::payload::Payload::Milestone(milestone_payload)) = full_message.0.payload() {
+                milestone_data.set_milestone(milestone_payload.clone());
+            }
             Self::process_milestone_data(
                 solidifier_id,
                 collector_handles,
