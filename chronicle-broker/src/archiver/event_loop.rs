@@ -84,6 +84,8 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                                     self.milestones_data.push(ms_data);
                                     break;
                                 }
+                            } else {
+                                warn!("Expected: {}, Dropping milestone_data: {}, as the syncer will eventually fill it up",next, ms_index);
                             }
                         }
                     } else {
