@@ -61,7 +61,8 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                                         Need::Abort
                                     })?;
                                 next += 1;
-                            } else {
+                            } else if ms_index > next {
+                                // Safety check to prevent potential rare race condition
                                 // check if we buffered too much.
                                 if self.milestones_data.len() > self.solidifiers_count as usize {
                                     error!("Identified gap in the new incoming data: {}..{}", next, ms_index);
