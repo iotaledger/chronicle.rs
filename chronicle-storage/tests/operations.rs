@@ -161,10 +161,11 @@ async fn init_database() {
             .consistency(Consistency::One)
             .build()
             .unwrap();
+        println!("Send the create keyspace statement");
         send_local(token, keyspace_statement.0, worker, keyspace.name().to_string());
         if let Some(msg) = inbox.recv().await {
             match msg {
-                Ok(_) => (),
+                Ok(_) => println!("Created the keyspace."),
                 Err(e) => panic!("Inbox recv() error: {}", e),
             }
         } else {
@@ -269,6 +270,7 @@ async fn init_scylla_application() {
     let apps = AppsBuilder::new().build();
 
     // Create tables
+    println!("Start to create tables");
     tokio::spawn(
         apps.Scylla()
             .await
@@ -300,7 +302,7 @@ async fn test_insert_select() {
     insert_select_delete_message_id_and_parent_record().await;
 
     // Error to fix!
-    // insert_select_transaction_id_index_and_transaction_record().await;
+    insert_select_transaction_id_index_and_transaction_record().await;
     // Error to fix!
     // insert_select_output_id_and_transaction_record().await;
 
