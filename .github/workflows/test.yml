@@ -21,7 +21,7 @@ jobs:
     - uses: actions/checkout@main
 
     - name: Pull the latest Scylla docker image
-      run: docker pull scylladb/scylla
+      run: docker pull scylladb/scylla:4.4.1
 
     - name: Running Scylla testing environment
       run: docker run --name test-scylla --hostname test-scylla -d scylladb/scylla
