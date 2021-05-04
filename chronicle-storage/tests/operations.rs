@@ -134,11 +134,13 @@ impl Worker for BatchWorker {
 
 /// Init the scylla database
 async fn init_database() {
+    println!("Init database");
     let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
 
     for keyspace_config in storage_config.keyspaces.first().iter() {
         let keyspace = ChronicleKeyspace::new(keyspace_config.name.clone());
         assert_eq!(keyspace.name(), "chronicle_test");
+        println!("Keyspace checking");
         let datacenters = keyspace_config
             .data_centers
             .iter()
