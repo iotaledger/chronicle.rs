@@ -268,6 +268,11 @@ async fn init_database() {
 }
 
 async fn init_scylla_application() {
+    let _ = env_logger::builder()
+        .filter(None, log::LevelFilter::Info)
+        .is_test(true)
+        .try_init();
+
     // Add nodes
     let apps = AppsBuilder::new().build();
 
