@@ -10,7 +10,6 @@ use bee_message::{
         MilestonePayloadEssence,
         Output,
         SignatureUnlock,
-        TreasuryInput,
         UnlockBlock,
         UtxoInput,
     },
@@ -40,6 +39,7 @@ use chronicle_storage::{
         IndexationPK,
         IndexationRecord,
         InputData,
+        LedgerInclusionState,
         MessageMetadata,
         OutputRes,
         Paged,
@@ -67,10 +67,7 @@ use bee_test::rand::{
         rand_message_id,
         rand_message_ids,
     },
-    milestone::{
-        rand_milestone_id,
-        rand_milestone_index,
-    },
+    milestone::rand_milestone_index,
     transaction::rand_transaction_id,
 };
 use rand::Rng;
@@ -278,25 +275,24 @@ async fn init_scylla_application() {
 
     // Create tables
     println!("Start to create tables");
-    // tokio::spawn(
-    apps.Scylla()
-        .await
-        .future(|apps| async {
-            println!("Load storage config");
-            let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
-            let ws = format!("ws://{}/", storage_config.listen_address);
-            println!("Add nodes");
-            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
-                .await
-                .ok();
-            println!("Before init database");
-            init_database().await;
-            apps
-        })
-        .await
-        .start(None)
-        .await;
-    // );
+    tokio::spawn(
+        apps.Scylla()
+            .await
+            .future(|apps| async {
+                println!("Load storage config");
+                let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
+                let ws = format!("ws://{}/", storage_config.listen_address);
+                println!("Add nodes");
+                add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
+                    .await
+                    .ok();
+                println!("Before init database");
+                init_database().await;
+                apps
+            })
+            .await
+            .start(None),
+    );
 }
 
 // #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -312,7 +308,6 @@ async fn test_insert_select() {
     insert_select_delete_indexation_and_indexation_record().await;
     insert_select_delete_message_id_and_parent_record().await;
 
-    // Error to fix!
     insert_select_transaction_id_index_and_transaction_record().await;
     // Error to fix!
     // insert_select_output_id_and_transaction_record().await;
@@ -820,10 +815,9 @@ pub async fn insert_select_transaction_id_index_and_transaction_record() {
     let value = TransactionRecord {
         variant: TransactionVariant::Input,
         message_id: message_id,
-        // data: TransactionData::Input(InputData::Treasury(TreasuryInput::new(rand_milestone_id()))),
         data: TransactionData::Input(input_data),
-        inclusion_state: None,
-        milestone_index: None,
+        inclusion_state: Some(LedgerInclusionState::Included),
+        milestone_index: Some(rand_milestone_index()),
     };
     let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
     let worker = BatchWorker::boxed(sender.clone());
@@ -874,7 +868,7 @@ pub async fn insert_select_output_id_and_transaction_record() {
         variant: TransactionVariant::Output,
         message_id: message_id,
         data: TransactionData::Output(Output::SignatureLockedSingle(rand_signature_locked_single_output())),
-        inclusion_state: None,
+        inclusion_state: Some(LedgerInclusionState::Included),
         milestone_index: Some(rand_milestone_index()),
     };
     let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
