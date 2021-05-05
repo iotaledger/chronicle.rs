@@ -277,11 +277,14 @@ async fn init_scylla_application() {
     apps.Scylla()
         .await
         .future(|apps| async {
+            println!("Load storage config");
             let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
             let ws = format!("ws://{}/", storage_config.listen_address);
+            println!("Add nodes");
             add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
                 .await
                 .ok();
+            println!("Before init database");
             init_database().await;
             apps
         })
