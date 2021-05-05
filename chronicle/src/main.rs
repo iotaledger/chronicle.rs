@@ -66,7 +66,7 @@ impl Builder for AppsBuilder {
 }
 
 fn main() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
     env_logger::init();
     register_metrics();
     let config = get_config();
