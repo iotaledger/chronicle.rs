@@ -15,7 +15,7 @@
             ],
             listen_address: "127.0.0.1:8080",
             thread_count: CoreMultiple(1),
-            reporter_count: 1,
+            reporter_count: 2,
             local_datacenter: "datacenter1",
             nodes: [
                 "172.17.0.2:19042",

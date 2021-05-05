@@ -309,7 +309,7 @@ async fn test_insert_select() {
     insert_select_delete_message_id_and_parent_record().await;
 
     insert_select_transaction_id_index_and_transaction_record().await;
-    // Error to fix!
+    // Insert Failed
     // insert_select_output_id_and_transaction_record().await;
 
     insert_select_hint_and_partition().await;
@@ -864,13 +864,12 @@ pub async fn insert_select_output_id_and_transaction_record() {
     let keyspace = ChronicleKeyspace::new("chronicle_test".to_owned());
     let message_id = rand_message_id();
     let key = rand_output_id();
-    let value = TransactionRecord {
-        variant: TransactionVariant::Output,
-        message_id: message_id,
-        data: TransactionData::Output(Output::SignatureLockedSingle(rand_signature_locked_single_output())),
-        inclusion_state: Some(LedgerInclusionState::Included),
-        milestone_index: Some(rand_milestone_index()),
-    };
+    let value = TransactionRecord::output(
+        message_id,
+        Output::SignatureLockedSingle(rand_signature_locked_single_output()),
+        Some(LedgerInclusionState::Included),
+        Some(rand_milestone_index()),
+    );
     let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
     let worker = BatchWorker::boxed(sender.clone());
     let insert_req = keyspace
