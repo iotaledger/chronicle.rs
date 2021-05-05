@@ -164,24 +164,32 @@ impl Solidifier {
         // this is request from syncer in order for solidifier to collect,
         // the milestone data for the provided milestone index.
         if let Some(ms_data) = self.milestones_data.get_mut(&milestone_index) {
-            // NOTE: this likely will never happens
+            // NOTE: this likely will never happen
+            let created_by = ms_data.created_by();
             warn!(
                 "Received solidify request on an existing milestone data: index: {} created_by: {:?}, pending: {}, messages: {}, milestone_exist: {}, unless this is an expected race condition",
-                milestone_index, ms_data.created_by(), ms_data.pending().len(), ms_data.messages().len(), ms_data.milestone_exist(),
+                milestone_index, created_by, ms_data.pending().len(), ms_data.messages().len(), ms_data.milestone_exist(),
             );
-            // tell syncer to skip this atm
-            let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
+            if created_by == &CreatedBy::Expected && !ms_data.milestone_exist() {
+                // convert the ownership to syncer
+                ms_data.created_by = CreatedBy::Syncer;
+                // request milestone in order to respark solidification process
+                Self::request_milestone_message(&self.collector_handles, self.partition_id, milestone_index);
+                // insert empty entry for in_database
+                self.in_database
+                    .entry(milestone_index)
+                    .or_insert_with(|| InDatabase::new(milestone_index));
+            } else {
+                // tell syncer to skip this atm
+                let _ = self.syncer_handle.send(SyncerEvent::Unreachable(milestone_index));
+            }
         } else {
             // Asking any collector (as we don't know the message id of the milestone)
             // however, we use milestone_index % collector_count to have unfirom distribution.
             // note: solidifier_id/partition_id is actually = milestone_index % collector_count;
             // as both solidifiers and collectors have the same count.
             // this event should be enough to spark the solidification process
-            let ask_collector = AskCollector::MilestoneMessage(milestone_index);
-            if let Some(collector_handle) = self.collector_handles.get(&self.partition_id) {
-                let ask_event = CollectorEvent::Ask(ask_collector);
-                let _ = collector_handle.send(ask_event);
-            }
+            Self::request_milestone_message(&self.collector_handles, self.partition_id, milestone_index);
             // insert empty entry
             self.milestones_data
                 .insert(milestone_index, MilestoneData::new(milestone_index, CreatedBy::Syncer));
@@ -476,7 +484,8 @@ impl Solidifier {
             // still for safety reasons, we should ask collector for its milestone,
             // but we are going to let syncer sends us an event when it observes a glitch
 
-            // Insert anything in between(belongs to self solidifier_id) as Expected
+            // Insert entries for anything in between(belongs to self solidifier_id) as Expected,
+            // which should
             for expected in self.expected..milestone_index {
                 let id = (expected % self.collector_count as u32) as u8;
                 if id.eq(&self.partition_id) {
@@ -491,11 +500,11 @@ impl Solidifier {
                         .or_insert_with(|| MilestoneData::new(expected, CreatedBy::Expected));
                     if !milestone_data.milestone_exist() {
                         error!(
-                            "solidifier_id: {}, however it will request the expected index: {} milestone",
+                            "solidifier_id: {}, however syncer will fill the expected index: {} milestone",
                             id, expected
                         );
                         // For safety reasons, we ask collector for expected milestone
-                        Self::request_milestone_message(collector_handles, solidifier_id, expected)
+                        // Self::request_milestone_message(collector_handles, solidifier_id, expected)
                     }
                 }
             }
