@@ -485,7 +485,6 @@ impl Solidifier {
             // but we are going to let syncer sends us an event when it observes a glitch
 
             // Insert entries for anything in between(belongs to self solidifier_id) as Expected,
-            // which should
             for expected in self.expected..milestone_index {
                 let id = (expected % self.collector_count as u32) as u8;
                 if id.eq(&self.partition_id) {
@@ -503,8 +502,6 @@ impl Solidifier {
                             "solidifier_id: {}, however syncer will fill the expected index: {} milestone",
                             id, expected
                         );
-                        // For safety reasons, we ask collector for expected milestone
-                        // Self::request_milestone_message(collector_handles, solidifier_id, expected)
                     }
                 }
             }

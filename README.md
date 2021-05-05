@@ -38,7 +38,7 @@ Chronicle provides tools for managing and accessing permanode solutions using th
 - Store IOTA messages in real time, using one or more [Scylla](https://www.scylladb.com/) clusters
 - Explore stored messages using an HTTP API
 - Store the data you want by modifying incoming messages
-- Filter data to store it how and where you want
+- Filter data to store it how and where you want (work in progress)
 
 Chronicle includes the following crates:
 
@@ -64,13 +64,7 @@ To run Chronicle, you need the following:
 
 - Preferred a 10 Gbps network connection
 
-- At least 2 CPU cores (only for the meantime)
-
-    You can check how many CPU cores your device has, using the following command:
-
-    ```bash
-    nproc
-    ```
+- At least 2 CPU cores (recommended)
 
 - [Rust](https://www.rust-lang.org/tools/install)
 
@@ -107,6 +101,10 @@ Clone this repository:
 
 ```bash
 git clone https://github.com/iotaledger/chronicle.rs
+```
+
+```bash
+cargo build --release
 ```
 
 If you wish to use the filter functionality, enable the `filter` feature in [chronicle](chronicle/Cargo.toml)
@@ -151,17 +149,77 @@ See [PartitionConfig](chronicle-storage/src/config.rs#PartitionConfig)
 
 Specifies the number of partitions to use in the database, as well as the number of milestones to use as chunks.
 
+NOTICE: You can't change `partition_config` in future without migration.
+
 ### `api_config`
 
-TODO
+Nothing at the moment, please refer to [.env](.env).
 
 ### `broker_config`
 
-#### `mqtt_brokers: Vec<Url>`
-TODO
+#### `websocket_address: String`
+The Broker dashboard listen address, where it accepts requests to manage the broker topology.
 
-#### `endpoints: Vec<Url>`
-TODO
+
+#### `mqtt_brokers: Vec<Url>`
+
+- Messages: mqtt topic used to receive incoming IOTA messages;
+- MessagesReferenced: mqtt topic used to receive incoming metadata;
+
+NOTICE: You should at least have one of each.
+
+#### `api_endpoints: Vec<Url>`
+IOTA node-endpoints used by chronicle to fill gaps.
+
+#### `retries_per_endpoint: u8`
+Max number of retries to retrieve something from `api_endpoints`.
+
+#### `retries_per_query: usize`
+Max number of retries to fetch/insert something from/to`scylla`, before declaring an outage, which will force the broker application to pause and await for scylla cluster to recover.
+
+#### `collector_count: u8`
+The number of concurrent collectors which collect data from feed sources also it's used as solidifier_count.
+
+#### `requester_count: u8`
+The number of concurrent requesters per collector.
+
+NOTE: requesters are used by collector to fetch missing data from `api_endpoint`
+
+
+#### `request_timeout_secs: u64`
+The `api_endpoint` request timeout.
+
+
+#### `parallelism: u8`
+The max number of concurrent solidify requests.
+
+
+#### `sync_range: Option<SyncRange>`
+Identiy the milestone data sync range from/to.
+
+#### `complete_gaps_interval_secs: u64`
+Interval used by syncer to check if there are some gaps to fill/complete.
+
+#### `logs_dir: Option<String>`
+If provided, it will archive the milestone data in ordered fashion.
+
+#### `max_log_size: Option<u64>`
+The upper limit of the log_file_size.
+
+NOTE: Ensure to use a limit within your filesystem range.
+
+### Running Chronicle
+
+See [Building Chronicle](#Building-Chronicle).
+
+
+```bash
+cd target/release && cp /path/to/your/config.ron ./
+```
+
+```bash
+cargo run --release
+```
 
 ## Supporting the project
 
@@ -179,11 +237,8 @@ If you want to get involved in the community, need help with getting set up, hav
 
 - Add more examples and documentation
 - Add more test cases
-- Add more field tests
-- Allow Chronicle to solidify transactions
 - Implement selective permanode
 - Add dashboard web app
-- Improve framework
 
 ## LICENSE
 
