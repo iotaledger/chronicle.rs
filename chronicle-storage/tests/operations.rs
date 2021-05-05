@@ -273,21 +273,22 @@ async fn init_scylla_application() {
 
     // Create tables
     println!("Start to create tables");
-    tokio::spawn(
-        apps.Scylla()
-            .await
-            .future(|apps| async {
-                let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
-                let ws = format!("ws://{}/", storage_config.listen_address);
-                add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
-                    .await
-                    .ok();
-                init_database().await;
-                apps
-            })
-            .await
-            .start(None),
-    );
+    // tokio::spawn(
+    apps.Scylla()
+        .await
+        .future(|apps| async {
+            let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
+            let ws = format!("ws://{}/", storage_config.listen_address);
+            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
+                .await
+                .ok();
+            init_database().await;
+            apps
+        })
+        .await
+        .start(None)
+        .await;
+    // );
 }
 
 // #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
