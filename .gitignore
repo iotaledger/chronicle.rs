@@ -3,5 +3,5 @@
 Cargo.lock
 examples/target
 chronicle/logs
-
+.vscode/**/*
 *config.ron

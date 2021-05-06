@@ -8,9 +8,12 @@ use chronicle::{
     ConfigCommand,
     SocketMsg,
 };
-use chronicle_broker::application::{
-    ChronicleBrokerThrough,
-    ImporterSession,
+use chronicle_broker::{
+    application::{
+        ChronicleBrokerThrough,
+        ImporterSession,
+    },
+    solidifier::MilestoneData,
 };
 use chronicle_common::config::{
     MqttType,
@@ -483,86 +486,127 @@ async fn cleanup_archive() -> anyhow::Result<()> {
     pb.inc_length(paths.len() as u64);
     paths.sort_unstable_by_key(|&(s, _, _)| s);
     pb.println("Merging...");
-    for (start, end, path) in paths {
-        // There is a gap
-        if last_log.is_some() && last_log.as_ref().unwrap().1 != start {
+    for (start, end, mut path) in paths {
+        // There is a gap or we are on the first file
+        if last_log.is_none() || (last_log.is_some() && last_log.as_ref().unwrap().1 != start) {
             // pb.println(format!(
             //    "Gap between {} and {}",
             //    last_log.as_ref().unwrap().2.to_string_lossy(),
             //    path.to_string_lossy()
             //));
             // pb.println(format!("Saving {} as dest file", path.to_string_lossy()));
-            last_log = Some((start, end, path.clone()));
-        } else {
-            // Start a new merge
-            if last_log.is_none() {
-                // pb.println(format!("Saving {} as dest file", path.to_string_lossy()));
-                last_log = Some((start, end, path.clone()));
-            // Merge this file into the last one
-            } else {
-                let (last_start, last_end, last_path) = last_log.as_ref().unwrap();
-                let to_file = OpenOptions::new().append(true).open(last_path).unwrap();
-                let to_file_len = to_file.metadata().unwrap().len();
-                let mut to_file = BufWriter::new(to_file);
-                let mut from_file = BufReader::new(File::open(&path).unwrap());
-                let mut line = String::new();
-                let mut new_end = *last_end - 1;
-                while let Ok(read) = from_file.read_line(&mut line) {
-                    new_end += 1;
-                    if read == 0 {
-                        // pb.println(format!("Drained source file: {}", path.to_string_lossy()));
-                        let new_path = last_path
+            if let Ok(file) = File::open(&path) {
+                if let Ok(metadata) = file.metadata() {
+                    if metadata.len() == 0 {
+                        pb.println(format!("File at {} is empty! Deleting it...", path.to_string_lossy()));
+                        drop(file);
+                        std::fs::remove_file(path)?;
+                        continue;
+                    }
+                }
+                let reader = BufReader::new(file);
+                let lines_count = reader.lines().count();
+                if lines_count != end - start {
+                    pb.println(format!(
+                        "File at {} has fewer milestones than expected. Checking if the file can be corrected...",
+                        path.to_string_lossy()
+                    ));
+                    let file = File::open(&path)?;
+                    let reader = BufReader::new(file);
+                    let mut correct_milestone = start as u32;
+                    for line in reader.lines().filter_map(|l| l.ok()) {
+                        if let Ok(milestone) = serde_json::from_str::<MilestoneData>(&line) {
+                            if milestone.milestone_index() != correct_milestone {
+                                bail!(
+                                    "File at {} has an invalid milestone and cannot be corrected! Expected {}, found {}",
+                                    path.to_string_lossy(),
+                                    correct_milestone,
+                                    milestone.milestone_index()
+                                );
+                            }
+                        } else {
+                            bail!("Malformed data found at milestone {}!", correct_milestone);
+                        }
+                        correct_milestone += 1;
+                    }
+                    if correct_milestone != end as u32 {
+                        pb.println(format!(
+                            "File at {} contains milestones {} to {}, adjusting filename...",
+                            path.to_string_lossy(),
+                            start,
+                            correct_milestone
+                        ));
+                        let new_path = path
                             .parent()
                             .unwrap()
-                            .join(Path::new(&format!("{}to{}.log", last_start, new_end)));
-                        // Save to_file with new end
-                        to_file.flush()?;
-                        drop(to_file);
-                        std::fs::rename(last_path, &new_path)?;
-                        // Remove the depleted file
-                        std::fs::remove_file(path)?;
-                        last_log = Some((*last_start, new_end, new_path));
-                        break;
-                    } else if read as u64 + to_file_len <= chronicle_broker::archiver::MAX_LOG_SIZE {
-                        to_file.write(std::mem::take(&mut line).as_bytes())?;
-                    } else {
-                        // pb.println("Reached max file size. Saving...");
-                        // Save to_file with new end
-                        to_file.flush()?;
-                        drop(to_file);
-                        std::fs::rename(
-                            last_path,
-                            last_path
-                                .parent()
-                                .unwrap()
-                                .join(Path::new(&format!("{}to{}.log", last_start, new_end))),
-                        )?;
-
-                        if new_end != end {
-                            // Need to create an entirely new file
-                            let new_path = path
-                                .parent()
-                                .unwrap()
-                                .join(Path::new(&format!("{}to{}.log", new_end, end)));
-                            let mut new_file = BufWriter::new(File::create(&new_path)?);
-                            new_file.write(std::mem::take(&mut line).as_bytes())?;
-                            // Write the rest of the source file to the new location
-                            while let Ok(read) = from_file.read_line(&mut line) {
-                                if read == 0 {
-                                    break;
-                                } else {
-                                    new_file.write(std::mem::take(&mut line).as_bytes())?;
-                                }
-                            }
-                            // Delete the source file
-                            std::fs::remove_file(path)?;
-                            last_log = Some((new_end, end, new_path));
-                        } else {
-                            std::fs::remove_file(path)?;
-                            last_log = None;
-                        }
-                        break;
+                            .join(Path::new(&format!("{}to{}.log", start, correct_milestone)));
+                        std::fs::rename(&path, &new_path)?;
+                        path = new_path;
                     }
+                }
+            } else {
+                pb.println(format!(
+                    "File at {} has mysteriously gone missing. Moving on...",
+                    path.to_string_lossy()
+                ));
+                continue;
+            }
+            last_log = Some((start, end, path));
+        } else {
+            let (last_start, last_end, last_path) = last_log.as_ref().unwrap();
+            let to_file = OpenOptions::new().append(true).open(last_path)?;
+            let to_file_len = to_file.metadata()?.len();
+            let mut to_file = BufWriter::new(to_file);
+            let mut from_file = BufReader::new(File::open(&path)?);
+            let mut line = String::new();
+            let mut new_end = *last_end - 1;
+            while let Ok(read) = from_file.read_line(&mut line) {
+                new_end += 1;
+                if read == 0 {
+                    // pb.println(format!("Drained source file: {}", path.to_string_lossy()));
+                    let new_path = last_path
+                        .parent()
+                        .unwrap()
+                        .join(Path::new(&format!("{}to{}.log", last_start, new_end)));
+                    // Save to_file with new end
+                    to_file.flush()?;
+                    drop(to_file);
+                    std::fs::rename(last_path, &new_path)?;
+                    // Remove the depleted file
+                    std::fs::remove_file(path)?;
+                    last_log = Some((*last_start, new_end, new_path));
+                    break;
+                } else if read as u64 + to_file_len <= chronicle_broker::archiver::MAX_LOG_SIZE {
+                    if let Ok(milestone) = serde_json::from_str::<MilestoneData>(&line) {
+                        if milestone.milestone_index() != new_end as u32 {
+                            cleanup_writer(&mut to_file, &path, *last_start, new_end)?;
+                            cleanup_reader(std::mem::take(&mut line), &mut from_file, &path, new_end, end)?;
+                            bail!(
+                                "File at {} has an invalid milestone and cannot be corrected! Expected {}, found {}",
+                                path.to_string_lossy(),
+                                new_end,
+                                milestone.milestone_index()
+                            );
+                        }
+                    } else {
+                        cleanup_writer(&mut to_file, &path, *last_start, new_end)?;
+                        cleanup_reader(std::mem::take(&mut line), &mut from_file, &path, new_end, end)?;
+                        bail!("Malformed data found at milestone {}!", new_end);
+                    }
+                    to_file.write(std::mem::take(&mut line).as_bytes())?;
+                } else {
+                    // pb.println("Reached max file size. Saving...");
+                    // Save to_file with new end
+                    cleanup_writer(&mut to_file, &path, *last_start, new_end)?;
+
+                    if new_end != end {
+                        let new_path = cleanup_reader(std::mem::take(&mut line), &mut from_file, &path, new_end, end)?;
+                        last_log = Some((new_end, end, new_path));
+                    } else {
+                        std::fs::remove_file(path)?;
+                        last_log = None;
+                    }
+                    break;
                 }
             }
         }
@@ -570,4 +614,43 @@ async fn cleanup_archive() -> anyhow::Result<()> {
     }
     pb.finish();
     Ok(())
+}
+
+fn cleanup_writer(file: &mut BufWriter<File>, path: &PathBuf, start: usize, end: usize) -> anyhow::Result<()> {
+    file.flush()?;
+    drop(file);
+    std::fs::rename(
+        path,
+        path.parent()
+            .unwrap()
+            .join(Path::new(&format!("{}to{}.log", start, end))),
+    )?;
+    Ok(())
+}
+
+fn cleanup_reader(
+    mut last_line: String,
+    file: &mut BufReader<File>,
+    path: &PathBuf,
+    start: usize,
+    end: usize,
+) -> anyhow::Result<PathBuf> {
+    // Need to create an entirely new file
+    let new_path = path
+        .parent()
+        .unwrap()
+        .join(Path::new(&format!("{}to{}.log", start, end)));
+    let mut new_file = BufWriter::new(File::create(&new_path)?);
+    new_file.write(std::mem::take(&mut last_line).as_bytes())?;
+    // Write the rest of the source file to the new location
+    while let Ok(read) = file.read_line(&mut last_line) {
+        if read == 0 {
+            break;
+        } else {
+            new_file.write(std::mem::take(&mut last_line).as_bytes())?;
+        }
+    }
+    // Delete the source file
+    std::fs::remove_file(path)?;
+    Ok(new_path)
 }

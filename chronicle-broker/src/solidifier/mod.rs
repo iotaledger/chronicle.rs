@@ -176,7 +176,8 @@ impl MilestoneData {
             created_by,
         }
     }
-    pub(crate) fn milestone_index(&self) -> u32 {
+    /// Get the milestone index from this milestone data
+    pub fn milestone_index(&self) -> u32 {
         self.milestone_index
     }
     fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
