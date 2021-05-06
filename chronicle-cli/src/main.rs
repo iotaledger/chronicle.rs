@@ -456,6 +456,11 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
 async fn cleanup_archive() -> anyhow::Result<()> {
     let config = VersionedConfig::load(None)?.verify().await?;
     let logs_dir;
+    let max_log_size = config
+        .broker_config
+        .max_log_size
+        .clone()
+        .unwrap_or(chronicle_broker::archiver::MAX_LOG_SIZE);
     if let Some(dir) = config.broker_config.logs_dir.as_ref() {
         logs_dir = dir;
     } else {
@@ -576,7 +581,7 @@ async fn cleanup_archive() -> anyhow::Result<()> {
                     std::fs::remove_file(path)?;
                     last_log = Some((*last_start, new_end, new_path));
                     break;
-                } else if read as u64 + to_file_len <= chronicle_broker::archiver::MAX_LOG_SIZE {
+                } else if read as u64 + to_file_len <= max_log_size {
                     if let Ok(milestone) = serde_json::from_str::<MilestoneData>(&line) {
                         if milestone.milestone_index() != new_end as u32 {
                             cleanup_writer(&mut to_file, &path, *last_start, new_end)?;
