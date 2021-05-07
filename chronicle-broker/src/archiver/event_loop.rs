@@ -98,6 +98,17 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {
                                     error!("{}", e);
                                     Need::Abort
                                 })?;
+                            // it overlaps with the incoming flow.
+                        } else if milestone_data.milestone_index() == next {
+                            // we handle the milestone_data from syncer as Incoming without upper_ms_limit
+                            self.handle_milestone_data(milestone_data, None).await.map_err(|e| {
+                                error!("{}", e);
+                                Need::Abort
+                            })?;
+                            next += 1;
+                        } else {
+                            // we received a futuristic milestone_data from syncer.
+                            self.milestones_data.push(Ascending::new(milestone_data));
                         }
                     }
                 }
