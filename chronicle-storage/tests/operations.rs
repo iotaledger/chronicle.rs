@@ -295,26 +295,29 @@ async fn init_scylla_application() {
     );
 }
 
+async fn test_with_scylla_application(test_fut: impl futures::Future) {
+    init_scylla_application().await;
+    test_fut.await;
+}
+
 // #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[async_std::test]
 async fn test_insert_select() {
+    let tests_fut = async {
+        insert_select_message_id_and_message().await;
+        insert_select_message_id_and_message_metadata().await;
+        insert_select_message_id_and_messsage_message_metadata().await;
+        insert_select_delete_ed25519_address_and_address_record().await;
+        insert_select_delete_indexation_and_indexation_record().await;
+        insert_select_delete_message_id_and_parent_record().await;
+        insert_select_transaction_id_index_and_transaction_record().await;
+        insert_select_output_id_and_transaction_record().await;
+        insert_select_hint_and_partition().await;
+        insert_milestone_index_and_message_id_milestone_payload().await;
+        insert_sync_key_and_sync_record().await;
+    };
     // Init Scylla Application
-    init_scylla_application().await;
-
-    insert_select_message_id_and_message().await;
-    insert_select_message_id_and_message_metadata().await;
-    insert_select_message_id_and_messsage_message_metadata().await;
-    insert_select_delete_ed25519_address_and_address_record().await;
-    insert_select_delete_indexation_and_indexation_record().await;
-    insert_select_delete_message_id_and_parent_record().await;
-
-    insert_select_transaction_id_index_and_transaction_record().await;
-    // Insert Failed
-    // insert_select_output_id_and_transaction_record().await;
-
-    insert_select_hint_and_partition().await;
-    insert_milestone_index_and_message_id_milestone_payload().await;
-    insert_sync_key_and_sync_record().await;
+    test_with_scylla_application(tests_fut).await;
 }
 
 async fn insert_select_message_id_and_message() {

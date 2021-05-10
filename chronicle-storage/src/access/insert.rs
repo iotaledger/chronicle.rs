@@ -193,7 +193,7 @@ impl Insert<OutputId, TransactionRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
