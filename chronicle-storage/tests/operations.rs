@@ -275,24 +275,21 @@ async fn init_scylla_application() {
 
     // Create tables
     println!("Start to create tables");
-    tokio::spawn(
-        apps.Scylla()
-            .await
-            .future(|apps| async {
-                println!("Load storage config");
-                let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
-                let ws = format!("ws://{}/", storage_config.listen_address);
-                println!("Add nodes");
-                add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
-                    .await
-                    .ok();
-                println!("Before init database");
-                init_database().await;
-                apps
-            })
-            .await
-            .start(None),
-    );
+    apps.Scylla()
+        .await
+        .future(|apps| async {
+            println!("Load storage config");
+            let storage_config = Config::load(CONFIG_TEST_PATH.to_string()).unwrap().storage_config;
+            let ws = format!("ws://{}/", storage_config.listen_address);
+            println!("Add nodes");
+            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), 1)
+                .await
+                .ok();
+            println!("Before init database");
+            init_database().await;
+            apps
+        })
+        .await;
 }
 
 async fn test_with_scylla_application(test_fut: impl futures::Future) {
@@ -686,7 +683,6 @@ pub async fn insert_select_delete_indexation_and_indexation_record() {
     let request = keyspace
         .select::<Paged<VecDeque<Partitioned<IndexationRecord>>>>(&key)
         .consistency(Consistency::One)
-        .paging_state(&None)
         .build()
         .unwrap();
     let (sender, mut inbox) =
@@ -817,7 +813,7 @@ pub async fn insert_select_transaction_id_index_and_transaction_record() {
     let input_data = InputData::utxo(utxo_input, UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)));
     let value = TransactionRecord {
         variant: TransactionVariant::Input,
-        message_id: message_id,
+        message_id,
         data: TransactionData::Input(input_data),
         inclusion_state: Some(LedgerInclusionState::Included),
         milestone_index: Some(rand_milestone_index()),
