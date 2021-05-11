@@ -660,7 +660,12 @@ impl Merger {
                     }
                     self.merge(start, end, path, position).await?;
                 } else {
-                    println!("start: {:?}, end: {}, prev", start, end);
+                    if self.remove_file {
+                        tokio::fs::remove_file(&path).await?;
+                        if let Some(pb) = self.progress_bar.as_ref() {
+                            pb.println(format!("Removed unnecessary file: {}to{}.log", start, end));
+                        }
+                    }
                 }
                 // update prev_end
                 prev_end = end;
