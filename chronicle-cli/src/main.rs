@@ -518,7 +518,7 @@ impl Merger {
     /// Create new merger to merge the log files in the logs dir with progress_bar, this is helpful for CLI
     pub fn with_progress_bar(logs_dir: PathBuf, max_log_size: u64, remove_files: bool) -> anyhow::Result<Self> {
         let style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} ({eta})")
             .progress_chars("##-");
         let merger = Self {
             active: None,
@@ -571,7 +571,7 @@ impl Merger {
         start += position;
         let consumed_file = OpenOptions::new().read(true).open(&path).await?;
         let mut buf_reader = BufReader::new(consumed_file);
-        // discard all line up to the position
+        // discard all lines up to the position
         for _ in 0..position {
             buf_reader.read_line(&mut String::new()).await?;
         }
@@ -604,6 +604,8 @@ impl Merger {
                             bail!("Corrupted milestone data")
                         };
                     }
+                } else {
+                    bail!("Expected active file")
                 }
             }
         }
@@ -617,34 +619,51 @@ impl Merger {
         }
         if self.remove_file {
             tokio::fs::remove_file(path).await?;
+            if let Some(pb) = self.progress_bar.as_ref() {
+                pb.println(format!("Removed file: {}to{}.log", start - position, end));
+            }
         }
         Ok(())
     }
     async fn cleanup(mut self) -> anyhow::Result<()> {
         if let Some((prev_start, mut prev_end, prev_path)) = self.paths.pop() {
+            // set the first active file
             self.open_active(&prev_path, prev_start, prev_end).await?;
             while let Some((start, end, path)) = self.paths.pop() {
                 // check if it's continuous range to the previous one
                 if prev_end == start {
+                    if let Some(pb) = self.progress_bar.as_ref() {
+                        pb.println(format!("Continuous merge: {}..{}", start, end));
+                    }
                     // this will merge the file from position 0 (without discarding any line)
                     self.merge(start, end, path, 0).await?;
-                    // update prev_end
-                    prev_end = end;
                 } else if start > prev_end {
+                    if let Some(pb) = self.progress_bar.as_ref() {
+                        pb.println(format!("Identified missed log file: {}to{}.log", prev_end, start));
+                    }
                     // this is invoked when there is gap in the log files,
                     // close the active file;
                     self.close_active().await?;
                     // switch to next one;
                     self.open_active(&path, start, end).await?;
-                    // update prev_end
-                    prev_end = end;
                 } else if start < prev_end && end > prev_end {
                     // This is an overlap, however we have to skip some lines
                     let position = prev_end - start;
+                    if let Some(pb) = self.progress_bar.as_ref() {
+                        pb.println(format!(
+                            "Overlapped merge: {}..{} fetched from {}to{}.log",
+                            start + position,
+                            end,
+                            start,
+                            end
+                        ));
+                    }
                     self.merge(start, end, path, position).await?;
-                    // update prev_end
-                    prev_end = end;
+                } else {
+                    println!("start: {:?}, end: {}, prev", start, end);
                 }
+                // update prev_end
+                prev_end = end;
                 if let Some(pb) = self.progress_bar.as_ref() {
                     pb.inc(1);
                 }
@@ -662,6 +681,9 @@ impl Merger {
         Ok(())
     }
     async fn open_active(&mut self, file_path: &PathBuf, start: usize, end: usize) -> anyhow::Result<()> {
+        if let Some(pb) = self.progress_bar.as_ref() {
+            pb.println(format!("Opening {}to{}.log as active: {}.part", start, end, start));
+        }
         let part_file_name = format!("{}.part", start);
         let active_file_path = self.logs_dir.join(&part_file_name);
         if let Err(e) = tokio::fs::rename(file_path, &active_file_path).await {
@@ -683,6 +705,9 @@ impl Merger {
             if let Err(e) = tokio::fs::rename(&file_path, log_file_path).await {
                 bail!(e)
             };
+            if let Some(pb) = self.progress_bar.as_ref() {
+                pb.println(format!("Closed active: {}.part as {}to{}.log", start, start, end));
+            }
         };
         Ok(())
     }
@@ -697,6 +722,9 @@ impl Merger {
             .map_err(|e| anyhow!("Unable to create active log file: {}, error: {}", filename, e))?;
         let len = file.metadata().await?.len();
         let active_file = ActiveMerge::new(milestone_index as usize, milestone_index as usize, file_path, file, len);
+        if let Some(pb) = self.progress_bar.as_ref() {
+            pb.println(format!("Created active: {}.part", milestone_index));
+        }
         self.active.replace(active_file);
         Ok(())
     }
