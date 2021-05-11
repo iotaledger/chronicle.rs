@@ -129,6 +129,8 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                     if let Some(import_topology) = self.pending_imports.pop() {
                                         self.handle_import(import_topology).await;
                                     }
+                                    // remove its handle from importer_handles
+                                    self.importer_handles.remove(&service.get_name());
                                     // check if we finished all in_progress_importers
                                     self.try_close_importer_session().await;
                                 } else {

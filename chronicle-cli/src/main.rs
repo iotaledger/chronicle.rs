@@ -410,9 +410,11 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                     }
                                                 }
                                                 ImporterSession::Finish { from_ms, to_ms, msg } => {
+                                                    let m = format!("LogFile: {}to{}.log {}", from_ms, to_ms, msg);
                                                     if let Some(()) = active_progress_bars.remove(&(from_ms, to_ms)) {
-                                                        let m = format!("LogFile: {}to{}.log {}", from_ms, to_ms, msg);
                                                         pb.set_message(&m);
+                                                        pb.println(m);
+                                                    } else {
                                                         pb.println(m);
                                                     }
                                                 }
