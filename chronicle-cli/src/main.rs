@@ -463,7 +463,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 }
             }
         }
-        ("cleanup", Some(_subcommand)) => cleanup_archive().await?,
+        ("cleanup", Some(matches)) => cleanup_archive(matches).await?,
         _ => (),
     }
     Ok(())
@@ -499,6 +499,23 @@ pub enum ValidationLevel {
     Full,
     /// Validate all data formatting as it is about to be appended
     JustInTime,
+}
+
+impl Display for ValidationLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationLevel::Basic => write!(f, "Basic"),
+            ValidationLevel::Light => write!(f, "Light"),
+            ValidationLevel::Full => write!(f, "Full"),
+            ValidationLevel::JustInTime => write!(f, "JustInTime"),
+        }
+    }
+}
+
+impl Default for ValidationLevel {
+    fn default() -> Self {
+        ValidationLevel::JustInTime
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -720,6 +737,10 @@ impl Merger {
     pub async fn cleanup(mut self) -> anyhow::Result<()> {
         if let Some(pb) = self.progress_bar.as_mut() {
             pb.enable_steady_tick(100);
+            pb.println("Merging logs with the following configuration:");
+            pb.println(format!(" - validation level: {}", self.validation_level));
+            pb.println(format!(" - backup: {}", self.backup_dir.is_some()));
+            pb.println(format!(" - exit on validation err: {}", self.exit_on_val_err));
         }
         if let Some(ref dir) = self.backup_dir {
             if let Err(e) = tokio::fs::create_dir(dir).await {
@@ -982,7 +1003,23 @@ impl Merger {
     }
 }
 
-async fn cleanup_archive() -> anyhow::Result<()> {
+async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
+    let backup_logs = !matches.is_present("no-backup");
+    let val_level = matches
+        .value_of("validation-level")
+        .map(|s| match s {
+            "Basic" => ValidationLevel::Basic,
+            "Light" => ValidationLevel::Light,
+            "Full" => ValidationLevel::Full,
+            "JustInTime" => ValidationLevel::JustInTime,
+            _ => panic!("Invalid validation level!"),
+        })
+        .or_else(|| matches.is_present("val-level-basic").then(|| ValidationLevel::Basic))
+        .or_else(|| matches.is_present("val-level-light").then(|| ValidationLevel::Light))
+        .or_else(|| matches.is_present("val-level-full").then(|| ValidationLevel::Full))
+        .or_else(|| matches.is_present("val-level-jit").then(|| ValidationLevel::JustInTime))
+        .unwrap_or_default();
+    let exit_on_val_err = !matches.is_present("no-exit-on-val-err");
     let config = VersionedConfig::load(None)?.verify().await?;
     let logs_dir;
     let max_log_size = config
@@ -996,7 +1033,7 @@ async fn cleanup_archive() -> anyhow::Result<()> {
         println!("No LogsDir in the config, Chronicle is running without archiver");
         return Ok(());
     }
-    Merger::new(logs_dir, max_log_size, true, true, ValidationLevel::JustInTime, false)?
+    Merger::new(logs_dir, max_log_size, backup_logs, true, val_level, exit_on_val_err)?
         .cleanup()
         .await?;
     Ok(())
