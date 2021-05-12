@@ -7,15 +7,9 @@ use crate::{
         BrokerEvent,
         BrokerHandle,
         ChronicleBrokerScope,
-        SyncData,
     },
     archiver::LogFile,
-    solidifier::{
-        FullMessage,
-        MilestoneData,
-    },
 };
-use application::ImporterSession;
 use bee_message::{
     output::Output,
     payload::transaction::{

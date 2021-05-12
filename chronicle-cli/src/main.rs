@@ -12,11 +12,9 @@ use chronicle::{
     SocketMsg,
 };
 use chronicle_broker::{
-    application::{
-        ChronicleBrokerThrough,
-        ImporterSession,
-    },
-    solidifier::MilestoneData,
+    application::ChronicleBrokerThrough,
+    BrokerSocketMsg,
+    *,
 };
 use chronicle_common::config::{
     MqttType,
@@ -124,7 +122,7 @@ async fn process() -> anyhow::Result<()> {
         ("stop", Some(_matches)) => {
             let config = VersionedConfig::load(None)?.verify().await?;
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-            let message = Message::text(serde_json::to_string(&SocketMsg::Broker(
+            let message = Message::text(serde_json::to_string(&BrokerSocketMsg::ChronicleBroker(
                 ChronicleBrokerThrough::ExitProgram,
             ))?);
             stream.send(message).await?;
@@ -217,16 +215,16 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             if !matches.is_present("skip-connection") {
                 let mut messages = Vec::new();
                 for mqtt_address in mqtt_addresses.clone() {
-                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                        ChronicleBrokerThrough::Topology(chronicle_broker::application::Topology::AddMqttMessages(
-                            mqtt_address.clone(),
+                    messages.push(Message::text(serde_json::to_string(
+                        &BrokerSocketMsg::ChronicleBroker(ChronicleBrokerThrough::Topology(
+                            chronicle_broker::application::Topology::AddMqttMessages(mqtt_address.clone()),
                         )),
-                    ))?));
-                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                        ChronicleBrokerThrough::Topology(
+                    )?));
+                    messages.push(Message::text(serde_json::to_string(
+                        &BrokerSocketMsg::ChronicleBroker(ChronicleBrokerThrough::Topology(
                             chronicle_broker::application::Topology::AddMqttMessagesReferenced(mqtt_address),
-                        ),
-                    ))?));
+                        )),
+                    )?));
                 }
                 let (mut stream, _) =
                     connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;

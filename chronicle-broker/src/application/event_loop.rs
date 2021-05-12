@@ -14,7 +14,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
             while let Some(event) = self.inbox.recv().await {
                 match event {
                     BrokerEvent::Importer(importer_session) => {
-                        let socket_msg = super::SocketMsg::ChronicleBroker(importer_session);
+                        let socket_msg = BrokerSocketMsg::ChronicleBroker(importer_session);
                         self.response_to_sockets(&socket_msg).await;
                     }
                     BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
@@ -28,7 +28,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                 if self.service.is_stopping() {
                                     // response that should not change the topology while is_stopping
                                     error!("Not supposed to dynamiclly change the topology while broker service is_stopped");
-                                    let socket_msg = super::SocketMsg::ChronicleBroker(Err(topology));
+                                    let socket_msg = BrokerSocketMsg::ChronicleBroker(Err(topology));
                                     self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg)
                                         .await;
                                     continue;
@@ -66,7 +66,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                                     {
                                                         error!("{}", e);
                                                         let socket_msg =
-                                                            super::SocketMsg::ChronicleBroker(Err(topology.clone()));
+                                                            BrokerSocketMsg::ChronicleBroker(Err(topology.clone()));
                                                         self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
                                                     } else {
                                                         *requester_topology =
@@ -75,12 +75,12 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                                             h.send_requester_topology(requester_topology.clone());
                                                         });
                                                         let socket_msg =
-                                                            super::SocketMsg::ChronicleBroker(Ok(topology.clone()));
+                                                            BrokerSocketMsg::ChronicleBroker(Ok(topology.clone()));
                                                         self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
                                                     }
                                                 } else {
                                                     let socket_msg =
-                                                        super::SocketMsg::ChronicleBroker(Err(topology.clone()));
+                                                        BrokerSocketMsg::ChronicleBroker(Err(topology.clone()));
                                                     self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
                                                 };
                                             }
@@ -254,9 +254,9 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                         }
                         if is_not_websocket_child {
                             // response to all websocket
-                            let socket_msg = super::SocketMsg::ChronicleBroker(self.service.clone());
+                            let socket_msg = BrokerSocketMsg::ChronicleBroker(self.service.clone());
                             self.response_to_sockets(&socket_msg).await;
-                            let super::SocketMsg::ChronicleBroker(service) = socket_msg;
+                            let BrokerSocketMsg::ChronicleBroker(service) = socket_msg;
                             // Inform launcher with status change
                             supervisor.status_change(service);
                         }
@@ -362,7 +362,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                     path: path.clone(),
                     msg: "Invalid path".into(),
                 };
-                let socket_msg = super::SocketMsg::ChronicleBroker(event);
+                let socket_msg = BrokerSocketMsg::ChronicleBroker(event);
                 self.response_to_sockets(&socket_msg).await;
             }
         }
@@ -370,7 +370,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
     async fn try_close_importer_session(&mut self) {
         if self.in_progress_importers == 0 {
             let event = ImporterSession::Close;
-            let socket_msg = super::SocketMsg::ChronicleBroker(event);
+            let socket_msg = BrokerSocketMsg::ChronicleBroker(event);
             self.response_to_sockets(&socket_msg).await;
         }
     }
@@ -413,7 +413,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 path: file_path,
                 msg: "Unable to convert path to string".into(),
             };
-            let socket_msg = super::SocketMsg::ChronicleBroker(event);
+            let socket_msg = BrokerSocketMsg::ChronicleBroker(event);
             self.response_to_sockets(&socket_msg).await;
         }
     }
@@ -433,7 +433,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 path,
                 msg: "No LogFiles in the provided path".into(),
             };
-            let socket_msg = super::SocketMsg::ChronicleBroker(event);
+            let socket_msg = BrokerSocketMsg::ChronicleBroker(event);
             self.response_to_sockets(&socket_msg).await;
             return ();
         }
@@ -459,7 +459,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             }
         }
     }
-    pub(crate) async fn response_to_sockets<T: Serialize>(&mut self, msg: &super::SocketMsg<T>) {
+    pub(crate) async fn response_to_sockets<T: Serialize>(&mut self, msg: &BrokerSocketMsg<T>) {
         for socket in self.websockets.values_mut() {
             let j = serde_json::to_string(&msg).unwrap();
             let m = crate::websocket::Message::text(j);

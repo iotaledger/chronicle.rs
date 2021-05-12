@@ -10,7 +10,7 @@ edition = "2018"
 backstage = "0.1"
 chronicle = { path = "../chronicle" }
 chronicle-common = { path = "../chronicle-common" }
-chronicle-broker = { path = "../chronicle-broker" }
+chronicle-broker = { path = "../chronicle-broker", default-features = false }
 scylla-rs = "0.1"
 clap = { version = "2.33", features = ["yaml"] }
 tokio = "1.5"

@@ -21,7 +21,7 @@ scylla-rs = "0.1"
 chronicle-common = { path = "../chronicle-common" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-storage = { path = "../chronicle-storage" }
-chronicle-broker = { path = "../chronicle-broker" }
+chronicle-broker = { path = "../chronicle-broker", default-features = false, optional = true }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"
 env_logger = "0.8"
@@ -37,6 +37,7 @@ anyhow = "1.0"
 tokio = "1.5"
 
 [features]
-default = ["rocket"]
+default = ["rocket", "chronicle-broker"]
+application = ["chronicle-broker/application"]
 filter = ["chronicle-broker/filter"]
 rocket = ["chronicle-api/rocket_listener"]

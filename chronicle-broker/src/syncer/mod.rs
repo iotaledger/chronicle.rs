@@ -1,13 +1,11 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    application::SyncData,
     archiver::{
         ArchiverEvent,
         ArchiverHandle,
     },
     solidifier::{
-        MilestoneData,
         SolidifierEvent,
         SolidifierHandle,
     },

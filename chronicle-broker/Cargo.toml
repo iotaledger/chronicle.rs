@@ -9,28 +9,56 @@ name = "chronicle_broker"
 path = "src/lib.rs"
 
 [dependencies]
-chronicle-common = { path = "../chronicle-common" }
+chronicle-common = { path = "../chronicle-common", optional = true }
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-filter = { path = "../chronicle-filter", optional = true }
-backstage = "0.1"
-scylla-rs = "0.1"
+backstage = { version = "0.1", optional = true }
+scylla-rs = { version = "0.1", optional = true }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-log = "0.4"
-tokio-tungstenite = "0.14"
-reqwest = { version = "0.11", features = ["json"] }
-futures = "0.3"
-async-trait = "0.1"
-lru = "0.6"
-rand = "0.8"
-url = { version = "2.2", features = ["serde"] }
-bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
+serde_json = { version = "1.0", optional = true }
+log = { version = "0.4", optional = true }
+tokio-tungstenite = { version = "0.14", optional = true }
+reqwest = { version = "0.11", features = ["json"], optional = true }
+futures = { version = "0.3", optional = true }
+async-trait = { version = "0.1", optional = true }
+lru = { version = "0.6", optional = true }
+rand = { version = "0.8", optional = true }
+url = { version = "2.2", features = ["serde"], optional = true }
+bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev", optional = true }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev", optional = true }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
-hex = "0.4"
-anyhow = "1.0"
-tokio = "1.5"
-paho-mqtt = { version = "0.9", default-features = false, features = ["bundled"] }
+hex = { version = "0.4", optional = true }
+anyhow = { version = "1.0", optional = true }
+tokio = { version = "1.5", optional = true }
+paho-mqtt = { version = "0.9", default-features = false, features = ["bundled"], optional = true }
 
 [features]
+default = ["sync", "application"]
+sync = [
+    "chronicle-common",
+    "scylla-rs",
+    "anyhow",
+    "tokio",
+]
+application = [
+    "chronicle-common",
+    "chronicle-filter",
+    "backstage",
+    "scylla-rs",
+    "serde_json",
+    "log",
+    "tokio-tungstenite",
+    "reqwest",
+    "futures",
+    "async-trait",
+    "lru",
+    "rand",
+    "url",
+    "bee-common",
+    "bee-rest-api",
+    "hex",
+    "anyhow",
+    "tokio",
+    "paho-mqtt",
+]
 filter = ["chronicle-filter"]

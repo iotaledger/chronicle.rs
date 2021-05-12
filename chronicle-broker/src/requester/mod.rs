@@ -6,7 +6,6 @@ use super::{
         CollectorHandle,
         Internal,
     },
-    solidifier::FullMessage,
     *,
 };
 use bee_rest_api::types::{

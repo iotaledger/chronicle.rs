@@ -15,7 +15,7 @@ use bee_message::{
         TransactionId,
     },
 };
-use chronicle_broker::application::SyncData;
+use chronicle_broker::SyncData;
 use chronicle_common::{
     config::PartitionConfig,
     metrics::{

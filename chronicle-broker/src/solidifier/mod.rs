@@ -1,6 +1,5 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-
 use super::{
     archiver::{
         ArchiverEvent,
@@ -65,32 +64,6 @@ impl MilestoneMessage {
     }
 }
 
-/// A "full" message payload, including both message and metadata
-#[derive(Debug, Deserialize, Serialize)]
-pub struct FullMessage(pub Message, pub MessageMetadata);
-
-impl FullMessage {
-    /// Create a new full message
-    pub fn new(message: Message, metadata: MessageMetadata) -> Self {
-        Self(message, metadata)
-    }
-    /// Get the message ID
-    pub fn message_id(&self) -> &MessageId {
-        &self.1.message_id
-    }
-    /// Get the message's metadata
-    pub fn metadata(&self) -> &MessageMetadata {
-        &self.1
-    }
-    /// Get the message
-    pub fn message(&self) -> &Message {
-        &self.0
-    }
-    /// Get the milestone index that references this
-    pub fn ref_ms(&self) -> Option<u32> {
-        self.1.referenced_by_milestone_index
-    }
-}
 #[derive(Deserialize, Serialize)]
 struct MessageStatus {
     in_messages: bool,
@@ -125,86 +98,9 @@ impl InDatabase {
 
 impl From<&MilestoneData> for InDatabase {
     fn from(milestone_data: &MilestoneData) -> Self {
-        let mut in_database = Self::new(milestone_data.milestone_index);
+        let mut in_database = Self::new(milestone_data.milestone_index());
         in_database.set_messages_len(milestone_data.messages().len());
         in_database
-    }
-}
-
-/// Milestone data
-#[derive(Deserialize, Serialize)]
-pub struct MilestoneData {
-    milestone_index: u32,
-    milestone: Option<Box<MilestonePayload>>,
-    messages: HashMap<MessageId, FullMessage>,
-    pending: HashMap<MessageId, ()>,
-    created_by: CreatedBy,
-}
-
-impl MilestoneData {
-    /// Get the source this was created by
-    pub fn created_by(&self) -> &CreatedBy {
-        &self.created_by
-    }
-}
-
-/// Created by sources
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[repr(u8)]
-pub enum CreatedBy {
-    /// Created by the new incoming messages from the network
-    Incoming = 0,
-    /// Created by the new expected messages from the network
-    Expected = 1,
-    /// Created by solidifiy/sync request from syncer
-    Syncer = 2,
-}
-
-impl From<CreatedBy> for u8 {
-    fn from(value: CreatedBy) -> u8 {
-        value as u8
-    }
-}
-
-impl MilestoneData {
-    fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
-        Self {
-            milestone_index,
-            milestone: None,
-            messages: HashMap::new(),
-            pending: HashMap::new(),
-            created_by,
-        }
-    }
-    /// Get the milestone index from this milestone data
-    pub fn milestone_index(&self) -> u32 {
-        self.milestone_index
-    }
-    fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
-        self.milestone.replace(boxed_milestone_payload);
-    }
-    fn milestone_exist(&self) -> bool {
-        self.milestone.is_some()
-    }
-    fn add_full_message(&mut self, full_message: FullMessage) {
-        self.messages.insert(*full_message.message_id(), full_message);
-    }
-    fn remove_from_pending(&mut self, message_id: &MessageId) {
-        self.pending.remove(message_id);
-    }
-    fn messages(&self) -> &HashMap<MessageId, FullMessage> {
-        &self.messages
-    }
-    fn pending(&self) -> &HashMap<MessageId, ()> {
-        &self.pending
-    }
-}
-
-impl std::iter::IntoIterator for MilestoneData {
-    type Item = (MessageId, FullMessage);
-    type IntoIter = std::collections::hash_map::IntoIter<MessageId, FullMessage>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.messages.into_iter()
     }
 }
 
