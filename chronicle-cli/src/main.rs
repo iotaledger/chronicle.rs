@@ -1,8 +1,6 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-#![feature(bool_to_option)]
-
 use anyhow::{
     anyhow,
     bail,
@@ -38,6 +36,10 @@ use scylla_rs::prelude::ScyllaThrough;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
+    fmt::{
+        Debug,
+        Display,
+    },
     ops::Range,
     path::{
         Path,
@@ -459,7 +461,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 }
             }
         }
-        ("cleanup", Some(_subcommand)) => cleanup_archive().await?,
+        ("cleanup", Some(matches)) => cleanup_archive(matches).await?,
         _ => (),
     }
     Ok(())
@@ -467,23 +469,25 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
 
 #[derive(Error, Debug)]
 enum LogFileError {
-    #[error("File is empty!")]
-    EmptyFile,
-    #[error("Missing milestones {} to {}!", .0.start, .0.end)]
-    MissingMilestones(Range<u32>),
-    #[error("{0} extra milestones found!")]
-    ExtraMilestones(u32),
-    #[error("Duplicate milestone found: {0}!")]
-    DuplicateMilestone(u32),
-    #[error("Malformatted milestone {0}!")]
-    MalformattedMilestone(u32),
-    #[error("Invalid range specified: {} to {}", .0.start, .0.end)]
-    InvalidRange(Range<u32>),
+    #[error("File is empty: {0}")]
+    EmptyFile(PathBuf),
+    #[error("Missing milestones {} to {}: {path}", .range.start, .range.end)]
+    MissingMilestones { range: Range<u32>, path: PathBuf },
+    #[error("{num} extra milestones found: {path}")]
+    ExtraMilestones { num: u32, path: PathBuf },
+    #[error("Milestone {milestone} is outside of the file range: {path}")]
+    OutsideMilestone { milestone: u32, path: PathBuf },
+    #[error("Duplicate milestone {milestone} found: {path}")]
+    DuplicateMilestone { milestone: u32, path: PathBuf },
+    #[error("Malformatted milestone {milestone}: {path}")]
+    MalformattedMilestone { milestone: u32, path: PathBuf },
+    #[error("Invalid range specified: {} to {}: {path}", .range.start, .range.end)]
+    InvalidRange { range: Range<u32>, path: PathBuf },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ValidationLevel {
     /// Validate only the length and filename
     Basic,
@@ -491,6 +495,25 @@ pub enum ValidationLevel {
     Light,
     /// Validate all data formatting
     Full,
+    /// Validate all data formatting as it is about to be appended
+    JustInTime,
+}
+
+impl Display for ValidationLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationLevel::Basic => write!(f, "Basic"),
+            ValidationLevel::Light => write!(f, "Light"),
+            ValidationLevel::Full => write!(f, "Full"),
+            ValidationLevel::JustInTime => write!(f, "JustInTime"),
+        }
+    }
+}
+
+impl Default for ValidationLevel {
+    fn default() -> Self {
+        ValidationLevel::JustInTime
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -549,13 +572,17 @@ impl LogFile {
 
     pub async fn verify(&mut self, level: ValidationLevel) -> Result<(), LogFileError> {
         if self.len == 0 {
-            return Err(LogFileError::EmptyFile);
+            return Err(LogFileError::EmptyFile(self.file_path.clone()));
         }
         if self.start >= self.end {
-            return Err(LogFileError::InvalidRange(self.start..self.end));
+            return Err(LogFileError::InvalidRange {
+                range: self.start..self.end,
+                path: self.file_path.clone(),
+            });
         }
         match level {
             ValidationLevel::Light | ValidationLevel::Full => {
+                let path = self.file_path.clone();
                 let reader = BufReader::new(&mut self.file);
                 let mut idx = self.start;
                 let mut lines = reader.lines();
@@ -572,25 +599,37 @@ impl LogFile {
                     }
                     let milestone_index = match level {
                         ValidationLevel::Light => serde_json::from_str::<LightMilestoneData>(&line)
-                            .map_err(|_| LogFileError::MalformattedMilestone(idx))?
+                            .map_err(|_| LogFileError::MalformattedMilestone {
+                                milestone: idx,
+                                path: path.clone(),
+                            })?
                             .milestone_index(),
                         ValidationLevel::Full => serde_json::from_str::<MilestoneData>(&line)
-                            .map_err(|_| LogFileError::MalformattedMilestone(idx))?
+                            .map_err(|_| LogFileError::MalformattedMilestone {
+                                milestone: idx,
+                                path: path.clone(),
+                            })?
                             .milestone_index(),
                         _ => panic!(),
                     };
                     if milestone_index > idx {
-                        return Err(LogFileError::MissingMilestones(idx..milestone_index));
+                        return Err(LogFileError::MissingMilestones {
+                            range: idx..milestone_index,
+                            path,
+                        });
                     } else if milestone_index < idx {
                         extra += 1;
                         if milestone_index >= self.start && milestone_index < self.end {
-                            return Err(LogFileError::DuplicateMilestone(milestone_index));
+                            return Err(LogFileError::DuplicateMilestone {
+                                milestone: milestone_index,
+                                path,
+                            });
                         }
                     }
                     idx += 1;
                 }
                 if extra > 0 {
-                    return Err(LogFileError::ExtraMilestones(extra));
+                    return Err(LogFileError::ExtraMilestones { num: extra, path });
                 }
                 self.file
                     .seek(tokio::io::SeekFrom::Start(0))
@@ -632,6 +671,7 @@ pub struct Merger {
     progress_bar: Option<ProgressBar>,
     backup_dir: Option<PathBuf>,
     validation_level: ValidationLevel,
+    exit_on_val_err: bool,
 }
 
 impl Merger {
@@ -642,6 +682,7 @@ impl Merger {
         backup_logs: bool,
         progress_bar: bool,
         validation_level: ValidationLevel,
+        exit_on_val_err: bool,
     ) -> anyhow::Result<Self> {
         let mut progress_bar = progress_bar.then(|| {
             let style = ProgressStyle::default_bar()
@@ -684,6 +725,7 @@ impl Merger {
                 paths,
                 backup_dir,
                 validation_level,
+                exit_on_val_err,
             })
         } else {
             bail!("Logs directory is malformatted! Found: {}", logs_dir.to_string_lossy());
@@ -693,6 +735,10 @@ impl Merger {
     pub async fn cleanup(mut self) -> anyhow::Result<()> {
         if let Some(pb) = self.progress_bar.as_mut() {
             pb.enable_steady_tick(100);
+            pb.println("Merging logs with the following configuration:");
+            pb.println(format!(" - validation level: {}", self.validation_level));
+            pb.println(format!(" - backup: {}", self.backup_dir.is_some()));
+            pb.println(format!(" - exit on validation err: {}", self.exit_on_val_err));
         }
         if let Some(ref dir) = self.backup_dir {
             if let Err(e) = tokio::fs::create_dir(dir).await {
@@ -711,17 +757,18 @@ impl Merger {
                     pb.set_message(format!("Verifying {}", path.to_string_lossy()));
                 }
                 if let Err(e) = writer.verify(self.validation_level).await {
-                    if let Some(pb) = self.progress_bar.as_mut() {
-                        pb.println(format!("Log File Error: {}, path = {}", e, path.to_string_lossy()));
-                        pb.inc(writer.len())
-                    }
                     match e {
-                        LogFileError::EmptyFile => {
+                        LogFileError::EmptyFile(_) => {
                             tokio::fs::remove_file(path).await?;
                         }
-                        _ => (),
+                        _ => {
+                            self.handle_error(e, writer.len())?;
+                        }
                     }
                 } else {
+                    if let Some(pb) = self.progress_bar.as_mut() {
+                        pb.inc(writer.len());
+                    }
                     res = Some(writer);
                     break;
                 }
@@ -730,17 +777,24 @@ impl Merger {
         } {
             while let Some((start, end, path)) = self.paths.pop() {
                 // The previous file and this one match up
-                if writer.end == start {
+                // or there is an overlap between this log and the previous one
+                if start <= writer.end {
+                    if start < writer.end {
+                        if let Some(pb) = self.progress_bar.as_ref() {
+                            pb.println(format!("Found overlap in logs from {} to {}", start, writer.end));
+                        }
+                    }
                     self.merge(start, end, path, &mut writer).await?;
 
                 // There is a gap in the logs
                 } else if start > writer.end {
+                    if let Some(pb) = self.progress_bar.as_ref() {
+                        pb.println(format!("Found gap in logs from {} to {}", writer.end, start));
+                    }
                     writer = self.open_write(&path, start, end).await?;
-
-                // There is an overlap between this log and the previous one
-                } else if start < writer.end {
-                    // Just set this log to be written to and move on
-                    writer = self.open_write(&path, start, end).await?;
+                    if let Some(pb) = self.progress_bar.as_mut() {
+                        pb.inc(writer.len());
+                    }
                 }
             }
         } else {
@@ -756,48 +810,94 @@ impl Merger {
 
     async fn merge(&mut self, start: u32, end: u32, path: PathBuf, active: &mut LogFile) -> anyhow::Result<()> {
         if start >= end {
-            bail!(LogFileError::InvalidRange(start..end));
+            let err = LogFileError::InvalidRange {
+                range: start..end,
+                path: path.clone(),
+            };
+            if self.exit_on_val_err {
+                bail!(err);
+            } else {
+                if let Some(pb) = self.progress_bar.as_mut() {
+                    if let Ok(metadata) = std::fs::metadata(&path) {
+                        pb.inc(metadata.len());
+                    }
+                    pb.println(format!("{}", err))
+                }
+                return Ok(());
+            }
         }
         let mut consumed_file = self.open_read(&path, start, end).await?;
+        let total_bytes = consumed_file.len();
         if let Some(pb) = self.progress_bar.as_mut() {
             pb.set_message(format!("Verifying {}", path.to_string_lossy()));
         }
         if let Err(e) = consumed_file.verify(self.validation_level).await {
-            if let Some(pb) = self.progress_bar.as_mut() {
-                pb.println(format!("Log File Error: {}, path = {}", e, path.to_string_lossy()));
-                pb.inc(consumed_file.len());
-            }
             match e {
-                LogFileError::EmptyFile => {
-                    tokio::fs::remove_file(path).await?;
+                LogFileError::EmptyFile(_) => {
+                    tokio::fs::remove_file(&path).await?;
                 }
-                _ => (),
+                _ => {
+                    return self.handle_error(e, total_bytes);
+                }
             }
             return Ok(());
         }
         let mut buf_reader = BufReader::new(&mut consumed_file.file);
         let mut line_buffer = String::new();
         let mut milestone_index = start;
+        let mut total_read_bytes = 0;
         if let Some(pb) = self.progress_bar.as_mut() {
             pb.set_message(format!("Consuming {}", path.to_string_lossy()));
         }
         loop {
             match buf_reader.read_line(&mut line_buffer).await {
                 Ok(bytes) => {
+                    total_read_bytes += bytes as u64;
                     let ms_line = std::mem::take(&mut line_buffer);
                     if bytes == 0 {
                         // if let Some(pb) = self.progress_bar.as_mut() {
                         //    pb.println(format!("Removing log file {}", path.to_string_lossy()));
                         //}
-                        tokio::fs::remove_file(path).await?;
+                        tokio::fs::remove_file(&path).await?;
                         break;
                     } else {
+                        // Perform validation if JIT is enabled or we are looking at an overlapping milestone
+                        if milestone_index < active.end || self.validation_level == ValidationLevel::JustInTime {
+                            if let Ok(idx) =
+                                serde_json::from_str::<MilestoneData>(&ms_line).map(|data| data.milestone_index())
+                            {
+                                if milestone_index < idx {
+                                    let err = LogFileError::MissingMilestones {
+                                        range: milestone_index..idx,
+                                        path,
+                                    };
+                                    return self.handle_error(err, total_bytes - total_read_bytes);
+                                } else if milestone_index > idx {
+                                    let err = LogFileError::DuplicateMilestone { milestone: idx, path };
+                                    return self.handle_error(err, total_bytes - total_read_bytes);
+                                } else if idx < start || idx >= end {
+                                    let err = LogFileError::OutsideMilestone { milestone: idx, path };
+                                    return self.handle_error(err, total_bytes - total_read_bytes);
+                                }
+                            } else {
+                                let err = LogFileError::MalformattedMilestone {
+                                    milestone: milestone_index,
+                                    path,
+                                };
+                                return self.handle_error(err, total_bytes - total_read_bytes);
+                            }
+                        }
                         // We can fit this line in the writer file
                         if active.len() + (bytes as u64) < self.max_log_size {
                             // if let Some(pb) = self.progress_bar.as_mut() {
                             //    pb.println(format!("Appending to log file {}", active.file_path.to_string_lossy()));
                             //}
-                            active.append_line(&ms_line).await?;
+
+                            // Handle overlapping files by skipping milestones until we reach
+                            // the end of the active log
+                            if milestone_index == active.end {
+                                active.append_line(&ms_line).await?;
+                            }
                             if let Some(pb) = self.progress_bar.as_mut() {
                                 pb.inc(bytes as u64);
                             }
@@ -819,11 +919,41 @@ impl Merger {
                     milestone_index += 1;
                 }
                 Err(e) => {
-                    bail!(e);
+                    return self.handle_error(e, total_bytes - total_read_bytes);
                 }
             }
         }
+        match self.validation_level {
+            ValidationLevel::Basic | ValidationLevel::JustInTime => {
+                if milestone_index < end {
+                    let err = LogFileError::MissingMilestones {
+                        range: milestone_index..end,
+                        path,
+                    };
+                    return self.handle_error(err, total_bytes - total_read_bytes);
+                } else if milestone_index > end {
+                    let err = LogFileError::ExtraMilestones {
+                        num: milestone_index - end,
+                        path,
+                    };
+                    return self.handle_error(err, total_bytes - total_read_bytes);
+                }
+            }
+            _ => (),
+        }
         Ok(())
+    }
+
+    fn handle_error<E: Display + Into<anyhow::Error>>(&mut self, err: E, inc_bytes: u64) -> anyhow::Result<()> {
+        if self.exit_on_val_err {
+            bail!(err);
+        } else {
+            if let Some(pb) = self.progress_bar.as_mut() {
+                pb.inc(inc_bytes);
+                pb.println(format!("{}", err));
+            }
+            return Ok(());
+        }
     }
 
     async fn open_write(&mut self, file_path: &PathBuf, start: u32, end: u32) -> anyhow::Result<LogFile> {
@@ -877,7 +1007,23 @@ impl Merger {
     }
 }
 
-async fn cleanup_archive() -> anyhow::Result<()> {
+async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
+    let backup_logs = !matches.is_present("no-backup");
+    let val_level = matches
+        .value_of("validation-level")
+        .map(|s| match s {
+            "Basic" => ValidationLevel::Basic,
+            "Light" => ValidationLevel::Light,
+            "Full" => ValidationLevel::Full,
+            "JustInTime" => ValidationLevel::JustInTime,
+            _ => panic!("Invalid validation level!"),
+        })
+        .or_else(|| matches.is_present("val-level-basic").then(|| ValidationLevel::Basic))
+        .or_else(|| matches.is_present("val-level-light").then(|| ValidationLevel::Light))
+        .or_else(|| matches.is_present("val-level-full").then(|| ValidationLevel::Full))
+        .or_else(|| matches.is_present("val-level-jit").then(|| ValidationLevel::JustInTime))
+        .unwrap_or_default();
+    let exit_on_val_err = !matches.is_present("no-exit-on-val-err");
     let config = VersionedConfig::load(None)?.verify().await?;
     let logs_dir;
     let max_log_size = config
@@ -891,7 +1037,7 @@ async fn cleanup_archive() -> anyhow::Result<()> {
         println!("No LogsDir in the config, Chronicle is running without archiver");
         return Ok(());
     }
-    Merger::new(logs_dir, max_log_size, true, true, ValidationLevel::Full)?
+    Merger::new(logs_dir, max_log_size, backup_logs, true, val_level, exit_on_val_err)?
         .cleanup()
         .await?;
     Ok(())

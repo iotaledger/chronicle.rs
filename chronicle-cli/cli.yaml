@@ -9,9 +9,9 @@ subcommands:
   - start:
       about: Start a new Chronicle instance
       args:
-        - noexit:
+        - no-exit:
             short: n
-            long: noexit
+            long: no-exit
             help: Start the instance and force no exit in the shell
             conflicts_with:
               - service
@@ -20,7 +20,7 @@ subcommands:
             long: service
             help: Start the instance as a background service
             conflicts_with:
-              - noexit
+              - no-exit
   - stop:
       about: Stop a running Chronicle instance
   - rebuild:
@@ -147,3 +147,79 @@ subcommands:
         - cleanup:
             short: c
             about: Cleanup log file directory to normalize the file sizes.
+            args:
+              - no-backup:
+                  short: x
+                  long: no-backup
+                  help: >-
+                    Specify that you do not want to backup logs as they are merged. This is potentially dangerous but
+                    reduces disk usage.
+              - no-exit-on-val-err:
+                  short: n
+                  long: no-exit-on-val-err
+                  help: >-
+                    Specify that the merge should continue even if a file is deemed to be invalid. Depending on the
+                    validation level, this could happen in the middle of merging a file. In this event, the consumed
+                    file will be renamed .err but remain untouched, but milestones from that file will stay merged.
+              - validation-level:
+                  short: v
+                  long: val-level
+                  takes_value: true
+                  value_name: LEVEL
+                  possible_values:
+                    - Basic
+                    - Light
+                    - Full
+                    - JustInTime
+                  help: |-
+                    Specifies a validation level to use for this merge. The following are available:
+                      - Basic: Will perform emptiness and file name checking only
+                      - Light: Will perform partial deserialization of each milestone, checking only that 
+                          the index is valid
+                      - Full: Will perform full deserialization of each milestone in advance of merging 
+                          each file. This will avoid merging the entire invalid file.
+                      - JustInTime: Will perform full deserialization of each milestone as they are merged.
+                          This will avoid merging invalid lines but may partially merge invalid files.
+                  conflicts_with:
+                    - val-level-basic
+                    - val-level-light
+                    - val-level-full
+                    - val-level-jit
+              - val-level-basic:
+                  short: b
+                  long: basic-val
+                  help: Specify Basic validation level, which will perform emptiness and file name checking only
+                  conflicts_with:
+                    - val-level-light
+                    - val-level-full
+                    - val-level-jit
+              - val-level-light:
+                  short: l
+                  long: light-val
+                  help: >-
+                    Specify Light validation level, which will perform partial deserialization of each milestone,
+                    checking only that the index is valid
+                  conflicts_with:
+                    - val-level-basic
+                    - val-level-full
+                    - val-level-jit
+              - val-level-full:
+                  short: l
+                  long: full-val
+                  help: >-
+                    Specify Full validation level, which will perform full deserialization of each milestone in advance of merging each file.
+                    This will avoid merging the entire invalid file.
+                  conflicts_with:
+                    - val-level-basic
+                    - val-level-light
+                    - val-level-jit
+              - val-level-jit:
+                  short: j
+                  long: jit-val
+                  help: >-
+                    Specify Just In Time validation level, which will perform full deserialization of each milestone as they are merged.
+                    This will avoid merging invalid lines but may partially merge invalid files.
+                  conflicts_with:
+                    - val-level-basic
+                    - val-level-light
+                    - val-level-full
