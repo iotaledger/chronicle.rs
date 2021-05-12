@@ -768,6 +768,9 @@ impl Merger {
                         }
                     }
                 } else {
+                    if let Some(pb) = self.progress_bar.as_mut() {
+                        pb.inc(writer.len());
+                    }
                     res = Some(writer);
                     break;
                 }
@@ -791,6 +794,9 @@ impl Merger {
                         pb.println(format!("Found gap in logs from {} to {}", writer.end, start));
                     }
                     writer = self.open_write(&path, start, end).await?;
+                    if let Some(pb) = self.progress_bar.as_mut() {
+                        pb.inc(writer.len());
+                    }
                 }
             }
         } else {
