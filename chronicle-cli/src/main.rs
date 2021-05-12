@@ -779,6 +779,7 @@ impl Merger {
         }
         let mut buf_reader = BufReader::new(&mut consumed_file.file);
         let mut line_buffer = String::new();
+        let mut milestone_index = start;
         if let Some(pb) = self.progress_bar.as_mut() {
             pb.set_message(format!("Consuming {}", path.to_string_lossy()));
         }
@@ -808,9 +809,6 @@ impl Merger {
                             // if let Some(pb) = self.progress_bar.as_mut() {
                             //    pb.println("Exceeded file size!");
                             //}
-                            // We verified our file already, so we can unwrap safely here
-                            let milestone_data = serde_json::from_str::<MilestoneData>(&ms_line).unwrap();
-                            let milestone_index = milestone_data.milestone_index();
                             // Create a new file to funnel the remainder of the milestones to
                             *active = self.create_active(milestone_index).await?;
                             // Add the line we just read
@@ -820,6 +818,7 @@ impl Merger {
                             }
                         }
                     }
+                    milestone_index += 1;
                 }
                 Err(e) => {
                     bail!(e);
