@@ -743,7 +743,7 @@ impl Merger {
                             tokio::fs::remove_file(path).await?;
                         }
                         _ => {
-                            self.bail_or_return(e, writer.len())?;
+                            self.handle_error(e, writer.len())?;
                         }
                     }
                 } else {
@@ -812,7 +812,7 @@ impl Merger {
                     tokio::fs::remove_file(&path).await?;
                 }
                 _ => {
-                    self.bail_or_return(e, total_bytes)?;
+                    return self.handle_error(e, total_bytes);
                 }
             }
             return Ok(());
@@ -841,32 +841,25 @@ impl Merger {
                             if let Ok(idx) =
                                 serde_json::from_str::<MilestoneData>(&ms_line).map(|data| data.milestone_index())
                             {
-                                if let Some(err) = if milestone_index < idx {
-                                    Some(LogFileError::MissingMilestones {
+                                if milestone_index < idx {
+                                    let err = LogFileError::MissingMilestones {
                                         range: milestone_index..idx,
-                                        path: path.clone(),
-                                    })
+                                        path,
+                                    };
+                                    return self.handle_error(err, total_bytes - total_read_bytes);
                                 } else if milestone_index > idx {
-                                    Some(LogFileError::DuplicateMilestone {
-                                        milestone: idx,
-                                        path: path.clone(),
-                                    })
+                                    let err = LogFileError::DuplicateMilestone { milestone: idx, path };
+                                    return self.handle_error(err, total_bytes - total_read_bytes);
                                 } else if idx < start || idx >= end {
-                                    Some(LogFileError::OutsideMilestone {
-                                        milestone: idx,
-                                        path: path.clone(),
-                                    })
-                                } else {
-                                    None
-                                } {
-                                    self.bail_or_return(err, total_bytes - total_read_bytes)?;
+                                    let err = LogFileError::OutsideMilestone { milestone: idx, path };
+                                    return self.handle_error(err, total_bytes - total_read_bytes);
                                 }
                             } else {
                                 let err = LogFileError::MalformattedMilestone {
                                     milestone: milestone_index,
-                                    path: path.clone(),
+                                    path,
                                 };
-                                self.bail_or_return(err, total_bytes - total_read_bytes)?;
+                                return self.handle_error(err, total_bytes - total_read_bytes);
                             }
                         }
                         // We can fit this line in the writer file
@@ -901,7 +894,7 @@ impl Merger {
                     milestone_index += 1;
                 }
                 Err(e) => {
-                    self.bail_or_return(e, total_bytes - total_read_bytes)?;
+                    return self.handle_error(e, total_bytes - total_read_bytes);
                 }
             }
         }
@@ -912,13 +905,13 @@ impl Merger {
                         range: milestone_index..end,
                         path,
                     };
-                    self.bail_or_return(err, total_bytes - total_read_bytes)?;
+                    return self.handle_error(err, total_bytes - total_read_bytes);
                 } else if milestone_index > end {
                     let err = LogFileError::ExtraMilestones {
                         num: milestone_index - end,
                         path,
                     };
-                    self.bail_or_return(err, total_bytes - total_read_bytes)?;
+                    return self.handle_error(err, total_bytes - total_read_bytes);
                 }
             }
             _ => (),
@@ -926,7 +919,7 @@ impl Merger {
         Ok(())
     }
 
-    fn bail_or_return<E: Display + Into<anyhow::Error>>(&mut self, err: E, inc_bytes: u64) -> anyhow::Result<()> {
+    fn handle_error<E: Display + Into<anyhow::Error>>(&mut self, err: E, inc_bytes: u64) -> anyhow::Result<()> {
         if self.exit_on_val_err {
             bail!(err);
         } else {
