@@ -51,14 +51,6 @@ pub enum RequesterEvent {
     /// RequesterTopology event, to update the api endpoints
     Topology(RequesterTopology),
 }
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-/// Requester topology used by admins to add/remove IOTA api endpoints
-pub enum RequesterTopology {
-    /// Add new Api Endpoint
-    AddEndpoint(Url),
-    /// Remove existing Api Endpoint
-    RemoveEndpoint(Url),
-}
 
 /// Requester handle
 #[derive(Clone)]

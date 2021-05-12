@@ -86,5 +86,8 @@ mod app {
 #[cfg(feature = "application")]
 use app::*;
 
+#[cfg(feature = "merge")]
+pub mod merge;
+
 mod types;
 pub use types::*;

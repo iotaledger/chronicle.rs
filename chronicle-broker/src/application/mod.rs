@@ -39,17 +39,6 @@ builder!(
         collector_count: u8
 });
 
-#[derive(Deserialize, Serialize)]
-/// It's the Interface of the broker app to dynamiclly configure the application during runtime
-pub enum ChronicleBrokerThrough {
-    /// Shutdown json to gracefully shutdown broker app
-    Shutdown,
-    /// Alter the topology of the broker app
-    Topology(Topology),
-    /// Exit the broker app
-    ExitProgram,
-}
-
 /// BrokerHandle to be passed to the children
 pub struct BrokerHandle<H: ChronicleBrokerScope> {
     tx: tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>,
@@ -76,7 +65,7 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     parallelism: u8,
     complete_gaps_interval: Duration,
     parallelism_points: u8,
-    pending_imports: Vec<Topology>,
+    pending_imports: Vec<BrokerTopology>,
     in_progress_importers: usize,
     collector_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
@@ -120,30 +109,6 @@ pub enum BrokerEvent<T> {
     Children(BrokerChild),
     /// Used by Scylla to keep Broker up to date with scylla status
     Scylla(Service),
-}
-
-/// Topology event
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub enum Topology {
-    /// Add new MQTT Messages feed source
-    AddMqttMessages(Url),
-    /// Add new MQTT Messages Referenced feed source
-    AddMqttMessagesReferenced(Url),
-    /// Remove a MQTT Messages feed source
-    RemoveMqttMessages(Url),
-    /// Remove a MQTT Messages Referenced feed source
-    RemoveMqttMessagesReferenced(Url),
-    /// Import a log file using the given url
-    Import {
-        /// File or dir path which supposed to contain LogFiles
-        path: PathBuf,
-        /// Resume the importing process
-        resume: bool,
-        /// Provide optional import range
-        import_range: Option<Range<u32>>,
-    },
-    /// AddEndpoint
-    Requesters(RequesterTopology),
 }
 
 /// implementation of the AppBuilder

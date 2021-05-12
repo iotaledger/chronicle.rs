@@ -17,90 +17,92 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                         let socket_msg = BrokerSocketMsg::ChronicleBroker(importer_session);
                         self.response_to_sockets(&socket_msg).await;
                     }
-                    BrokerEvent::Passthrough(passthrough_events) => match passthrough_events.try_get_my_event() {
-                        Ok(my_event) => match my_event {
-                            ChronicleBrokerThrough::Shutdown => {
-                                self.shutdown(supervisor, true).await;
-                                // ensure to drop handle
-                                self.handle.take();
-                            }
-                            ChronicleBrokerThrough::Topology(mut topology) => {
-                                if self.service.is_stopping() {
-                                    // response that should not change the topology while is_stopping
-                                    error!("Not supposed to dynamiclly change the topology while broker service is_stopped");
-                                    let socket_msg = BrokerSocketMsg::ChronicleBroker(Err(topology));
-                                    self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg)
-                                        .await;
-                                    continue;
+                    BrokerEvent::Passthrough(passthrough_events) => {
+                        match passthrough_events.try_get_my_event() {
+                            Ok(my_event) => match my_event {
+                                ChronicleBrokerThrough::Shutdown => {
+                                    self.shutdown(supervisor, true).await;
+                                    // ensure to drop handle
+                                    self.handle.take();
                                 }
-                                match topology {
-                                    super::Topology::AddMqttMessages(url) => {
-                                        if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
-                                            tokio::spawn(mqtt.start(self.handle.clone()));
+                                ChronicleBrokerThrough::Topology(mut topology) => {
+                                    if self.service.is_stopping() {
+                                        // response that should not change the topology while is_stopping
+                                        error!("Not supposed to dynamiclly change the topology while broker service is_stopped");
+                                        let socket_msg = BrokerSocketMsg::ChronicleBroker(Err(topology));
+                                        self.response_to_sockets::<Result<BrokerTopology, BrokerTopology>>(&socket_msg)
+                                            .await;
+                                        continue;
+                                    }
+                                    match topology {
+                                        BrokerTopology::AddMqttMessages(url) => {
+                                            if let Some(mqtt) = self.add_mqtt(Messages, MqttType::Messages, url) {
+                                                tokio::spawn(mqtt.start(self.handle.clone()));
+                                            }
                                         }
-                                    }
-                                    super::Topology::AddMqttMessagesReferenced(url) => {
-                                        if let Some(mqtt) =
-                                            self.add_mqtt(MessagesReferenced, MqttType::MessagesReferenced, url)
-                                        {
-                                            tokio::spawn(mqtt.start(self.handle.clone()));
+                                        BrokerTopology::AddMqttMessagesReferenced(url) => {
+                                            if let Some(mqtt) =
+                                                self.add_mqtt(MessagesReferenced, MqttType::MessagesReferenced, url)
+                                            {
+                                                tokio::spawn(mqtt.start(self.handle.clone()));
+                                            }
                                         }
-                                    }
-                                    super::Topology::RemoveMqttMessagesReferenced(url) => {
-                                        self.remove_mqtt::<MessagesReferenced>(MqttType::MessagesReferenced, url)
-                                    }
-                                    super::Topology::RemoveMqttMessages(url) => {
-                                        self.remove_mqtt::<Messages>(MqttType::Messages, url)
-                                    }
-                                    super::Topology::Import { .. } => {
-                                        self.handle_import(topology).await;
-                                        self.try_close_importer_session().await;
-                                    }
-                                    super::Topology::Requesters(ref mut requester_topology) => {
-                                        match requester_topology {
-                                            RequesterTopology::AddEndpoint(ref url) => {
-                                                let reqwest_client = reqwest::Client::new();
-                                                if let Some(url) = BrokerConfig::adjust_api_endpoint(url.clone()) {
-                                                    if let Err(e) =
-                                                        BrokerConfig::verify_endpoint(&reqwest_client, &url).await
-                                                    {
-                                                        error!("{}", e);
+                                        BrokerTopology::RemoveMqttMessagesReferenced(url) => {
+                                            self.remove_mqtt::<MessagesReferenced>(MqttType::MessagesReferenced, url)
+                                        }
+                                        BrokerTopology::RemoveMqttMessages(url) => {
+                                            self.remove_mqtt::<Messages>(MqttType::Messages, url)
+                                        }
+                                        BrokerTopology::Import { .. } => {
+                                            self.handle_import(topology).await;
+                                            self.try_close_importer_session().await;
+                                        }
+                                        BrokerTopology::Requesters(ref mut requester_topology) => {
+                                            match requester_topology {
+                                                RequesterTopology::AddEndpoint(ref url) => {
+                                                    let reqwest_client = reqwest::Client::new();
+                                                    if let Some(url) = BrokerConfig::adjust_api_endpoint(url.clone()) {
+                                                        if let Err(e) =
+                                                            BrokerConfig::verify_endpoint(&reqwest_client, &url).await
+                                                        {
+                                                            error!("{}", e);
+                                                            let socket_msg =
+                                                                BrokerSocketMsg::ChronicleBroker(Err(topology.clone()));
+                                                            self.response_to_sockets::<Result<BrokerTopology, BrokerTopology>>(&socket_msg).await;
+                                                        } else {
+                                                            *requester_topology =
+                                                                RequesterTopology::AddEndpoint(url.clone());
+                                                            self.collector_handles.values().for_each(|h| {
+                                                                h.send_requester_topology(requester_topology.clone());
+                                                            });
+                                                            let socket_msg =
+                                                                BrokerSocketMsg::ChronicleBroker(Ok(topology.clone()));
+                                                            self.response_to_sockets::<Result<BrokerTopology, BrokerTopology>>(&socket_msg).await;
+                                                        }
+                                                    } else {
                                                         let socket_msg =
                                                             BrokerSocketMsg::ChronicleBroker(Err(topology.clone()));
-                                                        self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
-                                                    } else {
-                                                        *requester_topology =
-                                                            RequesterTopology::AddEndpoint(url.clone());
-                                                        self.collector_handles.values().for_each(|h| {
-                                                            h.send_requester_topology(requester_topology.clone());
-                                                        });
-                                                        let socket_msg =
-                                                            BrokerSocketMsg::ChronicleBroker(Ok(topology.clone()));
-                                                        self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
-                                                    }
-                                                } else {
-                                                    let socket_msg =
-                                                        BrokerSocketMsg::ChronicleBroker(Err(topology.clone()));
-                                                    self.response_to_sockets::<Result<super::Topology, super::Topology>>(&socket_msg).await;
-                                                };
-                                            }
-                                            RequesterTopology::RemoveEndpoint(_) => {
-                                                self.collector_handles.values().for_each(|h| {
-                                                    h.send_requester_topology(requester_topology.clone());
-                                                });
+                                                        self.response_to_sockets::<Result<BrokerTopology, BrokerTopology>>(&socket_msg).await;
+                                                    };
+                                                }
+                                                RequesterTopology::RemoveEndpoint(_) => {
+                                                    self.collector_handles.values().for_each(|h| {
+                                                        h.send_requester_topology(requester_topology.clone());
+                                                    });
+                                                }
                                             }
                                         }
                                     }
                                 }
+                                ChronicleBrokerThrough::ExitProgram => {
+                                    supervisor.exit_program(false);
+                                }
+                            },
+                            Err(other_app_event) => {
+                                supervisor.passthrough(other_app_event, self.get_name());
                             }
-                            ChronicleBrokerThrough::ExitProgram => {
-                                supervisor.exit_program(false);
-                            }
-                        },
-                        Err(other_app_event) => {
-                            supervisor.passthrough(other_app_event, self.get_name());
                         }
-                    },
+                    }
                     BrokerEvent::Scylla(service) => {
                         if let Err(Need::Restart) = status.as_ref() {
                             if service.is_running() {
@@ -334,8 +336,8 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             None
         }
     }
-    async fn handle_import(&mut self, import_topology: super::Topology) {
-        if let super::Topology::Import {
+    async fn handle_import(&mut self, import_topology: BrokerTopology) {
+        if let BrokerTopology::Import {
             ref path,
             ref resume,
             ref import_range,
@@ -450,7 +452,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
                 .await;
             // convert any remaining into pending_imports
             for file_path in import_files {
-                let topology = super::Topology::Import {
+                let topology = BrokerTopology::Import {
                     path: file_path,
                     resume,
                     import_range: import_range.clone(),

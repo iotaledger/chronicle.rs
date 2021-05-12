@@ -23,7 +23,7 @@ futures = { version = "0.3", optional = true }
 async-trait = { version = "0.1", optional = true }
 lru = { version = "0.6", optional = true }
 rand = { version = "0.8", optional = true }
-url = { version = "2.2", features = ["serde"], optional = true }
+url = { version = "2.2", features = ["serde"] }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev", optional = true }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev", optional = true }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
@@ -31,14 +31,26 @@ hex = { version = "0.4", optional = true }
 anyhow = { version = "1.0", optional = true }
 tokio = { version = "1.5", optional = true }
 paho-mqtt = { version = "0.9", default-features = false, features = ["bundled"], optional = true }
+thiserror = { version = "1.0", optional = true }
+indicatif = { version = "0.16", optional = true }
+glob = {version = "0.3", optional = true }
 
 [features]
-default = ["sync", "application"]
+default = ["merge"]
 sync = [
     "chronicle-common",
     "scylla-rs",
     "anyhow",
     "tokio",
+]
+merge = [
+    "anyhow",
+    "tokio",
+    "thiserror",
+    "serde_json",
+    "indicatif",
+    "futures",
+    "glob",
 ]
 application = [
     "chronicle-common",
@@ -53,7 +65,6 @@ application = [
     "async-trait",
     "lru",
     "rand",
-    "url",
     "bee-common",
     "bee-rest-api",
     "hex",
