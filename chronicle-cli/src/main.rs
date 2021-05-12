@@ -1,5 +1,8 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
+
+#![feature(bool_to_option)]
+
 use anyhow::{
     anyhow,
     bail,
@@ -34,20 +37,26 @@ use indicatif::{
 };
 use regex::Regex;
 use scylla_rs::prelude::ScyllaThrough;
+use serde::Deserialize;
+use serde_json::Value;
 use std::{
+    ops::Range,
     path::{
         Path,
         PathBuf,
     },
     process::Command,
 };
+use thiserror::Error;
 use tokio::{
     fs::{
+        metadata,
         File,
         OpenOptions,
     },
     io::{
         AsyncBufReadExt,
+        AsyncSeekExt,
         AsyncWriteExt,
         BufReader,
     },
@@ -385,11 +394,10 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                         } else {
                                                             skipped_or_imported = "imported"
                                                         }
-                                                        let m = format!(
+                                                        pb.set_message(format!(
                                                             "{}to{}.log: {} #{}",
                                                             from_ms, to_ms, skipped_or_imported, milestone_index
-                                                        );
-                                                        pb.set_message(&m);
+                                                        ));
                                                         pb.inc(ms_bytes_size as u64);
                                                     } else {
                                                         pb.inc_length(log_file_size);
@@ -400,20 +408,24 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                                         } else {
                                                             skipped_or_imported = "imported"
                                                         }
-                                                        let m = format!(
+                                                        pb.set_message(format!(
                                                             "{}to{}.log: {} #{}",
                                                             from_ms, to_ms, skipped_or_imported, milestone_index
-                                                        );
-                                                        pb.set_message(&m);
+                                                        ));
                                                         pb.inc(ms_bytes_size as u64);
                                                         active_progress_bars.insert((from_ms, to_ms), ());
                                                     }
                                                 }
                                                 ImporterSession::Finish { from_ms, to_ms, msg } => {
                                                     if let Some(()) = active_progress_bars.remove(&(from_ms, to_ms)) {
-                                                        let m = format!("LogFile: {}to{}.log {}", from_ms, to_ms, msg);
-                                                        pb.set_message(&m);
-                                                        pb.println(m);
+                                                        pb.set_message(format!(
+                                                            "LogFile: {}to{}.log {}",
+                                                            from_ms, to_ms, msg
+                                                        ));
+                                                        pb.println(format!(
+                                                            "LogFile: {}to{}.log {}",
+                                                            from_ms, to_ms, msg
+                                                        ));
                                                     }
                                                 }
                                                 ImporterSession::PathError { path, msg } => {
@@ -454,16 +466,60 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     Ok(())
 }
 
-struct ActiveMerge {
-    start: usize,
-    end: usize,
+#[derive(Error, Debug)]
+enum LogFileError {
+    #[error("File is empty!")]
+    EmptyFile,
+    #[error("Missing milestones {} to {}!", .0.start, .0.end)]
+    MissingMilestones(Range<u32>),
+    #[error("{0} extra milestones found!")]
+    ExtraMilestones(u32),
+    #[error("Duplicate milestone found: {0}!")]
+    DuplicateMilestone(u32),
+    #[error("Malformatted milestone {0}!")]
+    MalformattedMilestone(u32),
+    #[error("Invalid range specified: {} to {}", .0.start, .0.end)]
+    InvalidRange(Range<u32>),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ValidationLevel {
+    /// Validate only the length and filename
+    Basic,
+    /// Validate the milestone indexes
+    Light,
+    /// Validate all data formatting
+    Full,
+}
+
+#[derive(Debug, Deserialize)]
+struct LightMilestoneData {
+    milestone_index: u32,
+    milestone: Value,
+    messages: Value,
+    pending: Value,
+    created_by: Value,
+}
+
+impl LightMilestoneData {
+    /// Get the milestone index from this milestone data
+    pub fn milestone_index(&self) -> u32 {
+        self.milestone_index
+    }
+}
+
+struct LogFile {
+    start: u32,
+    end: u32,
     file_path: PathBuf,
     file: tokio::fs::File,
     len: u64,
 }
 
-impl ActiveMerge {
-    pub fn new(start: usize, end: usize, file_path: PathBuf, file: File, len: u64) -> Self {
+impl LogFile {
+    pub fn new(start: u32, end: u32, file_path: PathBuf, file: File, len: u64) -> Self {
         Self {
             file_path,
             file,
@@ -476,9 +532,10 @@ impl ActiveMerge {
         self.len
     }
     /// Append a new line to the active log file
-    pub async fn append_line(&mut self, line: &Vec<u8>) -> anyhow::Result<()> {
+    pub async fn append_line(&mut self, line: &String) -> anyhow::Result<()> {
+        let bytes = line.as_bytes();
         // append to the file
-        if let Err(e) = self.file.write_all(line.as_ref()).await {
+        if let Err(e) = self.file.write_all(bytes).await {
             bail!(
                 "Unable to append milestone data line into the log file: {:?}, error: {:?}",
                 self.file_path,
@@ -487,218 +544,338 @@ impl ActiveMerge {
         };
         self.end += 1;
         // update bytes size length;
-        self.len += line.len() as u64;
+        self.len += bytes.len() as u64;
+        Ok(())
+    }
+
+    pub async fn verify(&mut self, level: ValidationLevel) -> Result<(), LogFileError> {
+        if self.len == 0 {
+            return Err(LogFileError::EmptyFile);
+        }
+        if self.start >= self.end {
+            return Err(LogFileError::InvalidRange(self.start..self.end));
+        }
+        match level {
+            ValidationLevel::Light | ValidationLevel::Full => {
+                let reader = BufReader::new(&mut self.file);
+                let mut idx = self.start;
+                let mut lines = reader.lines();
+                let mut extra = 0;
+                while let Some(line) = lines.next_line().await.map_err(|e| anyhow!(e))? {
+                    // If we've exceeded our claimed range, just add up the extras
+                    if idx >= self.end {
+                        extra += 1;
+                        continue;
+                    } else if idx < self.start {
+                        extra += 1;
+                        idx += 1;
+                        continue;
+                    }
+                    let milestone_index = match level {
+                        ValidationLevel::Light => serde_json::from_str::<LightMilestoneData>(&line)
+                            .map_err(|_| LogFileError::MalformattedMilestone(idx))?
+                            .milestone_index(),
+                        ValidationLevel::Full => serde_json::from_str::<MilestoneData>(&line)
+                            .map_err(|_| LogFileError::MalformattedMilestone(idx))?
+                            .milestone_index(),
+                        _ => panic!(),
+                    };
+                    if milestone_index > idx {
+                        return Err(LogFileError::MissingMilestones(idx..milestone_index));
+                    } else if milestone_index < idx {
+                        extra += 1;
+                        if milestone_index >= self.start && milestone_index < self.end {
+                            return Err(LogFileError::DuplicateMilestone(milestone_index));
+                        }
+                    }
+                    idx += 1;
+                }
+                if extra > 0 {
+                    return Err(LogFileError::ExtraMilestones(extra));
+                }
+                self.file
+                    .seek(tokio::io::SeekFrom::Start(0))
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    async fn close(&mut self) -> anyhow::Result<()> {
+        self.file.flush().await?;
+        if self.file.metadata().await.is_ok() {
+            let new_path = self
+                .file_path
+                .parent()
+                .unwrap()
+                .join(&format!("{}to{}.log", self.start, self.end));
+            if self.file_path != new_path {
+                tokio::fs::rename(&self.file_path, new_path).await?;
+            }
+        }
         Ok(())
     }
 }
 
-struct Merger {
-    active: Option<ActiveMerge>,
-    paths: Vec<(usize, usize, PathBuf)>,
+impl std::ops::Drop for LogFile {
+    fn drop(&mut self) {
+        futures::executor::block_on(self.close()).unwrap();
+    }
+}
+
+pub struct Merger {
+    paths: Vec<(u32, u32, PathBuf)>,
     logs_dir: PathBuf,
     max_log_size: u64,
     progress_bar: Option<ProgressBar>,
-    remove_file: bool,
+    backup_dir: Option<PathBuf>,
+    validation_level: ValidationLevel,
 }
 
 impl Merger {
     /// Create new merger to merge the log files in the logs dir
-    #[allow(unused)]
-    pub fn new(logs_dir: PathBuf, max_log_size: u64, remove_files: bool) -> anyhow::Result<Self> {
-        let merger = Self {
-            active: None,
-            logs_dir,
-            max_log_size,
-            progress_bar: None,
-            paths: Vec::new(),
-            remove_file: remove_files,
-        };
-        merger.gather()
-    }
-    /// Create new merger to merge the log files in the logs dir with progress_bar, this is helpful for CLI
-    pub fn with_progress_bar(logs_dir: PathBuf, max_log_size: u64, remove_files: bool) -> anyhow::Result<Self> {
-        let style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})")
-            .progress_chars("##-");
-        let merger = Self {
-            active: None,
-            logs_dir,
-            max_log_size,
-            progress_bar: Some(ProgressBar::new(0).with_style(style)),
-            paths: Vec::new(),
-            remove_file: remove_files,
-        };
-        merger.gather()
-    }
-    fn gather(mut self) -> anyhow::Result<Self> {
-        if let Some(pb) = self.progress_bar.as_mut() {
-            pb.println("Gathering log files...");
+    pub fn new(
+        logs_dir: PathBuf,
+        max_log_size: u64,
+        backup_logs: bool,
+        progress_bar: bool,
+        validation_level: ValidationLevel,
+    ) -> anyhow::Result<Self> {
+        let mut progress_bar = progress_bar.then(|| {
+            let style = ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
+                )
+                .progress_chars("##-");
+            ProgressBar::new(0).with_style(style)
+        });
+        if let Some(pb) = progress_bar.as_mut() {
+            pb.println(format!("Gathering log files from {}", logs_dir.to_string_lossy()));
         }
-        if let Some(logs_dir) = self.logs_dir.to_str() {
-            self.paths = glob::glob(&format!("{}/*to*.log", logs_dir))
+        if let Some(dir) = logs_dir.to_str() {
+            let mut paths = glob::glob(&format!("{}/*to*.log", dir))
                 .unwrap()
                 .filter_map(|v| match v {
                     Ok(path) => {
                         let file_name = path.file_stem().unwrap();
                         let mut split = file_name.to_str().unwrap().split("to");
                         let (start, end) = (
-                            split.next().unwrap().parse::<usize>().unwrap(),
-                            split.next().unwrap().parse::<usize>().unwrap(),
+                            split.next().unwrap().parse::<u32>().unwrap(),
+                            split.next().unwrap().parse::<u32>().unwrap(),
                         );
+                        if let Some(pb) = progress_bar.as_mut() {
+                            if let Ok(metadata) = std::fs::metadata(&path) {
+                                pb.inc_length(metadata.len());
+                            }
+                        }
                         Some((start, end, path))
                     }
                     Err(_) => None,
                 })
                 .collect::<Vec<_>>();
-            self.paths.sort_unstable_by(|a, b| b.0.cmp(&a.0));
-            if let Some(pb) = self.progress_bar.as_mut() {
-                pb.inc_length(self.paths.len() as u64);
-            }
+            paths.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+            let backup_dir = backup_logs.then(|| logs_dir.join("backup"));
+            Ok(Self {
+                logs_dir,
+                max_log_size,
+                progress_bar,
+                paths,
+                backup_dir,
+                validation_level,
+            })
         } else {
-            bail!("No LogsDir");
+            bail!("Logs directory is malformatted! Found: {}", logs_dir.to_string_lossy());
         }
-        Ok(self)
     }
-    async fn merge(&mut self, mut start: usize, end: usize, path: PathBuf, position: usize) -> anyhow::Result<()> {
-        if start + position >= end || start >= end {
-            bail!(
-                "Invalid log file, start: {}, end: {}, position: {}",
-                start,
-                end,
-                position
-            );
+
+    pub async fn cleanup(mut self) -> anyhow::Result<()> {
+        if let Some(pb) = self.progress_bar.as_mut() {
+            pb.enable_steady_tick(100);
         }
-        start += position;
-        let consumed_file = OpenOptions::new().read(true).open(&path).await?;
-        let mut buf_reader = BufReader::new(consumed_file);
-        // discard all line up to the position
-        for _ in 0..position {
-            buf_reader.read_line(&mut String::new()).await?;
-        }
-        let mut line_buffer: String = String::new();
-        let mut processed_lines: usize = 0;
-        while let Ok(n) = buf_reader.read_line(&mut line_buffer).await {
-            let ms_line: Vec<u8> = std::mem::take(&mut line_buffer).into();
-            if n == 0 {
-                // reached EOF
-                break;
-            } else {
-                processed_lines += 1;
-                // merge file on top of the active log up to max_log_size,
-                if let Some(active) = self.active.as_mut() {
-                    if active.len() + (n as u64) < self.max_log_size {
-                        active.append_line(&ms_line).await?;
-                    } else {
-                        // close active
-                        self.close_active().await?;
-                        if let Ok(milestone_data) = serde_json::from_slice::<MilestoneData>(&ms_line) {
-                            let milestone_index = milestone_data.milestone_index();
-                            // create new file starting from milestone_data_line as active.
-                            self.create_active(milestone_index).await?;
-                            self.active
-                                .as_mut()
-                                .expect("Expected active log file")
-                                .append_line(&ms_line)
-                                .await?;
-                        } else {
-                            bail!("Corrupted milestone data")
-                        };
-                    }
+        if let Some(ref dir) = self.backup_dir {
+            if let Err(e) = tokio::fs::create_dir(dir).await {
+                match e.kind() {
+                    std::io::ErrorKind::AlreadyExists => (),
+                    _ => bail!(e),
                 }
             }
         }
-        if end - start != processed_lines {
-            bail!(
-                "Corrupted active log file, start: {}, end: {}, processed_lines: {}",
-                start,
-                end,
-                processed_lines
-            );
-        }
-        if self.remove_file {
-            tokio::fs::remove_file(path).await?;
-        }
-        Ok(())
-    }
-    async fn cleanup(mut self) -> anyhow::Result<()> {
-        if let Some((prev_start, mut prev_end, prev_path)) = self.paths.pop() {
-            self.open_active(&prev_path, prev_start, prev_end).await?;
+        // Take the first path as our dest file
+        if let Some(mut writer) = {
+            let mut res = None;
             while let Some((start, end, path)) = self.paths.pop() {
-                // check if it's continuous range to the previous one
-                if prev_end == start {
-                    // this will merge the file from position 0 (without discarding any line)
-                    self.merge(start, end, path, 0).await?;
-                    // update prev_end
-                    prev_end = end;
-                } else if start > prev_end {
-                    // this is invoked when there is gap in the log files,
-                    // close the active file;
-                    self.close_active().await?;
-                    // switch to next one;
-                    self.open_active(&path, start, end).await?;
-                    // update prev_end
-                    prev_end = end;
-                } else if start < prev_end && end > prev_end {
-                    // This is an overlap, however we have to skip some lines
-                    let position = prev_end - start;
-                    self.merge(start, end, path, position).await?;
-                    // update prev_end
-                    prev_end = end;
+                let mut writer = self.open_write(&path, start, end).await?;
+                if let Some(pb) = self.progress_bar.as_mut() {
+                    pb.set_message(format!("Verifying {}", path.to_string_lossy()));
                 }
-                if let Some(pb) = self.progress_bar.as_ref() {
-                    pb.inc(1);
+                if let Err(e) = writer.verify(self.validation_level).await {
+                    if let Some(pb) = self.progress_bar.as_mut() {
+                        pb.println(format!("Log File Error: {}, path = {}", e, path.to_string_lossy()));
+                        pb.inc(writer.len())
+                    }
+                    match e {
+                        LogFileError::EmptyFile => {
+                            tokio::fs::remove_file(path).await?;
+                        }
+                        _ => (),
+                    }
+                } else {
+                    res = Some(writer);
+                    break;
                 }
             }
-            // close active file (if any)
-            self.close_active().await?;
+            res
+        } {
+            while let Some((start, end, path)) = self.paths.pop() {
+                // The previous file and this one match up
+                if writer.end == start {
+                    self.merge(start, end, path, &mut writer).await?;
+
+                // There is a gap in the logs
+                } else if start > writer.end {
+                    writer = self.open_write(&path, start, end).await?;
+
+                // There is an overlap between this log and the previous one
+                } else if start < writer.end {
+                    // Just set this log to be written to and move on
+                    writer = self.open_write(&path, start, end).await?;
+                }
+            }
         } else {
             if let Some(pb) = self.progress_bar.as_ref() {
-                pb.println("No Logfiles to merge");
+                pb.println("No valid log files to merge");
             }
         }
         if let Some(pb) = self.progress_bar.as_ref() {
-            pb.finish_with_message("done");
+            pb.finish_with_message("Finished merging files!");
         }
         Ok(())
     }
-    async fn open_active(&mut self, file_path: &PathBuf, start: usize, end: usize) -> anyhow::Result<()> {
-        let part_file_name = format!("{}.part", start);
-        let active_file_path = self.logs_dir.join(&part_file_name);
-        if let Err(e) = tokio::fs::rename(file_path, &active_file_path).await {
-            bail!(e)
-        };
-        let active_file = OpenOptions::new().append(true).open(&active_file_path).await?;
+
+    async fn merge(&mut self, start: u32, end: u32, path: PathBuf, active: &mut LogFile) -> anyhow::Result<()> {
+        if start >= end {
+            bail!(LogFileError::InvalidRange(start..end));
+        }
+        let mut consumed_file = self.open_read(&path, start, end).await?;
+        if let Some(pb) = self.progress_bar.as_mut() {
+            pb.set_message(format!("Verifying {}", path.to_string_lossy()));
+        }
+        if let Err(e) = consumed_file.verify(self.validation_level).await {
+            if let Some(pb) = self.progress_bar.as_mut() {
+                pb.println(format!("Log File Error: {}, path = {}", e, path.to_string_lossy()));
+                pb.inc(consumed_file.len());
+            }
+            match e {
+                LogFileError::EmptyFile => {
+                    tokio::fs::remove_file(path).await?;
+                }
+                _ => (),
+            }
+            return Ok(());
+        }
+        let mut buf_reader = BufReader::new(&mut consumed_file.file);
+        let mut line_buffer = String::new();
+        if let Some(pb) = self.progress_bar.as_mut() {
+            pb.set_message(format!("Consuming {}", path.to_string_lossy()));
+        }
+        loop {
+            match buf_reader.read_line(&mut line_buffer).await {
+                Ok(bytes) => {
+                    let ms_line = std::mem::take(&mut line_buffer);
+                    if bytes == 0 {
+                        // if let Some(pb) = self.progress_bar.as_mut() {
+                        //    pb.println(format!("Removing log file {}", path.to_string_lossy()));
+                        //}
+                        tokio::fs::remove_file(path).await?;
+                        break;
+                    } else {
+                        // We can fit this line in the writer file
+                        if active.len() + (bytes as u64) < self.max_log_size {
+                            // if let Some(pb) = self.progress_bar.as_mut() {
+                            //    pb.println(format!("Appending to log file {}", active.file_path.to_string_lossy()));
+                            //}
+                            active.append_line(&ms_line).await?;
+                            if let Some(pb) = self.progress_bar.as_mut() {
+                                pb.inc(bytes as u64);
+                            }
+
+                        // Adding this line would go over our limit
+                        } else {
+                            // if let Some(pb) = self.progress_bar.as_mut() {
+                            //    pb.println("Exceeded file size!");
+                            //}
+                            // We verified our file already, so we can unwrap safely here
+                            let milestone_data = serde_json::from_str::<MilestoneData>(&ms_line).unwrap();
+                            let milestone_index = milestone_data.milestone_index();
+                            // Create a new file to funnel the remainder of the milestones to
+                            *active = self.create_active(milestone_index).await?;
+                            // Add the line we just read
+                            active.append_line(&ms_line).await?;
+                            if let Some(pb) = self.progress_bar.as_mut() {
+                                pb.inc(bytes as u64);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    bail!(e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn open_write(&mut self, file_path: &PathBuf, start: u32, end: u32) -> anyhow::Result<LogFile> {
+        // if let Some(pb) = self.progress_bar.as_mut() {
+        //    pb.println(format!("Opening file for writes: {}", file_path.to_string_lossy()));
+        //}
+        let active_file_path = self.logs_dir.join(&format!("{}.part", start));
+        // Copy the file to the backup first, if asked
+        if let Some(ref dir) = self.backup_dir {
+            tokio::fs::copy(file_path, dir.join(file_path.file_name().unwrap())).await?;
+        }
+        tokio::fs::rename(file_path, &active_file_path).await?;
+        let active_file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(&active_file_path)
+            .await?;
         let active_len = active_file.metadata().await?.len();
-        self.active
-            .replace(ActiveMerge::new(start, end, active_file_path, active_file, active_len));
-        Ok(())
+        Ok(LogFile::new(start, end, active_file_path, active_file, active_len))
     }
-    async fn close_active(&mut self) -> anyhow::Result<()> {
-        if let Some(ActiveMerge {
-            file_path, start, end, ..
-        }) = self.active.take()
-        {
-            let log_file_name = format!("{}to{}.log", start, end);
-            let log_file_path = self.logs_dir.join(&log_file_name);
-            if let Err(e) = tokio::fs::rename(&file_path, log_file_path).await {
-                bail!(e)
-            };
-        };
-        Ok(())
+
+    async fn open_read(&mut self, file_path: &PathBuf, start: u32, end: u32) -> anyhow::Result<LogFile> {
+        // if let Some(pb) = self.progress_bar.as_mut() {
+        //    pb.println(format!("Opening file for reads: {}", file_path.to_string_lossy()));
+        //}
+        // Copy the file to the backup first, if asked
+        if let Some(ref dir) = self.backup_dir {
+            tokio::fs::copy(file_path, dir.join(file_path.file_name().unwrap())).await?;
+        }
+        let file = OpenOptions::new().read(true).open(&file_path).await?;
+        let len = file.metadata().await?.len();
+        Ok(LogFile::new(start, end, file_path.clone(), file, len))
     }
-    async fn create_active(&mut self, milestone_index: u32) -> anyhow::Result<()> {
-        let filename = format!("{}.part", milestone_index);
-        let file_path = self.logs_dir.join(&filename);
+
+    async fn create_active(&mut self, milestone_index: u32) -> anyhow::Result<LogFile> {
+        let file_path = self.logs_dir.join(&format!("{}.part", milestone_index));
         let file: File = OpenOptions::new()
             .append(true)
             .create(true)
             .open(&file_path)
             .await
-            .map_err(|e| anyhow!("Unable to create active log file: {}, error: {}", filename, e))?;
+            .map_err(|e| {
+                anyhow!(
+                    "Unable to create active log file: {}, error: {}",
+                    file_path.to_string_lossy(),
+                    e
+                )
+            })?;
         let len = file.metadata().await?.len();
-        let active_file = ActiveMerge::new(milestone_index as usize, milestone_index as usize, file_path, file, len);
-        self.active.replace(active_file);
-        Ok(())
+        Ok(LogFile::new(milestone_index, milestone_index, file_path, file, len))
     }
 }
 
@@ -716,7 +893,7 @@ async fn cleanup_archive() -> anyhow::Result<()> {
         println!("No LogsDir in the config, Chronicle is running without archiver");
         return Ok(());
     }
-    Merger::with_progress_bar(logs_dir, max_log_size, true)?
+    Merger::new(logs_dir, max_log_size, true, true, ValidationLevel::Full)?
         .cleanup()
         .await?;
     Ok(())
