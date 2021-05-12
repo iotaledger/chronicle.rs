@@ -223,3 +223,8 @@ subcommands:
                     - val-level-basic
                     - val-level-light
                     - val-level-full
+        - validate:
+            short: v
+            about: >-
+              Validate log files without modifying them. This will perform various checks and output any issues
+              as well as whether or not they can be handled by the merge process.

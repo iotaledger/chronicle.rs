@@ -11,7 +11,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::{
     fmt::Display,
-    ops::Range,
+    ops::{
+        Deref,
+        DerefMut,
+        Range,
+    },
     path::PathBuf,
 };
 use thiserror::Error;
@@ -44,8 +48,47 @@ enum LogFileError {
     MalformattedMilestone { milestone: u32, path: PathBuf },
     #[error("Invalid range specified: {} to {}: {path}", .range.start, .range.end)]
     InvalidRange { range: Range<u32>, path: PathBuf },
+    #[error("File exceeds max file size of {max}: {path}")]
+    TooBig { max: u64, path: PathBuf },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl LogFileError {
+    fn additional_info(&self) -> &'static str {
+        match self {
+            LogFileError::EmptyFile(_) => "Empty files will be removed by the merger.",
+            LogFileError::MissingMilestones { .. } => {
+                "Either milestone are missing from a file or there is a gap between files.
+                The merger will fill this gap if the milestones are provided later."
+            }
+            LogFileError::ExtraMilestones { .. } => {
+                "Extra milestones were found in a file which were not declared by the file name.
+                The merger will ignore this file if validation level is Full or Light.
+                For JustInTime validation, this will be reported as an `OutsideMilestone`."
+            }
+            LogFileError::OutsideMilestone { .. } => {
+                "A milestone was found in a file which was not expected. 
+                The merger will not use this milestone."
+            }
+            LogFileError::DuplicateMilestone { .. } => {
+                "A duplicate milestone was found. The merger will not use this milestone."
+            }
+            LogFileError::MalformattedMilestone { .. } => {
+                "A milestone was determined to be malformatted, i.e could not be deserialized properly.
+                The merger will not use this file if validation level is Full or Light.
+                For JustInTime validation, the merger will ignore the rest of the file after this."
+            }
+            LogFileError::InvalidRange { .. } => {
+                "This file has an invalid range defined in its file name. The file will not be used."
+            }
+            LogFileError::TooBig { .. } => {
+                "This file exceeds the requested maximum file size.
+                The merger will skip this file."
+            }
+            LogFileError::Other(_) => "An unknown error occurred.",
+        }
+    }
 }
 
 /// Defines levels of validation checking for log files during a merge
@@ -100,6 +143,7 @@ struct LogFile {
     file_path: PathBuf,
     file: File,
     len: u64,
+    pub err: bool,
 }
 
 impl LogFile {
@@ -110,6 +154,7 @@ impl LogFile {
             len,
             start,
             end,
+            err: false,
         }
     }
     pub fn len(&self) -> u64 {
@@ -134,9 +179,11 @@ impl LogFile {
 
     pub async fn verify(&mut self, level: ValidationLevel) -> Result<(), LogFileError> {
         if self.len == 0 {
+            self.err = true;
             return Err(LogFileError::EmptyFile(self.file_path.clone()));
         }
         if self.start >= self.end {
+            self.err = true;
             return Err(LogFileError::InvalidRange {
                 range: self.start..self.end,
                 path: self.file_path.clone(),
@@ -160,21 +207,24 @@ impl LogFile {
                         continue;
                     }
                     let milestone_index = match level {
-                        ValidationLevel::Light => serde_json::from_str::<LightMilestoneData>(&line)
-                            .map_err(|_| LogFileError::MalformattedMilestone {
-                                milestone: idx,
-                                path: path.clone(),
-                            })?
-                            .milestone_index(),
-                        ValidationLevel::Full => serde_json::from_str::<MilestoneData>(&line)
-                            .map_err(|_| LogFileError::MalformattedMilestone {
-                                milestone: idx,
-                                path: path.clone(),
-                            })?
-                            .milestone_index(),
+                        ValidationLevel::Light => match serde_json::from_str::<LightMilestoneData>(&line) {
+                            Ok(milestone) => milestone.milestone_index(),
+                            Err(_) => {
+                                self.err = true;
+                                return Err(LogFileError::MalformattedMilestone { milestone: idx, path });
+                            }
+                        },
+                        ValidationLevel::Full => match serde_json::from_str::<MilestoneData>(&line) {
+                            Ok(milestone) => milestone.milestone_index(),
+                            Err(_) => {
+                                self.err = true;
+                                return Err(LogFileError::MalformattedMilestone { milestone: idx, path });
+                            }
+                        },
                         _ => panic!(),
                     };
                     if milestone_index > idx {
+                        self.err = true;
                         return Err(LogFileError::MissingMilestones {
                             range: idx..milestone_index,
                             path,
@@ -182,6 +232,7 @@ impl LogFile {
                     } else if milestone_index < idx {
                         extra += 1;
                         if milestone_index >= self.start && milestone_index < self.end {
+                            self.err = true;
                             return Err(LogFileError::DuplicateMilestone {
                                 milestone: milestone_index,
                                 path,
@@ -191,6 +242,7 @@ impl LogFile {
                     idx += 1;
                 }
                 if extra > 0 {
+                    self.err = true;
                     return Err(LogFileError::ExtraMilestones { num: extra, path });
                 }
                 self.file
@@ -207,11 +259,12 @@ impl LogFile {
     async fn close(&mut self) -> anyhow::Result<()> {
         self.file.flush().await?;
         if self.file.metadata().await.is_ok() {
-            let new_path = self
-                .file_path
-                .parent()
-                .unwrap()
-                .join(&format!("{}to{}.log", self.start, self.end));
+            let new_path = self.file_path.parent().unwrap().join(&format!(
+                "{}to{}.{}",
+                self.start,
+                self.end,
+                if self.err { "err" } else { "log" }
+            ));
             if self.file_path != new_path {
                 tokio::fs::rename(&self.file_path, new_path).await?;
             }
@@ -226,9 +279,119 @@ impl std::ops::Drop for LogFile {
     }
 }
 
+/// Sorted log paths with start and end milestones
+#[derive(Default)]
+pub struct LogPaths(Vec<(u32, u32, PathBuf)>);
+
+impl LogPaths {
+    /// Create a new paths structure from a log directory
+    pub fn new(logs_dir: &PathBuf) -> anyhow::Result<Self> {
+        if let Some(dir) = logs_dir.to_str() {
+            let mut paths = glob::glob(&format!("{}/*to*.log", dir))
+                .unwrap()
+                .filter_map(|v| match v {
+                    Ok(path) => {
+                        let file_name = path.file_stem().unwrap();
+                        let mut split = file_name.to_str().unwrap().split("to");
+                        let (start, end) = (
+                            split.next().unwrap().parse::<u32>().unwrap(),
+                            split.next().unwrap().parse::<u32>().unwrap(),
+                        );
+                        Some((start, end, path))
+                    }
+                    Err(_) => None,
+                })
+                .collect::<Vec<_>>();
+            paths.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+            Ok(Self(paths))
+        } else {
+            bail!("Logs directory is malformatted! Found: {}", logs_dir.to_string_lossy());
+        }
+    }
+
+    /// Perform validation of the logs defined by these paths
+    pub async fn validate(self, max_log_size: u64, progress_bar: bool) -> anyhow::Result<()> {
+        let mut progress_bar = progress_bar.then(|| {
+            let style = ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
+                )
+                .progress_chars("##-");
+            ProgressBar::new(0).with_style(style)
+        });
+        if let Some(pb) = progress_bar.as_mut() {
+            for (_, _, path) in self.0.iter() {
+                if let Ok(metadata) = std::fs::metadata(path) {
+                    pb.inc_length(metadata.len());
+                }
+            }
+            pb.enable_steady_tick(100);
+            pb.println("Validating logs...");
+        }
+        let mut prev_end = None;
+        for (start, end, path) in self.0.into_iter().rev() {
+            if let Some(prev_end) = prev_end {
+                if start > prev_end {
+                    let e = LogFileError::MissingMilestones {
+                        range: prev_end..start,
+                        path: path.clone(),
+                    };
+                    Self::handle_err(&mut progress_bar, e)?;
+                }
+            }
+            let file = OpenOptions::new().read(true).open(&path).await?;
+            let len = file.metadata().await?.len();
+            if len > max_log_size {
+                let e = LogFileError::TooBig {
+                    max: max_log_size,
+                    path: path.clone(),
+                };
+                Self::handle_err(&mut progress_bar, e)?;
+            }
+            let mut log = LogFile::new(start, end, path.clone(), file, len);
+            if let Err(e) = log.verify(ValidationLevel::Full).await {
+                Self::handle_err(&mut progress_bar, e)?;
+            }
+            if let Some(pb) = progress_bar.as_mut() {
+                pb.inc(log.len());
+            }
+            prev_end = Some(end);
+        }
+        Ok(())
+    }
+
+    fn handle_err(pb: &mut Option<ProgressBar>, e: LogFileError) -> anyhow::Result<()> {
+        if let Some(pb) = pb.as_mut() {
+            pb.println(format!("Validation Error: {}\n\t{}", e, e.additional_info()));
+        } else {
+            bail!("Validation Error: {}", e);
+        }
+        Ok(())
+    }
+
+    /// Consume the paths and return an iterator over the inner vector
+    pub fn into_iter(self) -> std::iter::Rev<std::vec::IntoIter<(u32, u32, PathBuf)>> {
+        self.0.into_iter().rev()
+    }
+}
+
+impl Deref for LogPaths {
+    type Target = Vec<(u32, u32, PathBuf)>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for LogPaths {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Hold configuration and state for merging log files
 pub struct Merger {
-    paths: Vec<(u32, u32, PathBuf)>,
+    paths: LogPaths,
     logs_dir: PathBuf,
     max_log_size: u64,
     progress_bar: Option<ProgressBar>,
@@ -258,46 +421,27 @@ impl Merger {
         if let Some(pb) = progress_bar.as_mut() {
             pb.println(format!("Gathering log files from {}", logs_dir.to_string_lossy()));
         }
-        if let Some(dir) = logs_dir.to_str() {
-            let mut paths = glob::glob(&format!("{}/*to*.log", dir))
-                .unwrap()
-                .filter_map(|v| match v {
-                    Ok(path) => {
-                        let file_name = path.file_stem().unwrap();
-                        let mut split = file_name.to_str().unwrap().split("to");
-                        let (start, end) = (
-                            split.next().unwrap().parse::<u32>().unwrap(),
-                            split.next().unwrap().parse::<u32>().unwrap(),
-                        );
-                        if let Some(pb) = progress_bar.as_mut() {
-                            if let Ok(metadata) = std::fs::metadata(&path) {
-                                pb.inc_length(metadata.len());
-                            }
-                        }
-                        Some((start, end, path))
-                    }
-                    Err(_) => None,
-                })
-                .collect::<Vec<_>>();
-            paths.sort_unstable_by(|a, b| b.0.cmp(&a.0));
-            let backup_dir = backup_logs.then(|| logs_dir.join("backup"));
-            Ok(Self {
-                logs_dir,
-                max_log_size,
-                progress_bar,
-                paths,
-                backup_dir,
-                validation_level,
-                exit_on_val_err,
-            })
-        } else {
-            bail!("Logs directory is malformatted! Found: {}", logs_dir.to_string_lossy());
-        }
+        let paths = LogPaths::new(&logs_dir)?;
+        let backup_dir = backup_logs.then(|| logs_dir.join("backup"));
+        Ok(Self {
+            logs_dir,
+            max_log_size,
+            progress_bar,
+            paths,
+            backup_dir,
+            validation_level,
+            exit_on_val_err,
+        })
     }
 
     /// Begin cleaning up (merging) log files using the Merger instance
     pub async fn cleanup(mut self) -> anyhow::Result<()> {
         if let Some(pb) = self.progress_bar.as_mut() {
+            for (_, _, path) in self.paths.iter() {
+                if let Ok(metadata) = std::fs::metadata(path) {
+                    pb.inc_length(metadata.len());
+                }
+            }
             pb.enable_steady_tick(100);
             pb.println("Merging logs with the following configuration:");
             pb.println(format!(" - validation level: {}", self.validation_level));
@@ -320,12 +464,13 @@ impl Merger {
                 if let Some(pb) = self.progress_bar.as_mut() {
                     pb.set_message(format!("Verifying {}", path.to_string_lossy()));
                 }
-                if let Err(e) = writer.verify(self.validation_level).await {
+                if let Err(e) = writer.verify(ValidationLevel::Full).await {
                     match e {
                         LogFileError::EmptyFile(_) => {
                             tokio::fs::remove_file(path).await?;
                         }
                         _ => {
+                            writer.err = true;
                             self.handle_error(e, writer.len())?;
                         }
                     }
@@ -359,6 +504,17 @@ impl Merger {
                     if let Some(pb) = self.progress_bar.as_mut() {
                         pb.inc(writer.len());
                     }
+                    if let Err(e) = writer.verify(ValidationLevel::Full).await {
+                        match e {
+                            LogFileError::EmptyFile(_) => {
+                                tokio::fs::remove_file(path).await?;
+                            }
+                            _ => {
+                                writer.err = true;
+                                self.handle_error(e, writer.len())?;
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -373,23 +529,6 @@ impl Merger {
     }
 
     async fn merge(&mut self, start: u32, end: u32, path: PathBuf, active: &mut LogFile) -> anyhow::Result<()> {
-        if start >= end {
-            let err = LogFileError::InvalidRange {
-                range: start..end,
-                path: path.clone(),
-            };
-            if self.exit_on_val_err {
-                bail!(err);
-            } else {
-                if let Some(pb) = self.progress_bar.as_mut() {
-                    if let Ok(metadata) = std::fs::metadata(&path) {
-                        pb.inc(metadata.len());
-                    }
-                    pb.println(format!("{}", err))
-                }
-                return Ok(());
-            }
-        }
         let mut consumed_file = self.open_read(&path, start, end).await?;
         let total_bytes = consumed_file.len();
         if let Some(pb) = self.progress_bar.as_mut() {
@@ -430,20 +569,24 @@ impl Merger {
                             if let Ok(idx) =
                                 serde_json::from_str::<MilestoneData>(&ms_line).map(|data| data.milestone_index())
                             {
-                                if milestone_index < idx {
+                                if idx < start || idx >= end {
+                                    consumed_file.err = true;
+                                    let err = LogFileError::OutsideMilestone { milestone: idx, path };
+                                    return self.handle_error(err, total_bytes - total_read_bytes);
+                                } else if milestone_index < idx {
+                                    consumed_file.err = true;
                                     let err = LogFileError::MissingMilestones {
                                         range: milestone_index..idx,
                                         path,
                                     };
                                     return self.handle_error(err, total_bytes - total_read_bytes);
                                 } else if milestone_index > idx {
+                                    consumed_file.err = true;
                                     let err = LogFileError::DuplicateMilestone { milestone: idx, path };
-                                    return self.handle_error(err, total_bytes - total_read_bytes);
-                                } else if idx < start || idx >= end {
-                                    let err = LogFileError::OutsideMilestone { milestone: idx, path };
                                     return self.handle_error(err, total_bytes - total_read_bytes);
                                 }
                             } else {
+                                consumed_file.err = true;
                                 let err = LogFileError::MalformattedMilestone {
                                     milestone: milestone_index,
                                     path,
@@ -490,12 +633,14 @@ impl Merger {
         match self.validation_level {
             ValidationLevel::Basic | ValidationLevel::JustInTime => {
                 if milestone_index < end {
+                    consumed_file.err = true;
                     let err = LogFileError::MissingMilestones {
                         range: milestone_index..end,
                         path,
                     };
                     return self.handle_error(err, total_bytes - total_read_bytes);
                 } else if milestone_index > end {
+                    consumed_file.err = true;
                     let err = LogFileError::ExtraMilestones {
                         num: milestone_index - end,
                         path,

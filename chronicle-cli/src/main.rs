@@ -11,6 +11,7 @@ use chronicle::{
 };
 use chronicle_broker::{
     merge::{
+        LogPaths,
         Merger,
         ValidationLevel,
     },
@@ -442,6 +443,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             }
         }
         ("cleanup", Some(matches)) => cleanup_archive(matches).await?,
+        ("validate", Some(_matches)) => validate_archive().await?,
         _ => (),
     }
     Ok(())
@@ -477,4 +479,17 @@ async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         .cleanup()
         .await?;
     Ok(())
+}
+
+async fn validate_archive() -> anyhow::Result<()> {
+    let config = VersionedConfig::load(None)?.verify().await?;
+    let logs_dir;
+    let max_log_size = config.broker_config.max_log_size.clone().unwrap_or(u32::MAX as u64);
+    if let Some(dir) = config.broker_config.logs_dir.as_ref() {
+        logs_dir = PathBuf::from(dir);
+    } else {
+        println!("No LogsDir in the config, Chronicle is running without archiver");
+        return Ok(());
+    }
+    LogPaths::new(&logs_dir)?.validate(max_log_size, true).await
 }
