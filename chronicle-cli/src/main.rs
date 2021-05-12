@@ -475,6 +475,8 @@ enum LogFileError {
     MissingMilestones(Range<u32>),
     #[error("{0} extra milestones found!")]
     ExtraMilestones(u32),
+    #[error("Milestone {0} is outside of the file range!")]
+    OutsideMilestone(u32),
     #[error("Duplicate milestone found: {0}!")]
     DuplicateMilestone(u32),
     #[error("Malformatted milestone {0}!")]
@@ -485,7 +487,7 @@ enum LogFileError {
     Other(#[from] anyhow::Error),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ValidationLevel {
     /// Validate only the length and filename
     Basic,
@@ -493,6 +495,8 @@ pub enum ValidationLevel {
     Light,
     /// Validate all data formatting
     Full,
+    /// Validate all data formatting as it is about to be appended
+    JustInTime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -732,16 +736,12 @@ impl Merger {
         } {
             while let Some((start, end, path)) = self.paths.pop() {
                 // The previous file and this one match up
-                if writer.end == start {
+                // or there is an overlap between this log and the previous one
+                if start <= writer.end {
                     self.merge(start, end, path, &mut writer).await?;
 
                 // There is a gap in the logs
                 } else if start > writer.end {
-                    writer = self.open_write(&path, start, end).await?;
-
-                // There is an overlap between this log and the previous one
-                } else if start < writer.end {
-                    // Just set this log to be written to and move on
                     writer = self.open_write(&path, start, end).await?;
                 }
             }
@@ -794,14 +794,32 @@ impl Merger {
                         tokio::fs::remove_file(path).await?;
                         break;
                     } else {
+                        // Perform validation if JIT is enabled or we are looking at an overlapping milestone
+                        if milestone_index < active.end || self.validation_level == ValidationLevel::JustInTime {
+                            let idx = serde_json::from_str::<MilestoneData>(&ms_line)
+                                .map_err(|_| LogFileError::MalformattedMilestone(milestone_index))?
+                                .milestone_index();
+                            if milestone_index < idx {
+                                bail!(LogFileError::MissingMilestones(milestone_index..idx));
+                            } else if milestone_index > idx {
+                                bail!(LogFileError::DuplicateMilestone(idx));
+                            } else if idx < start || idx >= end {
+                                bail!(LogFileError::OutsideMilestone(idx));
+                            }
+                        }
                         // We can fit this line in the writer file
                         if active.len() + (bytes as u64) < self.max_log_size {
                             // if let Some(pb) = self.progress_bar.as_mut() {
                             //    pb.println(format!("Appending to log file {}", active.file_path.to_string_lossy()));
                             //}
-                            active.append_line(&ms_line).await?;
-                            if let Some(pb) = self.progress_bar.as_mut() {
-                                pb.inc(bytes as u64);
+
+                            // Handle overlapping files by skipping milestones until we reach
+                            // the end of the active log
+                            if milestone_index >= active.end {
+                                active.append_line(&ms_line).await?;
+                                if let Some(pb) = self.progress_bar.as_mut() {
+                                    pb.inc(bytes as u64);
+                                }
                             }
 
                         // Adding this line would go over our limit
@@ -893,7 +911,7 @@ async fn cleanup_archive() -> anyhow::Result<()> {
         println!("No LogsDir in the config, Chronicle is running without archiver");
         return Ok(());
     }
-    Merger::new(logs_dir, max_log_size, true, true, ValidationLevel::Full)?
+    Merger::new(logs_dir, max_log_size, true, true, ValidationLevel::JustInTime)?
         .cleanup()
         .await?;
     Ok(())
