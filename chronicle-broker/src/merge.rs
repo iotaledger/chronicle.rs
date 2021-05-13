@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::MilestoneData;
 use anyhow::{
     anyhow,
@@ -68,7 +71,7 @@ impl LogFileError {
                 For JustInTime validation, this will be reported as an `OutsideMilestone`."
             }
             LogFileError::OutsideMilestone { .. } => {
-                "A milestone was found in a file which was not expected. 
+                "A milestone was found in a file which was not expected.
                 The merger will not use this milestone."
             }
             LogFileError::DuplicateMilestone { .. } => {
