@@ -638,7 +638,8 @@ impl Collector {
         } else {
             confirmed_milestone_index = None;
         }
-        if let Essence::Regular(regular) = transaction.essence() {
+        let Essence::Regular(regular) = transaction.essence();
+        {
             for (input_index, input) in regular.inputs().iter().enumerate() {
                 // insert utxoinput row along with input row
                 if let Input::Utxo(utxo_input) = input {
@@ -780,7 +781,8 @@ impl Collector {
         let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
-                if let Address::Ed25519(ed_address) = sls.address() {
+                let Address::Ed25519(ed_address) = sls.address();
+                {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, sls.amount(), inclusion_state);
@@ -789,12 +791,11 @@ impl Collector {
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
                     self.insert(inherent_worker, &self.get_keyspace(), hint, partition)
-                } else {
-                    bail!("Unexpected address variant");
                 }
             }
             Output::SignatureLockedDustAllowance(slda) => {
-                if let Address::Ed25519(ed_address) = slda.address() {
+                let Address::Ed25519(ed_address) = slda.address();
+                {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, slda.amount(), inclusion_state);
@@ -803,8 +804,6 @@ impl Collector {
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
                     self.insert(inherent_worker, &self.get_keyspace(), hint, partition)
-                } else {
-                    bail!("Unexpected address variant");
                 }
             }
             e => {
@@ -862,7 +861,8 @@ impl Collector {
         milestone_index: MilestoneIndex,
     ) -> anyhow::Result<()> {
         let transaction_id = transaction.id();
-        if let Essence::Regular(regular) = transaction.essence() {
+        let Essence::Regular(regular) = transaction.essence();
+        {
             if let Some(Payload::Indexation(indexation)) = regular.payload() {
                 let index_key = Indexation(hex::encode(indexation.index()));
                 self.delete_indexation(&message_id, index_key, milestone_index)?;
@@ -885,7 +885,8 @@ impl Collector {
         let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
-                if let Address::Ed25519(ed_address) = sls.address() {
+                let Address::Ed25519(ed_address) = sls.address();
+                {
                     let address_pk = Ed25519AddressPK::new(
                         *ed_address,
                         partition_id,
@@ -895,12 +896,11 @@ impl Collector {
                         index,
                     );
                     self.delete(address_pk)?;
-                } else {
-                    error!("Unexpected address variant");
                 }
             }
             Output::SignatureLockedDustAllowance(slda) => {
-                if let Address::Ed25519(ed_address) = slda.address() {
+                let Address::Ed25519(ed_address) = slda.address();
+                {
                     let address_pk = Ed25519AddressPK::new(
                         *ed_address,
                         partition_id,
@@ -910,9 +910,7 @@ impl Collector {
                         index,
                     );
                     self.delete(address_pk)?;
-                } else {
-                    error!("Unexpected address variant");
-                }
+                };
             }
             e => {
                 if let Output::Treasury(_) = e {

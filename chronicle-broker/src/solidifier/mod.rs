@@ -18,10 +18,7 @@ use super::{
     *,
 };
 use bee_message::prelude::MilestonePayload;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+
 use std::{
     ops::{
         Deref,
@@ -62,12 +59,6 @@ impl MilestoneMessage {
     ) -> Self {
         Self(message_id, milestone_payload, message, metadata)
     }
-}
-
-#[derive(Deserialize, Serialize)]
-struct MessageStatus {
-    in_messages: bool,
-    in_database: bool,
 }
 
 struct InDatabase {
@@ -184,6 +175,7 @@ pub struct Solidifier {
     keyspace: ChronicleKeyspace,
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneData>,
+    analytics: HashMap<u32, AnalyticRecord>,
     in_database: HashMap<u32, InDatabase>,
     lru_in_database: lru::LruCache<u32, ()>,
     unreachable: lru::LruCache<u32, ()>,
@@ -216,6 +208,7 @@ impl Builder for SolidifierBuilder {
             lru_in_database: lru::LruCache::new(100),
             unreachable: lru::LruCache::new(100),
             milestones_data: HashMap::new(),
+            analytics: HashMap::new(),
             collector_handles: self.collector_handles.unwrap(),
             collector_count,
             syncer_handle: self.syncer_handle.unwrap(),

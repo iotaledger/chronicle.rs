@@ -273,7 +273,8 @@ impl Importer {
         } else {
             confirmed_milestone_index = None;
         }
-        if let Essence::Regular(regular) = transaction.essence() {
+        let Essence::Regular(regular) = transaction.essence();
+        {
             for (input_index, input) in regular.inputs().iter().enumerate() {
                 // insert utxoinput row along with input row
                 if let Input::Utxo(utxo_input) = input {
@@ -314,9 +315,7 @@ impl Importer {
                         ledger_inclusion_state,
                         confirmed_milestone_index,
                     )?;
-                } else {
-                    error!("A new input variant was added to this type!")
-                }
+                };
             }
             for (output_index, output) in regular.outputs().iter().enumerate() {
                 // insert output row
@@ -411,7 +410,8 @@ impl Importer {
         let output_type = output.kind();
         match output {
             Output::SignatureLockedSingle(sls) => {
-                if let Address::Ed25519(ed_address) = sls.address() {
+                let Address::Ed25519(ed_address) = sls.address();
+                {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, sls.amount(), inclusion_state);
@@ -420,12 +420,11 @@ impl Importer {
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
                     self.insert(inherent_worker, hint, partition)?;
-                } else {
-                    error!("Unexpected address variant");
-                }
+                };
             }
             Output::SignatureLockedDustAllowance(slda) => {
-                if let Address::Ed25519(ed_address) = slda.address() {
+                let Address::Ed25519(ed_address) = slda.address();
+                {
                     let partitioned = Partitioned::new(*ed_address, partition_id, milestone_index.0);
                     let address_record =
                         AddressRecord::new(output_type, *transaction_id, index, slda.amount(), inclusion_state);
@@ -434,9 +433,7 @@ impl Importer {
                     let hint = Hint::address(ed_address.to_string());
                     let partition = Partition::new(partition_id, *milestone_index);
                     self.insert(inherent_worker, hint, partition)?;
-                } else {
-                    error!("Unexpected address variant");
-                }
+                };
             }
             e => {
                 if let Output::Treasury(_) = e {
