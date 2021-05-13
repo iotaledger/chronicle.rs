@@ -279,7 +279,7 @@ impl Select<TransactionId, MessageId> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT message_id FROM {}.transactions 
+            "SELECT message_id FROM {}.transactions
             WHERE transaction_id = ? and inclusion_state = ? and variant = 'input'
             LIMIT 1 ALLOW FILTERING",
             self.name()
@@ -388,6 +388,37 @@ impl RowsDecoder<SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
         if rows_iter.is_empty() {
             Ok(None)
         } else {
+            Ok(Some(rows_iter))
+        }
+    }
+}
+
+impl Select<SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT milestone_index, message_count, transaction_count, transferred_tokens FROM {}.analytics WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, sync_range: &SyncRange) -> T::Return {
+        builder
+            .value(&"permanode")
+            .value(&sync_range.from)
+            .value(&sync_range.to)
+    }
+}
+
+impl RowsDecoder<SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
+    type Row = AnalyticRecord;
+    fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Iter<AnalyticRecord>>> {
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
+        let rows_iter = Self::Row::rows_iter(decoder)?;
+        if rows_iter.is_empty() && !rows_iter.has_more_pages() {
+            Ok(None)
+        } else {
+            // CQL specs states that the page result might be empty but has more pages to fetch.
             Ok(Some(rows_iter))
         }
     }
@@ -518,5 +549,20 @@ impl Row for SyncRecord {
         let synced_by = rows.column_value::<Option<u8>>()?;
         let logged_by = rows.column_value::<Option<u8>>()?;
         Ok(SyncRecord::new(milestone_index, synced_by, logged_by))
+    }
+}
+
+impl Row for AnalyticRecord {
+    fn try_decode_row<T: ColumnValue>(rows: &mut T) -> anyhow::Result<Self> {
+        let milestone_index = MilestoneIndex(rows.column_value::<u32>()?);
+        let message_count = MessageCount(rows.column_value::<u32>()?);
+        let transaction_count = TransactionCount(rows.column_value::<u32>()?);
+        let transferred_tokens = TransferredTokens(rows.column_value::<u64>()?);
+        Ok(AnalyticRecord::new(
+            milestone_index,
+            message_count,
+            transaction_count,
+            transferred_tokens,
+        ))
     }
 }
