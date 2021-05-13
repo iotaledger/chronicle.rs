@@ -144,17 +144,19 @@ struct LogFile {
     file: File,
     len: u64,
     pub err: bool,
+    pub finalized: bool,
 }
 
 impl LogFile {
     pub fn new(start: u32, end: u32, file_path: PathBuf, file: File, len: u64) -> Self {
         Self {
-            file_path,
             file,
             len,
             start,
             end,
-            err: false,
+            err: file_path.extension().map(|ext| ext == "err").unwrap_or(false),
+            finalized: file_path.extension().map(|ext| ext == "fin").unwrap_or(false),
+            file_path,
         }
     }
     pub fn len(&self) -> u64 {
@@ -177,7 +179,14 @@ impl LogFile {
         Ok(())
     }
 
-    pub async fn verify(&mut self, level: ValidationLevel) -> Result<(), LogFileError> {
+    pub async fn verify(
+        &mut self,
+        level: ValidationLevel,
+        progress_bar: &mut Option<ProgressBar>,
+    ) -> Result<(), LogFileError> {
+        if self.finalized {
+            return Ok(());
+        }
         if self.len == 0 {
             self.err = true;
             return Err(LogFileError::EmptyFile(self.file_path.clone()));
@@ -191,19 +200,24 @@ impl LogFile {
         }
         match level {
             ValidationLevel::Light | ValidationLevel::Full => {
+                if let Some(pb) = progress_bar.as_mut() {
+                    pb.set_position(0);
+                    pb.set_length(self.len);
+                    pb.set_message(format!("Validating {}", self.file_path.to_string_lossy()));
+                }
                 let path = self.file_path.clone();
                 let reader = BufReader::new(&mut self.file);
-                let mut idx = self.start;
+                let mut est_idx = self.start;
                 let mut lines = reader.lines();
                 let mut extra = 0;
                 while let Some(line) = lines.next_line().await.map_err(|e| anyhow!(e))? {
                     // If we've exceeded our claimed range, just add up the extras
-                    if idx >= self.end {
+                    if est_idx >= self.end {
                         extra += 1;
                         continue;
-                    } else if idx < self.start {
+                    } else if est_idx < self.start {
                         extra += 1;
-                        idx += 1;
+                        est_idx += 1;
                         continue;
                     }
                     let milestone_index = match level {
@@ -211,25 +225,31 @@ impl LogFile {
                             Ok(milestone) => milestone.milestone_index(),
                             Err(_) => {
                                 self.err = true;
-                                return Err(LogFileError::MalformattedMilestone { milestone: idx, path });
+                                return Err(LogFileError::MalformattedMilestone {
+                                    milestone: est_idx,
+                                    path,
+                                });
                             }
                         },
                         ValidationLevel::Full => match serde_json::from_str::<MilestoneData>(&line) {
                             Ok(milestone) => milestone.milestone_index(),
                             Err(_) => {
                                 self.err = true;
-                                return Err(LogFileError::MalformattedMilestone { milestone: idx, path });
+                                return Err(LogFileError::MalformattedMilestone {
+                                    milestone: est_idx,
+                                    path,
+                                });
                             }
                         },
                         _ => panic!(),
                     };
-                    if milestone_index > idx {
+                    if milestone_index > est_idx {
                         self.err = true;
                         return Err(LogFileError::MissingMilestones {
-                            range: idx..milestone_index,
+                            range: est_idx..milestone_index,
                             path,
                         });
-                    } else if milestone_index < idx {
+                    } else if milestone_index < est_idx {
                         extra += 1;
                         if milestone_index >= self.start && milestone_index < self.end {
                             self.err = true;
@@ -239,7 +259,11 @@ impl LogFile {
                             });
                         }
                     }
-                    idx += 1;
+
+                    est_idx += 1;
+                    if let Some(pb) = progress_bar.as_mut() {
+                        pb.inc(line.as_bytes().len() as u64);
+                    }
                 }
                 if extra > 0 {
                     self.err = true;
@@ -249,6 +273,7 @@ impl LogFile {
                     .seek(tokio::io::SeekFrom::Start(0))
                     .await
                     .map_err(|e| anyhow!(e))?;
+                self.end = est_idx;
             }
             _ => (),
         }
@@ -263,7 +288,13 @@ impl LogFile {
                 "{}to{}.{}",
                 self.start,
                 self.end,
-                if self.err { "err" } else { "log" }
+                if self.err {
+                    "err"
+                } else if self.finalized {
+                    "log.fin"
+                } else {
+                    "log"
+                }
             ));
             if self.file_path != new_path {
                 tokio::fs::rename(&self.file_path, new_path).await?;
@@ -275,7 +306,7 @@ impl LogFile {
 
 impl std::ops::Drop for LogFile {
     fn drop(&mut self) {
-        futures::executor::block_on(self.close()).unwrap();
+        tokio::task::block_in_place(|| futures::executor::block_on(self.close())).unwrap();
     }
 }
 
@@ -285,24 +316,40 @@ pub struct LogPaths(Vec<(u32, u32, PathBuf)>);
 
 impl LogPaths {
     /// Create a new paths structure from a log directory
-    pub fn new(logs_dir: &PathBuf) -> anyhow::Result<Self> {
+    pub fn new(logs_dir: &PathBuf, include_finalized: bool) -> anyhow::Result<Self> {
+        let split_filename = |v: Result<PathBuf, _>| match v {
+            Ok(path) => {
+                let file_name = path.file_stem().unwrap();
+                let mut split = file_name.to_str().unwrap().split(".").next().unwrap().split("to");
+                let (start, end) = (
+                    split.next().unwrap().parse::<u32>().unwrap(),
+                    split.next().map(|s| s.parse::<u32>().unwrap()).unwrap_or(u32::MAX),
+                );
+                Some((start, end, path))
+            }
+            Err(_) => None,
+        };
         if let Some(dir) = logs_dir.to_str() {
-            let mut paths = glob::glob(&format!("{}/*to*.log", dir))
+            let paths = glob::glob(&format!("{}/*to*.log", dir))
                 .unwrap()
-                .filter_map(|v| match v {
-                    Ok(path) => {
-                        let file_name = path.file_stem().unwrap();
-                        let mut split = file_name.to_str().unwrap().split("to");
-                        let (start, end) = (
-                            split.next().unwrap().parse::<u32>().unwrap(),
-                            split.next().unwrap().parse::<u32>().unwrap(),
-                        );
-                        Some((start, end, path))
-                    }
-                    Err(_) => None,
-                })
-                .collect::<Vec<_>>();
-            paths.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+                .filter_map(split_filename)
+                .chain(
+                    glob::glob(&format!("{}/*.log.active", dir))
+                        .unwrap()
+                        .filter_map(split_filename),
+                );
+            let mut paths = if include_finalized {
+                paths
+                    .chain(
+                        glob::glob(&format!("{}/*to*.log.fin", dir))
+                            .unwrap()
+                            .filter_map(split_filename),
+                    )
+                    .collect::<Vec<_>>()
+            } else {
+                paths.collect::<Vec<_>>()
+            };
+            paths.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
             Ok(Self(paths))
         } else {
             bail!("Logs directory is malformatted! Found: {}", logs_dir.to_string_lossy());
@@ -325,7 +372,6 @@ impl LogPaths {
                     pb.inc_length(metadata.len());
                 }
             }
-            pb.enable_steady_tick(100);
             pb.println("Validating logs...");
         }
         let mut prev_end = None;
@@ -349,11 +395,8 @@ impl LogPaths {
                 Self::handle_err(&mut progress_bar, e)?;
             }
             let mut log = LogFile::new(start, end, path.clone(), file, len);
-            if let Err(e) = log.verify(ValidationLevel::Full).await {
+            if let Err(e) = log.verify(ValidationLevel::Full, &mut progress_bar).await {
                 Self::handle_err(&mut progress_bar, e)?;
-            }
-            if let Some(pb) = progress_bar.as_mut() {
-                pb.inc(log.len());
             }
             prev_end = Some(end);
         }
@@ -391,13 +434,13 @@ impl DerefMut for LogPaths {
 
 /// Hold configuration and state for merging log files
 pub struct Merger {
-    paths: LogPaths,
     logs_dir: PathBuf,
     max_log_size: u64,
     progress_bar: Option<ProgressBar>,
     backup_dir: Option<PathBuf>,
     validation_level: ValidationLevel,
     exit_on_val_err: bool,
+    include_finalized: bool,
 }
 
 impl Merger {
@@ -409,8 +452,9 @@ impl Merger {
         progress_bar: bool,
         validation_level: ValidationLevel,
         exit_on_val_err: bool,
+        include_finalized: bool,
     ) -> anyhow::Result<Self> {
-        let mut progress_bar = progress_bar.then(|| {
+        let progress_bar = progress_bar.then(|| {
             let style = ProgressStyle::default_bar()
                 .template(
                     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
@@ -418,36 +462,31 @@ impl Merger {
                 .progress_chars("##-");
             ProgressBar::new(0).with_style(style)
         });
-        if let Some(pb) = progress_bar.as_mut() {
-            pb.println(format!("Gathering log files from {}", logs_dir.to_string_lossy()));
-        }
-        let paths = LogPaths::new(&logs_dir)?;
         let backup_dir = backup_logs.then(|| logs_dir.join("backup"));
         Ok(Self {
             logs_dir,
             max_log_size,
             progress_bar,
-            paths,
             backup_dir,
             validation_level,
             exit_on_val_err,
+            include_finalized,
         })
     }
 
     /// Begin cleaning up (merging) log files using the Merger instance
     pub async fn cleanup(mut self) -> anyhow::Result<()> {
         if let Some(pb) = self.progress_bar.as_mut() {
-            for (_, _, path) in self.paths.iter() {
-                if let Ok(metadata) = std::fs::metadata(path) {
-                    pb.inc_length(metadata.len());
-                }
-            }
-            pb.enable_steady_tick(100);
             pb.println("Merging logs with the following configuration:");
             pb.println(format!(" - validation level: {}", self.validation_level));
             pb.println(format!(" - backup: {}", self.backup_dir.is_some()));
             pb.println(format!(" - exit on validation err: {}", self.exit_on_val_err));
+            pb.println(format!(" - include finalized: {}", self.include_finalized));
         }
+        if let Some(pb) = self.progress_bar.as_mut() {
+            pb.println(format!("Gathering log files from {}", self.logs_dir.to_string_lossy()));
+        }
+        let mut paths = LogPaths::new(&self.logs_dir, self.include_finalized)?;
         if let Some(ref dir) = self.backup_dir {
             if let Err(e) = tokio::fs::create_dir(dir).await {
                 match e.kind() {
@@ -459,12 +498,18 @@ impl Merger {
         // Take the first path as our dest file
         if let Some(mut writer) = {
             let mut res = None;
-            while let Some((start, end, path)) = self.paths.pop() {
+            while let Some((start, end, path)) = paths.pop() {
                 let mut writer = self.open_write(&path, start, end).await?;
-                if let Some(pb) = self.progress_bar.as_mut() {
-                    pb.set_message(format!("Verifying {}", path.to_string_lossy()));
-                }
-                if let Err(e) = writer.verify(ValidationLevel::Full).await {
+                if let Err(e) = writer
+                    .verify(
+                        match self.validation_level {
+                            ValidationLevel::Basic => ValidationLevel::Basic,
+                            _ => ValidationLevel::Full,
+                        },
+                        &mut self.progress_bar,
+                    )
+                    .await
+                {
                     match e {
                         LogFileError::EmptyFile(_) => {
                             tokio::fs::remove_file(path).await?;
@@ -475,16 +520,13 @@ impl Merger {
                         }
                     }
                 } else {
-                    if let Some(pb) = self.progress_bar.as_mut() {
-                        pb.inc(writer.len());
-                    }
                     res = Some(writer);
                     break;
                 }
             }
             res
         } {
-            while let Some((start, end, path)) = self.paths.pop() {
+            while let Some((start, end, path)) = paths.pop() {
                 // The previous file and this one match up
                 // or there is an overlap between this log and the previous one
                 if start <= writer.end {
@@ -493,7 +535,7 @@ impl Merger {
                             pb.println(format!("Found overlap in logs from {} to {}", start, writer.end));
                         }
                     }
-                    self.merge(start, end, path, &mut writer).await?;
+                    writer = self.merge(start, end, path, writer).await?;
 
                 // There is a gap in the logs
                 } else if start > writer.end {
@@ -501,10 +543,16 @@ impl Merger {
                         pb.println(format!("Found gap in logs from {} to {}", writer.end, start));
                     }
                     writer = self.open_write(&path, start, end).await?;
-                    if let Some(pb) = self.progress_bar.as_mut() {
-                        pb.inc(writer.len());
-                    }
-                    if let Err(e) = writer.verify(ValidationLevel::Full).await {
+                    if let Err(e) = writer
+                        .verify(
+                            match self.validation_level {
+                                ValidationLevel::Basic => ValidationLevel::Basic,
+                                _ => ValidationLevel::Full,
+                            },
+                            &mut self.progress_bar,
+                        )
+                        .await
+                    {
                         match e {
                             LogFileError::EmptyFile(_) => {
                                 tokio::fs::remove_file(path).await?;
@@ -528,28 +576,31 @@ impl Merger {
         Ok(())
     }
 
-    async fn merge(&mut self, start: u32, end: u32, path: PathBuf, active: &mut LogFile) -> anyhow::Result<()> {
+    async fn merge(&mut self, start: u32, end: u32, path: PathBuf, mut active: LogFile) -> anyhow::Result<LogFile> {
         let mut consumed_file = self.open_read(&path, start, end).await?;
         let total_bytes = consumed_file.len();
-        if let Some(pb) = self.progress_bar.as_mut() {
-            pb.set_message(format!("Verifying {}", path.to_string_lossy()));
-        }
-        if let Err(e) = consumed_file.verify(self.validation_level).await {
+        if let Err(e) = consumed_file
+            .verify(self.validation_level, &mut self.progress_bar)
+            .await
+        {
             match e {
                 LogFileError::EmptyFile(_) => {
                     tokio::fs::remove_file(&path).await?;
                 }
                 _ => {
-                    return self.handle_error(e, total_bytes);
+                    return self.handle_error(e, total_bytes).map(|_| active);
                 }
             }
-            return Ok(());
+            return Ok(active);
         }
+
         let mut buf_reader = BufReader::new(&mut consumed_file.file);
         let mut line_buffer = String::new();
         let mut milestone_index = start;
         let mut total_read_bytes = 0;
         if let Some(pb) = self.progress_bar.as_mut() {
+            pb.set_position(0);
+            pb.set_length(total_bytes);
             pb.set_message(format!("Consuming {}", path.to_string_lossy()));
         }
         loop {
@@ -572,18 +623,18 @@ impl Merger {
                                 if idx < start || idx >= end {
                                     consumed_file.err = true;
                                     let err = LogFileError::OutsideMilestone { milestone: idx, path };
-                                    return self.handle_error(err, total_bytes - total_read_bytes);
+                                    return self.handle_error(err, total_bytes - total_read_bytes).map(|_| active);
                                 } else if milestone_index < idx {
                                     consumed_file.err = true;
                                     let err = LogFileError::MissingMilestones {
                                         range: milestone_index..idx,
                                         path,
                                     };
-                                    return self.handle_error(err, total_bytes - total_read_bytes);
+                                    return self.handle_error(err, total_bytes - total_read_bytes).map(|_| active);
                                 } else if milestone_index > idx {
                                     consumed_file.err = true;
                                     let err = LogFileError::DuplicateMilestone { milestone: idx, path };
-                                    return self.handle_error(err, total_bytes - total_read_bytes);
+                                    return self.handle_error(err, total_bytes - total_read_bytes).map(|_| active);
                                 }
                             } else {
                                 consumed_file.err = true;
@@ -591,7 +642,7 @@ impl Merger {
                                     milestone: milestone_index,
                                     path,
                                 };
-                                return self.handle_error(err, total_bytes - total_read_bytes);
+                                return self.handle_error(err, total_bytes - total_read_bytes).map(|_| active);
                             }
                         }
                         // We can fit this line in the writer file
@@ -614,10 +665,24 @@ impl Merger {
                             // if let Some(pb) = self.progress_bar.as_mut() {
                             //    pb.println("Exceeded file size!");
                             //}
-                            // Create a new file to funnel the remainder of the milestones to
-                            *active = self.create_active(milestone_index).await?;
-                            // Add the line we just read
-                            active.append_line(&ms_line).await?;
+                            active.finalized = true;
+                            // If we read more than just a single line from the file
+                            if total_read_bytes != bytes as u64 {
+                                // Create a new file to funnel the remainder of the milestones to
+                                active = self.create_active(milestone_index).await?;
+                                // Add the line we just read
+                                active.append_line(&ms_line).await?;
+
+                            // Otherwise we shouldn't copy it line-by-line, just set the active file
+                            } else {
+                                // Drop our reader file so we can access it as a writer
+                                drop(consumed_file);
+                                // Drop the writer ahead of reassignment so we don't conflict names
+                                drop(active);
+                                // We already validated the file above, so it's not needed here
+                                // Just return the new active file
+                                return Ok(self.open_write(&path, start, end).await?);
+                            }
                             if let Some(pb) = self.progress_bar.as_mut() {
                                 pb.inc(bytes as u64);
                             }
@@ -626,7 +691,7 @@ impl Merger {
                     milestone_index += 1;
                 }
                 Err(e) => {
-                    return self.handle_error(e, total_bytes - total_read_bytes);
+                    return self.handle_error(e, total_bytes - total_read_bytes).map(|_| active);
                 }
             }
         }
@@ -638,19 +703,19 @@ impl Merger {
                         range: milestone_index..end,
                         path,
                     };
-                    return self.handle_error(err, total_bytes - total_read_bytes);
+                    return self.handle_error(err, total_bytes - total_read_bytes).map(|_| active);
                 } else if milestone_index > end {
                     consumed_file.err = true;
                     let err = LogFileError::ExtraMilestones {
                         num: milestone_index - end,
                         path,
                     };
-                    return self.handle_error(err, total_bytes - total_read_bytes);
+                    return self.handle_error(err, total_bytes - total_read_bytes).map(|_| active);
                 }
             }
             _ => (),
         }
-        Ok(())
+        Ok(active)
     }
 
     fn handle_error<E: Display + Into<anyhow::Error>>(&mut self, err: E, inc_bytes: u64) -> anyhow::Result<()> {
@@ -669,7 +734,7 @@ impl Merger {
         // if let Some(pb) = self.progress_bar.as_mut() {
         //    pb.println(format!("Opening file for writes: {}", file_path.to_string_lossy()));
         //}
-        let active_file_path = self.logs_dir.join(&format!("{}.part", start));
+        let active_file_path = self.logs_dir.join(&format!("{}.log.active", start));
         // Copy the file to the backup first, if asked
         if let Some(ref dir) = self.backup_dir {
             tokio::fs::copy(file_path, dir.join(file_path.file_name().unwrap())).await?;
@@ -698,7 +763,7 @@ impl Merger {
     }
 
     async fn create_active(&mut self, milestone_index: u32) -> anyhow::Result<LogFile> {
-        let file_path = self.logs_dir.join(&format!("{}.part", milestone_index));
+        let file_path = self.logs_dir.join(&format!("{}.log.active", milestone_index));
         let file: File = OpenOptions::new()
             .append(true)
             .create(true)

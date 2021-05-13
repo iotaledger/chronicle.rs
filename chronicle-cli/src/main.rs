@@ -466,6 +466,7 @@ async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         .or_else(|| matches.is_present("val-level-jit").then(|| ValidationLevel::JustInTime))
         .unwrap_or_default();
     let exit_on_val_err = !matches.is_present("no-exit-on-val-err");
+    let include_finalized = matches.is_present("include-finalized");
     let config = VersionedConfig::load(None)?.verify().await?;
     let logs_dir;
     let max_log_size = config.broker_config.max_log_size.clone().unwrap_or(u32::MAX as u64);
@@ -475,9 +476,17 @@ async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         println!("No LogsDir in the config, Chronicle is running without archiver");
         return Ok(());
     }
-    Merger::new(logs_dir, max_log_size, backup_logs, true, val_level, exit_on_val_err)?
-        .cleanup()
-        .await?;
+    Merger::new(
+        logs_dir,
+        max_log_size,
+        backup_logs,
+        true,
+        val_level,
+        exit_on_val_err,
+        include_finalized,
+    )?
+    .cleanup()
+    .await?;
     Ok(())
 }
 
@@ -491,5 +500,5 @@ async fn validate_archive() -> anyhow::Result<()> {
         println!("No LogsDir in the config, Chronicle is running without archiver");
         return Ok(());
     }
-    LogPaths::new(&logs_dir)?.validate(max_log_size, true).await
+    LogPaths::new(&logs_dir, true)?.validate(max_log_size, true).await
 }

@@ -204,7 +204,7 @@ subcommands:
                     - val-level-full
                     - val-level-jit
               - val-level-full:
-                  short: l
+                  short: f
                   long: full-val
                   help: >-
                     Specify Full validation level, which will perform full deserialization of each milestone in advance of merging each file.
@@ -223,6 +223,12 @@ subcommands:
                     - val-level-basic
                     - val-level-light
                     - val-level-full
+              - include-finalized:
+                  short: a
+                  long: all
+                  help: >-
+                    Include finalized logs (logs which have reached their maximum size) in the merge. 
+                    This will not include .err files.
         - validate:
             short: v
             about: >-
