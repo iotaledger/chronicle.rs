@@ -15,7 +15,10 @@ use serde::{
 };
 use std::{
     collections::HashMap,
-    ops::Range,
+    ops::{
+        Add,
+        Range,
+    },
     path::PathBuf,
 };
 use url::Url;
@@ -85,9 +88,9 @@ pub struct MilestoneData {
 /// The analytics collected from the milestone data
 pub struct Analytics {
     /// The transaction count
-    pub transaction_count: u128,
+    pub transaction_count: u64,
     /// The message count
-    pub message_count: u128,
+    pub message_count: u64,
     /// The transferred tokens
     pub transferred_tokens: u128,
 }
@@ -121,9 +124,9 @@ impl MilestoneData {
     /// Get the analytics from the collected messages
     pub fn get_analytics(&self) -> Analytics {
         // The accumulators
-        let mut transaction_count: u128 = 0;
-        let mut message_count: u128 = 0;
-        let mut transferred_tokens: u128 = 0;
+        let mut transaction_count: u64 = 0;
+        let mut message_count: u64 = 0;
+        let mut transferred_tokens: u64 = 0;
 
         // Iterate the messages to calculate analytics
         for (_, full_message) in &self.messages {
