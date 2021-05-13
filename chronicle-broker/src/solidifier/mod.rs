@@ -18,13 +18,19 @@ use super::{
     },
     *,
 };
-use bee_message::prelude::MilestonePayload;
+use bee_message::prelude::{
+    Essence,
+    MilestonePayload,
+    Output,
+    Payload,
+};
 use serde::{
     Deserialize,
     Serialize,
 };
 use std::{
     ops::{
+        Add,
         Deref,
         DerefMut,
     },
@@ -166,6 +172,29 @@ impl From<CreatedBy> for u8 {
     }
 }
 
+#[derive(Deserialize, Serialize)]
+/// The analytics collected from the milestone data
+pub struct Analytics {
+    /// The transaction count
+    pub transaction_count: u128,
+    /// The message count
+    pub message_count: u128,
+    /// The transferred tokens
+    pub transferred_tokens: u128,
+}
+
+impl Add for Analytics {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            transaction_count: self.transaction_count + other.transaction_count,
+            message_count: self.message_count + other.message_count,
+            transferred_tokens: self.transferred_tokens + other.transferred_tokens,
+        }
+    }
+}
+
 impl MilestoneData {
     fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
@@ -180,6 +209,47 @@ impl MilestoneData {
     pub fn milestone_index(&self) -> u32 {
         self.milestone_index
     }
+    /// Get the analytics from the collected messages
+    pub fn get_analytics(&self) -> Analytics {
+        // The accumulators
+        let mut transaction_count: u128 = 0;
+        let mut message_count: u128 = 0;
+        let mut transferred_tokens: u128 = 0;
+
+        // Iterate the messages to calculate analytics
+        for (_, full_message) in &self.messages {
+            // Accumulate the message count
+            message_count += 1;
+            if let Some(Payload::Transaction(payload)) = full_message.message().payload() {
+                // Accumulate the transaction count
+                transaction_count += 1;
+                if let Essence::Regular(regular_essence) = payload.essence() {
+                    for output in regular_essence.outputs() {
+                        match output {
+                            // Accumulate the transferred token amount
+                            Output::SignatureLockedSingle(output) => transferred_tokens += output.amount() as u128,
+                            Output::SignatureLockedDustAllowance(output) => {
+                                transferred_tokens += output.amount() as u128
+                            }
+                            // Note that the transaction payload don't have Treasury
+                            _ => unreachable!(),
+                        }
+                    }
+                } else {
+                    // There is only one kind of essence currently
+                    unreachable!();
+                }
+            }
+        }
+
+        // Return the analytics
+        Analytics {
+            transaction_count,
+            message_count,
+            transferred_tokens,
+        }
+    }
+
     fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
         self.milestone.replace(boxed_milestone_payload);
     }
