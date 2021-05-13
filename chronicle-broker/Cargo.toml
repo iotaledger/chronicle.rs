@@ -41,16 +41,25 @@ sync = [
     "chronicle-common",
     "scylla-rs",
     "anyhow",
-    "tokio",
+    "tokio/full",
 ]
 merge = [
     "anyhow",
-    "tokio",
+    "tokio/macros",
+    "tokio/fs",
+    "tokio/rt-multi-thread",
     "thiserror",
     "serde_json",
     "indicatif",
     "futures",
     "glob",
+]
+analytic = [
+    "chronicle-common",
+    "anyhow",
+    "scylla-rs",
+    "tokio/full",
+    "futures",
 ]
 application = [
     "chronicle-common",
@@ -69,7 +78,8 @@ application = [
     "bee-rest-api",
     "hex",
     "anyhow",
-    "tokio",
+    "tokio/full",
     "paho-mqtt",
+    "sync"
 ]
 filter = ["chronicle-filter"]

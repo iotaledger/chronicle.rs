@@ -87,6 +87,7 @@ mod app {
 use app::*;
 
 #[cfg(feature = "merge")]
+/// Provide the archive file merger functionality;
 pub mod merge;
 
 mod types;
