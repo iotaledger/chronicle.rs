@@ -1,9 +1,17 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use bee_message::{
     prelude::MilestonePayload,
     Message,
     MessageId,
 };
-use chronicle_storage::access::MessageMetadata;
+use chronicle_storage::access::{
+    AnalyticRecord,
+    MessageMetadata,
+};
+#[cfg(feature = "scylla-rs")]
+use scylla_rs::cql::Rows;
 use serde::{
     Deserialize,
     Serialize,
@@ -397,6 +405,169 @@ mod sync {
                 };
                 ranges.push(range);
             };
+        }
+    }
+}
+
+#[cfg(feature = "analytic")]
+pub use analytic::*;
+#[cfg(feature = "analytic")]
+mod analytic {
+    use super::*;
+    use chronicle_common::SyncRange;
+    use scylla_rs::prelude::{
+        Consistency,
+        GetSelectRequest,
+        Iter,
+        Select,
+        ValueWorker,
+    };
+    use std::ops::Range;
+
+    /// Representation of vector of analytic data
+    #[derive(Debug, Clone, Default, Serialize)]
+    pub struct AnalyticsData {
+        #[serde(flatten)]
+        analytics: Vec<AnalyticData>,
+    }
+
+    #[derive(Debug, Clone, Default, Serialize)]
+    /// AnalyticData representation for a continuous range in scylla
+    pub struct AnalyticData {
+        #[serde(flatten)]
+        range: Range<u32>,
+        message_count: u128,
+        transaction_count: u128,
+        transferred_tokens: u128,
+    }
+    impl From<AnalyticRecord> for AnalyticData {
+        fn from(record: AnalyticRecord) -> Self {
+            // create analytic
+            let milestone_index = **record.milestone_index();
+            let message_count = **record.message_count() as u128;
+            let transaction_count = **record.transaction_count() as u128;
+            let transferred_tokens = **record.transferred_tokens() as u128;
+            let range = Range {
+                start: milestone_index,
+                end: milestone_index + 1,
+            };
+            AnalyticData::new(range, message_count, transaction_count, transferred_tokens)
+        }
+    }
+    impl AnalyticData {
+        pub(crate) fn new(
+            range: Range<u32>,
+            message_count: u128,
+            transaction_count: u128,
+            transferred_tokens: u128,
+        ) -> Self {
+            Self {
+                range,
+                message_count,
+                transaction_count,
+                transferred_tokens,
+            }
+        }
+        async fn process(mut self, analytics_data: &mut AnalyticsData, records: &mut Iter<AnalyticRecord>) {
+            while let Some(record) = records.next() {
+                if self.start() - 1 == **record.milestone_index() {
+                    self.acc(record);
+                } else {
+                    // there is gap, therefore we finish self
+                    analytics_data.add_analytic_data(self);
+                    // create new analytic_data
+                    self = AnalyticData::from(record);
+                }
+            }
+            analytics_data.add_analytic_data(self);
+        }
+        fn start(&self) -> u32 {
+            self.range.start
+        }
+        fn acc(&mut self, record: AnalyticRecord) {
+            self.range.start -= 1;
+            self.message_count += **record.message_count() as u128;
+            self.transaction_count += **record.transaction_count() as u128;
+            self.transferred_tokens += **record.transferred_tokens() as u128;
+        }
+    }
+
+    impl AnalyticsData {
+        /// Try to fetch the analytics data from the analytics table for the provided keyspace and sync range
+        pub async fn try_fetch<S: 'static + Select<SyncRange, Iter<AnalyticRecord>>>(
+            keyspace: &S,
+            sync_range: &SyncRange,
+            retries: usize,
+            page_size: i32,
+        ) -> anyhow::Result<AnalyticsData> {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            Self::query_analytics_table(keyspace, sync_range, retries, tx.clone(), page_size, None)?;
+            let mut analytics_data = AnalyticsData::default();
+            while let Some(mut records) = rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("Unable to fetch the analytics response"))??
+            {
+                if records.has_more_pages() {
+                    // request next page
+                    let paging_state = records.take_paging_state();
+                    // this will request the next page, and value worker will pass it to us through rx
+                    Self::query_analytics_table(keyspace, sync_range, retries, tx.clone(), page_size, paging_state)?;
+                    // Gets the first record in the page result, which is used to trigger accumulation
+                    analytics_data.try_trigger(&mut records).await;
+                } else {
+                    // no more pages to fetch, therefore we process whatever we received, ..
+                    analytics_data.try_trigger(&mut records).await;
+                    // break the while
+                    break;
+                }
+            }
+            Ok(analytics_data)
+        }
+        async fn try_trigger(&mut self, analytics_rows: &mut Iter<AnalyticRecord>) {
+            if let Some(analytic_record) = analytics_rows.next() {
+                self.process(analytic_record, analytics_rows).await;
+            }
+        }
+        async fn process(&mut self, record: AnalyticRecord, records: &mut Iter<AnalyticRecord>) {
+            // check if there is an active analytic_data with continuous range
+            if let Some(analytic_data) = self.try_pop_recent_analytic_data() {
+                analytic_data.process(self, records).await;
+            } else {
+                let analytic_data = AnalyticData::from(record);
+                analytic_data.process(self, records).await;
+            }
+        }
+        fn query_analytics_table<S: 'static + Select<SyncRange, Iter<AnalyticRecord>>>(
+            keyspace: &S,
+            sync_range: &SyncRange,
+            retries: usize,
+            tx: tokio::sync::mpsc::UnboundedSender<Result<Option<Iter<AnalyticRecord>>, scylla_rs::app::WorkerError>>,
+            page_size: i32,
+            paging_state: Option<Vec<u8>>,
+        ) -> anyhow::Result<()> {
+            let req = keyspace
+                .select(sync_range)
+                .consistency(Consistency::One)
+                .page_size(page_size)
+                .paging_state(&paging_state)
+                .build()?;
+            let worker = ValueWorker::new(
+                tx,
+                keyspace.clone(),
+                sync_range.clone(),
+                retries,
+                std::marker::PhantomData,
+            )
+            .with_paging(page_size, paging_state);
+            req.send_local(Box::new(worker));
+            Ok(())
+        }
+        fn try_pop_recent_analytic_data(&mut self) -> Option<AnalyticData> {
+            self.analytics.pop()
+        }
+        fn add_analytic_data(&mut self, analytic_data: AnalyticData) {
+            self.analytics.push(analytic_data);
         }
     }
 }
