@@ -20,6 +20,7 @@ use std::{
     ops::{
         Deref,
         DerefMut,
+        Range,
     },
     path::Path,
 };
@@ -44,6 +45,15 @@ impl Default for SyncRange {
         Self {
             from: 1,
             to: i32::MAX as u32,
+        }
+    }
+}
+
+impl From<Range<u32>> for SyncRange {
+    fn from(range: Range<u32>) -> Self {
+        Self {
+            from: range.start,
+            to: range.end,
         }
     }
 }

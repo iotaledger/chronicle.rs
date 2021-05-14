@@ -12,6 +12,7 @@ use bee_rest_api::types::dtos::{
     OutputDto,
     PayloadDto,
 };
+use chronicle_broker::AnalyticData;
 use chronicle_storage::access::{
     AddressRecord,
     IndexationRecord,
@@ -94,7 +95,7 @@ pub(crate) enum ListenerResponse {
         children_message_ids: Vec<String>,
         state: Option<String>,
     },
-    /// Response of GET /api/<keyspace>/messages/<message_id>/children?expanded=true
+    /// Response of GET /api/<keyspace>/messages/<message_id>/children[?expanded=true]
     MessageChildrenExpanded {
         #[serde(rename = "messageId")]
         message_id: String,
@@ -115,7 +116,7 @@ pub(crate) enum ListenerResponse {
         message_ids: Vec<String>,
         state: Option<String>,
     },
-    /// Response of GET /api/<keyspace>/messages?expanded=true&<index>
+    /// Response of GET /api/<keyspace>/messages?<index>[&expanded=true]
     MessagesForIndexExpanded {
         index: String,
         #[serde(rename = "maxResults")]
@@ -138,7 +139,7 @@ pub(crate) enum ListenerResponse {
         output_ids: Vec<OutputId>,
         state: Option<String>,
     },
-    /// Response of GET /api/<keyspace>/addresses/<address>/outputs?expanded=true
+    /// Response of GET /api/<keyspace>/addresses/<address>/outputs[?expanded=true]
     OutputsForAddressExpanded {
         // The type of the address (1=Ed25519).
         #[serde(rename = "addressType")]
@@ -171,6 +172,8 @@ pub(crate) enum ListenerResponse {
         message_id: String,
         timestamp: u64,
     },
+    /// Response of GET /api/<keyspace>/analytics[?start=<u32>&end=<u32>]
+    Analytics { ranges: Vec<AnalyticData> },
 }
 
 impl TryFrom<Message> for ListenerResponse {

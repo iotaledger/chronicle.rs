@@ -15,7 +15,10 @@ use bee_message::{
         TransactionId,
     },
 };
-use chronicle_broker::SyncData;
+use chronicle_broker::{
+    AnalyticsData,
+    SyncData,
+};
 use chronicle_common::{
     config::PartitionConfig,
     metrics::{
@@ -131,8 +134,9 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
                 get_message_by_index,
                 get_output,
                 get_ed25519_outputs,
+                get_transaction_included_message,
                 get_milestone,
-                get_transaction_included_message
+                get_analytics
             ],
         )
         .attach(CORS)
@@ -914,6 +918,27 @@ async fn get_milestone(keyspace: String, index: u32, keyspaces: State<'_, HashSe
             message_id: milestone.message_id().to_string(),
             timestamp: milestone.timestamp(),
         })
+}
+
+#[get("/<keyspace>/analytics?<start>&<end>")]
+async fn get_analytics(
+    keyspace: String,
+    start: Option<u32>,
+    end: Option<u32>,
+    keyspaces: State<'_, HashSet<String>>,
+) -> ListenerResult {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let keyspace = ChronicleKeyspace::new(keyspace);
+
+    let range = start.unwrap_or(1)..end.unwrap_or(u32::MAX);
+
+    let ranges = AnalyticsData::try_fetch(&keyspace, &range.into(), 1, 5000)
+        .await?
+        .analytics;
+
+    Ok(ListenerResponse::Analytics { ranges })
 }
 
 #[catch(500)]

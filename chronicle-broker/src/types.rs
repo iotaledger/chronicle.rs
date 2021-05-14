@@ -427,11 +427,12 @@ mod analytic {
     /// Representation of vector of analytic data
     #[derive(Debug, Clone, Default, Serialize)]
     pub struct AnalyticsData {
+        /// Vector of sequential ranges of analytics data
         #[serde(flatten)]
-        analytics: Vec<AnalyticData>,
+        pub analytics: Vec<AnalyticData>,
     }
 
-    #[derive(Debug, Clone, Default, Serialize)]
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     /// AnalyticData representation for a continuous range in scylla
     pub struct AnalyticData {
         #[serde(flatten)]
