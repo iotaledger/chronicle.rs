@@ -126,7 +126,7 @@ impl MilestoneData {
         // The accumulators
         let mut transaction_count: u64 = 0;
         let mut message_count: u64 = 0;
-        let mut transferred_tokens: u64 = 0;
+        let mut transferred_tokens: u128 = 0;
 
         // Iterate the messages to calculate analytics
         for (_, full_message) in &self.messages {
