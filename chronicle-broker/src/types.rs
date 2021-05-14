@@ -60,9 +60,22 @@ pub enum BrokerTopology {
         resume: bool,
         /// Provide optional import range
         import_range: Option<Range<u32>>,
+        /// The type of import requested
+        import_type: ImportType,
     },
-    /// AddEndpoint
+    /// Add Endpoint
     Requesters(RequesterTopology),
+}
+
+/// Import types
+#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
+pub enum ImportType {
+    /// Import everything
+    All,
+    /// Import only Sync data
+    Sync,
+    /// Import only Analytics data
+    Analytics,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

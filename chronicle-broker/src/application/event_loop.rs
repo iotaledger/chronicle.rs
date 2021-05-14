@@ -339,8 +339,9 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
     async fn handle_import(&mut self, import_topology: BrokerTopology) {
         if let BrokerTopology::Import {
             ref path,
-            ref resume,
+            resume,
             ref import_range,
+            import_type,
         } = import_topology
         {
             // don't do anything if the service is shutting down
@@ -355,10 +356,17 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             }
             if path.is_file() {
                 // build importer
-                self.spawn_importer(path.clone(), *resume, import_range.clone(), self.parallelism_points)
-                    .await;
+                self.spawn_importer(
+                    path.clone(),
+                    resume,
+                    import_range.clone(),
+                    import_type,
+                    self.parallelism_points,
+                )
+                .await;
             } else if path.is_dir() {
-                self.spawn_importers(path.clone(), *resume, import_range.clone()).await;
+                self.spawn_importers(path.clone(), resume, import_range.clone(), import_type)
+                    .await;
             } else {
                 let event = ImporterSession::PathError {
                     path: path.clone(),
@@ -381,6 +389,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
         file_path: PathBuf,
         resume: bool,
         import_range: Option<Range<u32>>,
+        import_type: ImportType,
         parallelism: u8,
     ) {
         // don't do anything if the service is shutting down
@@ -419,7 +428,13 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             self.response_to_sockets(&socket_msg).await;
         }
     }
-    async fn spawn_importers(&mut self, path: PathBuf, resume: bool, import_range: Option<Range<u32>>) {
+    async fn spawn_importers(
+        &mut self,
+        path: PathBuf,
+        resume: bool,
+        import_range: Option<Range<u32>>,
+        import_type: ImportType,
+    ) {
         let mut import_files = Vec::new();
         if let Ok(mut dir_entry) = tokio::fs::read_dir(&path).await {
             while let Ok(Some(p)) = dir_entry.next_entry().await {
@@ -442,20 +457,27 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
         if self.parallelism_points as usize > import_files_len {
             let parallelism = (self.parallelism_points as usize / import_files_len) as u8;
             for file_path in import_files {
-                self.spawn_importer(file_path, resume, import_range.clone(), parallelism)
+                self.spawn_importer(file_path, resume, import_range.clone(), import_type, parallelism)
                     .await
             }
         } else {
             // unwrap is safe
             let file_path = import_files.pop().expect("Expected import file");
-            self.spawn_importer(file_path, resume, import_range.clone(), self.parallelism_points)
-                .await;
+            self.spawn_importer(
+                file_path,
+                resume,
+                import_range.clone(),
+                import_type,
+                self.parallelism_points,
+            )
+            .await;
             // convert any remaining into pending_imports
             for file_path in import_files {
                 let topology = BrokerTopology::Import {
                     path: file_path,
                     resume,
                     import_range: import_range.clone(),
+                    import_type,
                 };
                 self.pending_imports.push(topology);
             }

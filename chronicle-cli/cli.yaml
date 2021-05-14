@@ -144,6 +144,18 @@ subcommands:
                   help: >-
                     The range of milestone indexes to import. Defaults to the configured range. 
                     Can be any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
+              - sync-data-only:
+                  short: s
+                  long: sync-only
+                  help: Only import sync data, not analytics.
+                  conflicts_with:
+                    - analytics-data-only
+              - analytics-data-only:
+                  short: a
+                  long: analytics-only
+                  help: Only import analytics data, not sync.
+                  conflicts_with:
+                    - sync-data-only
         - cleanup:
             short: c
             about: Cleanup log file directory to normalize the file sizes.

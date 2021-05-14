@@ -330,6 +330,13 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             if is_url {
                 panic!("URL imports are not currently supported!");
             }
+            let import_type = if subcommand.is_present("sync-data-only") {
+                ImportType::Sync
+            } else if subcommand.is_present("analytics-data-only") {
+                ImportType::Analytics
+            } else {
+                ImportType::All
+            };
             let sty = ProgressStyle::default_bar()
                 .template(
                     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
@@ -345,6 +352,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                         path,
                         resume: false,
                         import_range: Some(range),
+                        import_type,
                     }),
                 ))?))
                 .await?;
