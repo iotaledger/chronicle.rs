@@ -58,6 +58,20 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                                     // Inform syncer (maybe it wants to update the dashboard or something)
                                     info!("Synced this milestone {}", milestone_index);
                                 }
+                                CqlResult::AnalyzedMilestone(milestone_index) => {
+                                    if let Some(in_database) = self.in_database.get_mut(&milestone_index) {
+                                        in_database.set_analyzed(true);
+                                        info!("Analyzed this milestone {}", milestone_index);
+                                        if in_database.check_if_all_in_database() {
+                                            // Insert record into sync table
+                                            self.handle_in_database(milestone_index).unwrap_or_else(|e| {
+                                                error!("{}", e);
+                                            });
+                                        }
+                                    } else {
+                                        error!("Analyzed Milestone should have in_database entry");
+                                    }
+                                }
                             }
                         }
                         Err(cql_result) => {
@@ -70,6 +84,12 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                                 }
                                 CqlResult::SyncedMilestone(milestone_index) => {
                                     error!("Unable to update sync table for milestone index: {}", milestone_index,);
+                                }
+                                CqlResult::AnalyzedMilestone(milestone_index) => {
+                                    error!(
+                                        "Unable to update analytics table for milestone index: {}",
+                                        milestone_index,
+                                    );
                                 }
                             }
                             error!("Scylla cluster is likely having a complete outage, so we are shutting down broker for meantime.");
@@ -203,7 +223,7 @@ impl Solidifier {
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
             // remove it from pending
             milestone_data.remove_from_pending(message_id);
-            let check_if_completed = Self::check_if_completed(milestone_data);
+            let check_if_completed = milestone_data.check_if_completed();
             let created_by = milestone_data.created_by;
             if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
                 self.push_to_logger(milestone_index)?;
@@ -224,7 +244,12 @@ impl Solidifier {
     }
     fn push_to_logger(&mut self, milestone_index: u32) -> anyhow::Result<()> {
         // Remove milestoneData from self state and pass it to archiver
-        let milestone_data = self.milestones_data.remove(&milestone_index).unwrap();
+        let milestone_data = self
+            .milestones_data
+            .remove(&milestone_index)
+            .expect("Expected milestone data for milestone_index");
+        let analytic_record = milestone_data.get_analytic_record()?;
+        self.insert_analytic(milestone_index, analytic_record)?;
         // Update in_database
         let in_database = self
             .in_database
@@ -251,7 +276,12 @@ impl Solidifier {
             milestone_index
         );
         // Remove milestoneData from self state and pass it to syncer
-        let milestone_data = self.milestones_data.remove(&milestone_index).unwrap();
+        let milestone_data = self
+            .milestones_data
+            .remove(&milestone_index)
+            .expect("Expected milestone data for milestone_index");
+        let analytic_record = milestone_data.get_analytic_record()?;
+        self.insert_analytic(milestone_index, analytic_record)?;
         // Update in_database
         let in_database = self
             .in_database
@@ -277,12 +307,30 @@ impl Solidifier {
             .insert(&sync_key, &synced_record)
             .consistency(Consistency::One)
             .build()?;
-        let worker = SolidifierWorker::boxed(
+        let worker = SyncedMilestoneWorker::boxed(
             self.handle.clone(),
             milestone_index,
             self.keyspace.clone(),
             sync_key,
             synced_record,
+            self.retries,
+        );
+        request.send_local(worker);
+        Ok(())
+    }
+    fn insert_analytic(&self, milestone_index: u32, analytic_record: AnalyticRecord) -> anyhow::Result<()> {
+        let sync_key = Synckey;
+        let request = self
+            .keyspace
+            .insert(&sync_key, &analytic_record)
+            .consistency(Consistency::One)
+            .build()?;
+        let worker = AnalyzedMilestoneWorker::boxed(
+            self.handle.clone(),
+            milestone_index,
+            self.keyspace.clone(),
+            sync_key,
+            analytic_record,
             self.retries,
         );
         request.send_local(worker);
@@ -315,7 +363,7 @@ impl Solidifier {
                 milestone_data.set_milestone(milestone_payload);
                 milestone_data.remove_from_pending(&metadata.message_id);
                 milestone_data.add_full_message(FullMessage::new(message, metadata));
-                let check_if_completed = Self::check_if_completed(milestone_data);
+                let check_if_completed = milestone_data.check_if_completed();
                 let created_by = milestone_data.created_by;
                 if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
                     self.push_to_logger(milestone_index)?;
@@ -408,7 +456,7 @@ impl Solidifier {
                 milestone_index,
                 full_message,
             );
-            let check_if_completed = Self::check_if_completed(milestone_data);
+            let check_if_completed = milestone_data.check_if_completed();
             let created_by = milestone_data.created_by;
             if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
                 self.push_to_logger(milestone_index)?;
@@ -533,21 +581,5 @@ impl Solidifier {
         milestone_data.remove_from_pending(full_message.message_id());
         // Add full message
         milestone_data.add_full_message(full_message);
-    }
-    fn check_if_completed(milestone_data: &mut MilestoneData) -> bool {
-        // Check if there are no pending at all to set complete to true
-        let index = milestone_data.milestone_index();
-        let no_pending_left = milestone_data.pending().is_empty();
-        let milestone_exist = milestone_data.milestone_exist();
-        if no_pending_left && milestone_exist {
-            // milestone data is complete now
-            info!(
-                "{} is solid, with total messages: {}",
-                index,
-                milestone_data.messages().len()
-            );
-            return true;
-        }
-        false
     }
 }
