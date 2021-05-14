@@ -932,7 +932,7 @@ async fn get_analytics(
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
 
-    let range = start.unwrap_or(1)..end.unwrap_or(u32::MAX);
+    let range = start.unwrap_or(1)..end.unwrap_or(i32::MAX as u32);
 
     let ranges = AnalyticsData::try_fetch(&keyspace, &range.into(), 1, 5000)
         .await?
