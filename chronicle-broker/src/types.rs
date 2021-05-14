@@ -13,7 +13,10 @@ use bee_message::{
 };
 use chronicle_storage::access::{
     AnalyticRecord,
+    MessageCount,
     MessageMetadata,
+    TransactionCount,
+    TransferredTokens,
 };
 #[cfg(feature = "scylla-rs")]
 use scylla_rs::cql::Rows;
@@ -23,10 +26,7 @@ use serde::{
 };
 use std::{
     collections::HashMap,
-    ops::{
-        Add,
-        Range,
-    },
+    ops::Range,
     path::PathBuf,
 };
 use url::Url;
@@ -105,29 +105,6 @@ pub struct MilestoneData {
     pub(crate) created_by: CreatedBy,
 }
 
-#[derive(Deserialize, Serialize)]
-/// The analytics collected from the milestone data
-pub struct Analytics {
-    /// The transaction count
-    pub transaction_count: u64,
-    /// The message count
-    pub message_count: u64,
-    /// The transferred tokens
-    pub transferred_tokens: u128,
-}
-
-impl Add for Analytics {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self {
-            transaction_count: self.transaction_count + other.transaction_count,
-            message_count: self.message_count + other.message_count,
-            transferred_tokens: self.transferred_tokens + other.transferred_tokens,
-        }
-    }
-}
-
 impl MilestoneData {
     pub(crate) fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
@@ -143,11 +120,14 @@ impl MilestoneData {
         self.milestone_index
     }
     /// Get the analytics from the collected messages
-    pub fn get_analytics(&self) -> Analytics {
+    pub fn get_analytic_record(&self) -> anyhow::Result<AnalyticRecord> {
+        if !self.check_if_completed() {
+            anyhow::bail!("cannot get analytics for uncompleted milestone data")
+        }
         // The accumulators
-        let mut transaction_count: u64 = 0;
-        let mut message_count: u64 = 0;
-        let mut transferred_tokens: u128 = 0;
+        let mut transaction_count: u32 = 0;
+        let mut message_count: u32 = 0;
+        let mut transferred_tokens: u64 = 0;
 
         // Iterate the messages to calculate analytics
         for (_, full_message) in &self.messages {
@@ -156,31 +136,29 @@ impl MilestoneData {
             if let Some(Payload::Transaction(payload)) = full_message.message().payload() {
                 // Accumulate the transaction count
                 transaction_count += 1;
-                if let Essence::Regular(regular_essence) = payload.essence() {
+                let Essence::Regular(regular_essence) = payload.essence();
+                {
                     for output in regular_essence.outputs() {
                         match output {
                             // Accumulate the transferred token amount
-                            Output::SignatureLockedSingle(output) => transferred_tokens += output.amount() as u128,
-                            Output::SignatureLockedDustAllowance(output) => {
-                                transferred_tokens += output.amount() as u128
-                            }
+                            Output::SignatureLockedSingle(output) => transferred_tokens += output.amount(),
+                            Output::SignatureLockedDustAllowance(output) => transferred_tokens += output.amount(),
                             // Note that the transaction payload don't have Treasury
-                            _ => unreachable!(),
+                            _ => anyhow::bail!("Unexpected Output variant in transaction payload"),
                         }
                     }
-                } else {
-                    // There is only one kind of essence currently
-                    unreachable!();
                 }
             }
         }
-
-        // Return the analytics
-        Analytics {
-            transaction_count,
-            message_count,
-            transferred_tokens,
-        }
+        let milestone_index = self.milestone_index();
+        let analytic_record = AnalyticRecord::new(
+            bee_message::milestone::MilestoneIndex(milestone_index),
+            MessageCount(message_count),
+            TransactionCount(transaction_count),
+            TransferredTokens(transferred_tokens),
+        );
+        // Return the analytic record
+        Ok(analytic_record)
     }
     pub(crate) fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
         self.milestone.replace(boxed_milestone_payload);
@@ -206,6 +184,17 @@ impl MilestoneData {
     /// Get the source this was created by
     pub fn created_by(&self) -> &CreatedBy {
         &self.created_by
+    }
+    /// Check if the milestone data is completed
+    pub fn check_if_completed(&self) -> bool {
+        // Check if there are no pending at all to set complete to true
+        let no_pending_left = self.pending().is_empty();
+        let milestone_exist = self.milestone_exist();
+        if no_pending_left && milestone_exist {
+            // milestone data is complete now
+            return true;
+        }
+        false
     }
 }
 
