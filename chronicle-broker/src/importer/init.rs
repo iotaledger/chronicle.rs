@@ -4,7 +4,7 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {
+impl<H: ChronicleBrokerScope, T: ImportMode> Init<BrokerHandle<H>> for Importer<T> {
     async fn init(&mut self, status: Result<(), Need>, supervisor: &mut Option<BrokerHandle<H>>) -> Result<(), Need> {
         info!(
             "{} is Initializing, with permanode keyspace: {}",
@@ -55,14 +55,11 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Importer {
     }
 }
 
-impl Importer {
+impl<T: ImportMode> Importer<T> {
     async fn init_importing<H: ChronicleBrokerScope>(&mut self, supervisor: &BrokerHandle<H>) -> anyhow::Result<()> {
         for _ in 0..self.parallelism {
             if let Some(milestone_data) = self.next_milestone_data(supervisor).await? {
-                let milestone_index = milestone_data.milestone_index();
-                let mut iterator = milestone_data.into_iter();
-                self.insert_some_messages(milestone_index, &mut iterator)?;
-                self.in_progress_milestones_data.insert(milestone_index, iterator);
+                T::handle_milestone_data(milestone_data, self)?;
             } else {
                 self.eof = true;
                 break;

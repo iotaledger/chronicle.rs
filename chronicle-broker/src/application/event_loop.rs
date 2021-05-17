@@ -384,6 +384,30 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             self.response_to_sockets(&socket_msg).await;
         }
     }
+    fn build_and_start_importer<T: ImportMode>(
+        &mut self,
+        file_path: PathBuf,
+        resume: bool,
+        import_range: Option<Range<u32>>,
+        parallelism: u8,
+    ) {
+        let mut importer_builder = ImporterBuilder::<T>::new();
+        if let Some(import_range) = import_range {
+            importer_builder = importer_builder.import_range(import_range);
+        };
+        let importer = importer_builder
+            .file_path(file_path)
+            .resume(resume)
+            .parallelism(parallelism)
+            .retries_per_query(50) // TODO get it from config
+            .chronicle_id(0) // TODO get it from config
+            .build();
+        let handle = importer.clone_handle().expect("Expected existing importer handle");
+        self.importer_handles.insert(importer.get_name(), handle);
+        let service = Service::new();
+        self.service.update_microservice(importer.get_name(), service);
+        tokio::spawn(importer.start(self.handle.clone()));
+    }
     async fn spawn_importer(
         &mut self,
         file_path: PathBuf,
@@ -400,22 +424,14 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             if self.service.microservices.get(&path_str.to_owned()).is_some() {
                 return ();
             }
-            let mut importer_builder = ImporterBuilder::new();
-            if let Some(import_range) = import_range {
-                importer_builder = importer_builder.import_range(import_range);
-            };
-            let importer = importer_builder
-                .file_path(file_path)
-                .resume(resume)
-                .parallelism(parallelism)
-                .retries_per_query(50) // TODO get it from config
-                .chronicle_id(0) // TODO get it from config
-                .build();
-            let handle = importer.clone_handle().expect("Expected existing importer handle");
-            self.importer_handles.insert(importer.get_name(), handle);
-            let service = Service::new();
-            self.service.update_microservice(importer.get_name(), service);
-            tokio::spawn(importer.start(self.handle.clone()));
+            match import_type {
+                ImportType::All => {
+                    self.build_and_start_importer::<All>(file_path, resume, import_range, parallelism);
+                }
+                ImportType::Analytics => {
+                    self.build_and_start_importer::<Analytics>(file_path, resume, import_range, parallelism);
+                }
+            }
             self.in_progress_importers += 1;
             self.parallelism_points -= parallelism;
         } else {

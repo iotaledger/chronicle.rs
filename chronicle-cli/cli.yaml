@@ -142,20 +142,12 @@ subcommands:
                   takes_value: true
                   value_name: RANGE
                   help: >-
-                    The range of milestone indexes to import. Defaults to the configured range. 
+                    The range of milestone indexes to import. Defaults to the configured range.
                     Can be any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
-              - sync-data-only:
-                  short: s
-                  long: sync-only
-                  help: Only import sync data, not analytics.
-                  conflicts_with:
-                    - analytics-data-only
-              - analytics-data-only:
+              - analytics:
                   short: a
-                  long: analytics-only
-                  help: Only import analytics data, not sync.
-                  conflicts_with:
-                    - sync-data-only
+                  long: analytics
+                  help: Only import analytics data, not sync or anything else.
         - cleanup:
             short: c
             about: Cleanup log file directory to normalize the file sizes.
@@ -186,9 +178,9 @@ subcommands:
                   help: |-
                     Specifies a validation level to use for this merge. The following are available:
                       - Basic: Will perform emptiness and file name checking only
-                      - Light: Will perform partial deserialization of each milestone, checking only that 
+                      - Light: Will perform partial deserialization of each milestone, checking only that
                           the index is valid
-                      - Full: Will perform full deserialization of each milestone in advance of merging 
+                      - Full: Will perform full deserialization of each milestone in advance of merging
                           each file. This will avoid merging the entire invalid file.
                       - JustInTime: Will perform full deserialization of each milestone as they are merged.
                           This will avoid merging invalid lines but may partially merge invalid files.
@@ -239,7 +231,7 @@ subcommands:
                   short: a
                   long: all
                   help: >-
-                    Include finalized logs (logs which have reached their maximum size) in the merge. 
+                    Include finalized logs (logs which have reached their maximum size) in the merge.
                     This will not include .err files.
         - validate:
             short: v

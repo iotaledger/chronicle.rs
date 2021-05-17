@@ -81,8 +81,6 @@ pub enum BrokerTopology {
 pub enum ImportType {
     /// Import everything
     All,
-    /// Import only Sync data
-    Sync,
     /// Import only Analytics data
     Analytics,
 }

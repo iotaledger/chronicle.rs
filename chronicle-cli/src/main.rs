@@ -330,9 +330,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             if is_url {
                 panic!("URL imports are not currently supported!");
             }
-            let import_type = if subcommand.is_present("sync-data-only") {
-                ImportType::Sync
-            } else if subcommand.is_present("analytics-data-only") {
+            let import_type = if subcommand.is_present("analytics") {
                 ImportType::Analytics
             } else {
                 ImportType::All
