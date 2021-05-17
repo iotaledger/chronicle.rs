@@ -34,6 +34,7 @@ impl EventLoop<CollectorHandle> for Requester {
                             info!("AddedEndpoint: {}", url);
                             self.api_endpoints.push_front(url);
                         }
+                        self.shuffle();
                     }
                     RequesterTopology::RemoveEndpoint(url) => {
                         info!("Trying to RemoveEndpoint: {}", url);
@@ -60,16 +61,16 @@ impl Requester {
         let mut retries = self.retries;
         loop {
             if retries > 0 {
-                if let Some(remote_url) = self.api_endpoints.pop_back() {
+                if let Some(remote_url) = self.api_endpoints.pop_front() {
                     if let Ok(full_message) = self.request_message_and_metadata(&remote_url, message_id).await {
                         self.respond_to_collector(collector_handle, try_ms_index, Some(message_id), Some(full_message));
                         self.api_endpoints.push_front(remote_url);
                         break;
                     } else {
+                        self.api_endpoints.push_back(remote_url);
                         retries -= 1;
                         // keep retrying, but yield to keep the system responsive
                         tokio::task::yield_now().await;
-                        self.api_endpoints.push_front(remote_url);
                         continue;
                     }
                 } else {
@@ -90,7 +91,7 @@ impl Requester {
         let mut retries = self.retries;
         loop {
             if retries > 0 {
-                if let Some(remote_url) = self.api_endpoints.pop_back() {
+                if let Some(remote_url) = self.api_endpoints.pop_front() {
                     if let Ok(full_message) = self.request_milestone_message(&remote_url, milestone_index).await {
                         self.respond_to_collector(
                             collector_handle,
@@ -101,10 +102,10 @@ impl Requester {
                         self.api_endpoints.push_front(remote_url);
                         break;
                     } else {
+                        self.api_endpoints.push_back(remote_url);
                         retries -= 1;
                         // keep retrying, but yield to keep the system responsive
                         tokio::task::yield_now().await;
-                        self.api_endpoints.push_front(remote_url);
                         continue;
                     }
                 } else {
