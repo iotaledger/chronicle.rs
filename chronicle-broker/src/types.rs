@@ -546,16 +546,20 @@ mod analytic {
         }
         async fn process(mut self, analytics_data: &mut AnalyticsData, records: &mut Iter<AnalyticRecord>) {
             while let Some(record) = records.next() {
-                if self.start() - 1 == **record.milestone_index() {
-                    self.acc(record);
-                } else {
-                    // there is gap, therefore we finish self
-                    analytics_data.add_analytic_data(self);
-                    // create new analytic_data
-                    self = AnalyticData::from(record);
-                }
+                self = self.process_record(record, analytics_data);
             }
             analytics_data.add_analytic_data(self);
+        }
+        fn process_record(mut self, record: AnalyticRecord, analytics_data: &mut AnalyticsData) -> Self {
+            if self.start() - 1 == **record.milestone_index() {
+                self.acc(record);
+            } else {
+                // there is gap, therefore we finish self
+                analytics_data.add_analytic_data(self);
+                // create new analytic_data
+                self = AnalyticData::from(record);
+            }
+            self
         }
         fn start(&self) -> u32 {
             self.range.start
@@ -607,7 +611,8 @@ mod analytic {
         }
         async fn process(&mut self, record: AnalyticRecord, records: &mut Iter<AnalyticRecord>) {
             // check if there is an active analytic_data with continuous range
-            if let Some(analytic_data) = self.try_pop_recent_analytic_data() {
+            if let Some(mut analytic_data) = self.try_pop_recent_analytic_data() {
+                analytic_data = analytic_data.process_record(record, self);
                 analytic_data.process(self, records).await;
             } else {
                 let analytic_data = AnalyticData::from(record);
