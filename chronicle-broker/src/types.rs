@@ -13,6 +13,7 @@ use bee_message::{
 };
 use chronicle_storage::access::{
     AnalyticRecord,
+    LedgerInclusionState,
     MessageCount,
     MessageMetadata,
     TransactionCount,
@@ -130,21 +131,24 @@ impl MilestoneData {
         let mut transferred_tokens: u64 = 0;
 
         // Iterate the messages to calculate analytics
-        for (_, full_message) in &self.messages {
+        for (_, FullMessage(message, metadata)) in &self.messages {
             // Accumulate the message count
             message_count += 1;
-            if let Some(Payload::Transaction(payload)) = full_message.message().payload() {
-                // Accumulate the transaction count
-                transaction_count += 1;
-                let Essence::Regular(regular_essence) = payload.essence();
-                {
-                    for output in regular_essence.outputs() {
-                        match output {
-                            // Accumulate the transferred token amount
-                            Output::SignatureLockedSingle(output) => transferred_tokens += output.amount(),
-                            Output::SignatureLockedDustAllowance(output) => transferred_tokens += output.amount(),
-                            // Note that the transaction payload don't have Treasury
-                            _ => anyhow::bail!("Unexpected Output variant in transaction payload"),
+            // Accumulate confirmed(included) transaction value
+            if let Some(LedgerInclusionState::Included) = metadata.ledger_inclusion_state {
+                if let Some(Payload::Transaction(payload)) = message.payload() {
+                    // Accumulate the transaction count
+                    transaction_count += 1;
+                    let Essence::Regular(regular_essence) = payload.essence();
+                    {
+                        for output in regular_essence.outputs() {
+                            match output {
+                                // Accumulate the transferred token amount
+                                Output::SignatureLockedSingle(output) => transferred_tokens += output.amount(),
+                                Output::SignatureLockedDustAllowance(output) => transferred_tokens += output.amount(),
+                                // Note that the transaction payload don't have Treasury
+                                _ => anyhow::bail!("Unexpected Output variant in transaction payload"),
+                            }
                         }
                     }
                 }
