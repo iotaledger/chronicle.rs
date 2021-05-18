@@ -148,6 +148,9 @@ subcommands:
                   short: a
                   long: analytics
                   help: Only import analytics data, not sync or anything else.
+              - resume:
+                  long: resume
+                  help: Resume the importing the process by skipping synced milestone range(s).
         - cleanup:
             short: c
             about: Cleanup log file directory to normalize the file sizes.

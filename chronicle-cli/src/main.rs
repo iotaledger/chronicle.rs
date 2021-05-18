@@ -303,6 +303,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                     path = Path::new(&logs_dir).join(path);
                 }
             }
+            let resume = subcommand.is_present("resume");
             let (is_url, is_file) = Url::parse(dir)
                 .map(|url| (true, Path::new(url.path()).extension().is_some()))
                 .unwrap_or_else(|_| (false, path.extension().is_some()));
@@ -318,7 +319,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                         Ok(start..end)
                     })?
                 }
-                _ => 0..u32::MAX,
+                _ => 1..(i32::MAX as u32),
             };
             println!(
                 "Path: {}, is_url: {}, is_file: {}, range: {:?}",
@@ -348,7 +349,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
                     ChronicleBrokerThrough::Topology(BrokerTopology::Import {
                         path,
-                        resume: false,
+                        resume,
                         import_range: Some(range),
                         import_type,
                     }),
