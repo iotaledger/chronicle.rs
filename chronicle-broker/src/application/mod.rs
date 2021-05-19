@@ -7,7 +7,6 @@ use crate::{
     importer::*,
     listener::*,
     mqtt::*,
-    requester::*,
     solidifier::*,
     syncer::*,
     websocket::*,
@@ -39,17 +38,6 @@ builder!(
         collector_count: u8
 });
 
-#[derive(Deserialize, Serialize)]
-/// It's the Interface of the broker app to dynamiclly configure the application during runtime
-pub enum ChronicleBrokerThrough {
-    /// Shutdown json to gracefully shutdown broker app
-    Shutdown,
-    /// Alter the topology of the broker app
-    Topology(Topology),
-    /// Exit the broker app
-    ExitProgram,
-}
-
 /// BrokerHandle to be passed to the children
 pub struct BrokerHandle<H: ChronicleBrokerScope> {
     tx: tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>,
@@ -76,7 +64,7 @@ pub struct ChronicleBroker<H: ChronicleBrokerScope> {
     parallelism: u8,
     complete_gaps_interval: Duration,
     parallelism_points: u8,
-    pending_imports: Vec<Topology>,
+    pending_imports: Vec<BrokerTopology>,
     in_progress_importers: usize,
     collector_count: u8,
     collector_handles: HashMap<u8, CollectorHandle>,
@@ -122,250 +110,6 @@ pub enum BrokerEvent<T> {
     Scylla(Service),
 }
 
-/// Enum used by importer to keep the sockets up to date with most recent progress.
-#[derive(Deserialize, Serialize, Debug)]
-pub enum ImporterSession {
-    /// Create/update progress bar state
-    ProgressBar {
-        /// Total size of the logfile
-        log_file_size: u64,
-        /// LogFile start range
-        from_ms: u32,
-        /// LogFile end range
-        to_ms: u32,
-        /// milestone data bytes size
-        ms_bytes_size: usize,
-        /// Milestone index
-        milestone_index: u32,
-        /// Identify whether it skipped/resume the milestone_index or imported.
-        skipped: bool,
-    },
-    /// Finish the progress bar with message
-    Finish {
-        /// LogFile start range
-        from_ms: u32,
-        /// LogFile end range
-        to_ms: u32,
-        /// Finish the progress bar using this msg.
-        msg: String,
-    },
-    /// Return error
-    PathError {
-        /// Invalid dir or file path
-        path: PathBuf,
-        /// Useful debug message
-        msg: String,
-    },
-    /// Close session
-    Close,
-}
-
-/// Topology event
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub enum Topology {
-    /// Add new MQTT Messages feed source
-    AddMqttMessages(Url),
-    /// Add new MQTT Messages Referenced feed source
-    AddMqttMessagesReferenced(Url),
-    /// Remove a MQTT Messages feed source
-    RemoveMqttMessages(Url),
-    /// Remove a MQTT Messages Referenced feed source
-    RemoveMqttMessagesReferenced(Url),
-    /// Import a log file using the given url
-    Import {
-        /// File or dir path which supposed to contain LogFiles
-        path: PathBuf,
-        /// Resume the importing process
-        resume: bool,
-        /// Provide optional import range
-        import_range: Option<Range<u32>>,
-    },
-    /// AddEndpoint
-    Requesters(RequesterTopology),
-}
-
-#[derive(Deserialize, Serialize)]
-/// Defines a message to/from the Broker or its children
-pub enum SocketMsg<T> {
-    /// A message to/from the Broker
-    ChronicleBroker(T),
-}
-
-/// Representation of the database sync data
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct SyncData {
-    /// The completed(synced and logged) milestones data
-    pub(crate) completed: Vec<Range<u32>>,
-    /// Synced milestones data but unlogged
-    pub(crate) synced_but_unlogged: Vec<Range<u32>>,
-    /// Gaps/missings milestones data
-    pub(crate) gaps: Vec<Range<u32>>,
-}
-
-impl SyncData {
-    /// Try to fetch the sync data from the sync table for the provided keyspace and sync range
-    pub async fn try_fetch<S: 'static + Select<SyncRange, Iter<SyncRecord>>>(
-        keyspace: &S,
-        sync_range: &SyncRange,
-        retries: usize,
-    ) -> anyhow::Result<SyncData> {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let _ = keyspace
-            .select(sync_range)
-            .consistency(Consistency::One)
-            .build()?
-            .send_local(ValueWorker::boxed(
-                tx,
-                keyspace.clone(),
-                sync_range.clone(),
-                retries,
-                std::marker::PhantomData,
-            ));
-        let select_response = rx
-            .recv()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("Expected Rx inbox to receive the sync data response"))??;
-        let mut sync_data = SyncData::default();
-        if let Some(mut sync_rows) = select_response {
-            // Get the first row, note: the first row is always with the largest milestone_index
-            let SyncRecord {
-                milestone_index,
-                logged_by,
-                ..
-            } = sync_rows.next().unwrap();
-            // push missing row/gap (if any)
-            sync_data.process_gaps(sync_range.to, *milestone_index);
-            sync_data.process_rest(&logged_by, *milestone_index, &None);
-            let mut pre_ms = milestone_index;
-            let mut pre_lb = logged_by;
-            // Generate and identify missing gaps in order to fill them
-            while let Some(SyncRecord {
-                milestone_index,
-                logged_by,
-                ..
-            }) = sync_rows.next()
-            {
-                // check if there are any missings
-                sync_data.process_gaps(*pre_ms, *milestone_index);
-                sync_data.process_rest(&logged_by, *milestone_index, &pre_lb);
-                pre_ms = milestone_index;
-                pre_lb = logged_by;
-            }
-            // pre_ms is the most recent milestone we processed
-            // it's also the lowest milestone index in the select response
-            // so anything < pre_ms && anything >= (self.sync_range.from - 1)
-            // (lower provided sync bound) are missing
-            // push missing row/gap (if any)
-            sync_data.process_gaps(*pre_ms, sync_range.from - 1);
-            Ok(sync_data)
-        } else {
-            // Everything is missing as gaps
-            sync_data.process_gaps(sync_range.to, sync_range.from - 1);
-            Ok(sync_data)
-        }
-    }
-    /// Takes the lowest gap from the sync_data
-    pub fn take_lowest_gap(&mut self) -> Option<Range<u32>> {
-        self.gaps.pop()
-    }
-    /// Takes the lowest unlogged range from the sync_data
-    pub fn take_lowest_unlogged(&mut self) -> Option<Range<u32>> {
-        self.synced_but_unlogged.pop()
-    }
-    /// Takes the lowest unlogged or gap from the sync_data
-    pub fn take_lowest_gap_or_unlogged(&mut self) -> Option<Range<u32>> {
-        let lowest_gap = self.gaps.last();
-        let lowest_unlogged = self.synced_but_unlogged.last();
-        match (lowest_gap, lowest_unlogged) {
-            (Some(gap), Some(unlogged)) => {
-                if gap.start < unlogged.start {
-                    self.gaps.pop()
-                } else {
-                    self.synced_but_unlogged.pop()
-                }
-            }
-            (Some(_), None) => self.gaps.pop(),
-            (None, Some(_)) => self.synced_but_unlogged.pop(),
-            _ => None,
-        }
-    }
-    /// Takes the lowest uncomplete(mixed range for unlogged and gap) from the sync_data
-    pub fn take_lowest_uncomplete(&mut self) -> Option<Range<u32>> {
-        if let Some(mut pre_range) = self.take_lowest_gap_or_unlogged() {
-            loop {
-                if let Some(next_range) = self.get_lowest_gap_or_unlogged() {
-                    if next_range.start.eq(&pre_range.end) {
-                        pre_range.end = next_range.end;
-                        let _ = self.take_lowest_gap_or_unlogged();
-                    } else {
-                        return Some(pre_range);
-                    }
-                } else {
-                    return Some(pre_range);
-                }
-            }
-        } else {
-            None
-        }
-    }
-    fn get_lowest_gap_or_unlogged(&self) -> Option<&Range<u32>> {
-        let lowest_gap = self.gaps.last();
-        let lowest_unlogged = self.synced_but_unlogged.last();
-        match (lowest_gap, lowest_unlogged) {
-            (Some(gap), Some(unlogged)) => {
-                if gap.start < unlogged.start {
-                    self.gaps.last()
-                } else {
-                    self.synced_but_unlogged.last()
-                }
-            }
-            (Some(_), None) => self.gaps.last(),
-            (None, Some(_)) => self.synced_but_unlogged.last(),
-            _ => None,
-        }
-    }
-    fn process_rest(&mut self, logged_by: &Option<u8>, milestone_index: u32, pre_lb: &Option<u8>) {
-        if logged_by.is_some() {
-            // process logged
-            Self::proceed(&mut self.completed, milestone_index, pre_lb.is_some());
-        } else {
-            // process_unlogged
-            let unlogged = &mut self.synced_but_unlogged;
-            Self::proceed(unlogged, milestone_index, pre_lb.is_none());
-        }
-    }
-    fn process_gaps(&mut self, pre_ms: u32, milestone_index: u32) {
-        let gap_start = milestone_index + 1;
-        if gap_start != pre_ms {
-            // create missing gap
-            let gap = Range {
-                start: gap_start,
-                end: pre_ms,
-            };
-            self.gaps.push(gap);
-        }
-    }
-    fn proceed(ranges: &mut Vec<Range<u32>>, milestone_index: u32, check: bool) {
-        let end_ms = milestone_index + 1;
-        if let Some(Range { start, .. }) = ranges.last_mut() {
-            if check && *start == end_ms {
-                *start = milestone_index;
-            } else {
-                let range = Range {
-                    start: milestone_index,
-                    end: end_ms,
-                };
-                ranges.push(range)
-            }
-        } else {
-            let range = Range {
-                start: milestone_index,
-                end: end_ms,
-            };
-            ranges.push(range);
-        };
-    }
-}
 /// implementation of the AppBuilder
 impl<H: ChronicleBrokerScope> AppBuilder<H> for ChronicleBrokerBuilder<H> {}
 

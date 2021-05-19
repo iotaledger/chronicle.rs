@@ -142,8 +142,15 @@ subcommands:
                   takes_value: true
                   value_name: RANGE
                   help: >-
-                    The range of milestone indexes to import. Defaults to the configured range. 
+                    The range of milestone indexes to import. Defaults to the configured range.
                     Can be any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
+              - analytics:
+                  short: a
+                  long: analytics
+                  help: Only import analytics data, not sync or anything else.
+              - resume:
+                  long: resume
+                  help: Resume the importing the process by skipping synced milestone range(s).
         - cleanup:
             short: c
             about: Cleanup log file directory to normalize the file sizes.
@@ -174,9 +181,9 @@ subcommands:
                   help: |-
                     Specifies a validation level to use for this merge. The following are available:
                       - Basic: Will perform emptiness and file name checking only
-                      - Light: Will perform partial deserialization of each milestone, checking only that 
+                      - Light: Will perform partial deserialization of each milestone, checking only that
                           the index is valid
-                      - Full: Will perform full deserialization of each milestone in advance of merging 
+                      - Full: Will perform full deserialization of each milestone in advance of merging
                           each file. This will avoid merging the entire invalid file.
                       - JustInTime: Will perform full deserialization of each milestone as they are merged.
                           This will avoid merging invalid lines but may partially merge invalid files.
@@ -204,7 +211,7 @@ subcommands:
                     - val-level-full
                     - val-level-jit
               - val-level-full:
-                  short: l
+                  short: f
                   long: full-val
                   help: >-
                     Specify Full validation level, which will perform full deserialization of each milestone in advance of merging each file.
@@ -223,3 +230,14 @@ subcommands:
                     - val-level-basic
                     - val-level-light
                     - val-level-full
+              - include-finalized:
+                  short: a
+                  long: all
+                  help: >-
+                    Include finalized logs (logs which have reached their maximum size) in the merge.
+                    This will not include .err files.
+        - validate:
+            short: v
+            about: >-
+              Validate log files without modifying them. This will perform various checks and output any issues
+              as well as whether or not they can be handled by the merge process.

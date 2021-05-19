@@ -1,6 +1,5 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-
 use super::{
     archiver::{
         ArchiverEvent,
@@ -19,10 +18,7 @@ use super::{
     *,
 };
 use bee_message::prelude::MilestonePayload;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+
 use std::{
     ops::{
         Deref,
@@ -65,41 +61,10 @@ impl MilestoneMessage {
     }
 }
 
-/// A "full" message payload, including both message and metadata
-#[derive(Debug, Deserialize, Serialize)]
-pub struct FullMessage(pub Message, pub MessageMetadata);
-
-impl FullMessage {
-    /// Create a new full message
-    pub fn new(message: Message, metadata: MessageMetadata) -> Self {
-        Self(message, metadata)
-    }
-    /// Get the message ID
-    pub fn message_id(&self) -> &MessageId {
-        &self.1.message_id
-    }
-    /// Get the message's metadata
-    pub fn metadata(&self) -> &MessageMetadata {
-        &self.1
-    }
-    /// Get the message
-    pub fn message(&self) -> &Message {
-        &self.0
-    }
-    /// Get the milestone index that references this
-    pub fn ref_ms(&self) -> Option<u32> {
-        self.1.referenced_by_milestone_index
-    }
-}
-#[derive(Deserialize, Serialize)]
-struct MessageStatus {
-    in_messages: bool,
-    in_database: bool,
-}
-
 struct InDatabase {
     #[allow(unused)]
     milestone_index: u32,
+    analyzed: bool,
     messages_len: usize,
     in_database: HashMap<MessageId, ()>,
 }
@@ -108,6 +73,7 @@ impl InDatabase {
     fn new(milestone_index: u32) -> Self {
         Self {
             milestone_index,
+            analyzed: false,
             messages_len: usize::MAX,
             in_database: HashMap::new(),
         }
@@ -118,93 +84,19 @@ impl InDatabase {
     fn add_message_id(&mut self, message_id: MessageId) {
         self.in_database.insert(message_id, ());
     }
+    fn set_analyzed(&mut self, analyzed: bool) {
+        self.analyzed = analyzed;
+    }
     fn check_if_all_in_database(&self) -> bool {
-        self.messages_len == self.in_database.len()
+        self.messages_len == self.in_database.len() && self.analyzed
     }
 }
 
 impl From<&MilestoneData> for InDatabase {
     fn from(milestone_data: &MilestoneData) -> Self {
-        let mut in_database = Self::new(milestone_data.milestone_index);
+        let mut in_database = Self::new(milestone_data.milestone_index());
         in_database.set_messages_len(milestone_data.messages().len());
         in_database
-    }
-}
-
-/// Milestone data
-#[derive(Deserialize, Serialize)]
-pub struct MilestoneData {
-    milestone_index: u32,
-    milestone: Option<Box<MilestonePayload>>,
-    messages: HashMap<MessageId, FullMessage>,
-    pending: HashMap<MessageId, ()>,
-    created_by: CreatedBy,
-}
-
-impl MilestoneData {
-    /// Get the source this was created by
-    pub fn created_by(&self) -> &CreatedBy {
-        &self.created_by
-    }
-}
-
-/// Created by sources
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[repr(u8)]
-pub enum CreatedBy {
-    /// Created by the new incoming messages from the network
-    Incoming = 0,
-    /// Created by the new expected messages from the network
-    Expected = 1,
-    /// Created by solidifiy/sync request from syncer
-    Syncer = 2,
-}
-
-impl From<CreatedBy> for u8 {
-    fn from(value: CreatedBy) -> u8 {
-        value as u8
-    }
-}
-
-impl MilestoneData {
-    fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
-        Self {
-            milestone_index,
-            milestone: None,
-            messages: HashMap::new(),
-            pending: HashMap::new(),
-            created_by,
-        }
-    }
-    /// Get the milestone index from this milestone data
-    pub fn milestone_index(&self) -> u32 {
-        self.milestone_index
-    }
-    fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
-        self.milestone.replace(boxed_milestone_payload);
-    }
-    fn milestone_exist(&self) -> bool {
-        self.milestone.is_some()
-    }
-    fn add_full_message(&mut self, full_message: FullMessage) {
-        self.messages.insert(*full_message.message_id(), full_message);
-    }
-    fn remove_from_pending(&mut self, message_id: &MessageId) {
-        self.pending.remove(message_id);
-    }
-    fn messages(&self) -> &HashMap<MessageId, FullMessage> {
-        &self.messages
-    }
-    fn pending(&self) -> &HashMap<MessageId, ()> {
-        &self.pending
-    }
-}
-
-impl std::iter::IntoIterator for MilestoneData {
-    type Item = (MessageId, FullMessage);
-    type IntoIter = std::collections::hash_map::IntoIter<MessageId, FullMessage>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.messages.into_iter()
     }
 }
 
@@ -231,6 +123,8 @@ pub enum CqlResult {
     PersistedMsg(MessageId, u32),
     /// Milestone was synced or not
     SyncedMilestone(u32),
+    /// Analyzed MilestoneData or not
+    AnalyzedMilestone(u32),
 }
 
 /// SolidifierHandle
@@ -482,7 +376,7 @@ impl Drop for AtomicSolidifierHandle {
 
 /// Solidifier worker
 #[derive(Clone)]
-pub struct SolidifierWorker<S, K, V>
+pub struct SyncedMilestoneWorker<S, K, V>
 where
     S: 'static + Insert<K, V>,
     K: 'static + Send,
@@ -496,7 +390,7 @@ where
     retries: u16,
 }
 
-impl<S: Insert<K, V>, K, V> SolidifierWorker<S, K, V>
+impl<S: Insert<K, V>, K, V> SyncedMilestoneWorker<S, K, V>
 where
     S: 'static + Insert<K, V>,
     K: 'static + Send,
@@ -526,7 +420,7 @@ where
     }
 }
 
-impl<S, K, V> Worker for SolidifierWorker<S, K, V>
+impl<S, K, V> Worker for SyncedMilestoneWorker<S, K, V>
 where
     S: 'static + Insert<K, V>,
     K: 'static + Send + Clone,
@@ -571,9 +465,108 @@ where
             }
         } else {
             // no more retries
-            // resond with error
+            // respond with error
             let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
             let _ = self.handle.send(SolidifierEvent::CqlResult(Err(synced_ms)));
+        }
+        Ok(())
+    }
+}
+
+/// Solidifier worker
+#[derive(Clone)]
+pub struct AnalyzedMilestoneWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send,
+    V: 'static + Send,
+{
+    handle: SolidifierHandle,
+    milestone_index: u32,
+    keyspace: S,
+    key: K,
+    value: V,
+    retries: u16,
+}
+
+impl<S: Insert<K, V>, K, V> AnalyzedMilestoneWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send,
+    V: 'static + Send,
+{
+    /// Create a new solidifier worker with a handle and retries
+    pub fn new(handle: SolidifierHandle, milestone_index: u32, keyspace: S, key: K, value: V, retries: u16) -> Self {
+        Self {
+            handle,
+            milestone_index,
+            keyspace,
+            key,
+            value,
+            retries,
+        }
+    }
+    /// Create a new boxed solidifier worker with a handle and retries
+    pub fn boxed(
+        handle: SolidifierHandle,
+        milestone_index: u32,
+        keyspace: S,
+        key: K,
+        value: V,
+        retries: u16,
+    ) -> Box<Self> {
+        Box::new(Self::new(handle, milestone_index, keyspace, key, value, retries))
+    }
+}
+
+impl<S, K, V> Worker for AnalyzedMilestoneWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send + Clone,
+    V: 'static + Send + Clone,
+{
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
+        Decoder::try_from(giveload).and_then(|decoder| decoder.get_void())?;
+        let analyzed_ms = CqlResult::AnalyzedMilestone(self.milestone_index);
+        let _ = self.handle.send(SolidifierEvent::CqlResult(Ok(analyzed_ms)));
+        Ok(())
+    }
+    fn handle_error(
+        mut self: Box<Self>,
+        mut error: WorkerError,
+        reporter: &Option<ReporterHandle>,
+    ) -> anyhow::Result<()> {
+        error!(
+            "{:?}, left retries: {}, reporter running: {}",
+            error,
+            self.retries,
+            reporter.is_some()
+        );
+        if let WorkerError::Cql(ref mut cql_error) = error {
+            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
+                handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
+            }
+        } else if self.retries > 0 {
+            self.retries -= 1;
+            // currently we assume all cql/worker errors are retryable, but we might change this in future
+            match self
+                .keyspace
+                .insert_query(&self.key, &self.value)
+                .consistency(Consistency::One)
+                .build()
+            {
+                Ok(req) => {
+                    tokio::spawn(async { req.send_global(self) });
+                }
+                Err(e) => {
+                    error!("{}", e);
+                }
+            }
+        } else {
+            // no more retries
+            // respond with error
+            let analyzed_ms = CqlResult::AnalyzedMilestone(self.milestone_index);
+            let _ = self.handle.send(SolidifierEvent::CqlResult(Err(analyzed_ms)));
         }
         Ok(())
     }

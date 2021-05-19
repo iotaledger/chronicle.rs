@@ -5,7 +5,6 @@ use super::*;
 use bee_message::prelude::MilestoneIndex;
 use chronicle_common::Wrapper;
 use chronicle_storage::access::SyncRecord;
-use solidifier::CreatedBy;
 
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Archiver {

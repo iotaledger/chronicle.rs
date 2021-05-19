@@ -4,12 +4,13 @@
 use super::*;
 
 #[async_trait::async_trait]
-impl<H: ChronicleBrokerScope> Terminating<BrokerHandle<H>> for Importer {
+impl<H: ChronicleBrokerScope, T: Send + ImportMode> Terminating<BrokerHandle<H>> for Importer<T> {
     async fn terminating(
         &mut self,
         status: Result<(), Need>,
         supervisor: &mut Option<BrokerHandle<H>>,
     ) -> Result<(), Need> {
+        info!("{} is terminating", self.get_name());
         let msg;
         if status.is_ok() {
             msg = "done".into();

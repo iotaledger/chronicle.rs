@@ -290,3 +290,31 @@ impl Insert<Synckey, SyncRecord> for ChronicleKeyspace {
             .value(logged_by)
     }
 }
+
+impl Insert<Synckey, AnalyticRecord> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "INSERT INTO {}.analytics (key, milestone_index, message_count, transaction_count, transferred_tokens) VALUES (?, ?, ?, ?, ?)",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(
+        builder: T,
+        _: &Synckey,
+        AnalyticRecord {
+            milestone_index,
+            message_count,
+            transaction_count,
+            transferred_tokens,
+        }: &AnalyticRecord,
+    ) -> T::Return {
+        builder
+            .value(&"permanode")
+            .value(&milestone_index.0)
+            .value(&message_count.0)
+            .value(&transaction_count.0)
+            .value(&transferred_tokens.0)
+    }
+}

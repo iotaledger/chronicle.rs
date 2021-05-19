@@ -449,3 +449,78 @@ impl<T> Wrapper for JsonData<T> {
         self.data
     }
 }
+#[derive(Clone, Debug)]
+/// Wrapper around MessageCount u32
+pub struct MessageCount(pub u32);
+impl Deref for MessageCount {
+    type Target = u32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+#[derive(Clone, Debug)]
+/// Wrapper around TransactionCount u32
+pub struct TransactionCount(pub u32);
+impl Deref for TransactionCount {
+    type Target = u32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+#[derive(Clone, Debug)]
+/// Wrapper around MessageCount u64
+pub struct TransferredTokens(pub u64);
+impl Deref for TransferredTokens {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+#[derive(Clone, Debug)]
+/// MilestoneData analytics information.
+pub struct AnalyticRecord {
+    /// Duh it's the milestone index
+    pub milestone_index: MilestoneIndex,
+    /// The total number of messages within a milestone cone
+    pub message_count: MessageCount,
+    /// The total number of transactions within a milestone cone
+    pub transaction_count: TransactionCount,
+    /// Transferred IOTA tokens volume within a milestone cone
+    pub transferred_tokens: TransferredTokens,
+}
+
+impl AnalyticRecord {
+    /// Create new MilestoneDataInfo object
+    pub fn new(
+        milestone_index: MilestoneIndex,
+        message_count: MessageCount,
+        transaction_count: TransactionCount,
+        transferred_tokens: TransferredTokens,
+    ) -> Self {
+        Self {
+            milestone_index,
+            message_count,
+            transaction_count,
+            transferred_tokens,
+        }
+    }
+    /// Gets the milestone index
+    pub fn milestone_index(&self) -> &MilestoneIndex {
+        &self.milestone_index
+    }
+    /// Gets the message_count
+    pub fn message_count(&self) -> &MessageCount {
+        &self.message_count
+    }
+    /// Gets the transaction count
+    pub fn transaction_count(&self) -> &TransactionCount {
+        &self.transaction_count
+    }
+    /// Gets the transferred tokens
+    pub fn transferred_tokens(&self) -> &TransferredTokens {
+        &self.transferred_tokens
+    }
+}

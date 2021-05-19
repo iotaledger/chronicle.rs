@@ -239,6 +239,15 @@ async fn init_database() -> anyhow::Result<()> {
                 synced_by tinyint,
                 logged_by tinyint,
                 PRIMARY KEY (key, milestone_index)
+            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+            
+            CREATE TABLE IF NOT EXISTS {0}.analytics (
+                key text,
+                milestone_index int,
+                message_count int,
+                transaction_count int,
+                transferred_tokens bigint,
+                PRIMARY KEY (key, milestone_index)
             ) WITH CLUSTERING ORDER BY (milestone_index DESC);",
             keyspace.name()
         );

@@ -9,7 +9,6 @@ use crate::{
         BrokerHandle,
         ChronicleBrokerScope,
     },
-    solidifier::MilestoneData,
     syncer::Ascending,
 };
 use anyhow::{
