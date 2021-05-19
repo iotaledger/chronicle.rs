@@ -293,161 +293,288 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
 }
 
 async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
-    let config = VersionedConfig::load(None)?.verify().await?;
     match matches.subcommand() {
-        ("import", Some(subcommand)) => {
-            let dir = subcommand.value_of("directory").unwrap_or("");
-            let mut path = PathBuf::from(dir);
-            if path.is_relative() {
-                if let Some(logs_dir) = config.broker_config.logs_dir.as_ref() {
-                    path = Path::new(&logs_dir).join(path);
-                }
-            }
-            let resume = subcommand.is_present("resume");
-            let (is_url, is_file) = Url::parse(dir)
-                .map(|url| (true, Path::new(url.path()).extension().is_some()))
-                .unwrap_or_else(|_| (false, path.extension().is_some()));
-            let range = subcommand.value_of("range");
-            let range = match range {
-                Some(s) => {
-                    let matches = Regex::new(r"(\d+)\D+(\d+)")?
-                        .captures(s)
-                        .ok_or_else(|| anyhow!("Malformatted range!"));
-                    matches.and_then(|c| {
-                        let start = c.get(1).unwrap().as_str().parse::<u32>()?;
-                        let end = c.get(2).unwrap().as_str().parse::<u32>()?;
-                        Ok(start..end)
-                    })?
-                }
-                _ => 1..(i32::MAX as u32),
-            };
-            println!(
-                "Path: {}, is_url: {}, is_file: {}, range: {:?}",
-                if is_url { dir.into() } else { path.to_string_lossy() },
-                is_url,
-                is_file,
-                range
-            );
-            if is_url {
-                panic!("URL imports are not currently supported!");
-            }
-            let import_type = if subcommand.is_present("analytics") {
-                ImportType::Analytics
-            } else {
-                ImportType::All
-            };
-            let sty = ProgressStyle::default_bar()
-                .template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
-                )
-                .progress_chars("##-");
-            let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
-            let pb = ProgressBar::new(0);
-            pb.set_style(sty.clone());
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-            stream
-                .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                    ChronicleBrokerThrough::Topology(BrokerTopology::Import {
-                        path,
-                        resume,
-                        import_range: Some(range),
-                        import_type,
-                    }),
-                ))?))
-                .await?;
-            while let Some(msg) = stream.next().await {
-                match msg {
-                    Ok(msg) => {
-                        match msg {
-                            Message::Text(ref s) => {
-                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
-                                    if let Some(service_json) = json.get("ChronicleBroker").cloned() {
-                                        if let Ok(session) =
-                                            serde_json::from_value::<ImporterSession>(service_json.clone())
-                                        {
-                                            match session {
-                                                ImporterSession::ProgressBar {
-                                                    log_file_size,
-                                                    from_ms,
-                                                    to_ms,
-                                                    ms_bytes_size,
-                                                    milestone_index,
-                                                    skipped,
-                                                } => {
-                                                    if let Some(()) = active_progress_bars.get_mut(&(from_ms, to_ms)) {
-                                                        // advance the pb
-                                                        let skipped_or_imported;
-                                                        if skipped {
-                                                            skipped_or_imported = "skipped"
-                                                        } else {
-                                                            skipped_or_imported = "imported"
-                                                        }
-                                                        pb.set_message(format!(
-                                                            "{}to{}.log: {} #{}",
-                                                            from_ms, to_ms, skipped_or_imported, milestone_index
-                                                        ));
-                                                        pb.inc(ms_bytes_size as u64);
-                                                    } else {
-                                                        pb.inc_length(log_file_size);
-                                                        // advance the pb
-                                                        let skipped_or_imported;
-                                                        if skipped {
-                                                            skipped_or_imported = "skipped"
-                                                        } else {
-                                                            skipped_or_imported = "imported"
-                                                        }
-                                                        pb.set_message(format!(
-                                                            "{}to{}.log: {} #{}",
-                                                            from_ms, to_ms, skipped_or_imported, milestone_index
-                                                        ));
-                                                        pb.inc(ms_bytes_size as u64);
-                                                        active_progress_bars.insert((from_ms, to_ms), ());
-                                                    }
-                                                }
-                                                ImporterSession::Finish { from_ms, to_ms, msg } => {
-                                                    let m = format!("LogFile: {}to{}.log {}", from_ms, to_ms, msg);
-                                                    if let Some(()) = active_progress_bars.remove(&(from_ms, to_ms)) {
-                                                        pb.set_message(msg);
-                                                        pb.println(m);
-                                                    } else {
-                                                        pb.println(m);
-                                                    }
-                                                }
-                                                ImporterSession::PathError { path, msg } => {
-                                                    pb.println(format!("ErrorPath: {:?}, msg: {:?}", path, msg))
-                                                }
-                                                ImporterSession::Close => {
-                                                    pb.finish_with_message("done");
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        println!("Json message from Chronicle: {:?}", json);
-                                    }
-                                } else {
-                                    println!("Text message from Chronicle: {:?}", msg);
-                                }
-                            }
-                            Message::Close(c) => {
-                                if let Some(c) = c {
-                                    println!("Closed connection: {}", c);
-                                }
-                                break;
-                            }
-                            _ => (),
-                        }
-                    }
-                    Err(e) => {
-                        println!("Error received from Chronicle: {}", e);
-                        break;
-                    }
-                }
-            }
-        }
+        ("import", Some(matches)) => import(matches).await?,
         ("cleanup", Some(matches)) => cleanup_archive(matches).await?,
         ("validate", Some(_matches)) => validate_archive().await?,
         _ => (),
+    }
+    Ok(())
+}
+
+async fn import<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
+    let config = VersionedConfig::load(None)?.verify().await?;
+    let dir = matches.value_of("directory").unwrap_or("");
+    let mut path = PathBuf::from(dir);
+    if path.is_relative() {
+        if let Some(logs_dir) = config.broker_config.logs_dir.as_ref() {
+            path = Path::new(&logs_dir).join(path);
+        }
+    }
+    let resume = matches.is_present("resume");
+    let (is_url, is_file) = Url::parse(dir)
+        .map(|url| (true, Path::new(url.path()).extension().is_some()))
+        .unwrap_or_else(|_| (false, path.extension().is_some()));
+    let range = matches.value_of("range");
+    let range = match range {
+        Some(s) => {
+            let matches = Regex::new(r"(\d+)\D+(\d+)")?
+                .captures(s)
+                .ok_or_else(|| anyhow!("Malformatted range!"));
+            matches.and_then(|c| {
+                let start = c.get(1).unwrap().as_str().parse::<u32>()?;
+                let end = c.get(2).unwrap().as_str().parse::<u32>()?;
+                Ok(start..end)
+            })?
+        }
+        _ => 1..(i32::MAX as u32),
+    };
+    // println!(
+    //    "Path: {}, is_url: {}, is_file: {}, range: {:?}",
+    //    if is_url { dir.into() } else { path.to_string_lossy() },
+    //    is_url,
+    //    is_file,
+    //    range
+    //);
+    if is_url {
+        panic!("URL imports are not currently supported!");
+    }
+    let import_type = if matches.is_present("analytics") {
+        ImportType::Analytics
+    } else {
+        ImportType::All
+    };
+    let sty = ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})")
+        .progress_chars("##-");
+    let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
+    let pb = ProgressBar::new(0);
+    pb.set_style(sty.clone());
+    let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+    stream
+        .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
+            ChronicleBrokerThrough::Topology(BrokerTopology::Import {
+                path,
+                resume,
+                import_range: Some(range),
+                import_type,
+            }),
+        ))?))
+        .await?;
+    while let Some(msg) = stream.next().await {
+        match msg {
+            Ok(msg) => {
+                match msg {
+                    Message::Text(ref s) => {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
+                            if let Some(service_json) = json.get("ChronicleBroker").cloned() {
+                                if let Ok(session) = serde_json::from_value::<ImporterSession>(service_json.clone()) {
+                                    match session {
+                                        ImporterSession::ProgressBar {
+                                            log_file_size,
+                                            from_ms,
+                                            to_ms,
+                                            ms_bytes_size,
+                                            milestone_index,
+                                            skipped,
+                                        } => {
+                                            if let Some(()) = active_progress_bars.get_mut(&(from_ms, to_ms)) {
+                                                // advance the pb
+                                                let skipped_or_imported;
+                                                if skipped {
+                                                    skipped_or_imported = "skipped"
+                                                } else {
+                                                    skipped_or_imported = "imported"
+                                                }
+                                                pb.set_message(format!(
+                                                    "{}to{}.log: {} #{}",
+                                                    from_ms, to_ms, skipped_or_imported, milestone_index
+                                                ));
+                                                pb.inc(ms_bytes_size as u64);
+                                            } else {
+                                                pb.inc_length(log_file_size);
+                                                // advance the pb
+                                                let skipped_or_imported;
+                                                if skipped {
+                                                    skipped_or_imported = "skipped"
+                                                } else {
+                                                    skipped_or_imported = "imported"
+                                                }
+                                                pb.set_message(format!(
+                                                    "{}to{}.log: {} #{}",
+                                                    from_ms, to_ms, skipped_or_imported, milestone_index
+                                                ));
+                                                pb.inc(ms_bytes_size as u64);
+                                                active_progress_bars.insert((from_ms, to_ms), ());
+                                            }
+                                        }
+                                        ImporterSession::Finish { from_ms, to_ms, msg } => {
+                                            let m = format!("LogFile: {}to{}.log {}", from_ms, to_ms, msg);
+                                            if let Some(()) = active_progress_bars.remove(&(from_ms, to_ms)) {
+                                                pb.set_message(msg);
+                                                pb.println(m);
+                                            } else {
+                                                pb.println(m);
+                                            }
+                                        }
+                                        ImporterSession::PathError { path, msg } => {
+                                            pb.println(format!("ErrorPath: {:?}, msg: {:?}", path, msg))
+                                        }
+                                        ImporterSession::Close => {
+                                            pb.finish_with_message("done");
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else {
+                                println!("Json message from Chronicle: {:?}", json);
+                            }
+                        } else {
+                            println!("Text message from Chronicle: {:?}", msg);
+                        }
+                    }
+                    Message::Close(c) => {
+                        if let Some(c) = c {
+                            println!("Closed connection: {}", c);
+                        }
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+            Err(e) => {
+                println!("Error received from Chronicle: {}", e);
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn export<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
+    let config = VersionedConfig::load(None)?.verify().await?;
+    let dir = matches.value_of("directory").unwrap_or("");
+    let mut path = PathBuf::from(dir);
+    if path.is_relative() {
+        if let Some(logs_dir) = config.broker_config.logs_dir.as_ref() {
+            path = Path::new(&logs_dir).join(path);
+        }
+    }
+    let range = matches.value_of("range");
+    let range = match range {
+        Some(s) => {
+            let matches = Regex::new(r"(\d+)\D+(\d+)")?
+                .captures(s)
+                .ok_or_else(|| anyhow!("Malformatted range!"));
+            matches.and_then(|c| {
+                let start = c.get(1).unwrap().as_str().parse::<u32>()?;
+                let end = c.get(2).unwrap().as_str().parse::<u32>()?;
+                Ok(start..end)
+            })?
+        }
+        _ => 1..(i32::MAX as u32),
+    };
+    let sty = ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})")
+        .progress_chars("##-");
+    let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
+    let pb = ProgressBar::new(0);
+    pb.set_style(sty.clone());
+    let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+    stream
+        .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
+            ChronicleBrokerThrough::Topology(BrokerTopology::Export {
+                path,
+                export_range: Some(range),
+            }),
+        ))?))
+        .await?;
+    while let Some(msg) = stream.next().await {
+        match msg {
+            Ok(msg) => {
+                match msg {
+                    Message::Text(ref s) => {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
+                            if let Some(service_json) = json.get("ChronicleBroker").cloned() {
+                                if let Ok(session) = serde_json::from_value::<ImporterSession>(service_json.clone()) {
+                                    match session {
+                                        ImporterSession::ProgressBar {
+                                            log_file_size,
+                                            from_ms,
+                                            to_ms,
+                                            ms_bytes_size,
+                                            milestone_index,
+                                            skipped,
+                                        } => {
+                                            if let Some(()) = active_progress_bars.get_mut(&(from_ms, to_ms)) {
+                                                // advance the pb
+                                                let skipped_or_imported;
+                                                if skipped {
+                                                    skipped_or_imported = "skipped"
+                                                } else {
+                                                    skipped_or_imported = "imported"
+                                                }
+                                                pb.set_message(format!(
+                                                    "{}to{}.log: {} #{}",
+                                                    from_ms, to_ms, skipped_or_imported, milestone_index
+                                                ));
+                                                pb.inc(ms_bytes_size as u64);
+                                            } else {
+                                                pb.inc_length(log_file_size);
+                                                // advance the pb
+                                                let skipped_or_imported;
+                                                if skipped {
+                                                    skipped_or_imported = "skipped"
+                                                } else {
+                                                    skipped_or_imported = "imported"
+                                                }
+                                                pb.set_message(format!(
+                                                    "{}to{}.log: {} #{}",
+                                                    from_ms, to_ms, skipped_or_imported, milestone_index
+                                                ));
+                                                pb.inc(ms_bytes_size as u64);
+                                                active_progress_bars.insert((from_ms, to_ms), ());
+                                            }
+                                        }
+                                        ImporterSession::Finish { from_ms, to_ms, msg } => {
+                                            let m = format!("LogFile: {}to{}.log {}", from_ms, to_ms, msg);
+                                            if let Some(()) = active_progress_bars.remove(&(from_ms, to_ms)) {
+                                                pb.set_message(msg);
+                                                pb.println(m);
+                                            } else {
+                                                pb.println(m);
+                                            }
+                                        }
+                                        ImporterSession::PathError { path, msg } => {
+                                            pb.println(format!("ErrorPath: {:?}, msg: {:?}", path, msg))
+                                        }
+                                        ImporterSession::Close => {
+                                            pb.finish_with_message("done");
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else {
+                                println!("Json message from Chronicle: {:?}", json);
+                            }
+                        } else {
+                            println!("Text message from Chronicle: {:?}", msg);
+                        }
+                    }
+                    Message::Close(c) => {
+                        if let Some(c) = c {
+                            println!("Closed connection: {}", c);
+                        }
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+            Err(e) => {
+                println!("Error received from Chronicle: {}", e);
+                break;
+            }
+        }
     }
     Ok(())
 }

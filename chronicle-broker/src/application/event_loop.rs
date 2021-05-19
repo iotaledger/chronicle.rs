@@ -57,6 +57,9 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                             self.handle_import(topology).await;
                                             self.try_close_importer_session().await;
                                         }
+                                        BrokerTopology::Export { path, export_range } => {
+                                            // Export files
+                                        }
                                         BrokerTopology::Requesters(ref mut requester_topology) => {
                                             match requester_topology {
                                                 RequesterTopology::AddEndpoint(ref url) => {

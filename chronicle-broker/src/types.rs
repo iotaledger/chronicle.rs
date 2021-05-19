@@ -72,6 +72,13 @@ pub enum BrokerTopology {
         /// The type of import requested
         import_type: ImportType,
     },
+    /// Export log files
+    Export {
+        /// File or dir path which supposed to contain LogFiles
+        path: PathBuf,
+        /// Provide optional import range
+        export_range: Option<Range<u32>>,
+    },
     /// Add Endpoint
     Requesters(RequesterTopology),
 }

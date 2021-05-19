@@ -241,3 +241,21 @@ subcommands:
             about: >-
               Validate log files without modifying them. This will perform various checks and output any issues
               as well as whether or not they can be handled by the merge process.
+        - export:
+            short: e
+            about: Export database milestones to archive files.
+            args:
+              - directory:
+                  short: d
+                  long: dir
+                  takes_value: true
+                  value_name: DIR
+                  help: The directory into which to export archive files. Defaults to the configured output directory.
+              - range:
+                  short: r
+                  long: range
+                  takes_value: true
+                  value_name: RANGE
+                  help: >-
+                    The range of milestone indexes to export. Defaults to the configured range.
+                    Can be any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
