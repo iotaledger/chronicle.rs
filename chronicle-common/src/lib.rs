@@ -4,6 +4,7 @@
 #![warn(missing_docs)]
 //! Common code for Chronicle
 
+pub use alert::send_alert;
 use anyhow::anyhow;
 use config::Config;
 use glob::glob;
@@ -26,6 +27,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 
+mod alert;
 /// Configuration for the Chronicle application
 pub mod config;
 /// Metrics for prometheus integration

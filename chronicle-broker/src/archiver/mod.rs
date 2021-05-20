@@ -15,6 +15,7 @@ use anyhow::{
     anyhow,
     bail,
 };
+use chronicle_common::alert;
 use chronicle_storage::access::ChronicleKeyspace;
 use std::{
     collections::BinaryHeap,
@@ -159,6 +160,14 @@ impl LogFile {
         // append to the file
         if let Err(e) = self.file.write_all(line.as_ref()).await {
             self.maybe_corrupted = true;
+            // Check if the error was because of disk overflow
+            if let std::io::ErrorKind::WriteZero = e.kind() {
+                alert!(
+                    "Possible disk overflow occurred while writing to archive file {}",
+                    self.filename
+                )
+                .await?;
+            }
             bail!(
                 "Unable to append milestone data line into the log file: {}, error: {}",
                 self.filename,

@@ -7,6 +7,7 @@ use anyhow::bail;
 use chronicle_api::application::*;
 use chronicle_broker::application::*;
 use chronicle_common::{
+    alert,
     config::*,
     get_config,
     get_config_async,
@@ -87,14 +88,15 @@ fn main() {
         .thread_stack_size(apps.app_count * 4 * 1024 * 1024)
         .build()
         .expect("Expected to build tokio runtime");
-    let new_config = runtime.block_on(config.clone().verify()).unwrap();
-    if new_config != config {
-        get_history_mut().update(new_config.into());
+    let verified_config = runtime.block_on(config.clone().verify()).unwrap();
+    if verified_config != config {
+        get_history_mut().update(verified_config.into());
     }
     runtime.block_on(chronicle(apps));
 }
 
 async fn chronicle(apps: Apps) {
+    // alert!("Test alert").await.unwrap();
     apps.Scylla()
         .await
         .future(|apps| async {
