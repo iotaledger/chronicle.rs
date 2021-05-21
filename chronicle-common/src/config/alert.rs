@@ -11,9 +11,11 @@ use url::Url;
 /// ```
 /// AlertRequest (
 ///     url: "http://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
-///     json: Some({
-///         text: "$msg",
-///     })
+///     json: Some((
+///         {
+///             text: "$msg",
+///         }
+///     ))
 /// )
 /// ```
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
