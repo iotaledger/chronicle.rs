@@ -1,5 +1,5 @@
 (
-    version: 2,
+    version: 3,
     config: (
         websocket_address: "127.0.0.1:8081",
         storage_config: (
@@ -7,18 +7,18 @@
                 (
                     name: "permanode",
                     data_centers: {
-                        "Canada": (
-                            replication_factor: 1,
-                        ),
                         "USA": (
                             replication_factor: 2,
+                        ),
+                        "Canada": (
+                            replication_factor: 1,
                         ),
                     },
                 ),
             ],
             listen_address: "127.0.0.1:8080",
             thread_count: CoreMultiple(1),
-            reporter_count: 2,
+            reporter_count: 1,
             local_datacenter: "datacenter1",
             nodes: [
                 "127.0.0.1:9042",
@@ -30,36 +30,39 @@
         ),
         api_config: (),
         broker_config: (
-            retries_per_endpoint: 5,
-            retries_per_query: 100,
-            collector_count: 10,
-            requester_count: 10,
-            request_timeout_secs: 5,
-            parallelism: 25,
-            complete_gaps_interval_secs: 3600,
             websocket_address: "127.0.0.1:9000",
-            mqtt_stream_capacity: 10000,
             mqtt_brokers: {
                 Messages: [
                     "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
                     "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
                 ],
                 MessagesReferenced: [
-                    "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
                     "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
+                    "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
                 ],
             },
+            mqtt_stream_capacity: 10000,
             api_endpoints: [
                 "https://api.hornet-0.testnet.chrysalis2.com/api/v1",
                 "https://api.hornet-1.testnet.chrysalis2.com/api/v1",
             ],
+            retries_per_endpoint: 5,
+            retries_per_query: 100,
+            collector_count: 10,
+            requester_count: 10,
+            request_timeout_secs: 5,
+            parallelism: 25,
             sync_range: Some((
                 from: 1,
                 to: 2147483647,
             )),
+            complete_gaps_interval_secs: 3600,
             logs_dir: Some("chronicle/logs/"),
             max_log_size: Some(4294967296),
         ),
         historical_config_path: "./historical_config",
+        alert_config: (
+            requests: [],
+        ),
     ),
 )
