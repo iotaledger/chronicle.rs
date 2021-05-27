@@ -1,3 +1,5 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
 use super::*;
 use url::Url;
 
@@ -20,7 +22,9 @@ use url::Url;
 /// ```
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct AlertRequest {
+    /// The URL to which alert requests will be sent
     pub url: Url,
+    /// The json which will be sent (with replaced $msg token)
     pub json: Option<Value>,
 }
 

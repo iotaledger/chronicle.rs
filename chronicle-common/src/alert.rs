@@ -1,5 +1,9 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
 use crate::get_config_async;
+use log::debug;
 
+/// Send an alert message using the configured endpoints and format
 pub async fn send_alert(msg: String) -> anyhow::Result<()> {
     let config = get_config_async().await;
     let client = reqwest::Client::new();
@@ -28,6 +32,7 @@ pub async fn send_alert(msg: String) -> anyhow::Result<()> {
                     _ => (),
                 }
             }
+            debug!("Sending alert json:\n{}", serde_json::to_string_pretty(&json).unwrap());
             match client.post(request.url.clone()).json(&json).send().await {
                 Ok(res) => {
                     if !res.status().is_success() {
@@ -54,6 +59,8 @@ pub async fn send_alert(msg: String) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Alert macro which will log the given message as an error as well as send
+/// it to any configured alert endpoints
 #[macro_export]
 macro_rules! alert {
     ($lit:literal $(,)?) => ({
