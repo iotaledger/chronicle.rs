@@ -10,7 +10,7 @@ use url::Url;
 /// will be sent as the body of the request. The special token
 /// `$msg` will be replaced with the string alert message.
 ///
-/// ```no_run
+/// ```no_compile
 /// AlertRequest (
 ///     url: "http://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
 ///     json: Some(
