@@ -97,7 +97,9 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                             }
                             alert!(
                                 "Scylla cluster appears to be having an outage! The Chronicle Broker is shutting down."
-                            );
+                            )
+                            .await
+                            .ok();
                             // Abort solidifier in order to let broker app reschedule itself after few mins
                             // with reasonable retries, it means our cluster is likely in outage or partial outage (ie
                             // all replicas for given token).

@@ -55,7 +55,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
                     alert!(
                         "Chronicle syncer is unable to reach milestone index {} because no peers were able to provide it!",
                         milestone_index
-                    );
+                    ).await.ok();
                     self.handle_skip();
                     self.trigger_process_more();
                 }
