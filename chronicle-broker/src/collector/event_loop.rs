@@ -9,6 +9,7 @@ use bee_message::{
     payload::Payload,
     prelude::TransactionId,
 };
+use chronicle_common::metrics::CONFIRMATION_TIME_COLLECTOR;
 use std::sync::Arc;
 
 #[async_trait::async_trait]
@@ -48,7 +49,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         self.ref_ms.0 = *ref_ms;
                         // check if msg already in lru cache(if so then it's already presisted)
                         let wrong_msg_est_ms;
-                        if let Some((est_ms, _)) = self.lru_msg.get_mut(&message_id) {
+                        if let Some((_, est_ms, _)) = self.lru_msg.get_mut(&message_id) {
                             // check if est_ms is not identical to ref_ms
                             if &est_ms.0 != ref_ms {
                                 wrong_msg_est_ms = Some(*est_ms);
@@ -59,7 +60,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             }
                         } else {
                             // add it to the cache in order to not presist it again.
-                            self.lru_msg.put(message_id, (self.ref_ms, message.clone()));
+                            self.lru_msg.put(message_id, (None, self.ref_ms, message.clone()));
                             wrong_msg_est_ms = None;
                         }
                         // Cache metadata.
@@ -93,7 +94,8 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             error!("{}", e);
                         });
                         // add it to the cache in order to not presist it again.
-                        self.lru_msg.put(message_id, (self.est_ms, message));
+                        self.lru_msg
+                            .put(message_id, (Some(std::time::Instant::now()), self.est_ms, message));
                     }
                 }
                 CollectorEvent::MessageReferenced(metadata) => {
@@ -118,7 +120,12 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                         // check if msg already exist in the cache, if so we push it to solidifier
                         let cached_msg: Option<Message>;
                         let wrong_msg_est_ms;
-                        if let Some((est_ms, message)) = self.lru_msg.get_mut(&message_id) {
+                        if let Some((timestamp, est_ms, message)) = self.lru_msg.get_mut(&message_id) {
+                            if let Some(timestamp) = timestamp {
+                                let ms = timestamp.elapsed().as_millis() as f64;
+                                CONFIRMATION_TIME_COLLECTOR.set(ms);
+                            }
+
                             // check if est_ms is not identical to ref_ms
                             if &est_ms.0 != ref_ms {
                                 wrong_msg_est_ms = Some(*est_ms);
@@ -187,7 +194,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                     match ask {
                         AskCollector::FullMessage(solidifier_id, try_ms_index, message_id, created_by) => {
                             let mut message_tuple = None;
-                            if let Some((_, message)) = self.lru_msg.get(&message_id) {
+                            if let Some((_, _, message)) = self.lru_msg.get(&message_id) {
                                 if let Some(metadata) = self.lru_msg_ref.get(&message_id) {
                                     // metadata exist means we already pushed the full message to the solidifier,
                                     // or the message doesn't belong to the solidifier
