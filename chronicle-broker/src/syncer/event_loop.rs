@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use chronicle_common::alert;
+
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
     async fn event_loop(
@@ -50,7 +52,10 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Syncer {
                 SyncerEvent::Unreachable(milestone_index) => {
                     self.pending -= 1;
                     // This happens when all the peers don't have the requested milestone_index
-                    error!("Syncer unable to reach milestone_index: {}", milestone_index);
+                    alert!(
+                        "Chronicle syncer is unable to reach milestone index {} because no peers were able to provide it!",
+                        milestone_index
+                    ).await.ok();
                     self.handle_skip();
                     self.trigger_process_more();
                 }

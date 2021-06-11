@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+pub use alert::*;
 use anyhow::{
     anyhow,
     bail,
@@ -23,6 +24,7 @@ use std::{
 };
 pub use storage::*;
 
+mod alert;
 mod api;
 mod broker;
 mod storage;
@@ -33,7 +35,7 @@ pub const CONFIG_PATH: &str = "./config.ron";
 pub const HISTORICAL_CONFIG_PATH: &str = "./historical_config";
 /// The current config version.
 /// **Must be updated with each change to the config format.**
-const CURRENT_VERSION: u32 = 2;
+const CURRENT_VERSION: u32 = 3;
 
 /// Versioned config. Tracks version between config changes so that it can be validated on load.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
@@ -212,6 +214,8 @@ pub struct Config {
     pub broker_config: BrokerConfig,
     /// Historical config file path
     pub historical_config_path: String,
+    /// Alert notification config
+    pub alert_config: AlertConfig,
 }
 
 impl Default for Config {
@@ -222,6 +226,7 @@ impl Default for Config {
             api_config: Default::default(),
             broker_config: Default::default(),
             historical_config_path: HISTORICAL_CONFIG_PATH.to_owned(),
+            alert_config: Default::default(),
         }
     }
 }
@@ -250,6 +255,7 @@ impl Config {
         self.storage_config.verify().await?;
         self.api_config.verify().await?;
         self.broker_config.verify().await?;
+        self.alert_config.verify().await?;
         Ok(self)
     }
 }
@@ -324,6 +330,7 @@ mod test {
                 max_log_size: Some(4294967296),
             },
             historical_config_path: HISTORICAL_CONFIG_PATH.to_owned(),
+            alert_config: Default::default(),
         };
         let config: VersionedConfig = config.try_into().unwrap();
 
