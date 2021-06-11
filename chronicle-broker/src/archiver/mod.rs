@@ -121,12 +121,20 @@ impl LogFile {
     ) -> anyhow::Result<LogFile> {
         let filename = format!("{}.part", milestone_index);
         let file_path = dir_path.join(&filename);
-        let file: File = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(file_path)
-            .await
-            .map_err(|e| anyhow!("Unable to create log file: {}, error: {}", filename, e))?;
+        let file: File = match OpenOptions::new().append(true).create(true).open(file_path).await {
+            Ok(f) => f,
+            Err(e) => {
+                // Check if the error was because of disk overflow
+                if let std::io::ErrorKind::WriteZero = e.kind() {
+                    alert!(
+                        "Possible disk overflow occurred while creating archive file {}",
+                        filename
+                    )
+                    .await?;
+                }
+                bail!("Unable to create log file: {}, error: {}", filename, e);
+            }
+        };
         Ok(Self {
             len: 0,
             filename,
