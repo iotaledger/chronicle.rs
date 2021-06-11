@@ -131,6 +131,10 @@ fn register_metrics() {
     REGISTRY
         .register(Box::new(RESPONSE_TIME_COLLECTOR.clone()))
         .expect("Could not register collector");
+
+    REGISTRY
+        .register(Box::new(CONFIRMATION_TIME_COLLECTOR.clone()))
+        .expect("Could not register collector");
 }
 
 async fn init_database() -> anyhow::Result<()> {
