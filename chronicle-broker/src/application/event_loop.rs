@@ -28,7 +28,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                 ChronicleBrokerThrough::Topology(mut topology) => {
                                     if self.service.is_stopping() {
                                         // response that should not change the topology while is_stopping
-                                        error!("Not supposed to dynamiclly change the topology while broker service is_stopped");
+                                        error!("Not supposed to dynamically change the topology while broker service is_stopped");
                                         let socket_msg = BrokerSocketMsg::ChronicleBroker(Err(topology));
                                         self.response_to_sockets::<Result<BrokerTopology, BrokerTopology>>(&socket_msg)
                                             .await;
@@ -329,7 +329,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
         } else {
             // it does already exist
             error!(
-                "The Mqtt: {}, you're trying to add it does already exist as service",
+                "The Mqtt: {}, you're trying to add it already exists as service",
                 microservice_name
             );
             // TODO response with something;

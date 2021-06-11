@@ -7,7 +7,6 @@ use anyhow::bail;
 use chronicle_api::application::*;
 use chronicle_broker::application::*;
 use chronicle_common::{
-    alert,
     config::*,
     get_config,
     get_config_async,
@@ -96,7 +95,6 @@ fn main() {
 }
 
 async fn chronicle(apps: Apps) {
-    // alert!("Test alert").await.unwrap();
     apps.Scylla()
         .await
         .future(|apps| async {

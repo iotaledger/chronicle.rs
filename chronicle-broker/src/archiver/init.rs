@@ -12,7 +12,7 @@ impl<H: ChronicleBrokerScope> Init<BrokerHandle<H>> for Archiver {
             if e.kind() == std::io::ErrorKind::AlreadyExists {
                 // do nothing
             } else {
-                error!("Unable to create log directory, error: {}", e);
+                alert!("Unable to create log directory, error: {}", e);
                 return Err(Need::Abort);
             }
         };

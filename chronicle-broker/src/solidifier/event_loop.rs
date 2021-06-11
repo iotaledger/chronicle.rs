@@ -3,7 +3,10 @@
 
 use super::*;
 use bee_message::prelude::MilestoneIndex;
-use chronicle_common::Synckey;
+use chronicle_common::{
+    alert,
+    Synckey,
+};
 
 #[async_trait::async_trait]
 impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
@@ -92,7 +95,9 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Solidifier {
                                     );
                                 }
                             }
-                            error!("Scylla cluster is likely having a complete outage, so we are shutting down broker for meantime.");
+                            alert!(
+                                "Scylla cluster appears to be having an outage! The Chronicle Broker is shutting down."
+                            );
                             // Abort solidifier in order to let broker app reschedule itself after few mins
                             // with reasonable retries, it means our cluster is likely in outage or partial outage (ie
                             // all replicas for given token).
