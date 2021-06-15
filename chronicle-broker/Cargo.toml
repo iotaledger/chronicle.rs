@@ -33,7 +33,7 @@ tokio = { version = "1.5", optional = true }
 paho-mqtt = { version = "0.9", default-features = false, features = ["bundled"], optional = true }
 thiserror = { version = "1.0", optional = true }
 indicatif = { version = "0.16", optional = true }
-glob = {version = "0.3", optional = true }
+glob = { version = "0.3", optional = true }
 
 [features]
 default = ["merge"]

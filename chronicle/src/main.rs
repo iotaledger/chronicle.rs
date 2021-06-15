@@ -66,7 +66,9 @@ impl Builder for AppsBuilder {
 }
 
 fn main() {
-    dotenv::dotenv().ok();
+    if let Err(e) = dotenv::dotenv() {
+        error!("Error loading .env file: {}", e);
+    }
     env_logger::init();
     register_metrics();
     let config = get_config();

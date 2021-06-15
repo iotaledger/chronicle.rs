@@ -10,6 +10,10 @@ use bee_message::{
     prelude::TransactionId,
 };
 use chronicle_common::metrics::CONFIRMATION_TIME_COLLECTOR;
+use chronicle_filter::{
+    filter_messages,
+    FilterResponse,
+};
 use std::sync::Arc;
 
 #[async_trait::async_trait]
@@ -29,7 +33,8 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
             match event {
                 CollectorEvent::MessageAndMeta(requester_id, try_ms_index, message_id, opt_full_msg) => {
                     self.adjust_heap(requester_id);
-                    if let Some(FullMessage(message, metadata)) = opt_full_msg {
+                    if let Some(FullMessage(mut message, metadata)) = opt_full_msg {
+                        let filter = self.filter(&mut message);
                         let message_id = message_id.expect("Expected message_id in requester response");
                         let partition_id = (try_ms_index % (self.collector_count as u32)) as u8;
                         let ref_ms = metadata
@@ -71,7 +76,7 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                                     error!("{}", e);
                                 });
                         }
-                        self.insert_message_with_metadata(message_id, message, metadata)
+                        self.insert_message_with_metadata(message_id, message, metadata, filter)
                             .unwrap_or_else(|e| {
                                 error!("{}", e);
                             });
@@ -89,10 +94,12 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                 CollectorEvent::Message(message_id, mut message) => {
                     // check if msg already in lru cache(if so then it's already presisted)
                     if let None = self.lru_msg.get(&message_id) {
+                        let filter = self.filter(&mut message);
                         // store message
-                        self.insert_message(&message_id, &mut message).unwrap_or_else(|e| {
-                            error!("{}", e);
-                        });
+                        self.insert_message(&message_id, &mut message, filter)
+                            .unwrap_or_else(|e| {
+                                error!("{}", e);
+                            });
                         // add it to the cache in order to not presist it again.
                         self.lru_msg
                             .put(message_id, (Some(std::time::Instant::now()), self.est_ms, message));
@@ -171,14 +178,15 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             wrong_msg_est_ms = None;
                             self.process_pending_requests(*ref_ms);
                         }
-                        if let Some(message) = cached_msg {
+                        if let Some(mut message) = cached_msg {
+                            let filter = self.filter(&mut message);
                             if let Some(wrong_est_ms) = wrong_msg_est_ms {
                                 self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms)
                                     .unwrap_or_else(|e| {
                                         error!("{}", e);
                                     });
                             }
-                            self.insert_message_with_metadata(message_id, message, metadata)
+                            self.insert_message_with_metadata(message_id, message, metadata, filter)
                                 .unwrap_or_else(|e| {
                                     error!("{}", e);
                                 });
@@ -255,8 +263,9 @@ impl<H: ChronicleBrokerScope> EventLoop<BrokerHandle<H>> for Collector {
                             }
                             // insert the message if requested by syncer to ensure it gets cql responses for all the
                             // requested messages
-                            if let Some((message, metadata)) = message_tuple.take() {
-                                self.insert_message_with_metadata(message_id.clone(), message, metadata)
+                            if let Some((mut message, metadata)) = message_tuple.take() {
+                                let filter = self.filter(&mut message);
+                                self.insert_message_with_metadata(message_id.clone(), message, metadata, filter)
                                     .unwrap_or_else(|e| {
                                         error!("{}", e);
                                     });
@@ -389,29 +398,41 @@ impl Collector {
             let _ = solidifier_handle.send(full_msg_event);
         };
     }
-    /// Get the `Chronicle` keyspace of a message
-    #[cfg(feature = "filter")]
-    fn get_keyspace_for_message(&self, message: &mut Message) -> ChronicleKeyspace {
-        let res = futures::executor::block_on(chronicle_filter::filter_messages(message));
-        ChronicleKeyspace::new(res.keyspace.into_owned())
-    }
+
     /// Get the Chronicle keyspace
     fn get_keyspace(&self) -> ChronicleKeyspace {
         self.default_keyspace.clone()
+    }
+    fn filter(&self, message: &mut Message) -> Option<FilterResponse> {
+        if std::cfg!(feature = "filter") {
+            filter_messages(message)
+        } else {
+            Some(FilterResponse {
+                keyspace: self.get_keyspace().name().clone(),
+                ttl: None,
+            })
+        }
     }
     /// Get the partition id of a given milestone index
     fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
         self.partition_config.partition_id(milestone_index.0)
     }
     /// Insert the message id and message to the table
-    fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) -> anyhow::Result<()> {
+    fn insert_message(
+        &mut self,
+        message_id: &MessageId,
+        message: &mut Message,
+        filter: Option<FilterResponse>,
+    ) -> anyhow::Result<()> {
         // Check if metadata already exist in the cache
         let ledger_inclusion_state;
 
-        #[cfg(feature = "filter")]
-        let keyspace = self.get_keyspace_for_message(message);
-        #[cfg(not(feature = "filter"))]
-        let keyspace = self.get_keyspace();
+        let keyspace = filter
+            .map(|f| {
+                debug!("Using keyspace {}", f.keyspace);
+                ChronicleKeyspace::new(f.keyspace.to_string())
+            })
+            .unwrap_or(self.get_keyspace());
         let metadata;
         if let Some(meta) = self.lru_msg_ref.get(message_id) {
             metadata = Some(meta.clone());
@@ -595,11 +616,14 @@ impl Collector {
         message_id: MessageId,
         mut message: Message,
         metadata: MessageMetadata,
+        filter: Option<FilterResponse>,
     ) -> anyhow::Result<()> {
-        #[cfg(feature = "filter")]
-        let keyspace = self.get_keyspace_for_message(&mut message);
-        #[cfg(not(feature = "filter"))]
-        let keyspace = self.get_keyspace();
+        let keyspace = filter
+            .map(|f| {
+                debug!("Using keyspace {}", f.keyspace);
+                ChronicleKeyspace::new(f.keyspace.to_string())
+            })
+            .unwrap_or(self.get_keyspace());
         let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms);
         let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries_per_query);
         // Insert parents/children
