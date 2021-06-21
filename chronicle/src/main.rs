@@ -14,6 +14,7 @@ use chronicle_common::{
     metrics::*,
 };
 use chronicle_storage::access::ChronicleKeyspace;
+use dashboard::*;
 use scylla_rs::prelude::*;
 use tokio::sync::mpsc::{
     unbounded_channel,
@@ -21,6 +22,7 @@ use tokio::sync::mpsc::{
 };
 use websocket::*;
 
+mod dashboard;
 mod websocket;
 
 launcher!
@@ -30,6 +32,7 @@ launcher!
         [] -> ChronicleBroker<Sender>: ChronicleBrokerBuilder<Sender>,
         [] -> ChronicleAPI<Sender>: ChronicleAPIBuilder<Sender>,
         [] -> Websocket<Sender>: WebsocketBuilder<Sender>,
+        [] -> Dashboard<Sender>: DashboardBuilder<Sender>,
         [ChronicleBroker, ChronicleAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
     },
     state: Apps {}
@@ -56,11 +59,15 @@ impl Builder for AppsBuilder {
             .reporter_count(storage_config.reporter_count)
             .local_dc(storage_config.local_datacenter.clone());
         let websocket_builder = WebsocketBuilder::new();
+        // TODO: Note that in this dashboard test bench the socket address is fixed to be 172.0.0.0:8081
+        // Please use other ports for the existing websocket app
+        let dashboard_builder = DashboardBuilder::new();
 
         self.ChronicleAPI(chronicle_api_builder)
             .ChronicleBroker(chronicle_broker_builder)
             .Scylla(scylla_builder)
             .Websocket(websocket_builder)
+            .Dashboard(dashboard_builder)
             .to_apps()
     }
 }
@@ -114,6 +121,8 @@ async fn chronicle(apps: Apps) {
         .ChronicleBroker()
         .await
         .Websocket()
+        .await
+        .Dashboard()
         .await
         .start(None)
         .await;

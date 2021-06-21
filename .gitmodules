@@ -1,0 +1,5 @@
+[submodule "chronicle/src/dashboard/frontend"]
+	path = chronicle/src/dashboard/frontend
+	url = https://github.com/iotaledger/node-dashboard
+	branch = main
+	ignore = dirty
