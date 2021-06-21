@@ -45,6 +45,7 @@ serde_repr = { version = "0.1" }
 bee-runtime = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 tokio-stream = "0.1"
 cap = "0.1"
+rand = "0.8.0"
 
 [features]
 default = ["rocket", "application"]

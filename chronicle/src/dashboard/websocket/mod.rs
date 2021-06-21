@@ -3,7 +3,7 @@
 
 mod commands;
 pub(crate) mod responses;
-mod topics;
+pub mod topics;
 
 use commands::WsCommand;
 use topics::WsTopic;

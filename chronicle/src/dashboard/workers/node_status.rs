@@ -3,7 +3,17 @@
 
 use crate::dashboard::websocket::{
     broadcast,
+    responses::{
+        sync_status::SyncStatusResponse,
+        WsEvent,
+        WsEventInner,
+    },
+    topics::WsTopic,
     WsUsers,
+};
+use rand::{
+    thread_rng,
+    Rng,
 };
 
 use bee_runtime::shutdown_stream::ShutdownStream;
@@ -36,6 +46,18 @@ pub(crate) fn node_status_worker(mut ticker: ShutdownStream<Fuse<IntervalStream>
                 is_synced: true,
             };
             broadcast(public_node_status.into(), &users).await;
+
+            // Generate random number
+            let fake_sync_status = WsEvent::new(
+                WsTopic::SyncStatus,
+                // Send fake data
+                WsEventInner::SyncStatus(SyncStatusResponse {
+                    lmi: thread_rng().gen_range(0..1000),
+                    cmi: thread_rng().gen_range(0..1000),
+                }),
+            );
+
+            broadcast(fake_sync_status, &users).await;
         }
 
         info!("NodeStatus Worker stopped.");
