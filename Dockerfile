@@ -15,7 +15,10 @@ apt install -y build-essential gcc make cmake cmake-gui cmake-curses-gui libssl-
 RUN cargo build --release
 
 FROM debian
+
 WORKDIR /app
+RUN apt update && \
+apt install -y build-essential gcc make cmake cmake-gui cmake-curses-gui libssl-dev
 COPY --from=builder /app/target/release/chronicle ./chronicle
 
 ENTRYPOINT ["/app/chronicle"]
