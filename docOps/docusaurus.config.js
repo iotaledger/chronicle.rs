@@ -14,14 +14,13 @@ module.exports = {
   projectName: 'chronicle.rs',
   stylesheets: [
     'https://fonts.googleapis.com/css?family=Material+Icons',
-    'https://iota-community.github.io/iota-wiki/assets/css/styles.f9f708da.css',//replace this URL
   ],
   themeConfig: {
     navbar: {
       title: 'Chronicle',
       logo: {
         alt: 'IOTA',
-        src: '/img/logo/Logo_Swirl_Dark.png',
+        src: 'img/logo/Logo_Swirl_Dark.png',
       },
       items: [
         {
@@ -39,6 +38,28 @@ module.exports = {
     },
     footer: {
       style: 'dark',
+      links: [
+        {
+          title: 'Documentation',
+          items: [
+            {
+              label: 'Welcome',
+              to: '/docs/welcome',
+            },
+            {
+              label: 'Getting Started',
+              to: '/docs/getting_started',
+            },
+            {
+              label: 'Config Reference',
+              to: '/docs/config_reference',
+            },
+            {
+              label: 'Contribute',
+              to: '/docs/contribute',
+            },
+          ],
+        },],
       copyright: `Copyright © ${new Date().getFullYear()} IOTA Foundation, Built with Docusaurus.`,
     },
     prism: {
@@ -57,7 +78,7 @@ module.exports = {
             'https://github.com/iotaledger/chronicle.rs/tree/main/docs',
         },
         theme: {
-          customCss: require.resolve('./src/css/custom.css'),
+          customCss: require.resolve('./src/css/iota.css'),
         },
       },
     ],
