@@ -9,7 +9,7 @@ module.exports = {
   baseUrl: '/chronicle.rs/',
   onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'throw',
-  favicon: '/img/logo/img/favicon.ico',
+  favicon: '/img/logo/favicon.ico',
   organizationName: 'iotaledger',
   projectName: 'chronicle.rs',
   stylesheets: [
