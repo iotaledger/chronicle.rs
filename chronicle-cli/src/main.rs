@@ -5,10 +5,6 @@ use anyhow::{
     anyhow,
     bail,
 };
-use chronicle::{
-    ConfigCommand,
-    SocketMsg,
-};
 use chronicle_broker::{
     merge::{
         LogPaths,
@@ -16,8 +12,6 @@ use chronicle_broker::{
         ValidationLevel,
     },
     BrokerSocketMsg,
-    BrokerTopology,
-    ChronicleBrokerThrough,
     *,
 };
 use chronicle_common::config::{
@@ -38,7 +32,6 @@ use indicatif::{
     ProgressStyle,
 };
 use regex::Regex;
-use scylla_rs::prelude::ScyllaThrough;
 use std::{
     path::{
         Path,

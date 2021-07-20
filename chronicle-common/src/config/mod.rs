@@ -33,7 +33,7 @@ pub const CONFIG_PATH: &str = "./config.ron";
 pub const HISTORICAL_CONFIG_PATH: &str = "./historical_config";
 /// The current config version.
 /// **Must be updated with each change to the config format.**
-const CURRENT_VERSION: u32 = 2;
+const CURRENT_VERSION: u32 = 3;
 
 /// Versioned config. Tracks version between config changes so that it can be validated on load.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]

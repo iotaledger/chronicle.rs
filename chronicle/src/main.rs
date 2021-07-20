@@ -4,7 +4,9 @@
 #![warn(missing_docs)]
 //! # Chronicle
 use anyhow::bail;
-use chronicle_api::application::*;
+use async_trait::async_trait;
+use backstage::prelude::*;
+use chronicle_api::application::ChronicleAPI;
 use chronicle_broker::application::*;
 use chronicle_common::{
     config::*,
@@ -14,58 +16,115 @@ use chronicle_common::{
     metrics::*,
 };
 use chronicle_storage::access::ChronicleKeyspace;
-use scylla_rs::prelude::*;
+use scylla_rs::prelude::{
+    stage::Reporter,
+    *,
+};
+use std::time::Duration;
 use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,
 };
-use websocket::*;
 
-mod websocket;
+struct Launcher;
 
-launcher!
-(
-    builder: AppsBuilder
+#[supervise(Scylla, ChronicleBroker, ChronicleAPI)]
+enum LauncherEvent {}
+
+#[async_trait]
+impl Actor for Launcher {
+    type Dependencies = ();
+
+    type Event = LauncherEvent;
+
+    type Channel = TokioChannel<Self::Event>;
+
+    async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+    ) -> Result<(), ActorError>
+    where
+        Self: Sized,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<std::marker::PhantomData<Self>>,
     {
-        [] -> ChronicleBroker<Sender>: ChronicleBrokerBuilder<Sender>,
-        [] -> ChronicleAPI<Sender>: ChronicleAPIBuilder<Sender>,
-        [] -> Websocket<Sender>: WebsocketBuilder<Sender>,
-        [ChronicleBroker, ChronicleAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
-    },
-    state: Apps {}
-);
+        rt.update_status(ServiceStatus::Initializing).await.ok();
+        let config = get_config_async().await;
+        let storage_config = &config.storage_config;
+        let broker_config = &config.broker_config;
 
-impl Builder for AppsBuilder {
-    type State = Apps;
-
-    fn build(self) -> Self::State {
-        let config = get_config();
-        let storage_config = config.storage_config;
-        let broker_config = config.broker_config;
-        let chronicle_api_builder = ChronicleAPIBuilder::new();
-        let chronicle_broker_builder = ChronicleBrokerBuilder::new()
-            .collector_count(broker_config.collector_count)
-            .parallelism(broker_config.parallelism)
-            .complete_gaps_interval_secs(broker_config.complete_gaps_interval_secs);
-        let scylla_builder = ScyllaBuilder::new()
-            .listen_address(storage_config.listen_address.to_string())
+        let scylla = ScyllaBuilder::new()
+            .listen_address(storage_config.listen_address)
             .thread_count(match storage_config.thread_count {
                 ThreadCount::Count(c) => c,
                 ThreadCount::CoreMultiple(c) => num_cpus::get() * c,
             })
             .reporter_count(storage_config.reporter_count)
-            .local_dc(storage_config.local_datacenter.clone());
-        let websocket_builder = WebsocketBuilder::new();
+            .local_dc(storage_config.local_datacenter.clone())
+            .build();
+        let chronicle_broker_builder = ChronicleBrokerBuilder::new()
+            .collector_count(broker_config.collector_count)
+            .parallelism(broker_config.parallelism)
+            .complete_gaps_interval_secs(broker_config.complete_gaps_interval_secs)
+            .config(config);
+        rt.spawn_actor(scylla).await?;
+        let ws = format!("ws://{}/", "127.0.0.1:8080");
+        let nodes = vec![([127, 0, 0, 1], 9042).into()];
+        match add_nodes(&ws, nodes, 1).await {
+            Ok(_) => match init_database().await {
+                Ok(_) => log::debug!("{}", rt.service_tree().await),
+                Err(e) => {
+                    log::error!("{}", e);
+                    log::debug!("{}", rt.service_tree().await);
+                }
+            },
+            Err(e) => {
+                log::error!("{}", e);
+                log::debug!("{}", rt.service_tree().await);
+            }
+        }
+        rt.spawn_actor(ChronicleAPI).await?;
+        while let Err(e) = rt.spawn_actor(chronicle_broker_builder.clone().build()).await {
+            log::warn!("Could not start broker: {}", e);
+            log::debug!("{}", rt.service_tree().await);
+            log::warn!("Retrying in 10 seconds...");
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+        tokio::task::spawn(ctrl_c(rt.handle()));
+        log::info!("{}", rt.service_tree().await);
+        Ok(())
+    }
 
-        self.ChronicleAPI(chronicle_api_builder)
-            .ChronicleBroker(chronicle_broker_builder)
-            .Scylla(scylla_builder)
-            .Websocket(websocket_builder)
-            .to_apps()
+    async fn run<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        _: Self::Dependencies,
+    ) -> Result<(), ActorError>
+    where
+        Self: Sized,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<std::marker::PhantomData<Self>>,
+    {
+        rt.update_status(ServiceStatus::Running).await.ok();
+        while let Some(evt) = rt.next_event().await {
+            match evt {
+                LauncherEvent::StatusChange(s) => {
+                    // todo
+                }
+                LauncherEvent::ReportExit(r) => {
+                    // todo
+                }
+            }
+        }
+        rt.update_status(ServiceStatus::Stopped).await.ok();
+        Ok(())
     }
 }
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("{}", info);
+    }));
     dotenv::dotenv().ok();
     env_logger::init();
     register_metrics();
@@ -79,44 +138,27 @@ fn main() {
             thread_count = num_cpus::get() * c;
         }
     }
-    let apps = AppsBuilder::new().build();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(thread_count)
         .thread_name("chronicle")
-        .thread_stack_size(apps.app_count * 4 * 1024 * 1024)
+        .thread_stack_size(4 * 1024 * 1024)
         .build()
-        .expect("Expected to build tokio runtime");
+        .expect("Failed to build tokio runtime!");
     let new_config = runtime.block_on(config.clone().verify()).unwrap();
     if new_config != config {
         get_history_mut().update(new_config.into());
     }
-    runtime.block_on(chronicle(apps));
+    runtime.block_on(chronicle());
 }
 
-async fn chronicle(apps: Apps) {
-    apps.Scylla()
-        .await
-        .future(|apps| async {
-            let storage_config = get_config_async().await.storage_config;
-            let uniform_rf = storage_config.try_get_uniform_rf().expect("Expected Unifrom RF");
-            debug!("Adding nodes: {:?}", storage_config.nodes);
-            let ws = format!("ws://{}/", storage_config.listen_address);
-            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), uniform_rf)
-                .await
-                .ok();
-            init_database().await.ok();
-            apps
-        })
-        .await
-        .ChronicleAPI()
-        .await
-        .ChronicleBroker()
-        .await
-        .Websocket()
-        .await
-        .start(None)
-        .await;
+async fn ctrl_c(shutdown_handle: Act<Launcher>) {
+    tokio::signal::ctrl_c().await.unwrap();
+    shutdown_handle.shutdown();
+}
+
+async fn chronicle() {
+    Launcher.start_as_root::<ActorRegistry>().await.unwrap()
 }
 
 fn register_metrics() {
@@ -284,7 +326,11 @@ impl Worker for BatchWorker {
         Ok(())
     }
 
-    fn handle_error(self: Box<Self>, error: WorkerError, _reporter: &Option<ReporterHandle>) -> anyhow::Result<()> {
+    fn handle_error(
+        self: Box<Self>,
+        error: WorkerError,
+        _reporter: Option<&mut UnboundedSender<<Reporter as Actor>::Event>>,
+    ) -> anyhow::Result<()> {
         self.sender.send(Err(error))?;
         Ok(())
     }

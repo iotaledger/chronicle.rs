@@ -15,9 +15,6 @@ pub mod collector;
 /// The importer, which enables to import write-ahead-logs
 #[cfg(feature = "application")]
 pub mod importer;
-/// The listener, which receives incoming connections
-#[cfg(feature = "application")]
-pub mod listener;
 /// MQTT handler
 #[cfg(feature = "application")]
 pub mod mqtt;
@@ -30,9 +27,6 @@ pub mod solidifier;
 /// Milestone syncer
 #[cfg(feature = "application")]
 pub mod syncer;
-/// Websocket command router
-#[cfg(feature = "application")]
-pub mod websocket;
 #[cfg(feature = "application")]
 mod app {
     use super::*;
@@ -41,12 +35,9 @@ mod app {
         bail,
         ensure,
     };
-    pub use application::{
-        BrokerChild,
-        BrokerEvent,
-        BrokerHandle,
-        ChronicleBrokerScope,
-    };
+    pub use application::BrokerEvent;
+    pub use async_trait::async_trait;
+    pub use backstage::prelude::*;
     pub use bee_common::packable::Packable;
     pub use bee_message::{
         Message,
@@ -54,8 +45,8 @@ mod app {
     };
     pub use chronicle_common::{
         config::MqttType,
-        get_config,
         get_config_async,
+        get_history_mut_async,
         SyncRange,
     };
     pub use chronicle_storage::access::*;
@@ -75,6 +66,7 @@ mod app {
             TryFrom,
             TryInto,
         },
+        marker::PhantomData,
         ops::{
             Deref,
             DerefMut,

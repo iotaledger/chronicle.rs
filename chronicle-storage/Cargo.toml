@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
-scylla-rs = "0.1"
+scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "new-backstage" }
 bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
 async-trait = "0.1"

@@ -5,238 +5,512 @@ use crate::{
     archiver::*,
     collector::*,
     importer::*,
-    listener::*,
     mqtt::*,
+    requester::RequesterTopology,
     solidifier::*,
     syncer::*,
-    websocket::*,
 };
 use async_trait::async_trait;
-use chronicle_common::config::BrokerConfig;
+use chronicle_common::config::{
+    BrokerConfig,
+    Config,
+};
 use std::{
     ops::Range,
     str::FromStr,
     time::Duration,
 };
-
-mod event_loop;
-mod init;
-mod starter;
-mod terminating;
-
-/// Define the application scope trait
-pub trait ChronicleBrokerScope: LauncherSender<ChronicleBrokerBuilder<Self>> {}
-impl<H: LauncherSender<ChronicleBrokerBuilder<H>>> ChronicleBrokerScope for H {}
-
-// Broker builder
-builder!(
-    #[derive(Clone)]
-    ChronicleBrokerBuilder<H> {
-        listener_handle: ListenerHandle,
-        complete_gaps_interval_secs: u64,
-        parallelism: u8,
-        collector_count: u8
-});
-
-/// BrokerHandle to be passed to the children
-pub struct BrokerHandle<H: ChronicleBrokerScope> {
-    tx: tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>,
-}
-/// BrokerInbox used to recv events
-pub struct BrokerInbox<H: ChronicleBrokerScope> {
-    rx: tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>,
-}
-
-impl<H: ChronicleBrokerScope> Clone for BrokerHandle<H> {
-    fn clone(&self) -> Self {
-        BrokerHandle::<H> { tx: self.tx.clone() }
-    }
-}
+use tokio::sync::oneshot;
 
 /// Application state
-pub struct ChronicleBroker<H: ChronicleBrokerScope> {
-    service: Service,
-    websockets: HashMap<String, WsTx>,
-    listener_handle: Option<ListenerHandle>,
-    mqtt_handles: HashMap<String, MqttHandle>,
-    importer_handles: HashMap<String, ImporterHandle>,
-    asked_to_shutdown: HashMap<String, ()>,
+pub struct ChronicleBroker {
     parallelism: u8,
     complete_gaps_interval: Duration,
     parallelism_points: u8,
-    pending_imports: Vec<BrokerTopology>,
     in_progress_importers: usize,
     collector_count: u8,
-    collector_handles: HashMap<u8, CollectorHandle>,
-    solidifier_handles: HashMap<u8, SolidifierHandle>,
     logs_dir_path: Option<PathBuf>,
-    handle: Option<BrokerHandle<H>>,
-    inbox: BrokerInbox<H>,
     default_keyspace: ChronicleKeyspace,
     sync_range: SyncRange,
     sync_data: SyncData,
-    syncer_handle: Option<SyncerHandle>,
-}
-
-/// SubEvent type, indicates the children
-pub enum BrokerChild {
-    /// Used by Listener to keep broker up to date with its service
-    Listener(Service),
-    /// Used by Mqtt to keep Broker up to date with its service
-    Mqtt(Service, Option<MqttHandle>, Result<(), Need>),
-    /// Used by Collector(s) to keep Broker up to date with its service
-    Collector(Service),
-    /// Used by Solidifier(s) to keep Broker up to date with its service
-    Solidifier(Service, Result<(), Need>),
-    /// Used by Archiver to keep Broker up to date with its service
-    Archiver(Service, Result<(), Need>),
-    /// Used by Syncer to keep Broker up to date with its service
-    Syncer(Service, Result<(), Need>),
-    /// Used by Importer to keep Broker up to date with its service, u8 is parallelism
-    Importer(Service, Result<(), Need>, u8),
-    /// Used by Websocket to keep Broker up to date with its service
-    Websocket(Service, Option<WsTx>),
 }
 
 /// Event type of the broker Application
-pub enum BrokerEvent<T> {
-    /// Importer Session
-    Importer(ImporterSession),
-    /// It's the passthrough event, which the scylla application will receive from
-    Passthrough(T),
-    /// Used by broker children to push their service
-    Children(BrokerChild),
-    /// Used by Scylla to keep Broker up to date with scylla status
-    Scylla(Service),
+#[supervise(Mqtt<Messages>, Mqtt<MessagesReferenced>, Collector, Solidifier, Archiver, Syncer, Importer<All>, Importer<Analytics>)]
+pub enum BrokerEvent {
+    Websocket(BrokerRequest),
 }
 
-/// implementation of the AppBuilder
-impl<H: ChronicleBrokerScope> AppBuilder<H> for ChronicleBrokerBuilder<H> {}
-
-/// implementation of through type
-impl<H: ChronicleBrokerScope> ThroughType for ChronicleBrokerBuilder<H> {
-    type Through = ChronicleBrokerThrough;
+pub enum BrokerRequest {
+    /// Add new MQTT Messages feed source
+    AddMqttMessages(Url, oneshot::Sender<anyhow::Result<()>>),
+    /// Add new MQTT Messages Referenced feed source
+    AddMqttMessagesReferenced(Url, oneshot::Sender<anyhow::Result<()>>),
+    /// Remove a MQTT Messages feed source
+    RemoveMqttMessages(Url, oneshot::Sender<anyhow::Result<()>>),
+    /// Remove a MQTT Messages Referenced feed source
+    RemoveMqttMessagesReferenced(Url, oneshot::Sender<anyhow::Result<()>>),
+    Requester(RequesterTopology),
+    Import {
+        /// File or dir path which supposed to contain LogFiles
+        path: PathBuf,
+        /// Resume the importing process
+        resume: bool,
+        /// Provide optional import range
+        import_range: Option<Range<u32>>,
+        /// The type of import requested
+        import_type: ImportType,
+        responder: tokio::sync::mpsc::UnboundedSender<ImporterSession>,
+    },
 }
 
-/// implementation of builder
-impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
-    type State = ChronicleBroker<H>;
-    fn build(self) -> Self::State {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let handle = Some(BrokerHandle { tx });
-        let inbox = BrokerInbox { rx };
-        let config = get_config();
-        let default_keyspace = ChronicleKeyspace::new(
-            config
-                .storage_config
-                .keyspaces
-                .first()
-                .and_then(|keyspace| Some(keyspace.name.clone()))
-                .unwrap_or("permanode".to_owned()),
-        );
-        let sync_range = config
-            .broker_config
-            .sync_range
-            .and_then(|range| Some(range))
-            .unwrap_or(SyncRange::default());
-        let sync_data = SyncData {
-            completed: Vec::new(),
-            synced_but_unlogged: Vec::new(),
-            gaps: Vec::new(),
-        };
-        let logs_dir_path;
-        if let Some(logs_dir) = config.broker_config.logs_dir {
-            logs_dir_path = Some(PathBuf::from_str(&logs_dir).expect("Failed to parse configured logs path!"));
-        } else {
-            logs_dir_path = None;
-        }
-        let parallelism = self.parallelism.unwrap_or(25);
-        ChronicleBroker::<H> {
-            service: Service::new(),
-            websockets: HashMap::new(),
-            listener_handle: self.listener_handle,
-            mqtt_handles: HashMap::new(),
-            importer_handles: HashMap::new(),
-            asked_to_shutdown: HashMap::new(),
-            collector_count: self.collector_count.unwrap_or(10),
-            collector_handles: HashMap::new(),
-            solidifier_handles: HashMap::new(),
-            syncer_handle: None,
-            parallelism,
-            parallelism_points: parallelism,
-            pending_imports: Vec::new(),
-            in_progress_importers: 0,
-            logs_dir_path,
-            handle,
-            inbox,
-            default_keyspace,
-            sync_range,
-            sync_data,
-            complete_gaps_interval: Duration::from_secs(self.complete_gaps_interval_secs.unwrap()),
-        }
-        .set_name()
+/// Import types
+#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
+pub enum ImportType {
+    /// Import everything
+    All,
+    /// Import only Analytics data
+    Analytics,
+}
+
+#[build]
+#[derive(Clone)]
+pub fn build_broker(
+    config: Config,
+    complete_gaps_interval_secs: u64,
+    parallelism: Option<u8>,
+    collector_count: Option<u8>,
+) -> ChronicleBroker {
+    let default_keyspace = ChronicleKeyspace::new(
+        config
+            .storage_config
+            .keyspaces
+            .first()
+            .and_then(|keyspace| Some(keyspace.name.clone()))
+            .unwrap_or("permanode".to_owned()),
+    );
+    let sync_range = config
+        .broker_config
+        .sync_range
+        .and_then(|range| Some(range))
+        .unwrap_or(SyncRange::default());
+    let sync_data = SyncData {
+        completed: Vec::new(),
+        synced_but_unlogged: Vec::new(),
+        gaps: Vec::new(),
+    };
+    let logs_dir_path;
+    if let Some(logs_dir) = config.broker_config.logs_dir {
+        logs_dir_path = Some(PathBuf::from_str(&logs_dir).expect("Failed to parse configured logs path!"));
+    } else {
+        logs_dir_path = None;
+    }
+    let parallelism = parallelism.unwrap_or(25);
+    ChronicleBroker {
+        collector_count: collector_count.unwrap_or(10),
+        parallelism,
+        parallelism_points: parallelism,
+        in_progress_importers: 0,
+        logs_dir_path,
+        default_keyspace,
+        sync_range,
+        sync_data,
+        complete_gaps_interval: Duration::from_secs(complete_gaps_interval_secs),
     }
 }
 
-/// implementation of passthrough functionality
-impl<H: ChronicleBrokerScope> Passthrough<ChronicleBrokerThrough> for BrokerHandle<H> {
-    fn launcher_status_change(&mut self, _service: &Service) {}
-    fn app_status_change(&mut self, service: &Service) {
-        if service.is_running() && service.get_name() == "Scylla" {
-            let _ = self.send(BrokerEvent::Scylla(service.clone()));
-        }
-    }
-    fn passthrough(&mut self, _event: ChronicleBrokerThrough, _from_app_name: String) {}
-    fn service(&mut self, _service: &Service) {}
-}
+#[async_trait]
+impl Actor for ChronicleBroker {
+    type Dependencies = ();
+    type Event = BrokerEvent;
+    type Channel = TokioChannel<Self::Event>;
 
-/// implementation of shutdown functionality
-impl<H: ChronicleBrokerScope> Shutdown for BrokerHandle<H> {
-    fn shutdown(self) -> Option<Self>
+    async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+    ) -> Result<(), ActorError>
     where
         Self: Sized,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
     {
-        let broker_shutdown: H::AppsEvents = serde_json::from_str("{\"ChronicleBroker\": \"Shutdown\"}").unwrap();
-        let _ = self.send(BrokerEvent::Passthrough(broker_shutdown));
-        None
+        rt.update_status(ServiceStatus::Initializing).await.ok();
+        let config = get_config_async().await;
+        // Query sync table
+        self.sync_data = self.query_sync_table().await?;
+        info!("Current: {:#?}", self.sync_data);
+        // Get the gap_start
+        let gap_start = self.sync_data.gaps.first().unwrap().start;
+        // create syncer_builder
+
+        let mut syncer_builder = SyncerBuilder::new()
+            .sync_data(self.sync_data.clone())
+            .first_ask(AskSyncer::FillGaps)
+            .sync_range(self.sync_range)
+            .parallelism(self.parallelism)
+            .update_sync_data_every(self.complete_gaps_interval)
+            .solidifier_count(self.collector_count);
+        if let Some(dir_path) = self.logs_dir_path.as_ref() {
+            let (one, recv) = oneshot::channel();
+            let max_log_size = config.broker_config.max_log_size.unwrap_or(MAX_LOG_SIZE);
+            // create archiver_builder
+            let archiver = ArchiverBuilder::new()
+                .dir_path(dir_path.clone())
+                .keyspace(self.default_keyspace.clone())
+                .solidifiers_count(self.collector_count)
+                .max_log_size(max_log_size)
+                .oneshot(recv)
+                .build();
+            syncer_builder = syncer_builder.first_ask(AskSyncer::Complete).oneshot(one);
+            // start archiver
+            rt.spawn_actor(archiver).await?;
+        } else {
+            info!("Initializing Broker without Archiver");
+        };
+        let reqwest_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(config.broker_config.request_timeout_secs))
+            .build()
+            .expect("Expected reqwest client to build correctly");
+        let collector_builder = CollectorBuilder::new()
+            .collector_count(self.collector_count)
+            .requester_count(config.broker_config.requester_count)
+            .api_endpoints(config.broker_config.api_endpoints.iter().cloned().collect())
+            .storage_config(config.storage_config.clone())
+            .reqwest_client(reqwest_client.clone())
+            .retries_per_query(config.broker_config.retries_per_query)
+            .retries_per_endpoint(config.broker_config.retries_per_endpoint);
+        let solidifier_builder = SolidifierBuilder::new()
+            .collector_count(self.collector_count)
+            .gap_start(gap_start)
+            .keyspace(self.default_keyspace.clone());
+        for partition_id in 0..self.collector_count {
+            let collector = collector_builder.clone().partition_id(partition_id).build();
+            rt.spawn_into_pool_keyed::<MapPool<_, _>>(partition_id, collector)
+                .await?;
+
+            let solidifier = solidifier_builder.clone().partition_id(partition_id).build();
+            rt.spawn_into_pool_keyed::<MapPool<_, _>>(partition_id, solidifier)
+                .await?;
+        }
+        // Finalize and Spawn Syncer
+        rt.spawn_actor(syncer_builder.build()).await?;
+        // Spawn mqtt brokers
+        for broker_url in config
+            .broker_config
+            .mqtt_brokers
+            .get(&MqttType::Messages)
+            .iter()
+            .flat_map(|v| v.iter())
+            .cloned()
+        {
+            self.add_mqtt(rt, Messages, MqttType::Messages, broker_url).await?;
+        }
+        for broker_url in config
+            .broker_config
+            .mqtt_brokers
+            .get(&MqttType::MessagesReferenced)
+            .iter()
+            .flat_map(|v| v.iter())
+            .cloned()
+        {
+            self.add_mqtt(rt, MessagesReferenced, MqttType::MessagesReferenced, broker_url)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn run<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        _: Self::Dependencies,
+    ) -> Result<(), ActorError>
+    where
+        Self: Sized,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
+    {
+        rt.update_status(ServiceStatus::Running).await.ok();
+        while let Some(event) = rt.next_event().await {
+            match event {
+                BrokerEvent::Websocket(request) => match request {
+                    BrokerRequest::AddMqttMessages(url, responder) => {
+                        responder.send(self.add_mqtt(rt, Messages, MqttType::Messages, url).await);
+                    }
+                    BrokerRequest::AddMqttMessagesReferenced(url, responder) => {
+                        responder.send(
+                            self.add_mqtt(rt, MessagesReferenced, MqttType::MessagesReferenced, url)
+                                .await,
+                        );
+                    }
+                    BrokerRequest::RemoveMqttMessages(url, responder) => {
+                        self.remove_mqtt::<_, _, Messages>(rt, MqttType::Messages, url).await;
+                        responder.send(Ok(()));
+                    }
+                    BrokerRequest::RemoveMqttMessagesReferenced(url, responder) => {
+                        self.remove_mqtt::<_, _, MessagesReferenced>(rt, MqttType::MessagesReferenced, url)
+                            .await;
+                        responder.send(Ok(()));
+                    }
+                    BrokerRequest::Requester(t) => match t {
+                        RequesterTopology::AddEndpoint(url, responder) => {
+                            if let Some(url) = BrokerConfig::adjust_api_endpoint(url.clone()) {
+                                let reqwest_client = reqwest::Client::new();
+                                if let Err(e) = BrokerConfig::verify_endpoint(&reqwest_client, &url).await {
+                                    todo!()
+                                } else {
+                                    if let Some(collector_handles) = rt.pool::<MapPool<Collector, u8>>().await {
+                                        todo!()
+                                    }
+                                }
+                            }
+                        }
+                        RequesterTopology::RemoveEndpoint(url, responder) => todo!(),
+                    },
+                    BrokerRequest::Import {
+                        path,
+                        resume,
+                        import_range,
+                        import_type,
+                        responder,
+                    } => {
+                        self.handle_import(rt, path, resume, import_range, import_type, responder)
+                            .await;
+                    }
+                },
+                BrokerEvent::StatusChange(s) => {
+                    // TODO
+                }
+                BrokerEvent::ReportExit(r) => match r {
+                    Ok(s) => match s.state {
+                        ChildStates::Importer_All(i) => {
+                            self.in_progress_importers -= 1;
+                        }
+                        ChildStates::Importer_Analytics(i) => {
+                            self.in_progress_importers -= 1;
+                        }
+                        _ => {
+                            // TODO
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("{}", e.error);
+                        match e.state {
+                            ChildStates::Importer_All(i) => {
+                                self.in_progress_importers -= 1;
+                            }
+                            ChildStates::Importer_Analytics(i) => {
+                                self.in_progress_importers -= 1;
+                            }
+                            _ => {
+                                // TODO
+                            }
+                        }
+                    }
+                },
+            }
+        }
+        Ok(())
     }
 }
 
-impl<H: ChronicleBrokerScope> Deref for BrokerHandle<H> {
-    type Target = tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.tx
+impl ChronicleBroker {
+    async fn query_sync_table(&mut self) -> anyhow::Result<SyncData> {
+        SyncData::try_fetch(&self.default_keyspace, &self.sync_range, 10).await
     }
-}
 
-impl<H: ChronicleBrokerScope> DerefMut for BrokerHandle<H> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.tx
+    async fn remove_mqtt<Reg, Sup, T>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        mqtt_type: MqttType,
+        url: Url,
+    ) where
+        Sup: EventDriven,
+        Reg: RegistryAccess + Send + Sync,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
+        T: Topic,
+        Mqtt<T>: Actor,
+        <BrokerEvent as SupervisorEvent>::Children: From<PhantomData<Mqtt<T>>>,
+        <BrokerEvent as SupervisorEvent>::ChildStates: From<Mqtt<T>>,
+    {
+        if let Some(pool) = rt.pool::<MapPool<Mqtt<T>, Url>>().await {
+            if let Some(handle) = pool.read().await.get(&url) {
+                handle.shutdown();
+                let config = get_config_async().await;
+                let mut new_config = config.clone();
+                if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
+                    list.remove(&url);
+                }
+                if new_config != config {
+                    get_history_mut_async().await.update(new_config.into());
+                }
+            }
+        }
     }
-}
 
-impl<H: ChronicleBrokerScope> Deref for BrokerInbox<H> {
-    type Target = tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rx
+    async fn add_mqtt<Reg, Sup, T>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        topic: T,
+        mqtt_type: MqttType,
+        url: Url,
+    ) -> anyhow::Result<()>
+    where
+        Sup: EventDriven,
+        Reg: RegistryAccess + Send + Sync,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
+        T: Topic,
+        Mqtt<T>: Actor,
+        <BrokerEvent as SupervisorEvent>::Children: From<PhantomData<Mqtt<T>>>,
+        <BrokerEvent as SupervisorEvent>::ChildStates: From<Mqtt<T>>,
+    {
+        let config = get_config_async().await;
+        let mqtt = MqttBuilder::new()
+            .topic(topic)
+            .url(url.clone())
+            .stream_capacity(config.broker_config.mqtt_stream_capacity)
+            .collector_count(self.collector_count)
+            .build();
+        rt.spawn_into_pool_keyed::<MapPool<Mqtt<T>, Url>>(url.clone(), mqtt)
+            .await
+            .map_err(|_| anyhow::anyhow!("The Mqtt for url {} already exists!", url))?;
+        let mut new_config = config.clone();
+        if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
+            list.insert(url);
+        }
+        if new_config != config {
+            get_history_mut_async().await.update(new_config.into());
+        }
+        Ok(())
     }
-}
 
-impl<H: ChronicleBrokerScope> DerefMut for BrokerInbox<H> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.rx
-    }
-}
+    async fn handle_import<Reg, Sup>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        path: PathBuf,
+        resume: bool,
+        import_range: Option<Range<u32>>,
+        import_type: ImportType,
+        responder: tokio::sync::mpsc::UnboundedSender<ImporterSession>,
+    ) -> anyhow::Result<()>
+    where
+        Sup: EventDriven,
+        Reg: RegistryAccess + Send + Sync,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
+    {
+        if path.is_file() {
+            // build importer
+            self.spawn_importer(rt, path.clone(), resume, import_range.clone(), import_type, responder)
+                .await?;
+        } else if path.is_dir() {
+            self.spawn_importers(rt, path.clone(), resume, import_range.clone(), import_type, responder)
+                .await?;
+        } else {
+            responder
+                .send(ImporterSession::PathError {
+                    path: path.clone(),
+                    msg: "Invalid path".into(),
+                })
+                .ok();
+        }
 
-/// impl name of the application
-impl<H: ChronicleBrokerScope> Name for ChronicleBroker<H> {
-    fn set_name(mut self) -> Self {
-        self.service.update_name("ChronicleBroker".to_string());
-        self
+        Ok(())
     }
-    fn get_name(&self) -> String {
-        self.service.get_name()
+
+    async fn spawn_importer<Reg, Sup>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        file_path: PathBuf,
+        resume: bool,
+        import_range: Option<Range<u32>>,
+        import_type: ImportType,
+        responder: tokio::sync::mpsc::UnboundedSender<ImporterSession>,
+    ) -> anyhow::Result<()>
+    where
+        Sup: EventDriven,
+        Reg: RegistryAccess + Send + Sync,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
+    {
+        match import_type {
+            ImportType::All => {
+                let importer = crate::importer::ImporterBuilder::<All>::new()
+                    .import_range(import_range)
+                    .file_path(file_path.clone())
+                    .resume(resume)
+                    .retries_per_query(50) // TODO get it from config
+                    .chronicle_id(0) // TODO get it from config
+                    .responder(responder)
+                    .build();
+                rt.spawn_into_pool_keyed::<MapPool<_, _>>(file_path.clone(), importer)
+                    .await?;
+            }
+            ImportType::Analytics => {
+                let importer = crate::importer::ImporterBuilder::<Analytics>::new()
+                    .import_range(import_range)
+                    .file_path(file_path.clone())
+                    .resume(resume)
+                    .retries_per_query(50) // TODO get it from config
+                    .chronicle_id(0) // TODO get it from config
+                    .responder(responder)
+                    .build();
+                rt.spawn_into_pool_keyed::<MapPool<_, _>>(file_path.clone(), importer)
+                    .await?;
+            }
+        }
+        self.in_progress_importers += 1;
+
+        Ok(())
+    }
+    async fn spawn_importers<Reg, Sup>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        path: PathBuf,
+        resume: bool,
+        import_range: Option<Range<u32>>,
+        import_type: ImportType,
+        responder: tokio::sync::mpsc::UnboundedSender<ImporterSession>,
+    ) -> anyhow::Result<()>
+    where
+        Sup: EventDriven,
+        Reg: RegistryAccess + Send + Sync,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
+    {
+        let mut import_files = Vec::new();
+        if let Ok(mut dir_entry) = tokio::fs::read_dir(&path).await {
+            while let Ok(Some(p)) = dir_entry.next_entry().await {
+                let file_path = p.path();
+                if file_path.is_file() {
+                    import_files.push(file_path);
+                }
+            }
+        };
+        let import_files_len = import_files.len();
+        if import_files_len == 0 {
+            responder
+                .send(ImporterSession::PathError {
+                    path,
+                    msg: "No LogFiles in the provided path".into(),
+                })
+                .ok();
+            return Ok(());
+        }
+        for file_path in import_files {
+            self.spawn_importer(
+                rt,
+                file_path,
+                resume,
+                import_range.clone(),
+                import_type,
+                responder.clone(),
+            )
+            .await?;
+        }
+
+        Ok(())
     }
 }

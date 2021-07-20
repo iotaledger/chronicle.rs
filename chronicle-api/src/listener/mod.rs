@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use application::*;
 use chronicle_common::get_config_async;
 use chronicle_storage::access::*;
 use rocket::{
@@ -20,10 +19,8 @@ use std::{
 };
 use thiserror::Error;
 
-mod init;
 #[cfg(feature = "rocket_listener")]
 mod rocket_event_loop;
-mod terminating;
 
 #[derive(Error, Debug)]
 enum ListenerError {
@@ -62,21 +59,10 @@ impl ListenerError {
 }
 
 /// A listener implementation using Rocket.rs
-pub struct RocketListener {
-    rocket: Option<Rocket>,
-}
-
-impl RocketListener {
-    /// Create a rocket listener data structure using a Rocket instance
-    pub fn new(rocket: Rocket) -> Self {
-        Self { rocket: Some(rocket) }
-    }
-}
+pub struct RocketListener;
 
 /// A listener. Can use Rocket or another impl depending on data provided
 pub struct Listener<T> {
-    /// The listener's service
-    pub service: Service,
     data: T,
 }
 
@@ -106,38 +92,9 @@ pub enum Event {
     },
 }
 
-builder!(ListenerBuilder<T> {
-    data: T
-});
-
-impl<T: APIEngine> Builder for ListenerBuilder<T> {
-    type State = Listener<T>;
-
-    fn build(self) -> Self::State {
-        Self::State {
-            service: Service::new(),
-            data: self.data.expect("No listener data was provided!"),
-        }
-        .set_name()
-    }
-}
-
-impl<T: APIEngine> Name for Listener<T> {
-    fn set_name(mut self) -> Self {
-        self.service.update_name(format!("{} Listener", T::name()));
-        self
-    }
-
-    fn get_name(&self) -> String {
-        self.service.get_name()
-    }
-}
-
-#[async_trait::async_trait]
-impl<T: APIEngine, H: ChronicleAPIScope> AknShutdown<Listener<T>> for ChronicleAPISender<H> {
-    async fn aknowledge_shutdown(self, mut state: Listener<T>, _status: Result<(), Need>) {
-        state.service.update_status(ServiceStatus::Stopped);
-    }
+#[build]
+pub(crate) fn build_listener<T>(data: T) -> Listener<T> {
+    Listener { data }
 }
 
 /// A success wrapper for API responses

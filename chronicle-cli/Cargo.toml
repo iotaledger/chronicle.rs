@@ -7,10 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chronicle = { path = "../chronicle", default-features = false }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-broker = { path = "../chronicle-broker", default-features = false }
-scylla-rs = "0.1"
+scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "new-backstage" }
 clap = { version = "2.33", features = ["yaml"] }
 tokio = "1.5"
 tokio-tungstenite = "0.14"

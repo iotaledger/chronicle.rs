@@ -414,8 +414,8 @@ impl RowsDecoder<SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
     type Row = AnalyticRecord;
     fn try_decode(decoder: Decoder) -> anyhow::Result<Option<Iter<AnalyticRecord>>> {
         ensure!(decoder.is_rows()?, "Decoded response is not rows!");
-        let rows_iter = Self::Row::rows_iter(decoder)?;
-        if rows_iter.is_empty() && !rows_iter.has_more_pages() {
+        let mut rows_iter = Self::Row::rows_iter(decoder)?;
+        if rows_iter.is_empty() && rows_iter.take_paging_state().is_none() {
             Ok(None)
         } else {
             // CQL specs states that the page result might be empty but has more pages to fetch.

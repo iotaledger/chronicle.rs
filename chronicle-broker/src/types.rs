@@ -27,71 +27,14 @@ use serde::{
 };
 use std::{
     collections::HashMap,
-    ops::Range,
     path::PathBuf,
 };
-use url::Url;
 
 #[derive(Deserialize, Serialize)]
 /// Defines a message to/from the Broker or its children
 pub enum BrokerSocketMsg<T> {
     /// A message to/from the Broker
     ChronicleBroker(T),
-}
-
-#[derive(Deserialize, Serialize)]
-/// It's the Interface of the broker app to dynamiclly configure the application during runtime
-pub enum ChronicleBrokerThrough {
-    /// Shutdown json to gracefully shutdown broker app
-    Shutdown,
-    /// Alter the topology of the broker app
-    Topology(BrokerTopology),
-    /// Exit the broker app
-    ExitProgram,
-}
-
-/// Topology event
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub enum BrokerTopology {
-    /// Add new MQTT Messages feed source
-    AddMqttMessages(Url),
-    /// Add new MQTT Messages Referenced feed source
-    AddMqttMessagesReferenced(Url),
-    /// Remove a MQTT Messages feed source
-    RemoveMqttMessages(Url),
-    /// Remove a MQTT Messages Referenced feed source
-    RemoveMqttMessagesReferenced(Url),
-    /// Import a log file using the given url
-    Import {
-        /// File or dir path which supposed to contain LogFiles
-        path: PathBuf,
-        /// Resume the importing process
-        resume: bool,
-        /// Provide optional import range
-        import_range: Option<Range<u32>>,
-        /// The type of import requested
-        import_type: ImportType,
-    },
-    /// Add Endpoint
-    Requesters(RequesterTopology),
-}
-
-/// Import types
-#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
-pub enum ImportType {
-    /// Import everything
-    All,
-    /// Import only Analytics data
-    Analytics,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-/// Requester topology used by admins to add/remove IOTA api endpoints
-pub enum RequesterTopology {
-    /// Add new Api Endpoint
-    AddEndpoint(Url),
-    /// Remove existing Api Endpoint
-    RemoveEndpoint(Url),
 }
 
 /// Milestone data
@@ -588,9 +531,7 @@ mod analytic {
                 .await
                 .ok_or_else(|| anyhow::anyhow!("Unable to fetch the analytics response"))??
             {
-                if records.has_more_pages() {
-                    // request next page
-                    let paging_state = records.take_paging_state();
+                if let Some(paging_state) = records.take_paging_state() {
                     // this will request the next page, and value worker will pass it to us through rx
                     Self::query_analytics_table(keyspace, sync_range, retries, tx.clone(), page_size, paging_state)?;
                     // Gets the first record in the page result, which is used to trigger accumulation
@@ -619,14 +560,15 @@ mod analytic {
                 analytic_data.process(self, records).await;
             }
         }
-        fn query_analytics_table<S: 'static + Select<SyncRange, Iter<AnalyticRecord>>>(
+        fn query_analytics_table<S: 'static + Select<SyncRange, Iter<AnalyticRecord>>, P: Into<Option<Vec<u8>>>>(
             keyspace: &S,
             sync_range: &SyncRange,
             retries: usize,
             tx: tokio::sync::mpsc::UnboundedSender<Result<Option<Iter<AnalyticRecord>>, scylla_rs::app::WorkerError>>,
             page_size: i32,
-            paging_state: Option<Vec<u8>>,
+            paging_state: P,
         ) -> anyhow::Result<()> {
+            let paging_state = paging_state.into();
             let req = keyspace
                 .select(sync_range)
                 .consistency(Consistency::One)

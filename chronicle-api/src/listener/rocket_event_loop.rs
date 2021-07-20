@@ -54,15 +54,16 @@ use rocket::{
     get,
     http::ContentType,
     response::{
-        Content,
+        content,
         Responder,
     },
+    serde::json::Json,
+    Build,
     Data,
     Request,
     Response,
     State,
 };
-use rocket_contrib::json::Json;
 use std::{
     borrow::Borrow,
     collections::{
@@ -76,23 +77,40 @@ use std::{
     str::FromStr,
     time::SystemTime,
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{
+    self,
+    UnboundedSender,
+};
+
+pub enum RocketEvent {
+    Service(tokio::sync::oneshot::Sender<ServiceTree>),
+}
 
 #[async_trait]
-impl<H: ChronicleAPIScope> EventLoop<ChronicleAPISender<H>> for Listener<RocketListener> {
-    async fn event_loop(
+impl Actor for Listener<RocketListener> {
+    type Dependencies = ();
+    type Event = RocketEvent;
+    type Channel = TokioChannel<Self::Event>;
+
+    async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
-        _status: Result<(), Need>,
-        supervisor: &mut Option<ChronicleAPISender<H>>,
-    ) -> Result<(), Need> {
-        self.service.update_status(ServiceStatus::Running);
-        if let Some(ref mut supervisor) = supervisor {
-            supervisor
-                .send(ChronicleAPIEvent::Children(ChronicleAPIChild::Listener(
-                    self.service.clone(),
-                )))
-                .map_err(|_| Need::Abort)?;
-        }
+        _rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+    ) -> Result<(), ActorError> {
+        Ok(())
+    }
+
+    async fn run<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
+        &mut self,
+        rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
+        _: Self::Dependencies,
+    ) -> Result<(), ActorError>
+    where
+        Self: Sized,
+        Sup::Event: SupervisorEvent,
+        <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
+    {
+        rt.link_data::<Act<Scylla>>().await?;
+        rt.update_status(ServiceStatus::Running).await.ok();
 
         let storage_config = get_config_async().await.storage_config;
 
@@ -103,23 +121,32 @@ impl<H: ChronicleAPIScope> EventLoop<ChronicleAPISender<H>> for Listener<RocketL
             .map(|k| k.name)
             .collect::<HashSet<_>>();
 
-        construct_rocket(
-            self.data
-                .rocket
-                .take()
-                .ok_or_else(|| Need::Abort)?
-                .manage(storage_config.partition_config.clone())
-                .manage(keyspaces)
-                .register(catchers![internal_error, not_found]),
-        )
-        .launch()
-        .await
-        .map_err(|_| Need::Abort)
+        let rocket = construct_rocket()
+            .manage(storage_config.partition_config.clone())
+            .manage(keyspaces)
+            .manage(rt.handle().into_inner().into_inner())
+            .register("/", catchers![internal_error, not_found])
+            .ignite()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let rocket_shutdown = rocket.shutdown();
+
+        tokio::spawn(rocket.launch());
+        while let Some(evt) = rt.next_event().await {
+            match evt {
+                RocketEvent::Service(sender) => {
+                    sender.send(rt.service_tree().await).ok();
+                }
+            }
+        }
+        rocket_shutdown.notify();
+        Ok(())
     }
 }
 
-fn construct_rocket(rocket: Rocket) -> Rocket {
-    rocket
+fn construct_rocket() -> Rocket<Build> {
+    rocket::build()
         .mount(
             "/api",
             routes![
@@ -177,7 +204,7 @@ impl Fairing for RequestTimer {
     }
 
     /// Stores the start time of the request in request-local state.
-    async fn on_request(&self, request: &mut Request<'_>, _: &mut Data) {
+    async fn on_request(&self, request: &mut Request<'_>, _: &mut Data<'_>) {
         // Store a `TimerStart` instead of directly storing a `SystemTime`
         // to ensure that this usage doesn't conflict with anything else
         // that might store a `SystemTime` in request-local cache.
@@ -240,7 +267,7 @@ impl<'r> Responder<'r, 'static> for ListenerResponse {
             Status::InternalServerError
         })?;
 
-        Content(ContentType::JSON, string).respond_to(req)
+        content::Json(string).respond_to(req)
     }
 }
 
@@ -250,11 +277,15 @@ type ListenerResult = Result<ListenerResponse, ListenerError>;
 async fn options(_path: PathBuf) {}
 
 #[get("/info")]
-async fn info() -> ListenerResult {
+async fn info(handle: &State<UnboundedSender<RocketEvent>>) -> ListenerResult {
     let version = std::env!("CARGO_PKG_VERSION").to_string();
-    let service = SERVICE.read().await;
-    let is_healthy = !std::iter::once(&*service)
-        .chain(service.microservices.values())
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    handle
+        .send(RocketEvent::Service(sender))
+        .map_err(|e| ListenerError::from(anyhow::anyhow!("{}", e)))?;
+    let service = receiver.await.map_err(|e| ListenerError::from(anyhow::anyhow!(e)))?;
+    let is_healthy = !std::iter::once(&service)
+        .chain(service.children.iter())
         .any(|service| service.is_degraded() || service.is_maintenance() || service.is_stopped());
     Ok(ListenerResponse::Info {
         name: "Chronicle".into(),
@@ -290,12 +321,17 @@ async fn metrics() -> Result<String, ListenerError> {
 }
 
 #[get("/service")]
-async fn service() -> Json<Service> {
-    Json(SERVICE.read().await.clone())
+async fn service(handle: &State<UnboundedSender<RocketEvent>>) -> Result<Json<ServiceTree>, ListenerError> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    handle
+        .send(RocketEvent::Service(sender))
+        .map_err(|e| ListenerError::from(anyhow::anyhow!("{}", e)))?;
+    let service = receiver.await.map_err(|e| ListenerError::from(anyhow::anyhow!(e)))?;
+    Ok(Json(service))
 }
 
 #[get("/<keyspace>/sync")]
-async fn sync(keyspaces: State<'_, HashSet<String>>, keyspace: String) -> Result<Json<SyncData>, ListenerError> {
+async fn sync(keyspaces: &State<HashSet<String>>, keyspace: String) -> Result<Json<SyncData>, ListenerError> {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -314,8 +350,8 @@ async fn query<V, S, K>(
 ) -> Result<V, ListenerError>
 where
     S: 'static + Select<K, V>,
-    K: 'static + Send + Clone,
-    V: 'static + Send + Clone,
+    K: 'static + Send + Sync + Clone,
+    V: 'static + Send + Sync + Clone,
 {
     let request = keyspace.select::<V>(&key).consistency(Consistency::One);
     let request = if let Some(page_size) = page_size {
@@ -352,8 +388,8 @@ async fn page<K, V>(
     key: K,
 ) -> Result<Vec<Partitioned<V>>, ListenerError>
 where
-    K: 'static + Send + Clone,
-    V: 'static + Send + Clone,
+    K: 'static + Send + Sync + Clone,
+    V: 'static + Send + Sync + Clone,
     ChronicleKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
 {
     let total_start_time = std::time::Instant::now();
@@ -615,7 +651,7 @@ where
 }
 
 #[get("/<keyspace>/messages/<message_id>")]
-async fn get_message(keyspace: String, message_id: String, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
+async fn get_message(keyspace: String, message_id: String, keyspaces: &State<HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -630,7 +666,7 @@ async fn get_message(keyspace: String, message_id: String, keyspaces: State<'_, 
 async fn get_message_metadata(
     keyspace: String,
     message_id: String,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -649,8 +685,8 @@ async fn get_message_children(
     page_size: Option<usize>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: State<'_, PartitionConfig>,
-    keyspaces: State<'_, HashSet<String>>,
+    partition_config: &State<PartitionConfig>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -708,8 +744,8 @@ async fn get_message_by_index(
     utf8: Option<bool>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: State<'_, PartitionConfig>,
-    keyspaces: State<'_, HashSet<String>>,
+    partition_config: &State<PartitionConfig>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -777,8 +813,8 @@ async fn get_ed25519_outputs(
     page_size: Option<usize>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: State<'_, PartitionConfig>,
-    keyspaces: State<'_, HashSet<String>>,
+    partition_config: &State<PartitionConfig>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -839,7 +875,7 @@ async fn get_ed25519_outputs(
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
-async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
+async fn get_output(keyspace: String, output_id: String, keyspaces: &State<HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -889,7 +925,7 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
 async fn get_transaction_included_message(
     keyspace: String,
     transaction_id: String,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -905,7 +941,7 @@ async fn get_transaction_included_message(
 }
 
 #[get("/<keyspace>/milestones/<index>")]
-async fn get_milestone(keyspace: String, index: u32, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
+async fn get_milestone(keyspace: String, index: u32, keyspaces: &State<HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -925,7 +961,7 @@ async fn get_analytics(
     keyspace: String,
     start: Option<u32>,
     end: Option<u32>,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -989,7 +1025,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn options() {
-        let rocket = construct_rocket(rocket::ignite());
+        let rocket = construct_rocket();
         let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
 
         let res = client.options("/api/anything").dispatch().await;
@@ -1001,7 +1037,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn info() {
-        let rocket = construct_rocket(rocket::ignite());
+        let rocket = construct_rocket();
         let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
 
         let res = client.get("/api/info").dispatch().await;
@@ -1019,7 +1055,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn service() {
-        let rocket = construct_rocket(rocket::ignite());
+        let rocket = construct_rocket();
         let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
 
         let res = client.get("/api/service").dispatch().await;
@@ -1039,12 +1075,11 @@ mod tests {
             .cloned()
             .map(|k| k.name)
             .collect::<HashSet<_>>();
-        let rocket = construct_rocket(
-            rocket::ignite()
-                .manage(storage_config.partition_config.clone())
-                .manage(keyspaces),
-        );
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let rocket = construct_rocket();
+
+        let client = Client::tracked(rocket.manage(storage_config.partition_config.clone()).manage(keyspaces))
+            .await
+            .expect("Invalid rocket instance!");
 
         let res = client
             .get("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
