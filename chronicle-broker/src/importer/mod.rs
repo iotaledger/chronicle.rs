@@ -130,7 +130,7 @@ pub fn build<T>(
 impl<T: 'static + Send + Sync + ImportMode> Actor for Importer<T> {
     type Dependencies = Act<Scylla>;
     type Event = ImporterEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,

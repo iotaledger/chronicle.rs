@@ -1,29 +1,15 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    collector::{
-        Collector,
-        CollectorEvent,
-    },
+    collector::{Collector, CollectorEvent},
     *,
 };
-use bee_rest_api::types::{
-    dtos::MessageDto,
-    responses::MilestoneResponse,
-};
+use bee_rest_api::types::{dtos::MessageDto, responses::MilestoneResponse};
 use chronicle_common::Wrapper;
-use rand::{
-    prelude::SliceRandom,
-    thread_rng,
-};
+use rand::{prelude::SliceRandom, thread_rng};
 use reqwest::Client;
 use serde_json::Value;
-use std::{
-    collections::VecDeque,
-    convert::TryFrom,
-    iter::FromIterator,
-    str::FromStr,
-};
+use std::{collections::VecDeque, convert::TryFrom, iter::FromIterator, str::FromStr};
 use tokio::sync::oneshot;
 use url::Url;
 
@@ -78,7 +64,7 @@ pub fn build_requester(
 impl Actor for Requester {
     type Dependencies = Act<Collector>;
     type Event = RequesterEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
@@ -97,7 +83,7 @@ impl Actor for Requester {
     async fn run<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
         rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
-        mut collector_handle: Self::Dependencies,
+        collector_handle: Self::Dependencies,
     ) -> Result<(), ActorError>
     where
         Self: Sized,
@@ -108,11 +94,11 @@ impl Actor for Requester {
         while let Some(event) = rt.next_event().await {
             match event {
                 RequesterEvent::RequestFullMessage(message_id, try_ms_index) => {
-                    self.request_full_message_with_retries(&mut collector_handle, message_id, try_ms_index)
+                    self.request_full_message_with_retries(&collector_handle, message_id, try_ms_index)
                         .await;
                 }
                 RequesterEvent::RequestMilestone(milestone_index) => {
-                    self.request_milestone_message_with_retries(&mut collector_handle, milestone_index)
+                    self.request_milestone_message_with_retries(&collector_handle, milestone_index)
                         .await;
                 }
                 RequesterEvent::Topology(topology) => match topology {
@@ -154,7 +140,7 @@ impl Requester {
 
     async fn request_full_message_with_retries(
         &mut self,
-        collector_handle: &mut Act<Collector>,
+        collector_handle: &Act<Collector>,
         message_id: MessageId,
         try_ms_index: u32,
     ) {
@@ -188,7 +174,7 @@ impl Requester {
     }
     async fn request_milestone_message_with_retries(
         &mut self,
-        collector_handle: &mut Act<Collector>,
+        collector_handle: &Act<Collector>,
         milestone_index: u32,
     ) {
         let mut retries = self.retries;
@@ -227,14 +213,19 @@ impl Requester {
 
     async fn respond_to_collector(
         &self,
-        collector_handle: &mut Act<Collector>,
+        collector_handle: &Act<Collector>,
         ms_index: u32,
         opt_message_id: Option<MessageId>,
         opt_full_message: Option<FullMessage>,
     ) {
-        let collector_event =
-            CollectorEvent::MessageAndMeta(self.requester_id, ms_index, opt_message_id, opt_full_message);
-        collector_handle.send(collector_event).await.ok();
+        collector_handle
+            .send(CollectorEvent::MessageAndMeta(
+                self.requester_id,
+                ms_index,
+                opt_message_id,
+                opt_full_message,
+            ))
+            .ok();
     }
 
     async fn request_milestone_message(&mut self, remote_url: &Url, milestone_index: u32) -> Result<FullMessage, ()> {

@@ -1,26 +1,12 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    archiver::{
-        Archiver,
-        ArchiverEvent,
-    },
-    collector::{
-        AskCollector,
-        Collector,
-        CollectorEvent,
-        MessageIdPartitioner,
-    },
-    syncer::{
-        Syncer,
-        SyncerEvent,
-    },
+    archiver::{Archiver, ArchiverEvent},
+    collector::{AskCollector, Collector, CollectorEvent, MessageIdPartitioner},
+    syncer::{Syncer, SyncerEvent},
     *,
 };
-use bee_message::prelude::{
-    MilestoneIndex,
-    MilestonePayload,
-};
+use bee_message::prelude::{MilestoneIndex, MilestonePayload};
 use chronicle_common::Synckey;
 use scylla_rs::prelude::stage::Reporter;
 use tokio::sync::mpsc::UnboundedSender;
@@ -81,7 +67,7 @@ impl Actor for Solidifier {
         Option<Act<Archiver>>,
     );
     type Event = SolidifierEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
@@ -93,7 +79,7 @@ impl Actor for Solidifier {
     async fn run<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
         rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
-        (mut syncer_handle, _scylla_handle, collector_handles, mut archiver_handle): Self::Dependencies,
+        (syncer_handle, _scylla_handle, collector_handles, archiver_handle): Self::Dependencies,
     ) -> Result<(), ActorError>
     where
         Self: Sized,
@@ -108,9 +94,9 @@ impl Actor for Solidifier {
                     self.handle_new_msg(
                         full_message,
                         &my_handle,
-                        &mut archiver_handle,
+                        &archiver_handle,
                         &collector_handles,
-                        &mut syncer_handle,
+                        &syncer_handle,
                     )
                     .await?;
                 }
@@ -192,8 +178,8 @@ impl Actor for Solidifier {
                         milestone_index,
                         &message_id,
                         &my_handle,
-                        &mut archiver_handle,
-                        &mut syncer_handle,
+                        &archiver_handle,
+                        &syncer_handle,
                     )
                     .await?;
                 }
@@ -201,8 +187,8 @@ impl Actor for Solidifier {
                     self.handle_milestone_msg(
                         milestone_message,
                         &my_handle,
-                        &mut archiver_handle,
-                        &mut syncer_handle,
+                        &archiver_handle,
+                        &syncer_handle,
                         &collector_handles,
                     )
                     .await?;
@@ -211,13 +197,13 @@ impl Actor for Solidifier {
                     match milestone_index {
                         Ok(milestone_index) => {
                             // this is request to solidify this milestone
-                            self.handle_solidify(milestone_index, &mut syncer_handle, &collector_handles)
+                            self.handle_solidify(milestone_index, &syncer_handle, &collector_handles)
                                 .await;
                         }
                         Err(milestone_index) => {
                             // This is response from collector(s) that we are unable to solidify
                             // this milestone_index
-                            self.handle_solidify_failure(milestone_index, &mut syncer_handle).await;
+                            self.handle_solidify_failure(milestone_index, &syncer_handle).await;
                         }
                     }
                 }
@@ -233,7 +219,7 @@ impl Actor for Solidifier {
 }
 
 impl Solidifier {
-    async fn handle_solidify_failure(&mut self, milestone_index: u32, syncer_handle: &mut Act<Syncer>) {
+    async fn handle_solidify_failure(&mut self, milestone_index: u32, syncer_handle: &Act<Syncer>) {
         error!(
             "Solidifier id: {}. was unable to solidify milestone_index: {}",
             self.partition_id, milestone_index
@@ -254,7 +240,7 @@ impl Solidifier {
                         "Solidifier id: {}, failed to solidify syncer requested index: {} milestone data",
                         self.partition_id, milestone_index
                     );
-                    syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).await.ok();
+                    syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).ok();
                 } else {
                     // there is a glitch in the new incoming data, however the archiver and syncer will take care of
                     // that.
@@ -269,7 +255,7 @@ impl Solidifier {
     async fn handle_solidify(
         &mut self,
         milestone_index: u32,
-        syncer_handle: &mut Act<Syncer>,
+        syncer_handle: &Act<Syncer>,
         collector_handles: &Pool<MapPool<Collector, u8>>,
     ) {
         // open solidify requests only for less than the expected
@@ -279,7 +265,7 @@ impl Solidifier {
                 self.partition_id, milestone_index, self.expected
             );
             // tell syncer to skip this atm
-            syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).await.ok();
+            syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).ok();
             return ();
         }
         // remove it from unreachable (if we already tried to solidify it before)
@@ -308,7 +294,7 @@ impl Solidifier {
                     .or_insert_with(|| InDatabase::new(milestone_index));
             } else {
                 // tell syncer to skip this atm
-                syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).await.ok();
+                syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).ok();
             }
         } else {
             // Asking any collector (as we don't know the message id of the milestone)
@@ -331,8 +317,8 @@ impl Solidifier {
         milestone_index: u32,
         message_id: &MessageId,
         my_handle: &Act<Self>,
-        archiver_handle: &mut Option<Act<Archiver>>,
-        syncer_handle: &mut Act<Syncer>,
+        archiver_handle: &Option<Act<Archiver>>,
+        syncer_handle: &Act<Syncer>,
     ) -> anyhow::Result<()> {
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
             // remove it from pending
@@ -360,7 +346,7 @@ impl Solidifier {
         &mut self,
         milestone_index: u32,
         my_handle: &Act<Self>,
-        archiver_handle: &mut Option<Act<Archiver>>,
+        archiver_handle: &Option<Act<Archiver>>,
     ) -> anyhow::Result<()> {
         // Remove milestoneData from self state and pass it to archiver
         let milestone_data = self
@@ -379,13 +365,14 @@ impl Solidifier {
             // Insert record into sync table
             self.handle_in_database(milestone_index, my_handle)?;
         }
-        if let Some(archiver_handle) = archiver_handle.as_mut() {
+        if let Some(archiver_handle) = archiver_handle.as_ref() {
             info!(
                 "solidifier_id: {}, is pushing the milestone data for index: {}, to Logger",
                 self.partition_id, milestone_index
             );
-            let archiver_event = ArchiverEvent::MilestoneData(milestone_data, None);
-            archiver_handle.send(archiver_event).await.ok();
+            archiver_handle
+                .send(ArchiverEvent::MilestoneData(milestone_data, None))
+                .ok();
         };
         Ok(())
     }
@@ -393,7 +380,7 @@ impl Solidifier {
         &mut self,
         milestone_index: u32,
         my_handle: &Act<Self>,
-        syncer_handle: &mut Act<Syncer>,
+        syncer_handle: &Act<Syncer>,
     ) -> anyhow::Result<()> {
         info!(
             "Solidifier is pushing the milestone data for index: {}, to Syncer",
@@ -417,7 +404,7 @@ impl Solidifier {
             self.handle_in_database(milestone_index, my_handle)?;
         }
         let syncer_event = SyncerEvent::MilestoneData(milestone_data);
-        syncer_handle.send(syncer_event).await.ok();
+        syncer_handle.send(syncer_event).ok();
         Ok(())
     }
     fn handle_in_database(&mut self, milestone_index: u32, my_handle: &Act<Self>) -> anyhow::Result<()> {
@@ -469,8 +456,8 @@ impl Solidifier {
         &mut self,
         MilestoneMessage(_message_id, milestone_payload, message, metadata): MilestoneMessage,
         my_handle: &Act<Self>,
-        archiver_handle: &mut Option<Act<Archiver>>,
-        syncer_handle: &mut Act<Syncer>,
+        archiver_handle: &Option<Act<Archiver>>,
+        syncer_handle: &Act<Syncer>,
         collector_handles: &Pool<MapPool<Collector, u8>>,
     ) -> anyhow::Result<()> {
         let milestone_index = milestone_payload.essence().index().0;
@@ -556,33 +543,37 @@ impl Solidifier {
     ) {
         // Request it from collector
         let collector_id = partitioner.partition_id(&parent_id);
-        if let Some(mut collector_handle) = collector_handles.read().await.get(&collector_id).cloned() {
-            let ask_event = CollectorEvent::Ask(AskCollector::FullMessage(
-                solidifier_id,
-                milestone_index,
-                parent_id,
-                created_by,
-            ));
-            collector_handle.send(ask_event).await.ok();
-        }
+        collector_handles
+            .send(
+                &collector_id,
+                CollectorEvent::Ask(AskCollector::FullMessage(
+                    solidifier_id,
+                    milestone_index,
+                    parent_id,
+                    created_by,
+                )),
+            )
+            .await;
     }
     async fn request_milestone_message(
         collector_handles: &Pool<MapPool<Collector, u8>>,
         collector_id: u8,
         milestone_index: u32,
     ) {
-        if let Some(mut collector_handle) = collector_handles.read().await.get(&collector_id).cloned() {
-            let ask_event = CollectorEvent::Ask(AskCollector::MilestoneMessage(milestone_index));
-            collector_handle.send(ask_event).await.ok();
-        }
+        collector_handles
+            .send(
+                &collector_id,
+                CollectorEvent::Ask(AskCollector::MilestoneMessage(milestone_index)),
+            )
+            .await;
     }
     async fn handle_new_msg(
         &mut self,
         full_message: FullMessage,
         my_handle: &Act<Self>,
-        archiver_handle: &mut Option<Act<Archiver>>,
+        archiver_handle: &Option<Act<Archiver>>,
         collector_handles: &Pool<MapPool<Collector, u8>>,
-        syncer_handle: &mut Act<Syncer>,
+        syncer_handle: &Act<Syncer>,
     ) -> anyhow::Result<()> {
         // check what milestone_index referenced this message
         let milestone_index = full_message.ref_ms().unwrap();

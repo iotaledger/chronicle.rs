@@ -1,18 +1,8 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    requester::{
-        Requester,
-        RequesterEvent,
-        RequesterId,
-    },
-    solidifier::{
-        AtomicSolidifierHandle,
-        AtomicSolidifierWorker,
-        MilestoneMessage,
-        Solidifier,
-        SolidifierEvent,
-    },
+    requester::{Requester, RequesterEvent, RequesterId},
+    solidifier::{AtomicSolidifierHandle, AtomicSolidifierWorker, MilestoneMessage, Solidifier, SolidifierEvent},
     *,
 };
 use anyhow::bail;
@@ -22,27 +12,15 @@ use bee_message::{
     output::Output,
     parents::Parents,
     payload::{
-        transaction::{
-            Essence,
-            TransactionPayload,
-        },
+        transaction::{Essence, TransactionPayload},
         Payload,
     },
-    prelude::{
-        MilestoneIndex,
-        TransactionId,
-    },
+    prelude::{MilestoneIndex, TransactionId},
 };
-use chronicle_common::config::{
-    PartitionConfig,
-    StorageConfig,
-};
+use chronicle_common::config::{PartitionConfig, StorageConfig};
 use lru::LruCache;
 use reqwest::Client;
-use std::{
-    collections::VecDeque,
-    sync::Arc,
-};
+use std::{collections::VecDeque, sync::Arc};
 use url::Url;
 
 /// Collector events
@@ -168,7 +146,7 @@ pub fn build_collector(
 impl Actor for Collector {
     type Dependencies = (Pool<MapPool<Solidifier, u8>>, Pool<LruPool<Requester>>, Act<Scylla>);
     type Event = CollectorEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
@@ -265,14 +243,9 @@ impl Actor for Collector {
                         );
                         // inform solidifier
                         let solidifier_id = (try_ms_index % (self.collector_count as u32)) as u8;
-                        if let Some(mut solidifier_handle) =
-                            solidifier_handles.read().await.get(&solidifier_id).cloned()
-                        {
-                            solidifier_handle
-                                .send(SolidifierEvent::Solidify(Err(try_ms_index)))
-                                .await
-                                .ok();
-                        }
+                        solidifier_handles
+                            .send(&solidifier_id, SolidifierEvent::Solidify(Err(try_ms_index)))
+                            .await;
                     }
                 }
                 CollectorEvent::Message(message_id, mut message) => {
@@ -317,14 +290,14 @@ impl Actor for Collector {
                                 wrong_msg_est_ms = None;
                             }
                             cached_msg = Some(message.clone());
-                            // push to solidifier
-                            if let Some(mut solidifier_handle) =
-                                solidifier_handles.read().await.get(&partition_id).cloned()
-                            {
-                                let full_message = FullMessage::new(message.clone(), metadata.clone());
-                                let full_msg_event = SolidifierEvent::Message(full_message);
-                                solidifier_handle.send(full_msg_event).await.ok();
-                            };
+
+                            solidifier_handles
+                                .send(
+                                    &partition_id,
+                                    SolidifierEvent::Message(FullMessage::new(message.clone(), metadata.clone())),
+                                )
+                                .await;
+
                             // however the message_id might had been requested,
                             if let Some((requested_by_this_ms, _)) = self.pending_requests.remove(&message_id) {
                                 // check if we have to close it
@@ -402,13 +375,17 @@ impl Actor for Collector {
                                         )
                                         .await;
                                     } else {
-                                        if let Some(mut solidifier_handle) =
-                                            solidifier_handles.read().await.get(&solidifier_id).cloned()
-                                        {
-                                            let full_message = FullMessage::new(message.clone(), metadata.clone());
-                                            let full_msg_event = SolidifierEvent::Message(full_message);
-                                            solidifier_handle.send(full_msg_event).await.ok();
-                                        }
+                                        solidifier_handles
+                                            .send(
+                                                &solidifier_id,
+                                                SolidifierEvent::Message(FullMessage::new(
+                                                    message.clone(),
+                                                    metadata.clone(),
+                                                )),
+                                            )
+                                            .await
+                                            .ok();
+
                                         // make sure to insert the message if it's requested from syncer
                                         if created_by == CreatedBy::Syncer {
                                             self.ref_ms.0 = try_ms_index;
@@ -503,7 +480,7 @@ impl Actor for Collector {
                             let dur = *dur;
                             tokio::spawn(async move {
                                 tokio::time::sleep(dur).await;
-                                handle.send(evt).await.ok();
+                                handle.send(evt).ok();
                             });
                         }
                         ActorRequest::Finish => error!("{}", e.error),
@@ -534,12 +511,9 @@ impl Collector {
     }
     /// Request the milestone message of a given milestone index
     async fn request_milestone_message(&mut self, milestone_index: u32, requester_handles: &Pool<LruPool<Requester>>) {
-        if let Some(mut requester_handle) = requester_handles.read().await.get().cloned() {
-            requester_handle
-                .send(RequesterEvent::RequestMilestone(milestone_index))
-                .await
-                .ok();
-        };
+        requester_handles
+            .send(RequesterEvent::RequestMilestone(milestone_index))
+            .await;
     }
     /// Request the full message (i.e., including both message and metadata) of a given message id and
     /// a milestone index
@@ -549,12 +523,9 @@ impl Collector {
         try_ms_index: u32,
         requester_handles: &Pool<LruPool<Requester>>,
     ) {
-        if let Some(mut requester_handle) = requester_handles.read().await.get().cloned() {
-            requester_handle
-                .send(RequesterEvent::RequestFullMessage(message_id, try_ms_index))
-                .await
-                .ok();
-        };
+        requester_handles
+            .send(RequesterEvent::RequestFullMessage(message_id, try_ms_index))
+            .await;
     }
 
     /// Clean up the message and message_id with the wrong estimated milestone index
@@ -587,12 +558,12 @@ impl Collector {
         metadata: MessageMetadata,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
     ) {
-        if let Some(mut solidifier_handle) = solidifier_handles.read().await.get(&partition_id).cloned() {
-            solidifier_handle
-                .send(SolidifierEvent::Message(FullMessage::new(message, metadata)))
-                .await
-                .ok();
-        };
+        solidifier_handles
+            .send(
+                &partition_id,
+                SolidifierEvent::Message(FullMessage::new(message, metadata)),
+            )
+            .await;
     }
     /// Push a `Close` message_id (which doesn't belong to all solidifiers with a given milestone index) to the
     /// solidifier
@@ -603,12 +574,9 @@ impl Collector {
         try_ms_index: u32,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
     ) {
-        if let Some(mut solidifier_handle) = solidifier_handles.read().await.get(&partition_id).cloned() {
-            solidifier_handle
-                .send(SolidifierEvent::Close(message_id, try_ms_index))
-                .await
-                .ok();
-        };
+        solidifier_handles
+            .send(&partition_id, SolidifierEvent::Close(message_id, try_ms_index))
+            .await;
     }
     /// Get the `Chronicle` keyspace of a message
     #[cfg(feature = "filter")]
@@ -645,10 +613,8 @@ impl Collector {
             let milestone_index = MilestoneIndex(*meta.referenced_by_milestone_index.as_ref().unwrap());
             let solidifier_id = (*milestone_index % (self.collector_count as u32)) as u8;
             let solidifier_handle = solidifier_handles
-                .read()
-                .await
                 .get(&solidifier_id)
-                .cloned()
+                .await
                 .ok_or_else(|| anyhow::anyhow!("No solidifier handle for id {}!", solidifier_id))?;
             let inherent_worker =
                 AtomicWorker::new(solidifier_handle, *milestone_index, *message_id, self.retries_per_query);
@@ -773,14 +739,19 @@ impl Collector {
                 if metadata.is_some() && parents_check {
                     // push to the right solidifier
                     let solidifier_id = (ms_index.0 % (self.collector_count as u32)) as u8;
-                    if let Some(mut solidifier_handle) = solidifier_handles.read().await.get(&solidifier_id).cloned() {
-                        let ms_message =
-                            MilestoneMessage::new(*message_id, milestone.clone(), message.clone(), metadata);
-                        solidifier_handle
-                            .send(SolidifierEvent::Milestone(ms_message))
-                            .await
-                            .ok();
-                    };
+
+                    solidifier_handles
+                        .send(
+                            &solidifier_id,
+                            SolidifierEvent::Milestone(MilestoneMessage::new(
+                                *message_id,
+                                milestone.clone(),
+                                message.clone(),
+                                metadata,
+                            )),
+                        )
+                        .await;
+
                     self.insert(
                         inherent_worker,
                         &self.get_keyspace(),
@@ -846,10 +817,8 @@ impl Collector {
         let keyspace = self.get_keyspace();
         let solidifier_id = (self.ref_ms.0 % (self.collector_count as u32)) as u8;
         let solidifier_handle = solidifier_handles
-            .read()
-            .await
             .get(&solidifier_id)
-            .cloned()
+            .await
             .ok_or_else(|| anyhow::anyhow!("No solidifier for id {}", solidifier_id))?;
         let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries_per_query);
         // Insert parents/children

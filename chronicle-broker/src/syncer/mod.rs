@@ -1,23 +1,14 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    archiver::{
-        Archiver,
-        ArchiverEvent,
-    },
-    solidifier::{
-        Solidifier,
-        SolidifierEvent,
-    },
+    archiver::{Archiver, ArchiverEvent},
+    solidifier::{Solidifier, SolidifierEvent},
     *,
 };
 use async_recursion::async_recursion;
 use chronicle_common::Wrapper;
 use chronicle_storage::keyspaces::ChronicleKeyspace;
-use std::{
-    ops::Deref,
-    time::Duration,
-};
+use std::{ops::Deref, time::Duration};
 use tokio::sync::oneshot;
 
 /// Syncer events
@@ -111,7 +102,7 @@ pub fn build_syncer(
 impl Actor for Syncer {
     type Dependencies = (Pool<MapPool<Solidifier, u8>>, Act<Archiver>);
     type Event = SyncerEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
@@ -123,7 +114,7 @@ impl Actor for Syncer {
     async fn run<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
         rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
-        (solidifier_handles, mut archiver_handle): Self::Dependencies,
+        (solidifier_handles, archiver_handle): Self::Dependencies,
     ) -> Result<(), ActorError>
     where
         Self: Sized,
@@ -140,23 +131,21 @@ impl Actor for Syncer {
                         match ask {
                             AskSyncer::Complete => {
                                 if !self.highest.eq(&0) {
-                                    self.complete(&my_handle, &solidifier_handles, &mut archiver_handle)
-                                        .await;
+                                    self.complete(&my_handle, &solidifier_handles, &archiver_handle).await;
                                 } else {
                                     self.first_ask.replace(ask);
                                 }
                             }
                             AskSyncer::FillGaps => {
                                 if !self.highest.eq(&0) {
-                                    self.fill_gaps(&my_handle, &solidifier_handles, &mut archiver_handle)
-                                        .await;
+                                    self.fill_gaps(&my_handle, &solidifier_handles, &archiver_handle).await;
                                 } else {
                                     self.first_ask.replace(ask);
                                 }
                             }
                             AskSyncer::UpdateSyncData => {
                                 info!("Trying to update the sync data");
-                                self.update_sync(&my_handle, &solidifier_handles, &mut archiver_handle)
+                                self.update_sync(&my_handle, &solidifier_handles, &archiver_handle)
                                     .await;
                             }
                         }
@@ -168,7 +157,7 @@ impl Actor for Syncer {
                     }
                 }
                 SyncerEvent::MilestoneData(milestone_data) => {
-                    self.handle_milestone_data(milestone_data, &my_handle, &solidifier_handles, &mut archiver_handle)
+                    self.handle_milestone_data(milestone_data, &my_handle, &solidifier_handles, &archiver_handle)
                         .await;
                 }
                 SyncerEvent::Unreachable(milestone_index) => {
@@ -176,7 +165,7 @@ impl Actor for Syncer {
                     // This happens when all the peers don't have the requested milestone_index
                     error!("Syncer unable to reach milestone_index: {}", milestone_index);
                     self.handle_skip();
-                    self.trigger_process_more(&my_handle, &solidifier_handles, &mut archiver_handle)
+                    self.trigger_process_more(&my_handle, &solidifier_handles, &archiver_handle)
                         .await;
                 }
                 SyncerEvent::Shutdown => break,
@@ -191,7 +180,7 @@ impl Syncer {
         &mut self,
         my_handle: &Act<Self>,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
-        archiver_handle: &mut Act<Archiver>,
+        archiver_handle: &Act<Archiver>,
     ) {
         if self.eof {
             if let Some(sync_range) = self.sync_range.as_ref() {
@@ -203,7 +192,7 @@ impl Syncer {
                     self.complete_or_fillgaps(my_handle, solidifier_handles, archiver_handle)
                         .await;
                 } else {
-                    self.schedule_update_sync_data(my_handle.clone()).await;
+                    self.schedule_update_sync_data(my_handle.clone());
                 }
             }
         }
@@ -214,7 +203,7 @@ impl Syncer {
         milestone_data: MilestoneData,
         my_handle: &Act<Self>,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
-        archiver_handle: &mut Act<Archiver>,
+        archiver_handle: &Act<Archiver>,
     ) {
         self.pending -= 1;
         self.milestones_data.push(Ascending::new(milestone_data));
@@ -226,14 +215,13 @@ impl Syncer {
             // push it to archiver
             archiver_handle
                 .send(ArchiverEvent::MilestoneData(milestone_data, None))
-                .await
                 .ok();
             // push the rest
             while let Some(ms_data) = self.milestones_data.pop() {
                 let milestone_data = ms_data.into_inner();
                 let ms_index = milestone_data.milestone_index();
                 if next != ms_index {
-                    archiver_handle.send(ArchiverEvent::Close(next)).await.ok();
+                    archiver_handle.send(ArchiverEvent::Close(next)).ok();
                     // identify self.highest as glitch.
                     // eventually we will fill up this glitch
                     warn!(
@@ -249,13 +237,12 @@ impl Syncer {
                 // push it to archiver
                 archiver_handle
                     .send(ArchiverEvent::MilestoneData(milestone_data, None))
-                    .await
                     .ok();
             }
             // push the start point to archiver
             let _ = self.oneshot.take().expect("Expected oneshot channel").send(next);
             // tell archiver to finish the logfile
-            archiver_handle.send(ArchiverEvent::Close(next)).await.ok();
+            archiver_handle.send(ArchiverEvent::Close(next)).ok();
             // set the first ask request
             self.complete_or_fillgaps(my_handle, solidifier_handles, archiver_handle)
                 .await;
@@ -269,7 +256,6 @@ impl Syncer {
                     // push it to archiver
                     let _ = archiver_handle
                         .send(ArchiverEvent::MilestoneData(ms_data.into_inner(), upper_ms_limit))
-                        .await
                         .ok();
                     self.next += 1;
                 } else {
@@ -317,7 +303,7 @@ impl Syncer {
         &mut self,
         my_handle: &Act<Self>,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
-        archiver_handle: &mut Act<Archiver>,
+        archiver_handle: &Act<Archiver>,
     ) {
         match self.first_ask.as_ref() {
             Some(AskSyncer::Complete) => {
@@ -328,7 +314,7 @@ impl Syncer {
         }
     }
 
-    async fn close_log_file(&mut self, archiver_handle: &mut Act<Archiver>) {
+    fn close_log_file(&mut self, archiver_handle: &Act<Archiver>) {
         let created_log_file = self.initial_gap_start != self.next;
         if self.prev_closed_log_filename != self.initial_gap_start && created_log_file {
             info!(
@@ -336,7 +322,7 @@ impl Syncer {
                 self.initial_gap_start, self.initial_gap_start, self.next
             );
             // We should close any part file related to the current gap
-            archiver_handle.send(ArchiverEvent::Close(self.next)).await.ok();
+            archiver_handle.send(ArchiverEvent::Close(self.next)).ok();
 
             self.prev_closed_log_filename = self.initial_gap_start;
         } else {
@@ -366,7 +352,7 @@ impl Syncer {
         &mut self,
         my_handle: &Act<Self>,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
-        archiver_handle: &mut Act<Archiver>,
+        archiver_handle: &Act<Archiver>,
     ) {
         if let Some(ref mut active) = self.active {
             match active {
@@ -380,7 +366,7 @@ impl Syncer {
                             // move to next gap (only if pending is zero)
                             if self.pending.eq(&0) {
                                 // We should close any part file related to the current(above finished range) gap
-                                self.close_log_file(archiver_handle).await;
+                                self.close_log_file(archiver_handle);
                                 // Finished the current active range, therefore we drop it
                                 self.active.take();
                                 self.complete(my_handle, solidifier_handles, archiver_handle).await;
@@ -399,7 +385,7 @@ impl Syncer {
                             // move to next gap (only if pending is zero)
                             if self.pending.eq(&0) {
                                 // We should close any part file related to the current(above finished range) gap
-                                self.close_log_file(archiver_handle).await;
+                                self.close_log_file(archiver_handle);
                                 // Finished the current active range, therefore we drop it
                                 self.active.take();
                                 self.fill_gaps(my_handle, solidifier_handles, archiver_handle).await;
@@ -412,16 +398,16 @@ impl Syncer {
         } else {
             self.eof = true;
             info!("SyncData reached EOF");
-            self.schedule_update_sync_data(my_handle.clone()).await;
+            self.schedule_update_sync_data(my_handle.clone());
         }
     }
-    async fn schedule_update_sync_data(&self, mut my_handle: Act<Self>) {
+    fn schedule_update_sync_data(&self, my_handle: Act<Self>) {
         info!("Scheduling update sync after: {:?}", self.update_sync_data_every);
         let update_sync_data_every = self.update_sync_data_every;
         tokio::spawn(async move {
             tokio::time::sleep(update_sync_data_every).await;
             let ask = AskSyncer::UpdateSyncData;
-            my_handle.send(SyncerEvent::Ask(ask)).await.ok();
+            my_handle.send(SyncerEvent::Ask(ask)).ok();
         });
     }
     async fn request_solidify(
@@ -430,16 +416,15 @@ impl Syncer {
         milestone_index: u32,
     ) {
         let solidifier_id = (milestone_index % (solidifier_count as u32)) as u8;
-        if let Some(mut solidifier_handle) = solidifier_handles.read().await.get(&solidifier_id).cloned() {
-            let solidify_event = SolidifierEvent::Solidify(Ok(milestone_index));
-            solidifier_handle.send(solidify_event).await.ok();
-        }
+        solidifier_handles
+            .send(&solidifier_id, SolidifierEvent::Solidify(Ok(milestone_index)))
+            .await;
     }
     async fn trigger_process_more(
         &mut self,
         my_handle: &Act<Self>,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
-        archiver_handle: &mut Act<Archiver>,
+        archiver_handle: &Act<Archiver>,
     ) {
         // move to next range (only if pending is zero)
         if self.pending.eq(&0) {
@@ -447,11 +432,12 @@ impl Syncer {
             self.process_more(my_handle, solidifier_handles, archiver_handle).await;
         }
     }
+
     async fn complete(
         &mut self,
         my_handle: &Act<Self>,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
-        archiver_handle: &mut Act<Archiver>,
+        archiver_handle: &Act<Archiver>,
     ) {
         // start from the lowest uncomplete
         if let Some(mut gap) = self.sync_data.take_lowest_uncomplete() {
@@ -496,7 +482,7 @@ impl Syncer {
         &mut self,
         my_handle: &Act<Self>,
         solidifier_handles: &Pool<MapPool<Solidifier, u8>>,
-        archiver_handle: &mut Act<Archiver>,
+        archiver_handle: &Act<Archiver>,
     ) {
         // start from the lowest gap
         if let Some(mut gap) = self.sync_data.take_lowest_gap() {

@@ -1,25 +1,10 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use crate::{
-    archiver::*,
-    collector::*,
-    importer::*,
-    mqtt::*,
-    requester::RequesterTopology,
-    solidifier::*,
-    syncer::*,
-};
+use crate::{archiver::*, collector::*, importer::*, mqtt::*, requester::RequesterTopology, solidifier::*, syncer::*};
 use async_trait::async_trait;
-use chronicle_common::config::{
-    BrokerConfig,
-    Config,
-};
-use std::{
-    ops::Range,
-    str::FromStr,
-    time::Duration,
-};
+use chronicle_common::config::{BrokerConfig, Config};
+use std::{ops::Range, str::FromStr, time::Duration};
 use tokio::sync::oneshot;
 
 /// Application state
@@ -123,7 +108,7 @@ pub fn build_broker(
 impl Actor for ChronicleBroker {
     type Dependencies = ();
     type Event = BrokerEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
@@ -335,7 +320,7 @@ impl ChronicleBroker {
         <BrokerEvent as SupervisorEvent>::ChildStates: From<Mqtt<T>>,
     {
         if let Some(pool) = rt.pool::<MapPool<Mqtt<T>, Url>>().await {
-            if let Some(handle) = pool.read().await.get(&url) {
+            if let Some(handle) = pool.get(&url).await {
                 handle.shutdown();
                 let config = get_config_async().await;
                 let mut new_config = config.clone();

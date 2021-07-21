@@ -74,7 +74,7 @@ pub fn build_archiver(
 impl Actor for Archiver {
     type Dependencies = ();
     type Event = ArchiverEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,

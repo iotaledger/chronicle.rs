@@ -2,30 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 use backstage::prefabs::websocket::WebsocketChildren;
 use chronicle_broker::{
-    application::{
-        BrokerEvent,
-        BrokerRequest,
-        ChronicleBroker,
-        ImportType,
-    },
+    application::{BrokerEvent, BrokerRequest, ChronicleBroker, ImportType},
     requester::RequesterTopology,
 };
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::Message;
 use url::Url;
 
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use std::{
-    marker::PhantomData,
-    net::SocketAddr,
-    ops::Range,
-    path::PathBuf,
-};
+use std::{marker::PhantomData, net::SocketAddr, ops::Range, path::PathBuf};
 
 pub struct Websocket {
     pub listen_address: SocketAddr,
@@ -38,7 +25,7 @@ impl Actor for Websocket {
         Act<ChronicleBroker>,
     );
     type Event = WebsocketRequest;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
@@ -62,7 +49,7 @@ impl Actor for Websocket {
     async fn run<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
         rt: &mut ActorScopedRuntime<Self, Reg, Sup>,
-        (mut websocket, mut broker): Self::Dependencies,
+        (websocket, broker): Self::Dependencies,
     ) -> Result<(), ActorError>
     where
         Self: Sized,
@@ -84,13 +71,11 @@ impl Actor for Websocket {
                         let (sender, receiver) = tokio::sync::oneshot::channel();
                         if broker
                             .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessages(url, sender)))
-                            .await
                             .is_ok()
                         {
                             if let Ok(res) = receiver.await {
                                 websocket
                                     .send(WebsocketChildren::Response(addr, format!("{:?}", res).into()))
-                                    .await
                                     .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                             }
                         }
@@ -101,13 +86,11 @@ impl Actor for Websocket {
                             .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessagesReferenced(
                                 url, sender,
                             )))
-                            .await
                             .is_ok()
                         {
                             if let Ok(res) = receiver.await {
                                 websocket
                                     .send(WebsocketChildren::Response(addr, format!("{:?}", res).into()))
-                                    .await
                                     .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                             }
                         }
@@ -116,13 +99,11 @@ impl Actor for Websocket {
                         let (sender, receiver) = tokio::sync::oneshot::channel();
                         if broker
                             .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessages(url, sender)))
-                            .await
                             .is_ok()
                         {
                             if let Ok(res) = receiver.await {
                                 websocket
                                     .send(WebsocketChildren::Response(addr, format!("{:?}", res).into()))
-                                    .await
                                     .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                             }
                         }
@@ -133,13 +114,11 @@ impl Actor for Websocket {
                             .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessagesReferenced(
                                 url, sender,
                             )))
-                            .await
                             .is_ok()
                         {
                             if let Ok(res) = receiver.await {
                                 websocket
                                     .send(WebsocketChildren::Response(addr, format!("{:?}", res).into()))
-                                    .await
                                     .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                             }
                         }
@@ -151,13 +130,11 @@ impl Actor for Websocket {
                                 .send(BrokerEvent::Websocket(BrokerRequest::Requester(
                                     RequesterTopology::AddEndpoint(url, sender),
                                 )))
-                                .await
                                 .is_ok()
                             {
                                 if let Ok(res) = receiver.await {
                                     websocket
                                         .send(WebsocketChildren::Response(addr, format!("{:?}", res).into()))
-                                        .await
                                         .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                                 }
                             }
@@ -168,13 +145,11 @@ impl Actor for Websocket {
                                 .send(BrokerEvent::Websocket(BrokerRequest::Requester(
                                     RequesterTopology::RemoveEndpoint(url, sender),
                                 )))
-                                .await
                                 .is_ok()
                             {
                                 if let Ok(res) = receiver.await {
                                     websocket
                                         .send(WebsocketChildren::Response(addr, format!("{:?}", res).into()))
-                                        .await
                                         .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                                 }
                             }
@@ -195,7 +170,6 @@ impl Actor for Websocket {
                                 import_type,
                                 responder,
                             }))
-                            .await
                             .is_ok()
                         {
                             while let Some(res) = receiver.recv().await {
@@ -204,7 +178,6 @@ impl Actor for Websocket {
                                         addr,
                                         serde_json::to_string(&res).unwrap().into(),
                                     ))
-                                    .await
                                     .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                             }
                         }

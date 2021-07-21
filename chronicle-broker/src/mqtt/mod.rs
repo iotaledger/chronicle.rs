@@ -2,17 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    collector::{
-        Collector,
-        CollectorEvent,
-        MessageIdPartitioner,
-    },
+    collector::{Collector, CollectorEvent, MessageIdPartitioner},
     *,
 };
-use futures::{
-    stream::StreamExt,
-    Stream,
-};
+use futures::{stream::StreamExt, Stream};
 use std::time::Duration;
 /// Mqtt state
 pub struct Mqtt<T> {
@@ -61,14 +54,9 @@ impl Actor for Mqtt<Messages> {
                 let (message_id, _) = msg.id();
                 // partitioning based on first byte of the message_id
                 let collector_partition_id = self.partitioner.partition_id(&message_id);
-                if let Some(mut collector_handle) =
-                    collectors_handles.read().await.get(&collector_partition_id).cloned()
-                {
-                    collector_handle
-                        .send(CollectorEvent::Message(message_id, msg))
-                        .await
-                        .ok();
-                }
+                collectors_handles
+                    .send(&collector_partition_id, CollectorEvent::Message(message_id, msg))
+                    .await;
             };
         }
         Ok(())
@@ -107,14 +95,9 @@ impl Actor for Mqtt<MessagesReferenced> {
             if let Ok(msg_ref) = serde_json::from_str::<MessageMetadata>(&msg_ref.payload_str()) {
                 // partitioning based on first byte of the message_id
                 let collector_partition_id = self.partitioner.partition_id(&msg_ref.message_id);
-                if let Some(mut collector_handle) =
-                    collectors_handles.read().await.get(&collector_partition_id).cloned()
-                {
-                    collector_handle
-                        .send(CollectorEvent::MessageReferenced(msg_ref))
-                        .await
-                        .ok();
-                }
+                collectors_handles
+                    .send(&collector_partition_id, CollectorEvent::MessageReferenced(msg_ref))
+                    .await;
             };
         }
         Ok(())
@@ -242,13 +225,6 @@ where
 pub struct MqttReceiver {
     client: AsyncClient,
     stream: futures::channel::mpsc::Receiver<Option<paho_mqtt::Message>>,
-}
-
-#[async_trait]
-impl Receiver<paho_mqtt::Message> for MqttReceiver {
-    async fn recv(&mut self) -> Option<paho_mqtt::Message> {
-        self.stream.next().await.flatten()
-    }
 }
 
 impl Stream for MqttReceiver {

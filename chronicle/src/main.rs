@@ -37,7 +37,7 @@ impl Actor for Launcher {
 
     type Event = LauncherEvent;
 
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,

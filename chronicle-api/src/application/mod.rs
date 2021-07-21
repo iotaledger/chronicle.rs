@@ -21,7 +21,7 @@ pub enum ChronicleAPIEvent {}
 impl Actor for ChronicleAPI {
     type Dependencies = ();
     type Event = ChronicleAPIEvent;
-    type Channel = TokioChannel<Self::Event>;
+    type Channel = UnboundedTokioChannel<Self::Event>;
 
     async fn init<Reg: RegistryAccess + Send + Sync, Sup: EventDriven>(
         &mut self,
