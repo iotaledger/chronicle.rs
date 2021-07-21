@@ -9,7 +9,7 @@ const ActionList = [
     link: 'docs/welcome/',
     description: (
       <>
-        Learn the Basics about the IOTA Identity Wallet Library and how it works behind the scenes. 
+        Learn about Chronicle. 
       </>
     ),
   },
@@ -18,7 +18,7 @@ const ActionList = [
     link: 'docs/getting_started',
     description: (
       <>
-        Follow our tutorial to build your own IOTA application. IOTA Identity supports Rust, Python and Javascript.
+        Configure and run your own node.
       </>
     ),
   },
@@ -27,7 +27,7 @@ const ActionList = [
     link: 'docs/contribute',
     description: (
       <>
-        You want to be a part of the IOTA mission? Join the IOTA community or join the IOTA Libraries X-Team.
+        Join the IOTA community!
       </>
     ),
   },
