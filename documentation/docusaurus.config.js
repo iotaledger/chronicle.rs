@@ -5,7 +5,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 module.exports = {
   title: 'Chronicle',
   tagline: 'Official IOTA permanode solution.',
-  url: 'https://docs.iota.org', // TODO: PROPER URL
+  url: 'https://chronicle.docs.iota.org',
   baseUrl: '/',
   onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'throw',
