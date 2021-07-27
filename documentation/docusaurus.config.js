@@ -78,7 +78,7 @@ module.exports = {
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl:
-            'https://github.com/iotaledger/chronicle.rs/tree/main/docs',
+            'https://github.com/iotaledger/chronicle.rs/tree/dev/documentation/',
         },
         theme: {
           customCss: require.resolve('./src/css/iota.css'),
