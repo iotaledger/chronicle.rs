@@ -5,13 +5,17 @@ use anyhow::{
     anyhow,
     bail,
 };
+use chronicle_api::{
+    websocket::ConfigRequest,
+    ChronicleRequest,
+};
 use chronicle_broker::{
+    application::ImportType,
     merge::{
         LogPaths,
         Merger,
         ValidationLevel,
     },
-    BrokerSocketMsg,
     *,
 };
 use chronicle_common::config::{
@@ -32,6 +36,7 @@ use indicatif::{
     ProgressStyle,
 };
 use regex::Regex;
+use scylla_rs::prelude::websocket::ScyllaWebsocketEvent;
 use std::{
     path::{
         Path,
@@ -101,18 +106,21 @@ async fn process() -> anyhow::Result<()> {
         }
         ("stop", Some(_matches)) => {
             let config = VersionedConfig::load(None)?.verify().await?;
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-            let message = Message::text(serde_json::to_string(&BrokerSocketMsg::ChronicleBroker(
-                ChronicleBrokerThrough::ExitProgram,
-            ))?);
+            let (mut stream, _) = connect_async(Url::parse(&format!(
+                "ws://{}/",
+                config.broker_config.websocket_address
+            ))?)
+            .await?;
+            let message = Message::text(serde_json::to_string(&ChronicleRequest::ExitProgram)?);
             stream.send(message).await?;
         }
         ("rebuild", Some(_matches)) => {
             let config = VersionedConfig::load(None)?.verify().await?;
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-            let message = Message::text(serde_json::to_string(&SocketMsg::Scylla(ScyllaThrough::Topology(
-                scylla_rs::prelude::Topology::BuildRing(1),
-            )))?);
+            let (mut stream, _) =
+                connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address))?).await?;
+            let message = Message::text(serde_json::to_string(&ScyllaWebsocketEvent::Topology(
+                scylla_rs::prelude::websocket::Topology::BuildRing(1),
+            ))?);
             stream.send(message).await?;
         }
         ("config", Some(matches)) => {
@@ -121,9 +129,14 @@ async fn process() -> anyhow::Result<()> {
                 println!("{:#?}", config);
             }
             if matches.is_present("rollback") {
-                let (mut stream, _) =
-                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-                let message = Message::text(serde_json::to_string(&SocketMsg::General(ConfigCommand::Rollback))?);
+                let (mut stream, _) = connect_async(Url::parse(&format!(
+                    "ws://{}/",
+                    config.broker_config.websocket_address
+                ))?)
+                .await?;
+                let message = Message::text(serde_json::to_string(&ChronicleRequest::Config(
+                    ConfigRequest::Rollback,
+                ))?);
                 stream.send(message).await?;
             }
         }
@@ -144,18 +157,19 @@ async fn nodes<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         .value_of("remove")
         .map(|address| address.parse().expect("Invalid address provided!"));
     if !matches.is_present("skip-connection") {
-        let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+        let (mut stream, _) =
+            connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address))?).await?;
 
         if let Some(address) = add_address {
-            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla_rs::prelude::Topology::AddNode(address)));
-            let message = Message::text(serde_json::to_string(&message)?);
+            let message = Message::text(serde_json::to_string(&ScyllaWebsocketEvent::Topology(
+                scylla_rs::prelude::websocket::Topology::AddNode(address),
+            ))?);
             stream.send(message).await?;
         }
         if let Some(address) = rem_address {
-            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla_rs::prelude::Topology::RemoveNode(
-                address,
-            )));
-            let message = Message::text(serde_json::to_string(&message)?);
+            let message = Message::text(serde_json::to_string(&ScyllaWebsocketEvent::Topology(
+                scylla_rs::prelude::websocket::Topology::RemoveNode(address),
+            ))?);
             stream.send(message).await?;
         }
         if matches.is_present("list") {
@@ -196,18 +210,17 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 let mut messages = Vec::new();
                 for mqtt_address in mqtt_addresses.clone() {
                     messages.push(Message::text(serde_json::to_string(
-                        &BrokerSocketMsg::ChronicleBroker(ChronicleBrokerThrough::Topology(
-                            BrokerTopology::AddMqttMessages(mqtt_address.clone()),
-                        )),
+                        &ChronicleRequest::AddMqttMessages(mqtt_address.clone()),
                     )?));
                     messages.push(Message::text(serde_json::to_string(
-                        &BrokerSocketMsg::ChronicleBroker(ChronicleBrokerThrough::Topology(
-                            BrokerTopology::AddMqttMessagesReferenced(mqtt_address),
-                        )),
+                        &ChronicleRequest::AddMqttMessagesReferenced(mqtt_address),
                     )?));
                 }
-                let (mut stream, _) =
-                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+                let (mut stream, _) = connect_async(Url::parse(&format!(
+                    "ws://{}/",
+                    config.broker_config.websocket_address
+                ))?)
+                .await?;
                 for message in messages.drain(..) {
                     stream.send(message).await?;
                 }
@@ -237,15 +250,18 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             if !matches.is_present("skip-connection") {
                 let mut messages = Vec::new();
                 for mqtt_address in mqtt_addresses.clone() {
-                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                        ChronicleBrokerThrough::Topology(BrokerTopology::RemoveMqttMessages(mqtt_address.clone())),
-                    ))?));
-                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                        ChronicleBrokerThrough::Topology(BrokerTopology::RemoveMqttMessagesReferenced(mqtt_address)),
-                    ))?));
+                    messages.push(Message::text(serde_json::to_string(
+                        &ChronicleRequest::RemoveMqttMessages(mqtt_address.clone()),
+                    )?));
+                    messages.push(Message::text(serde_json::to_string(
+                        &ChronicleRequest::RemoveMqttMessagesReferenced(mqtt_address),
+                    )?));
                 }
-                let (mut stream, _) =
-                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+                let (mut stream, _) = connect_async(Url::parse(&format!(
+                    "ws://{}/",
+                    config.broker_config.websocket_address
+                ))?)
+                .await?;
                 for message in messages.drain(..) {
                     stream.send(message).await?;
                 }
@@ -337,16 +353,18 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
             let pb = ProgressBar::new(0);
             pb.set_style(sty.clone());
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+            let (mut stream, _) = connect_async(Url::parse(&format!(
+                "ws://{}/",
+                config.broker_config.websocket_address
+            ))?)
+            .await?;
             stream
-                .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                    ChronicleBrokerThrough::Topology(BrokerTopology::Import {
-                        path,
-                        resume,
-                        import_range: Some(range),
-                        import_type,
-                    }),
-                ))?))
+                .send(Message::text(serde_json::to_string(&ChronicleRequest::Import {
+                    path,
+                    resume,
+                    import_range: Some(range),
+                    import_type,
+                })?))
                 .await?;
             while let Some(msg) = stream.next().await {
                 match msg {

@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
-chronicle-broker = { path = "../chronicle-broker", features = ["sync", "analytic"] }
+chronicle-broker = { path = "../chronicle-broker", features = ["application", "sync", "analytic"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "new-backstage" }
 backstage = { git = "https://github.com/iotaledger/backstage", branch = "actor-refactor" }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }

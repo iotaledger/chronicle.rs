@@ -1,15 +1,29 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    collector::{Collector, CollectorEvent},
+    collector::{
+        Collector,
+        CollectorEvent,
+    },
     *,
 };
-use bee_rest_api::types::{dtos::MessageDto, responses::MilestoneResponse};
+use bee_rest_api::types::{
+    dtos::MessageDto,
+    responses::MilestoneResponse,
+};
 use chronicle_common::Wrapper;
-use rand::{prelude::SliceRandom, thread_rng};
+use rand::{
+    prelude::SliceRandom,
+    thread_rng,
+};
 use reqwest::Client;
 use serde_json::Value;
-use std::{collections::VecDeque, convert::TryFrom, iter::FromIterator, str::FromStr};
+use std::{
+    collections::VecDeque,
+    convert::TryFrom,
+    iter::FromIterator,
+    str::FromStr,
+};
 use tokio::sync::oneshot;
 use url::Url;
 

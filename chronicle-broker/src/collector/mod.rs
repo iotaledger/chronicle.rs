@@ -1,8 +1,18 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    requester::{Requester, RequesterEvent, RequesterId},
-    solidifier::{AtomicSolidifierHandle, AtomicSolidifierWorker, MilestoneMessage, Solidifier, SolidifierEvent},
+    requester::{
+        Requester,
+        RequesterEvent,
+        RequesterId,
+    },
+    solidifier::{
+        AtomicSolidifierHandle,
+        AtomicSolidifierWorker,
+        MilestoneMessage,
+        Solidifier,
+        SolidifierEvent,
+    },
     *,
 };
 use anyhow::bail;
@@ -12,15 +22,27 @@ use bee_message::{
     output::Output,
     parents::Parents,
     payload::{
-        transaction::{Essence, TransactionPayload},
+        transaction::{
+            Essence,
+            TransactionPayload,
+        },
         Payload,
     },
-    prelude::{MilestoneIndex, TransactionId},
+    prelude::{
+        MilestoneIndex,
+        TransactionId,
+    },
 };
-use chronicle_common::config::{PartitionConfig, StorageConfig};
+use chronicle_common::config::{
+    PartitionConfig,
+    StorageConfig,
+};
 use lru::LruCache;
 use reqwest::Client;
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::VecDeque,
+    sync::Arc,
+};
 use url::Url;
 
 /// Collector events
@@ -466,18 +488,14 @@ impl Actor for Collector {
                 CollectorEvent::Shutdown => break,
                 CollectorEvent::ReportExit(res) => match res {
                     Ok(_) => break,
-                    Err(e) => match e.error.request() {
+                    Err(mut e) => match e.error.request().clone() {
                         ActorRequest::Restart => {
                             rt.spawn_into_pool::<LruPool<_>>(e.state).await?;
                         }
                         ActorRequest::Reschedule(dur) => {
-                            let mut handle = rt.handle();
-                            let evt = Self::Event::report_err(ErrorReport::new(
-                                e.state,
-                                e.service,
-                                ActorError::RuntimeError(ActorRequest::Restart),
-                            ));
-                            let dur = *dur;
+                            let handle = rt.handle();
+                            e.error = ActorError::RuntimeError(ActorRequest::Restart);
+                            let evt = Self::Event::report_err(e);
                             tokio::spawn(async move {
                                 tokio::time::sleep(dur).await;
                                 handle.send(evt).ok();

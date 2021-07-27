@@ -2,10 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    collector::{Collector, CollectorEvent, MessageIdPartitioner},
+    collector::{
+        Collector,
+        CollectorEvent,
+        MessageIdPartitioner,
+    },
     *,
 };
-use futures::{stream::StreamExt, Stream};
+use futures::{
+    stream::StreamExt,
+    Stream,
+};
 use std::time::Duration;
 /// Mqtt state
 pub struct Mqtt<T> {

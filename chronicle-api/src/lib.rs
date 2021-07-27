@@ -21,6 +21,8 @@
 
 /// The main actor for the API
 pub mod application;
+
+#[cfg(feature = "rocket_listener")]
 /// The http endpoint listener
 pub mod listener;
 /// API response structs
@@ -28,9 +30,11 @@ pub mod responses;
 /// The websocket actor
 pub mod websocket;
 
+#[cfg(feature = "rocket_listener")]
 #[macro_use]
 extern crate rocket;
 
 use async_trait::async_trait;
 use backstage::prelude::*;
 use scylla_rs::prelude::*;
+pub use websocket::ChronicleRequest;

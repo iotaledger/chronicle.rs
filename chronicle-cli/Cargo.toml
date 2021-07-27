@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 chronicle-broker = { path = "../chronicle-broker", default-features = false }
+chronicle-api = { path = "../chronicle-api", default-features = false }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "new-backstage" }
 clap = { version = "2.33", features = ["yaml"] }
 tokio = "1.5"

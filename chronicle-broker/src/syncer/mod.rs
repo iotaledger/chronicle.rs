@@ -1,14 +1,23 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    archiver::{Archiver, ArchiverEvent},
-    solidifier::{Solidifier, SolidifierEvent},
+    archiver::{
+        Archiver,
+        ArchiverEvent,
+    },
+    solidifier::{
+        Solidifier,
+        SolidifierEvent,
+    },
     *,
 };
 use async_recursion::async_recursion;
 use chronicle_common::Wrapper;
 use chronicle_storage::keyspaces::ChronicleKeyspace;
-use std::{ops::Deref, time::Duration};
+use std::{
+    ops::Deref,
+    time::Duration,
+};
 use tokio::sync::oneshot;
 
 /// Syncer events

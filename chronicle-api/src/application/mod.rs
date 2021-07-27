@@ -1,14 +1,12 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use super::*;
+use crate::websocket::Websocket;
 use chronicle_common::get_config_async;
 
-use crate::{
-    listener::RocketListener,
-    websocket::Websocket,
-};
-
-use super::*;
+#[cfg(feature = "rocket_listener")]
+use crate::listener::RocketListener;
 
 /// The Chronicle API. Defines endpoints which can be used to
 /// retrieve data from the scylla database.
@@ -55,7 +53,7 @@ impl Actor for ChronicleAPI {
         <Sup::Event as SupervisorEvent>::Children: From<std::marker::PhantomData<Self>>,
     {
         rt.update_status(ServiceStatus::Running).await.ok();
-        while let Some(evt) = rt.next_event().await {}
+        while let Some(_) = rt.next_event().await {}
         Ok(())
     }
 }

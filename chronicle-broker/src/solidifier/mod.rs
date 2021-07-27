@@ -1,12 +1,26 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    archiver::{Archiver, ArchiverEvent},
-    collector::{AskCollector, Collector, CollectorEvent, MessageIdPartitioner},
-    syncer::{Syncer, SyncerEvent},
+    archiver::{
+        Archiver,
+        ArchiverEvent,
+    },
+    collector::{
+        AskCollector,
+        Collector,
+        CollectorEvent,
+        MessageIdPartitioner,
+    },
+    syncer::{
+        Syncer,
+        SyncerEvent,
+    },
     *,
 };
-use bee_message::prelude::{MilestoneIndex, MilestonePayload};
+use bee_message::prelude::{
+    MilestoneIndex,
+    MilestonePayload,
+};
 use chronicle_common::Synckey;
 use scylla_rs::prelude::stage::Reporter;
 use tokio::sync::mpsc::UnboundedSender;
@@ -979,7 +993,7 @@ where
     K: 'static + Send + Sync + Clone,
     V: 'static + Send + Sync + Clone,
 {
-    fn handle_response(mut self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
         Decoder::try_from(giveload).and_then(|decoder| decoder.get_void())?;
         let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
         let _ = self.handle.send(SolidifierEvent::CqlResult(Ok(synced_ms)));

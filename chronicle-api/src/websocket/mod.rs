@@ -1,18 +1,28 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
+use super::*;
 use backstage::prefabs::websocket::WebsocketChildren;
 use chronicle_broker::{
-    application::{BrokerEvent, BrokerRequest, ChronicleBroker, ImportType},
+    application::{
+        BrokerEvent,
+        BrokerRequest,
+        ChronicleBroker,
+        ImportType,
+    },
     requester::RequesterTopology,
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use std::{
+    marker::PhantomData,
+    net::SocketAddr,
+    ops::Range,
+    path::PathBuf,
+};
 use tokio_tungstenite::tungstenite::Message;
 use url::Url;
-
-// Copyright 2021 IOTA Stiftung
-// SPDX-License-Identifier: Apache-2.0
-use super::*;
-use std::{marker::PhantomData, net::SocketAddr, ops::Range, path::PathBuf};
 
 pub struct Websocket {
     pub listen_address: SocketAddr,
@@ -58,16 +68,16 @@ impl Actor for Websocket {
     {
         rt.update_status(ServiceStatus::Running).await.ok();
         while let Some(WebsocketRequest(addr, msg)) = rt.next_event().await {
-            debug!("Received message {} from {}", msg, addr);
+            log::debug!("Received message {} from {}", msg, addr);
             if let Some(msg) = {
                 if let Message::Text(t) = msg {
-                    serde_json::from_str::<ChronicleBrokerRequest>(&t).ok()
+                    serde_json::from_str::<ChronicleRequest>(&t).ok()
                 } else {
                     None
                 }
             } {
                 match msg {
-                    ChronicleBrokerRequest::AddMqttMessages(url) => {
+                    ChronicleRequest::AddMqttMessages(url) => {
                         let (sender, receiver) = tokio::sync::oneshot::channel();
                         if broker
                             .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessages(url, sender)))
@@ -80,7 +90,7 @@ impl Actor for Websocket {
                             }
                         }
                     }
-                    ChronicleBrokerRequest::AddMqttMessagesReferenced(url) => {
+                    ChronicleRequest::AddMqttMessagesReferenced(url) => {
                         let (sender, receiver) = tokio::sync::oneshot::channel();
                         if broker
                             .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessagesReferenced(
@@ -95,7 +105,7 @@ impl Actor for Websocket {
                             }
                         }
                     }
-                    ChronicleBrokerRequest::RemoveMqttMessages(url) => {
+                    ChronicleRequest::RemoveMqttMessages(url) => {
                         let (sender, receiver) = tokio::sync::oneshot::channel();
                         if broker
                             .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessages(url, sender)))
@@ -108,7 +118,7 @@ impl Actor for Websocket {
                             }
                         }
                     }
-                    ChronicleBrokerRequest::RemoveMqttMessagesReferenced(url) => {
+                    ChronicleRequest::RemoveMqttMessagesReferenced(url) => {
                         let (sender, receiver) = tokio::sync::oneshot::channel();
                         if broker
                             .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessagesReferenced(
@@ -123,7 +133,7 @@ impl Actor for Websocket {
                             }
                         }
                     }
-                    ChronicleBrokerRequest::Requester(t) => match t {
+                    ChronicleRequest::Requester(t) => match t {
                         RequesterTopologyRequest::AddEndpoint(url) => {
                             let (sender, receiver) = tokio::sync::oneshot::channel();
                             if broker
@@ -155,7 +165,7 @@ impl Actor for Websocket {
                             }
                         }
                     },
-                    ChronicleBrokerRequest::Import {
+                    ChronicleRequest::Import {
                         path,
                         resume,
                         import_range,
@@ -182,6 +192,17 @@ impl Actor for Websocket {
                             }
                         }
                     }
+                    ChronicleRequest::ExitProgram => {
+                        let res = rt.shutdown_scope(&ROOT_SCOPE).await;
+                        websocket
+                            .send(WebsocketChildren::Response(addr, format!("{:?}", res).into()))
+                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                    }
+                    ChronicleRequest::Config(req) => match req {
+                        ConfigRequest::Rollback => {
+                            // TODO
+                        }
+                    },
                 }
             }
         }
@@ -199,7 +220,8 @@ impl From<(SocketAddr, Message)> for WebsocketRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub enum ChronicleBrokerRequest {
+pub enum ChronicleRequest {
+    ExitProgram,
     /// Add new MQTT Messages feed source
     AddMqttMessages(Url),
     /// Add new MQTT Messages Referenced feed source
@@ -219,6 +241,7 @@ pub enum ChronicleBrokerRequest {
         /// The type of import requested
         import_type: ImportType,
     },
+    Config(ConfigRequest),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -227,4 +250,9 @@ pub enum RequesterTopologyRequest {
     AddEndpoint(Url),
     /// Remove existing Api Endpoint
     RemoveEndpoint(Url),
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ConfigRequest {
+    Rollback,
 }

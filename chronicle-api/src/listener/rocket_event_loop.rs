@@ -6,41 +6,81 @@ use crate::responses::*;
 use anyhow::anyhow;
 use bee_message::{
     milestone::Milestone,
-    prelude::{Ed25519Address, Message, MessageId, MilestoneIndex, OutputId, TransactionId},
+    prelude::{
+        Ed25519Address,
+        Message,
+        MessageId,
+        MilestoneIndex,
+        OutputId,
+        TransactionId,
+    },
 };
-use chronicle_broker::{AnalyticsData, SyncData};
+use chronicle_broker::{
+    AnalyticsData,
+    SyncData,
+};
 use chronicle_common::{
     config::PartitionConfig,
     metrics::{
-        prometheus::{self, Encoder, TextEncoder},
-        INCOMING_REQUESTS, REGISTRY, RESPONSE_CODE_COLLECTOR, RESPONSE_TIME_COLLECTOR,
+        prometheus::{
+            self,
+            Encoder,
+            TextEncoder,
+        },
+        INCOMING_REQUESTS,
+        REGISTRY,
+        RESPONSE_CODE_COLLECTOR,
+        RESPONSE_TIME_COLLECTOR,
     },
     SyncRange,
 };
 use chronicle_storage::{
-    access::{MessageMetadata, OutputRes, PartitionId, Partitioned},
+    access::{
+        MessageMetadata,
+        OutputRes,
+        PartitionId,
+        Partitioned,
+    },
     keyspaces::ChronicleKeyspace,
 };
 use hex::FromHex;
 use mpsc::unbounded_channel;
 use rocket::{
-    fairing::{Fairing, Info, Kind},
+    fairing::{
+        Fairing,
+        Info,
+        Kind,
+    },
     get,
     http::ContentType,
-    response::{content, Responder},
+    response::{
+        content,
+        Responder,
+    },
     serde::json::Json,
-    Build, Data, Request, Response, State,
+    Build,
+    Data,
+    Request,
+    Response,
+    State,
 };
 use std::{
     borrow::Borrow,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{
+        HashMap,
+        HashSet,
+        VecDeque,
+    },
     convert::TryInto,
     io::Cursor,
     path::PathBuf,
     str::FromStr,
     time::SystemTime,
 };
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::sync::mpsc::{
+    self,
+    UnboundedSender,
+};
 
 pub enum RocketEvent {
     Service(tokio::sync::oneshot::Sender<ServiceTree>),
@@ -96,7 +136,7 @@ impl Actor for Listener<RocketListener> {
         while let Some(evt) = rt.next_event().await {
             match evt {
                 RocketEvent::Service(sender) => {
-                    sender.send(rt.service_tree().await).ok();
+                    sender.send(rt.root_service_tree().await?).ok();
                 }
             }
         }
@@ -952,8 +992,15 @@ mod tests {
     use super::*;
     use chronicle_common::config::StorageConfig;
     use rocket::{
-        http::{ContentType, Header, Status},
-        local::asynchronous::{Client, LocalResponse},
+        http::{
+            ContentType,
+            Header,
+            Status,
+        },
+        local::asynchronous::{
+            Client,
+            LocalResponse,
+        },
     };
     use serde_json::Value;
 

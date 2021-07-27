@@ -1,10 +1,25 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use crate::{archiver::*, collector::*, importer::*, mqtt::*, requester::RequesterTopology, solidifier::*, syncer::*};
+use crate::{
+    archiver::*,
+    collector::*,
+    importer::*,
+    mqtt::*,
+    requester::RequesterTopology,
+    solidifier::*,
+    syncer::*,
+};
 use async_trait::async_trait;
-use chronicle_common::config::{BrokerConfig, Config};
-use std::{ops::Range, str::FromStr, time::Duration};
+use chronicle_common::config::{
+    BrokerConfig,
+    Config,
+};
+use std::{
+    ops::Range,
+    str::FromStr,
+    time::Duration,
+};
 use tokio::sync::oneshot;
 
 /// Application state
@@ -60,12 +75,7 @@ pub enum ImportType {
 
 #[build]
 #[derive(Clone)]
-pub fn build_broker(
-    config: Config,
-    complete_gaps_interval_secs: u64,
-    parallelism: Option<u8>,
-    collector_count: Option<u8>,
-) -> ChronicleBroker {
+pub fn build_broker(config: Config) -> ChronicleBroker {
     let default_keyspace = ChronicleKeyspace::new(
         config
             .storage_config
@@ -90,9 +100,9 @@ pub fn build_broker(
     } else {
         logs_dir_path = None;
     }
-    let parallelism = parallelism.unwrap_or(25);
+    let parallelism = config.broker_config.parallelism;
     ChronicleBroker {
-        collector_count: collector_count.unwrap_or(10),
+        collector_count: config.broker_config.collector_count,
         parallelism,
         parallelism_points: parallelism,
         in_progress_importers: 0,
@@ -100,7 +110,7 @@ pub fn build_broker(
         default_keyspace,
         sync_range,
         sync_data,
-        complete_gaps_interval: Duration::from_secs(complete_gaps_interval_secs),
+        complete_gaps_interval: Duration::from_secs(config.broker_config.complete_gaps_interval_secs),
     }
 }
 
