@@ -528,7 +528,7 @@ impl Solidifier {
         // and remove it from pending
         for parent_id in parents.iter() {
             let in_messages = milestone_data.messages().contains_key(&parent_id);
-            let in_pending = milestone_data.pending().contains_key(&parent_id);
+            let in_pending = milestone_data.pending().contains(&parent_id);
             let genesis = parent_id.eq(&MessageId::null());
             // Check if parent NOT in messages nor pending
             if !in_messages && !in_pending && !genesis {
@@ -543,7 +543,7 @@ impl Solidifier {
                 )
                 .await;
                 // Add it to pending
-                milestone_data.pending.insert(*parent_id, ());
+                milestone_data.pending.insert(*parent_id);
             };
         }
     }

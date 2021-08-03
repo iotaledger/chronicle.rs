@@ -5,6 +5,7 @@ use super::{
         Requester,
         RequesterEvent,
         RequesterId,
+        RequesterTopology,
     },
     solidifier::{
         AtomicSolidifierHandle,
@@ -56,6 +57,8 @@ pub enum CollectorEvent {
     MessageReferenced(MessageMetadata),
     /// Ask requests from solidifier(s)
     Ask(AskCollector),
+    /// Topology change
+    Topology(RequesterTopology),
     /// Shutdown the collector
     Shutdown,
 }
@@ -485,6 +488,32 @@ impl Actor for Collector {
                         }
                     }
                 }
+                CollectorEvent::Topology(topology) => match topology {
+                    RequesterTopology::AddEndpoint(url, responder) => {
+                        for handle in requester_handles.handles().await {
+                            let (sender, _) = tokio::sync::oneshot::channel();
+                            handle
+                                .send(RequesterEvent::Topology(RequesterTopology::AddEndpoint(
+                                    url.clone(),
+                                    sender,
+                                )))
+                                .ok();
+                        }
+                        responder.send(Ok(())).ok();
+                    }
+                    RequesterTopology::RemoveEndpoint(url, responder) => {
+                        for handle in requester_handles.handles().await {
+                            let (sender, _) = tokio::sync::oneshot::channel();
+                            handle
+                                .send(RequesterEvent::Topology(RequesterTopology::RemoveEndpoint(
+                                    url.clone(),
+                                    sender,
+                                )))
+                                .ok();
+                        }
+                        responder.send(Ok(())).ok();
+                    }
+                },
                 CollectorEvent::Shutdown => break,
                 CollectorEvent::ReportExit(res) => match res {
                     Ok(_) => break,

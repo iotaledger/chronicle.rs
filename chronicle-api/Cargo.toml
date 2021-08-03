@@ -1,8 +1,12 @@
 [package]
 name = "chronicle-api"
 version = "0.3.0"
-authors = ["Alex Coats <alexandcoats@gmail.com>"]
+authors = ["IOTA Stiftung"]
 edition = "2018"
+
+[lib]
+name = "chronicle_api"
+path = "src/lib.rs"
 
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }

@@ -117,21 +117,19 @@ impl Actor for Requester {
                 }
                 RequesterEvent::Topology(topology) => match topology {
                     RequesterTopology::AddEndpoint(url, responder) => {
-                        info!("Trying to AddEndpoint: {}", url);
                         if self.api_endpoints.iter().all(|u| u != &url) {
-                            info!("AddedEndpoint: {}", url);
+                            debug!("Added endpoint: {}", url);
                             self.api_endpoints.push_front(url);
                         }
                         self.shuffle();
-                        responder.send(Ok(()));
+                        responder.send(Ok(())).ok();
                     }
                     RequesterTopology::RemoveEndpoint(url, responder) => {
-                        info!("Trying to RemoveEndpoint: {}", url);
                         if let Some(p) = self.api_endpoints.iter().position(|u| u == &url) {
-                            info!("RemovedEndpoint: {}", url);
+                            debug!("Removed endpoint: {}", url);
                             self.api_endpoints.remove(p);
                         }
-                        responder.send(Ok(()));
+                        responder.send(Ok(())).ok();
                     }
                 },
             }

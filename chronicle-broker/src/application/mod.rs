@@ -4,6 +4,7 @@ use super::*;
 use crate::{
     archiver::*,
     collector::*,
+    exporter::*,
     importer::*,
     mqtt::*,
     requester::RequesterTopology,
@@ -36,7 +37,7 @@ pub struct ChronicleBroker {
 }
 
 /// Event type of the broker Application
-#[supervise(Mqtt<Messages>, Mqtt<MessagesReferenced>, Collector, Solidifier, Archiver, Syncer, Importer<All>, Importer<Analytics>)]
+#[supervise(Mqtt<Messages>, Mqtt<MessagesReferenced>, Collector, Solidifier, Archiver, Syncer, Importer<All>, Importer<Analytics>, Exporter)]
 pub enum BrokerEvent {
     Websocket(BrokerRequest),
 }
@@ -61,6 +62,10 @@ pub enum BrokerRequest {
         /// The type of import requested
         import_type: ImportType,
         responder: tokio::sync::mpsc::UnboundedSender<ImporterSession>,
+    },
+    Export {
+        range: Range<u32>,
+        responder: tokio::sync::mpsc::UnboundedSender<ExporterStatus>,
     },
 }
 
@@ -252,15 +257,37 @@ impl Actor for ChronicleBroker {
                             if let Some(url) = BrokerConfig::adjust_api_endpoint(url.clone()) {
                                 let reqwest_client = reqwest::Client::new();
                                 if let Err(e) = BrokerConfig::verify_endpoint(&reqwest_client, &url).await {
-                                    todo!()
+                                    responder.send(Err(e)).ok();
                                 } else {
                                     if let Some(collector_handles) = rt.pool::<MapPool<Collector, u8>>().await {
-                                        todo!()
+                                        for handle in collector_handles.handles().await {
+                                            let (sender, _) = tokio::sync::oneshot::channel();
+                                            handle
+                                                .send(CollectorEvent::Topology(RequesterTopology::AddEndpoint(
+                                                    url.clone(),
+                                                    sender,
+                                                )))
+                                                .ok();
+                                        }
+                                        responder.send(Ok(())).ok();
                                     }
                                 }
                             }
                         }
-                        RequesterTopology::RemoveEndpoint(url, responder) => todo!(),
+                        RequesterTopology::RemoveEndpoint(url, responder) => {
+                            if let Some(collector_handles) = rt.pool::<MapPool<Collector, u8>>().await {
+                                for handle in collector_handles.handles().await {
+                                    let (sender, _) = tokio::sync::oneshot::channel();
+                                    handle
+                                        .send(CollectorEvent::Topology(RequesterTopology::RemoveEndpoint(
+                                            url.clone(),
+                                            sender,
+                                        )))
+                                        .ok();
+                                }
+                                responder.send(Ok(())).ok();
+                            }
+                        }
                     },
                     BrokerRequest::Import {
                         path,
@@ -271,6 +298,20 @@ impl Actor for ChronicleBroker {
                     } => {
                         self.handle_import(rt, path, resume, import_range, import_type, responder)
                             .await;
+                    }
+                    BrokerRequest::Export { range, responder } => {
+                        let exporter = ExporterBuilder::new()
+                            .ms_range(range)
+                            .keyspace(self.default_keyspace.clone())
+                            .responder(responder.clone())
+                            .build();
+                        match rt.spawn_into_pool::<RandomPool<_>>(exporter).await {
+                            Err(e) => {
+                                log::error!("Error creating exporter: {}", e);
+                                responder.send(ExporterStatus::Failed(e.to_string())).ok();
+                            }
+                            _ => (),
+                        }
                     }
                 },
                 BrokerEvent::StatusChange(s) => {

@@ -261,6 +261,33 @@ pub struct MessageMetadata {
     pub should_reattach: Option<bool>,
 }
 
+/// A "full" message payload, including both message and metadata
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FullMessage(pub Message, pub MessageMetadata);
+
+impl FullMessage {
+    /// Create a new full message
+    pub fn new(message: Message, metadata: MessageMetadata) -> Self {
+        Self(message, metadata)
+    }
+    /// Get the message ID
+    pub fn message_id(&self) -> &MessageId {
+        &self.1.message_id
+    }
+    /// Get the message's metadata
+    pub fn metadata(&self) -> &MessageMetadata {
+        &self.1
+    }
+    /// Get the message
+    pub fn message(&self) -> &Message {
+        &self.0
+    }
+    /// Get the milestone index that references this
+    pub fn ref_ms(&self) -> Option<u32> {
+        self.1.referenced_by_milestone_index
+    }
+}
+
 /// A message's ledger inclusion state
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LedgerInclusionState {

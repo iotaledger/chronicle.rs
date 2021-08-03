@@ -8,14 +8,13 @@ use bee_message::{
         Output,
         Payload,
     },
-    Message,
     MessageId,
 };
 use chronicle_storage::access::{
     AnalyticRecord,
+    FullMessage,
     LedgerInclusionState,
     MessageCount,
-    MessageMetadata,
     TransactionCount,
     TransferredTokens,
 };
@@ -26,7 +25,10 @@ use serde::{
     Serialize,
 };
 use std::{
-    collections::HashMap,
+    collections::{
+        BTreeMap,
+        HashSet,
+    },
     path::PathBuf,
 };
 
@@ -38,12 +40,14 @@ pub enum BrokerSocketMsg<T> {
 }
 
 /// Milestone data
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MilestoneData {
     pub(crate) milestone_index: u32,
     pub(crate) milestone: Option<Box<MilestonePayload>>,
-    pub(crate) messages: HashMap<MessageId, FullMessage>,
-    pub(crate) pending: HashMap<MessageId, ()>,
+    pub(crate) messages: BTreeMap<MessageId, FullMessage>,
+    #[serde(skip)]
+    pub(crate) pending: HashSet<MessageId>,
+    #[serde(skip)]
     pub(crate) created_by: CreatedBy,
 }
 
@@ -52,8 +56,8 @@ impl MilestoneData {
         Self {
             milestone_index,
             milestone: None,
-            messages: HashMap::new(),
-            pending: HashMap::new(),
+            messages: BTreeMap::new(),
+            pending: HashSet::new(),
             created_by,
         }
     }
@@ -119,11 +123,11 @@ impl MilestoneData {
         self.pending.remove(message_id);
     }
     /// Get the milestone's messages
-    pub fn messages(&self) -> &HashMap<MessageId, FullMessage> {
+    pub fn messages(&self) -> &BTreeMap<MessageId, FullMessage> {
         &self.messages
     }
     /// Get the pending messages
-    pub fn pending(&self) -> &HashMap<MessageId, ()> {
+    pub fn pending(&self) -> &HashSet<MessageId> {
         &self.pending
     }
     /// Get the source this was created by
@@ -145,7 +149,7 @@ impl MilestoneData {
 
 impl std::iter::IntoIterator for MilestoneData {
     type Item = (MessageId, FullMessage);
-    type IntoIter = std::collections::hash_map::IntoIter<MessageId, FullMessage>;
+    type IntoIter = std::collections::btree_map::IntoIter<MessageId, FullMessage>;
     fn into_iter(self) -> Self::IntoIter {
         self.messages.into_iter()
     }
@@ -161,38 +165,19 @@ pub enum CreatedBy {
     Expected = 1,
     /// Created by solidifiy/sync request from syncer
     Syncer = 2,
+    /// Created by the exporter
+    Exporter = 3,
+}
+
+impl Default for CreatedBy {
+    fn default() -> Self {
+        Self::Incoming
+    }
 }
 
 impl From<CreatedBy> for u8 {
     fn from(value: CreatedBy) -> u8 {
         value as u8
-    }
-}
-
-/// A "full" message payload, including both message and metadata
-#[derive(Debug, Deserialize, Serialize)]
-pub struct FullMessage(pub Message, pub MessageMetadata);
-
-impl FullMessage {
-    /// Create a new full message
-    pub fn new(message: Message, metadata: MessageMetadata) -> Self {
-        Self(message, metadata)
-    }
-    /// Get the message ID
-    pub fn message_id(&self) -> &MessageId {
-        &self.1.message_id
-    }
-    /// Get the message's metadata
-    pub fn metadata(&self) -> &MessageMetadata {
-        &self.1
-    }
-    /// Get the message
-    pub fn message(&self) -> &Message {
-        &self.0
-    }
-    /// Get the milestone index that references this
-    pub fn ref_ms(&self) -> Option<u32> {
-        self.1.referenced_by_milestone_index
     }
 }
 

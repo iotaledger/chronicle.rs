@@ -28,7 +28,7 @@ use scylla_rs::{
     prelude::stage::Reporter,
 };
 use std::{
-    collections::hash_map::IntoIter,
+    collections::btree_map::IntoIter,
     ops::Range,
     path::PathBuf,
     sync::atomic::Ordering,
@@ -55,7 +55,7 @@ pub struct Importer<T> {
     default_keyspace: ChronicleKeyspace,
     /// The partition configuration
     partition_config: PartitionConfig,
-    /// The number of retires per query
+    /// The number of retries per query
     retries_per_query: usize,
     /// The chronicle id
     chronicle_id: u8,

@@ -132,48 +132,51 @@ impl Actor for Archiver {
                         milestone_data.milestone_index(),
                         opt_upper_limit
                     );
-                    // check if it belongs to new incoming data
-                    if !milestone_data.created_by().eq(&CreatedBy::Syncer) {
-                        self.milestones_data.push(Ascending::new(milestone_data));
-                        while let Some(ms_data) = self.milestones_data.pop() {
-                            let ms_index = ms_data.milestone_index();
-                            if next.eq(&ms_index) {
-                                self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
-                                    .await?;
-                                next += 1;
-                            } else if ms_index > next {
-                                // Safety check to prevent potential rare race condition
-                                // check if we buffered too much.
-                                if self.milestones_data.len() > self.solidifiers_count as usize {
-                                    error!("Identified gap in the new incoming data: {}..{}", next, ms_index);
-                                    // Close the file which we're unable atm to append on top.
-                                    self.close_log_file(next).await?;
-                                    // this supposed to create new file
+                    match milestone_data.created_by() {
+                        CreatedBy::Incoming | CreatedBy::Expected => {
+                            self.milestones_data.push(Ascending::new(milestone_data));
+                            while let Some(ms_data) = self.milestones_data.pop() {
+                                let ms_index = ms_data.milestone_index();
+                                if next.eq(&ms_index) {
                                     self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
                                         .await?;
-                                    // reset next
-                                    next = ms_index + 1;
+                                    next += 1;
+                                } else if ms_index > next {
+                                    // Safety check to prevent potential rare race condition
+                                    // check if we buffered too much.
+                                    if self.milestones_data.len() > self.solidifiers_count as usize {
+                                        error!("Identified gap in the new incoming data: {}..{}", next, ms_index);
+                                        // Close the file which we're unable atm to append on top.
+                                        self.close_log_file(next).await?;
+                                        // this supposed to create new file
+                                        self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
+                                            .await?;
+                                        // reset next
+                                        next = ms_index + 1;
+                                    } else {
+                                        self.milestones_data.push(ms_data);
+                                        break;
+                                    }
                                 } else {
-                                    self.milestones_data.push(ms_data);
-                                    break;
+                                    warn!("Expected: {}, Dropping milestone_data: {}, as the syncer will eventually fill it up", next, ms_index);
                                 }
-                            } else {
-                                warn!("Expected: {}, Dropping milestone_data: {}, as the syncer will eventually fill it up", next, ms_index);
                             }
                         }
-                    } else {
-                        // to prevent overlap, we ensure to only handle syncer milestone_data when it's less than next
-                        if milestone_data.milestone_index() < next {
-                            // handle syncer milestone data;
-                            self.handle_milestone_data(milestone_data, opt_upper_limit).await?;
-                            // it overlaps with the incoming flow.
-                        } else if milestone_data.milestone_index() == next {
-                            // we handle the milestone_data from syncer as Incoming without upper_ms_limit
-                            self.handle_milestone_data(milestone_data, None).await?;
-                            next += 1;
-                        } else {
-                            // we received a futuristic milestone_data from syncer.
-                            self.milestones_data.push(Ascending::new(milestone_data));
+                        CreatedBy::Syncer | CreatedBy::Exporter => {
+                            // to prevent overlap, we ensure to only handle syncer milestone_data when it's less than
+                            // next
+                            if milestone_data.milestone_index() < next {
+                                // handle syncer milestone data;
+                                self.handle_milestone_data(milestone_data, opt_upper_limit).await?;
+                                // it overlaps with the incoming flow.
+                            } else if milestone_data.milestone_index() == next {
+                                // we handle the milestone_data from syncer as Incoming without upper_ms_limit
+                                self.handle_milestone_data(milestone_data, None).await?;
+                                next += 1;
+                            } else {
+                                // we received a futuristic milestone_data from syncer.
+                                self.milestones_data.push(Ascending::new(milestone_data));
+                            }
                         }
                     }
                 }
@@ -261,7 +264,18 @@ impl Archiver {
             }
         } else {
             // check if the milestone_index already belongs to an existing processed files/ranges;
-            if !self.processed.iter().any(|r| r.contains(&milestone_index)) {
+            let mut already_processed = false;
+            if let Some(idx) = self.processed.iter().position(|r| r.contains(&milestone_index)) {
+                let processed = self.processed.get(idx).unwrap();
+                let filename = format!("{}to{}.log", processed.start, processed.end);
+                let file_path = self.dir_path.join(&filename);
+                if !file_path.exists() {
+                    self.processed.remove(idx);
+                } else {
+                    already_processed = true;
+                }
+            }
+            if !already_processed {
                 info!(
                     "Creating new log file starting from milestone index: {}",
                     milestone_index

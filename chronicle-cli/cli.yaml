@@ -91,14 +91,12 @@ subcommands:
                   short: m
                   takes_value: true
                   value_name: MQTT_ADDRESSES
-                  required: true
                   multiple: true
                   help: The MQTT addresses which will be subscribed to receive messages (ex. tcp://api.hornet-0.testnet.chrysalis2.com:1883)
               - endpoint-address:
                   short: e
                   takes_value: true
                   value_name: ENDPOINT_ADDRESSES
-                  required: false
                   multiple: true
                   help: The endpoint addresses which will be used to fetch missing messages (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
         - remove:
@@ -111,14 +109,12 @@ subcommands:
                   short: m
                   takes_value: true
                   value_name: MQTT_ADDRESSES
-                  required: true
                   multiple: true
                   help: The MQTT addresses to remove (ex. tcp://api.hornet-0.testnet.chrysalis2.com:1883)
               - endpoint-address:
                   short: e
                   takes_value: true
                   value_name: ENDPOINT_ADDRESSES
-                  required: false
                   multiple: true
                   help: The endpoint addresses to remove (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
   - archive:
@@ -151,6 +147,17 @@ subcommands:
               - resume:
                   long: resume
                   help: Resume the importing the process by skipping synced milestone range(s).
+        - export:
+            short: e
+            about: Export a range of milestone to archive files
+            args:
+              - range:
+                  takes_value: true
+                  required: true
+                  value_name: RANGE
+                  help: >-
+                    The range of milestone indexes to export. Can be a single milestone (ex. 100) 
+                    or any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
         - cleanup:
             short: c
             about: Cleanup log file directory to normalize the file sizes.

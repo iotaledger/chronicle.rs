@@ -61,21 +61,21 @@ impl Actor for Launcher {
             .build();
 
         rt.spawn_actor(scylla).await?;
-        // let ws = format!("ws://{}/", "127.0.0.1:8080");
-        // let nodes = vec![([127, 0, 0, 1], 9042).into()];
-        // match add_nodes(&ws, nodes, 1).await {
-        //    Ok(_) => match init_database().await {
-        //        Ok(_) => log::debug!("{}", rt.service_tree().await),
-        //        Err(e) => {
-        //            log::error!("{}", e);
-        //            log::debug!("{}", rt.service_tree().await);
-        //        }
-        //    },
-        //    Err(e) => {
-        //        log::error!("{}", e);
-        //        log::debug!("{}", rt.service_tree().await);
-        //    }
-        //}
+        let ws = format!("ws://{}/", config.storage_config.listen_address);
+        let nodes = config.storage_config.nodes.iter().cloned().collect();
+        match add_nodes(&ws, nodes, 1).await {
+            Ok(_) => match init_database().await {
+                Ok(_) => log::debug!("{}", rt.service_tree().await),
+                Err(e) => {
+                    log::error!("{}", e);
+                    log::debug!("{}", rt.service_tree().await);
+                }
+            },
+            Err(e) => {
+                log::error!("{}", e);
+                log::debug!("{}", rt.service_tree().await);
+            }
+        }
         rt.spawn_actor(ChronicleAPI).await?;
         tokio::task::spawn(ctrl_c(rt.handle()));
         log::info!("{}", rt.service_tree().await);
@@ -96,27 +96,54 @@ impl Actor for Launcher {
         let mut broker_handle = None;
         while let Some(evt) = rt.next_event().await {
             match evt {
-                LauncherEvent::StatusChange(s) => {
-                    match s.actor_type {
-                        Children::Scylla => {
-                            if s.prev_status == ScyllaStatus::Disconnected.as_str() {
-                                let config = get_config_async().await;
-                                let chronicle_broker = ChronicleBrokerBuilder::new().config(config).build();
-                                broker_handle.replace(rt.spawn_actor(chronicle_broker).await?);
-                                init_database().await?;
-                            } else if s.service.status() == ScyllaStatus::Disconnected.as_str() {
-                                if let Some(handle) = broker_handle.take() {
-                                    handle.shutdown();
-                                }
+                LauncherEvent::StatusChange(s) => match s.actor_type {
+                    Children::Scylla => {
+                        if s.prev_status == ScyllaStatus::Disconnected.as_str() {
+                            let config = get_config_async().await;
+                            let chronicle_broker = ChronicleBrokerBuilder::new().config(config).build();
+                            broker_handle.replace(rt.spawn_actor(chronicle_broker).await?);
+                            init_database().await?;
+                        } else if s.service.status() == ScyllaStatus::Disconnected.as_str() {
+                            if let Some(handle) = broker_handle.take() {
+                                handle.shutdown();
                             }
                         }
-                        _ => (),
                     }
-                    // todo
-                }
-                LauncherEvent::ReportExit(r) => {
-                    // todo
-                }
+                    _ => (),
+                },
+                LauncherEvent::ReportExit(res) => match res {
+                    Ok(s) => match s.state {
+                        ChildStates::Scylla(_) | ChildStates::ChronicleAPI(_) => break,
+                        _ => (),
+                    },
+                    Err(mut e) => match e.error.request().clone() {
+                        ActorRequest::Restart => match e.state {
+                            ChildStates::Scylla(s) => {
+                                rt.spawn_actor(s).await?;
+                            }
+                            ChildStates::ChronicleAPI(a) => {
+                                rt.spawn_actor(a).await?;
+                            }
+                            _ => (),
+                        },
+                        ActorRequest::Reschedule(dur) => match e.state {
+                            ChildStates::Scylla(_) | ChildStates::ChronicleAPI(_) => {
+                                e.error = ActorError::RuntimeError(ActorRequest::Restart);
+                                let handle = rt.handle();
+                                let evt = Self::Event::report_err(e);
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(dur).await;
+                                    handle.send(evt).ok();
+                                });
+                            }
+                            _ => (),
+                        },
+                        ActorRequest::Finish | ActorRequest::Panic => match e.state {
+                            ChildStates::Scylla(_) | ChildStates::ChronicleAPI(_) => break,
+                            _ => (),
+                        },
+                    },
+                },
             }
         }
         rt.update_status(ServiceStatus::Stopped).await.ok();
@@ -125,10 +152,10 @@ impl Actor for Launcher {
 }
 
 fn main() {
+    dotenv::dotenv().unwrap();
     std::panic::set_hook(Box::new(|info| {
         log::error!("{}", info);
     }));
-    dotenv::dotenv().ok();
     env_logger::init();
     register_metrics();
     let config = get_config();
@@ -161,7 +188,7 @@ async fn ctrl_c(shutdown_handle: Act<Launcher>) {
 }
 
 async fn chronicle() {
-    Launcher.start_as_root::<ActorRegistry>().await.unwrap()
+    Launcher.start_as_root::<ArcedRegistry>().await.unwrap()
 }
 
 fn register_metrics() {

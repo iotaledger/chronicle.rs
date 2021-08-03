@@ -6,11 +6,15 @@ use anyhow::{
     bail,
 };
 use chronicle_api::{
-    websocket::ConfigRequest,
+    websocket::{
+        RequesterTopologyRequest,
+        WebsocketResult,
+    },
     ChronicleRequest,
 };
 use chronicle_broker::{
     application::ImportType,
+    exporter::ExporterStatus,
     merge::{
         LogPaths,
         Merger,
@@ -18,9 +22,12 @@ use chronicle_broker::{
     },
     *,
 };
-use chronicle_common::config::{
-    MqttType,
-    VersionedConfig,
+use chronicle_common::{
+    config::{
+        MqttType,
+        VersionedConfig,
+    },
+    get_history_mut_async,
 };
 use clap::{
     load_yaml,
@@ -36,7 +43,10 @@ use indicatif::{
     ProgressStyle,
 };
 use regex::Regex;
-use scylla_rs::prelude::websocket::ScyllaWebsocketEvent;
+use scylla_rs::prelude::websocket::{
+    ScyllaWebsocketEvent,
+    Topology,
+};
 use std::{
     path::{
         Path,
@@ -113,6 +123,9 @@ async fn process() -> anyhow::Result<()> {
             .await?;
             let message = Message::text(serde_json::to_string(&ChronicleRequest::ExitProgram)?);
             stream.send(message).await?;
+            if let Some(Ok(msg)) = stream.next().await {
+                handle_websocket_result(msg);
+            }
         }
         ("rebuild", Some(_matches)) => {
             let config = VersionedConfig::load(None)?.verify().await?;
@@ -122,22 +135,18 @@ async fn process() -> anyhow::Result<()> {
                 scylla_rs::prelude::websocket::Topology::BuildRing(1),
             ))?);
             stream.send(message).await?;
+            if let Some(Ok(msg)) = stream.next().await {
+                handle_websocket_result(msg);
+            }
         }
         ("config", Some(matches)) => {
-            let config = VersionedConfig::load(None)?.verify().await?;
             if matches.is_present("print") {
+                let config = VersionedConfig::load(None)?.verify().await?;
                 println!("{:#?}", config);
             }
             if matches.is_present("rollback") {
-                let (mut stream, _) = connect_async(Url::parse(&format!(
-                    "ws://{}/",
-                    config.broker_config.websocket_address
-                ))?)
-                .await?;
-                let message = Message::text(serde_json::to_string(&ChronicleRequest::Config(
-                    ConfigRequest::Rollback,
-                ))?);
-                stream.send(message).await?;
+                let mut history = get_history_mut_async().await;
+                history.rollback();
             }
         }
         ("nodes", Some(matches)) => nodes(matches).await?,
@@ -165,12 +174,18 @@ async fn nodes<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 scylla_rs::prelude::websocket::Topology::AddNode(address),
             ))?);
             stream.send(message).await?;
+            if let Some(Ok(msg)) = stream.next().await {
+                handle_websocket_result(msg);
+            }
         }
         if let Some(address) = rem_address {
             let message = Message::text(serde_json::to_string(&ScyllaWebsocketEvent::Topology(
                 scylla_rs::prelude::websocket::Topology::RemoveNode(address),
             ))?);
             stream.send(message).await?;
+            if let Some(Ok(msg)) = stream.next().await {
+                handle_websocket_result(msg);
+            }
         }
         if matches.is_present("list") {
             todo!("Print list of nodes");
@@ -200,87 +215,148 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         ("add", Some(subcommand)) => {
             let mqtt_addresses = subcommand
                 .values_of("mqtt-address")
-                .ok_or_else(|| anyhow!("No mqtt addresses received!"))?
-                .map(|mqtt_address| Ok(Url::parse(mqtt_address)?))
-                .filter_map(|r: anyhow::Result<Url>| r.ok());
-            let endpoint_addresses = subcommand.values_of("endpoint-address");
-            // TODO add endpoints
+                .map(|addresses| addresses.map(Url::parse).collect::<Result<Vec<_>, _>>())
+                .transpose()?;
+            let endpoint_addresses = subcommand
+                .values_of("endpoint-address")
+                .map(|addresses| addresses.map(Url::parse).collect::<Result<Vec<_>, _>>())
+                .transpose()?;
 
             if !matches.is_present("skip-connection") {
                 let mut messages = Vec::new();
-                for mqtt_address in mqtt_addresses.clone() {
-                    messages.push(Message::text(serde_json::to_string(
-                        &ChronicleRequest::AddMqttMessages(mqtt_address.clone()),
-                    )?));
-                    messages.push(Message::text(serde_json::to_string(
-                        &ChronicleRequest::AddMqttMessagesReferenced(mqtt_address),
-                    )?));
+                if let Some(mqtt_addresses) = mqtt_addresses {
+                    for mqtt_address in mqtt_addresses {
+                        messages.push(Message::text(serde_json::to_string(
+                            &ChronicleRequest::AddMqttMessages(mqtt_address.clone()),
+                        )?));
+                        messages.push(Message::text(serde_json::to_string(
+                            &ChronicleRequest::AddMqttMessagesReferenced(mqtt_address),
+                        )?));
+                    }
                 }
-                let (mut stream, _) = connect_async(Url::parse(&format!(
-                    "ws://{}/",
-                    config.broker_config.websocket_address
-                ))?)
-                .await?;
-                for message in messages.drain(..) {
-                    stream.send(message).await?;
+                if let Some(endpoint_addresses) = endpoint_addresses {
+                    for address in endpoint_addresses {
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Requester(
+                            RequesterTopologyRequest::AddEndpoint(address),
+                        ))?));
+                    }
+                }
+                if !messages.is_empty() {
+                    let (mut stream, _) = connect_async(Url::parse(&format!(
+                        "ws://{}/",
+                        config.broker_config.websocket_address
+                    ))?)
+                    .await?;
+                    let msg_len = messages.len();
+                    stream
+                        .send_all(&mut futures::stream::iter(messages.into_iter().map(Ok)))
+                        .await?;
+                    for _ in 0..msg_len {
+                        if let Some(Ok(msg)) = stream.next().await {
+                            handle_websocket_result(msg);
+                        }
+                    }
                 }
             } else {
-                config
-                    .broker_config
-                    .mqtt_brokers
-                    .get_mut(&MqttType::Messages)
-                    .map(|m| m.extend(mqtt_addresses.clone()));
-                config
-                    .broker_config
-                    .mqtt_brokers
-                    .get_mut(&MqttType::MessagesReferenced)
-                    .map(|m| m.extend(mqtt_addresses));
-                config.save(None).expect("Failed to save config!");
+                let mut config_changed = false;
+                if let Some(mqtt_addresses) = mqtt_addresses {
+                    config.broker_config.mqtt_brokers.get_mut(&MqttType::Messages).map(|m| {
+                        for address in mqtt_addresses.clone() {
+                            config_changed = m.insert(address) | config_changed;
+                        }
+                    });
+                    config
+                        .broker_config
+                        .mqtt_brokers
+                        .get_mut(&MqttType::MessagesReferenced)
+                        .map(|m| {
+                            for address in mqtt_addresses {
+                                config_changed = m.insert(address) | config_changed;
+                            }
+                        });
+                    config_changed = true;
+                }
+                if let Some(endpoint_addresses) = endpoint_addresses {
+                    for address in endpoint_addresses {
+                        config_changed = config.broker_config.api_endpoints.insert(address) | config_changed;
+                    }
+                }
+                if config_changed {
+                    config.save(None).expect("Failed to save config!");
+                }
             }
         }
         ("remove", Some(subcommand)) => {
             let mqtt_addresses = subcommand
                 .values_of("mqtt-address")
-                .ok_or_else(|| anyhow!("No mqtt addresses received!"))?
-                .map(|mqtt_address| Ok(Url::parse(mqtt_address)?))
-                .filter_map(|r: anyhow::Result<Url>| r.ok());
-            let endpoint_addresses = subcommand.values_of("endpoint-address");
-            // TODO add endpoints
+                .map(|addresses| addresses.map(Url::parse).collect::<Result<Vec<_>, _>>())
+                .transpose()?;
+            let endpoint_addresses = subcommand
+                .values_of("endpoint-address")
+                .map(|addresses| addresses.map(Url::parse).collect::<Result<Vec<_>, _>>())
+                .transpose()?;
 
             if !matches.is_present("skip-connection") {
                 let mut messages = Vec::new();
-                for mqtt_address in mqtt_addresses.clone() {
-                    messages.push(Message::text(serde_json::to_string(
-                        &ChronicleRequest::RemoveMqttMessages(mqtt_address.clone()),
-                    )?));
-                    messages.push(Message::text(serde_json::to_string(
-                        &ChronicleRequest::RemoveMqttMessagesReferenced(mqtt_address),
-                    )?));
+                if let Some(mqtt_addresses) = mqtt_addresses {
+                    for mqtt_address in mqtt_addresses {
+                        messages.push(Message::text(serde_json::to_string(
+                            &ChronicleRequest::RemoveMqttMessages(mqtt_address.clone()),
+                        )?));
+                        messages.push(Message::text(serde_json::to_string(
+                            &ChronicleRequest::RemoveMqttMessagesReferenced(mqtt_address),
+                        )?));
+                    }
                 }
-                let (mut stream, _) = connect_async(Url::parse(&format!(
-                    "ws://{}/",
-                    config.broker_config.websocket_address
-                ))?)
-                .await?;
-                for message in messages.drain(..) {
-                    stream.send(message).await?;
+                if let Some(endpoint_addresses) = endpoint_addresses {
+                    for address in endpoint_addresses {
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Requester(
+                            RequesterTopologyRequest::RemoveEndpoint(address),
+                        ))?));
+                    }
+                }
+                if !messages.is_empty() {
+                    let (mut stream, _) = connect_async(Url::parse(&format!(
+                        "ws://{}/",
+                        config.broker_config.websocket_address
+                    ))?)
+                    .await?;
+                    let msg_len = messages.len();
+                    stream
+                        .send_all(&mut futures::stream::iter(messages.into_iter().map(Ok)))
+                        .await?;
+                    for _ in 0..msg_len {
+                        if let Some(Ok(msg)) = stream.next().await {
+                            handle_websocket_result(msg);
+                        }
+                    }
                 }
             } else {
-                config.broker_config.mqtt_brokers.get_mut(&MqttType::Messages).map(|m| {
-                    mqtt_addresses.clone().for_each(|u| {
-                        m.remove(&u);
-                    })
-                });
-                config
-                    .broker_config
-                    .mqtt_brokers
-                    .get_mut(&MqttType::MessagesReferenced)
-                    .map(|m| {
-                        mqtt_addresses.for_each(|u| {
-                            m.remove(&u);
+                let mut config_changed = false;
+                if let Some(mqtt_addresses) = mqtt_addresses {
+                    config.broker_config.mqtt_brokers.get_mut(&MqttType::Messages).map(|m| {
+                        mqtt_addresses.iter().for_each(|u| {
+                            config_changed = m.remove(u) | config_changed;
                         })
                     });
-                config.save(None).expect("Failed to save config!");
+                    config
+                        .broker_config
+                        .mqtt_brokers
+                        .get_mut(&MqttType::MessagesReferenced)
+                        .map(|m| {
+                            mqtt_addresses.iter().for_each(|u| {
+                                config_changed = m.remove(u) | config_changed;
+                            })
+                        });
+                }
+                if let Some(endpoint_addresses) = endpoint_addresses {
+                    for address in endpoint_addresses {
+                        config_changed = config.broker_config.api_endpoints.remove(&address) | config_changed;
+                    }
+                }
+                if config_changed {
+                    config.save(None).expect("Failed to save config!");
+                }
             }
         }
         _ => (),
@@ -299,6 +375,25 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn handle_websocket_result(msg: Message) {
+    match msg {
+        Message::Text(s) => {
+            if let Ok(res) = serde_json::from_str::<WebsocketResult>(&s) {
+                if let Err(e) = &*res {
+                    println!("Error: {}", e);
+                }
+            } else if let Ok(res) = serde_json::from_str::<Result<Topology, Topology>>(&s) {
+                if let Err(e) = res {
+                    println!("Error: {:?}", e);
+                }
+            } else {
+                println!("Unknown message: {}", s);
+            }
+        }
+        _ => (),
+    }
 }
 
 async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
@@ -449,6 +544,80 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                             _ => (),
                         }
                     }
+                    Err(e) => {
+                        println!("Error received from Chronicle: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+        ("export", Some(subcommand)) => {
+            let range = subcommand.value_of("range").unwrap();
+            let matches = Regex::new(r"(\d+)(?:\D+(\d+))?")?
+                .captures(range)
+                .ok_or_else(|| anyhow!("Malformatted range!"));
+            let range = matches.and_then(|c| {
+                let start = c.get(1).unwrap().as_str().parse::<u32>()?;
+                let end = c
+                    .get(2)
+                    .map(|s| s.as_str().parse::<u32>())
+                    .transpose()?
+                    .unwrap_or(start + 1);
+                Ok(start..end)
+            })?;
+            let sty = ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} ({eta})")
+                .progress_chars("##-");
+            let pb = ProgressBar::new(0);
+            pb.set_style(sty.clone());
+            pb.set_length(range.len() as u64);
+            let (mut stream, _) = connect_async(Url::parse(&format!(
+                "ws://{}/",
+                config.broker_config.websocket_address
+            ))?)
+            .await?;
+            stream
+                .send(Message::text(serde_json::to_string(&ChronicleRequest::Export(range))?))
+                .await?;
+            pb.enable_steady_tick(200);
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    Ok(msg) => match msg {
+                        Message::Text(ref s) => {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
+                                if let Ok(session) = serde_json::from_value::<ExporterStatus>(json.clone()) {
+                                    match session {
+                                        ExporterStatus::InProgress {
+                                            current,
+                                            completed,
+                                            total: _,
+                                        } => {
+                                            pb.set_position(completed as u64);
+                                            pb.set_message(format!("Current milestone: {}", current));
+                                        }
+                                        ExporterStatus::Done => {
+                                            pb.finish_with_message("Done");
+                                            break;
+                                        }
+                                        ExporterStatus::Failed(e) => {
+                                            pb.println(format!("Error: {}", e));
+                                            pb.finish_with_message(format!("Error: {}", e));
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else {
+                                println!("Text message from Chronicle: {:?}", msg);
+                            }
+                        }
+                        Message::Close(c) => {
+                            if let Some(c) = c {
+                                println!("Closed connection: {}", c);
+                            }
+                            break;
+                        }
+                        _ => (),
+                    },
                     Err(e) => {
                         println!("Error received from Chronicle: {}", e);
                         break;

@@ -82,6 +82,27 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Chro
     }
 }
 
+impl Select<MessageId, FullMessage> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        <Self as Select<MessageId, (Option<Message>, Option<MessageMetadata>)>>::statement(self)
+    }
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+        builder.value(&message_id.to_string())
+    }
+}
+
+impl RowsDecoder<MessageId, FullMessage> for ChronicleKeyspace {
+    type Row = Record<Option<FullMessage>>;
+    fn try_decode(decoder: Decoder) -> anyhow::Result<Option<FullMessage>> {
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
+        Ok(Self::Row::rows_iter(decoder)?
+            .next()
+            .map(|row| row.into_inner())
+            .flatten())
+    }
+}
+
 impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
@@ -449,6 +470,17 @@ impl Row for Record<(Option<Message>, Option<MessageMetadata>)> {
             .and_then(|bytes| Ok(bytes.map(|mut bytes| Message::unpack(&mut bytes)).transpose()?))?;
         let metadata = rows.column_value::<Option<MessageMetadata>>()?;
         Ok(Record::new((message, metadata)))
+    }
+}
+
+impl Row for Record<Option<FullMessage>> {
+    fn try_decode_row<T: ColumnValue>(rows: &mut T) -> anyhow::Result<Self> {
+        let message = rows
+            .column_value::<Option<Cursor<Vec<u8>>>>()
+            .and_then(|bytes| Ok(bytes.map(|mut bytes| Message::unpack(&mut bytes)).transpose()?))?;
+        let metadata = rows.column_value::<Option<MessageMetadata>>()?;
+        let full_message = message.and_then(|message| metadata.map(|metadata| FullMessage(message, metadata)));
+        Ok(Record::new(full_message))
     }
 }
 

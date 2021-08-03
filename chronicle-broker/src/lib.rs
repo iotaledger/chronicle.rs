@@ -12,9 +12,13 @@ pub mod archiver;
 /// The collector, which gathers data from feeds and APIs on request
 #[cfg(feature = "application")]
 pub mod collector;
-/// The importer, which enables to import write-ahead-logs
+/// The importer, which enables importing write-ahead-logs
 #[cfg(feature = "application")]
 pub mod importer;
+
+/// The exporter, which enables exporting write-ahead-logs
+#[cfg(feature = "application")]
+pub mod exporter;
 /// MQTT handler
 #[cfg(feature = "application")]
 pub mod mqtt;
