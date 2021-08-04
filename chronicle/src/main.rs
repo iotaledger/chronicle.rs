@@ -20,6 +20,7 @@ use scylla_rs::prelude::{
     stage::Reporter,
     *,
 };
+use std::time::Duration;
 use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,
@@ -61,22 +62,14 @@ impl Actor for Launcher {
             .build();
 
         rt.spawn_actor(scylla).await?;
-        let ws = format!("ws://{}/", config.storage_config.listen_address);
-        let nodes = config.storage_config.nodes.iter().cloned().collect();
-        match add_nodes(&ws, nodes, 1).await {
-            Ok(_) => match init_database().await {
-                Ok(_) => log::debug!("{}", rt.service_tree().await),
-                Err(e) => {
-                    log::error!("{}", e);
-                    log::debug!("{}", rt.service_tree().await);
-                }
-            },
-            Err(e) => {
-                log::error!("{}", e);
-                log::debug!("{}", rt.service_tree().await);
-            }
-        }
         rt.spawn_actor(ChronicleAPI).await?;
+        let ws = format!("ws://{}/", config.storage_config.listen_address);
+        let nodes = config.storage_config.nodes.iter().cloned().collect::<Vec<_>>();
+        while let Err(e) = add_nodes(&ws, nodes.clone(), 1).await {
+            log::error!("Error adding nodes: {}", e);
+            log::info!("Trying again after 5 seconds...");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
         tokio::task::spawn(ctrl_c(rt.handle()));
         log::info!("{}", rt.service_tree().await);
         Ok(())
@@ -99,10 +92,14 @@ impl Actor for Launcher {
                 LauncherEvent::StatusChange(s) => match s.actor_type {
                     Children::Scylla => {
                         if s.prev_status == ScyllaStatus::Disconnected.as_str() {
-                            let config = get_config_async().await;
-                            let chronicle_broker = ChronicleBrokerBuilder::new().config(config).build();
-                            broker_handle.replace(rt.spawn_actor(chronicle_broker).await?);
-                            init_database().await?;
+                            if let Err(e) = init_database().await {
+                                log::error!("{}", e);
+                                log::debug!("{}", rt.service_tree().await);
+                            } else {
+                                let config = get_config_async().await;
+                                let chronicle_broker = ChronicleBrokerBuilder::new().config(config).build();
+                                broker_handle.replace(rt.spawn_actor(chronicle_broker).await?);
+                            }
                         } else if s.service.status() == ScyllaStatus::Disconnected.as_str() {
                             if let Some(handle) = broker_handle.take() {
                                 handle.shutdown();
