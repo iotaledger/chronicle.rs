@@ -249,8 +249,11 @@ type ListenerResult = Result<ListenerResponse, ListenerError>;
 #[options("/<_path..>")]
 async fn options(_path: PathBuf) {}
 
-#[get("/info")]
-async fn info() -> ListenerResult {
+#[get("/<keyspace>/info")]
+async fn info(keyspaces: State<'_, HashSet<String>>, keyspace: String) -> ListenerResult {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
     let version = std::env!("CARGO_PKG_VERSION").to_string();
     let service = SERVICE.read().await;
     let is_healthy = !std::iter::once(&*service)
@@ -260,13 +263,6 @@ async fn info() -> ListenerResult {
         name: "Chronicle".into(),
         version,
         is_healthy,
-        network_id: "network id".into(),
-        bech32_hrp: "bech32 hrp".into(),
-        latest_milestone_index: 0,
-        confirmed_milestone_index: 0,
-        pruning_index: 0,
-        features: vec![],
-        min_pow_score: 0.0,
     })
 }
 
@@ -1004,7 +1000,7 @@ mod tests {
         let rocket = construct_rocket(rocket::ignite());
         let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
 
-        let res = client.get("/api/info").dispatch().await;
+        let res = client.get("/api/permanode/info").dispatch().await;
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
