@@ -901,10 +901,10 @@ where
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
-            } else {
-                self.handle.any_error.store(true, Ordering::Relaxed);
+                return Ok(());
             }
-        } else if self.retries > 0 {
+        }
+        if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
             match self
@@ -1005,7 +1005,7 @@ where
         reporter: Option<&mut UnboundedSender<<Reporter as Actor>::Event>>,
     ) -> anyhow::Result<()> {
         error!(
-            "{:?}, left retries: {}, reporter running: {}",
+            "{:?}, retries remaining: {}, reporter running: {}",
             error,
             self.retries,
             reporter.is_some()
@@ -1013,8 +1013,10 @@ where
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
+                return Ok(());
             }
-        } else if self.retries > 0 {
+        }
+        if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
             match self
@@ -1104,7 +1106,7 @@ where
         reporter: Option<&mut UnboundedSender<<Reporter as Actor>::Event>>,
     ) -> anyhow::Result<()> {
         error!(
-            "{:?}, left retries: {}, reporter running: {}",
+            "{:?}, retries remaining: {}, reporter running: {}",
             error,
             self.retries,
             reporter.is_some()
@@ -1112,8 +1114,10 @@ where
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
+                return Ok(());
             }
-        } else if self.retries > 0 {
+        }
+        if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
             match self
