@@ -161,7 +161,7 @@ impl<H: ChronicleBrokerScope> ChronicleBroker<H> {
             .await
             .map_err(|e| {
                 error!("{}", e);
-                Need::Abort
+                Need::RescheduleAfter(std::time::Duration::from_secs(60))
             })?;
         Ok(())
     }
