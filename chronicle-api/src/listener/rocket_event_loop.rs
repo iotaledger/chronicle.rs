@@ -950,7 +950,6 @@ fn not_found() -> ListenerError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronicle_common::config::StorageConfig;
     use rocket::{
         http::{
             ContentType,
@@ -963,6 +962,15 @@ mod tests {
         },
     };
     use serde_json::Value;
+
+    async fn construct_client() -> Client {
+        let mut keyspaces = HashSet::new();
+        keyspaces.insert("permanode".to_string());
+        let rocket = construct_rocket(rocket::ignite())
+            .manage(PartitionConfig::default())
+            .manage(keyspaces);
+        Client::tracked(rocket).await.expect("Invalid rocket instance!")
+    }
 
     fn check_cors_headers(res: &LocalResponse) {
         assert_eq!(
@@ -985,8 +993,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn options() {
-        let rocket = construct_rocket(rocket::ignite());
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
         let res = client.options("/api/anything").dispatch().await;
         assert_eq!(res.status(), Status::Ok);
@@ -997,8 +1004,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn info() {
-        let rocket = construct_rocket(rocket::ignite());
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
         let res = client.get("/api/permanode/info").dispatch().await;
         assert_eq!(res.status(), Status::Ok);
@@ -1015,8 +1021,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn service() {
-        let rocket = construct_rocket(rocket::ignite());
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
         let res = client.get("/api/service").dispatch().await;
         assert_eq!(res.status(), Status::Ok);
@@ -1028,19 +1033,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn get_message() {
-        let storage_config = StorageConfig::default();
-        let keyspaces = storage_config
-            .keyspaces
-            .iter()
-            .cloned()
-            .map(|k| k.name)
-            .collect::<HashSet<_>>();
-        let rocket = construct_rocket(
-            rocket::ignite()
-                .manage(storage_config.partition_config.clone())
-                .manage(keyspaces),
-        );
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
         let res = client
             .get("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
