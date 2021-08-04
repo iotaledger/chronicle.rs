@@ -105,7 +105,8 @@ pub struct MilestoneData {
 }
 
 impl MilestoneData {
-    pub(crate) fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
+    /// Create new milestone data
+    pub fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
             milestone_index,
             milestone: None,
@@ -162,17 +163,20 @@ impl MilestoneData {
         // Return the analytic record
         Ok(analytic_record)
     }
-    pub(crate) fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
+    /// Set the milestone payload in the milestone data
+    pub fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
         self.milestone.replace(boxed_milestone_payload);
     }
     /// Check if the milestone exists
     pub fn milestone_exist(&self) -> bool {
         self.milestone.is_some()
     }
-    pub(crate) fn add_full_message(&mut self, full_message: FullMessage) {
+    /// Add full message into the milestone messages
+    pub fn add_full_message(&mut self, full_message: FullMessage) {
         self.messages.insert(*full_message.message_id(), full_message);
     }
-    pub(crate) fn remove_from_pending(&mut self, message_id: &MessageId) {
+    /// Remove message id from pending
+    pub fn remove_from_pending(&mut self, message_id: &MessageId) {
         self.pending.remove(message_id);
     }
     /// Get the milestone's messages
