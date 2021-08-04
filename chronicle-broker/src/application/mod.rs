@@ -187,7 +187,11 @@ impl<H: ChronicleBrokerScope> Passthrough<ChronicleBrokerThrough> for BrokerHand
         }
     }
     fn passthrough(&mut self, _event: ChronicleBrokerThrough, _from_app_name: String) {}
-    fn service(&mut self, _service: &Service) {}
+    fn service(&mut self, service: &Service) {
+        if let Some(service) = service.microservices.get("Scylla") {
+            let _ = self.send(BrokerEvent::Scylla(service.clone()));
+        }
+    }
 }
 
 /// implementation of shutdown functionality
