@@ -990,7 +990,6 @@ fn not_found() -> ListenerError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronicle_common::config::StorageConfig;
     use rocket::{
         http::{
             ContentType,
@@ -1023,10 +1022,33 @@ mod tests {
         );
     }
 
+    async fn construct_client() -> Client {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<RocketEvent>();
+        let mut keyspaces = HashSet::new();
+        keyspaces.insert("permanode".to_string());
+        tokio::spawn(async move {
+            while let Some(evt) = receiver.recv().await {
+                match evt {
+                    RocketEvent::Service(s) => {
+                        s.send(ServiceTree {
+                            service: Service::new(Uuid::nil(), "rocket"),
+                            children: Vec::new(),
+                        })
+                        .ok();
+                    }
+                }
+            }
+        });
+        let rocket = construct_rocket()
+            .manage(PartitionConfig::default())
+            .manage(keyspaces)
+            .manage(sender);
+        Client::tracked(rocket).await.expect("Invalid rocket instance!")
+    }
+
     #[rocket::async_test]
     async fn options() {
-        let rocket = construct_rocket();
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
         let res = client.options("/api/anything").dispatch().await;
         assert_eq!(res.status(), Status::Ok);
@@ -1037,10 +1059,9 @@ mod tests {
 
     #[rocket::async_test]
     async fn info() {
-        let rocket = construct_rocket();
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
-        let res = client.get("/api/info").dispatch().await;
+        let res = client.get("/api/permanode/info").dispatch().await;
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
@@ -1055,31 +1076,19 @@ mod tests {
 
     #[rocket::async_test]
     async fn service() {
-        let rocket = construct_rocket();
-        let client = Client::tracked(rocket).await.expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
         let res = client.get("/api/service").dispatch().await;
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
-        let _body: Service = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
-            .expect("Failed to deserialize Service Response!");
+        let _body: ServiceTree = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+            .expect("Failed to deserialize Service Tree Response!");
     }
 
     #[rocket::async_test]
     async fn get_message() {
-        let storage_config = StorageConfig::default();
-        let keyspaces = storage_config
-            .keyspaces
-            .iter()
-            .cloned()
-            .map(|k| k.name)
-            .collect::<HashSet<_>>();
-        let rocket = construct_rocket();
-
-        let client = Client::tracked(rocket.manage(storage_config.partition_config.clone()).manage(keyspaces))
-            .await
-            .expect("Invalid rocket instance!");
+        let client = construct_client().await;
 
         let res = client
             .get("/api/permanode/messages/91515c13d2025f79ded3758abe5dc640591c3b6d58b1c52cd51d1fa0585774bc")
