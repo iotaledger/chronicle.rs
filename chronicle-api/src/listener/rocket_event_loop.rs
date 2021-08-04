@@ -276,8 +276,15 @@ type ListenerResult = Result<ListenerResponse, ListenerError>;
 #[options("/<_path..>")]
 async fn options(_path: PathBuf) {}
 
-#[get("/info")]
-async fn info(handle: &State<UnboundedSender<RocketEvent>>) -> ListenerResult {
+#[get("/<keyspace>/info")]
+async fn info(
+    keyspaces: &State<HashSet<String>>,
+    keyspace: String,
+    handle: &State<UnboundedSender<RocketEvent>>,
+) -> ListenerResult {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
     let version = std::env!("CARGO_PKG_VERSION").to_string();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     handle
@@ -288,16 +295,9 @@ async fn info(handle: &State<UnboundedSender<RocketEvent>>) -> ListenerResult {
         .chain(service.children.iter())
         .any(|service| !service.is_running());
     Ok(ListenerResponse::Info {
-        name: "Chronicle".into(),
+        name: "Chronicle (keyspace)".into(),
         version,
         is_healthy,
-        network_id: "network id".into(),
-        bech32_hrp: "bech32 hrp".into(),
-        latest_milestone_index: 0,
-        confirmed_milestone_index: 0,
-        pruning_index: 0,
-        features: vec![],
-        min_pow_score: 0.0,
     })
 }
 

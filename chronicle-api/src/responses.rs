@@ -39,19 +39,6 @@ pub(crate) enum ListenerResponse {
         version: String,
         #[serde(rename = "isHealthy")]
         is_healthy: bool,
-        #[serde(rename = "networkId")]
-        network_id: String,
-        #[serde(rename = "bech32HRP")]
-        bech32_hrp: String,
-        #[serde(rename = "latestMilestoneIndex")]
-        latest_milestone_index: u32,
-        #[serde(rename = "confirmedMilestoneIndex")]
-        confirmed_milestone_index: u32,
-        #[serde(rename = "pruningIndex")]
-        pruning_index: u32,
-        features: Vec<String>,
-        #[serde(rename = "minPowScore")]
-        min_pow_score: f64,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>
     /// and GET /api/<keyspace>/transactions/<transaction_id>/included-message
