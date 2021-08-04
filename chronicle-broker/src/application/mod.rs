@@ -7,7 +7,6 @@ use crate::{
     exporter::*,
     importer::*,
     mqtt::*,
-    requester::RequesterTopology,
     solidifier::*,
     syncer::*,
 };
@@ -17,11 +16,16 @@ use chronicle_common::config::{
     Config,
 };
 use std::{
+    collections::HashSet,
     ops::Range,
     str::FromStr,
+    sync::Arc,
     time::Duration,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{
+    oneshot,
+    RwLock,
+};
 
 /// Application state
 pub struct ChronicleBroker {
@@ -67,6 +71,14 @@ pub enum BrokerRequest {
         range: Range<u32>,
         responder: tokio::sync::mpsc::UnboundedSender<ExporterStatus>,
     },
+}
+
+/// Requester topology used by admins to add/remove IOTA api endpoints
+pub enum RequesterTopology {
+    /// Add new Api Endpoint
+    AddEndpoint(Url, oneshot::Sender<anyhow::Result<()>>),
+    /// Remove existing Api Endpoint
+    RemoveEndpoint(Url, oneshot::Sender<anyhow::Result<()>>),
 }
 
 /// Import types
@@ -174,7 +186,6 @@ impl Actor for ChronicleBroker {
         let collector_builder = CollectorBuilder::new()
             .collector_count(self.collector_count)
             .requester_count(config.broker_config.requester_count)
-            .api_endpoints(config.broker_config.api_endpoints.iter().cloned().collect())
             .storage_config(config.storage_config.clone())
             .reqwest_client(reqwest_client.clone())
             .retries_per_query(config.broker_config.retries_per_query)
@@ -216,6 +227,8 @@ impl Actor for ChronicleBroker {
             self.add_mqtt(rt, MessagesReferenced, MqttType::MessagesReferenced, broker_url)
                 .await?;
         }
+        rt.add_resource(Arc::new(RwLock::new(config.broker_config.api_endpoints)))
+            .await;
 
         Ok(())
     }
@@ -259,34 +272,44 @@ impl Actor for ChronicleBroker {
                                 if let Err(e) = BrokerConfig::verify_endpoint(&reqwest_client, &url).await {
                                     responder.send(Err(e)).ok();
                                 } else {
+                                    if let Some(endpoints) = rt.resource::<Arc<RwLock<HashSet<Url>>>>().await {
+                                        if !endpoints.read().await.contains(&url) {
+                                            endpoints.write().await.insert(url);
+                                        } else {
+                                            responder
+                                                .send(Err(anyhow::anyhow!("Endpoint {} already exists!", url)))
+                                                .ok();
+                                            break;
+                                        }
+                                    }
                                     if let Some(collector_handles) = rt.pool::<MapPool<Collector, u8>>().await {
                                         for handle in collector_handles.handles().await {
-                                            let (sender, _) = tokio::sync::oneshot::channel();
-                                            handle
-                                                .send(CollectorEvent::Topology(RequesterTopology::AddEndpoint(
-                                                    url.clone(),
-                                                    sender,
-                                                )))
-                                                .ok();
+                                            handle.send(CollectorEvent::RequesterTopologyChange).ok();
                                         }
-                                        responder.send(Ok(())).ok();
                                     }
+                                    responder.send(Ok(())).ok();
                                 }
+                            } else {
+                                responder
+                                    .send(Err(anyhow::anyhow!("Endpoint {} is invalid!", url)))
+                                    .ok();
                             }
                         }
                         RequesterTopology::RemoveEndpoint(url, responder) => {
+                            if let Some(endpoints) = rt.resource::<Arc<RwLock<HashSet<Url>>>>().await {
+                                if !endpoints.write().await.remove(&url) {
+                                    responder
+                                        .send(Err(anyhow::anyhow!("Endpoint {} did not exist!", url)))
+                                        .ok();
+                                    break;
+                                }
+                            }
                             if let Some(collector_handles) = rt.pool::<MapPool<Collector, u8>>().await {
                                 for handle in collector_handles.handles().await {
-                                    let (sender, _) = tokio::sync::oneshot::channel();
-                                    handle
-                                        .send(CollectorEvent::Topology(RequesterTopology::RemoveEndpoint(
-                                            url.clone(),
-                                            sender,
-                                        )))
-                                        .ok();
+                                    handle.send(CollectorEvent::RequesterTopologyChange).ok();
                                 }
-                                responder.send(Ok(())).ok();
                             }
+                            responder.send(Ok(())).ok();
                         }
                     },
                     BrokerRequest::Import {

@@ -4,8 +4,6 @@ use super::{
     requester::{
         Requester,
         RequesterEvent,
-        RequesterId,
-        RequesterTopology,
     },
     solidifier::{
         AtomicSolidifierHandle,
@@ -40,25 +38,21 @@ use chronicle_common::config::{
 };
 use lru::LruCache;
 use reqwest::Client;
-use std::{
-    collections::VecDeque,
-    sync::Arc,
-};
-use url::Url;
+use std::sync::Arc;
 
 /// Collector events
 #[supervise(Requester)]
 pub enum CollectorEvent {
     /// Requested Message and Metadata, u32 is the milestoneindex
-    MessageAndMeta(RequesterId, u32, Option<MessageId>, Option<FullMessage>),
+    MessageAndMeta(u32, Option<MessageId>, Option<FullMessage>),
     /// Newly seen message from feed source(s)
     Message(MessageId, Message),
     /// Newly seen MessageMetadataObj from feed source(s)
     MessageReferenced(MessageMetadata),
     /// Ask requests from solidifier(s)
     Ask(AskCollector),
-    /// Topology change
-    Topology(RequesterTopology),
+    /// Notify requesters about a topology change
+    RequesterTopologyChange,
     /// Shutdown the collector
     Shutdown,
 }
@@ -107,8 +101,6 @@ pub struct Collector {
     /// The hashmap to facilitate the recording the pending requests, which maps from
     /// a message id to the corresponding (milestone index, message) pair
     pending_requests: HashMap<MessageId, (u32, Message)>,
-    /// The double ended queue stores the api endpoints
-    api_endpoints: VecDeque<Url>,
     /// The http client
     reqwest_client: Client,
     /// The partition configure
@@ -123,7 +115,6 @@ pub fn build_collector(
     partition_id: u8,
     lru_capacity: Option<usize>,
     reqwest_client: Client,
-    api_endpoints: VecDeque<Url>,
     collector_count: u8,
     requester_count: Option<u8>,
     retries_per_query: Option<usize>,
@@ -160,7 +151,6 @@ pub fn build_collector(
         collector_count,
         requester_count: requester_count.unwrap_or(10),
         pending_requests: HashMap::new(),
-        api_endpoints,
         reqwest_client,
         partition_config,
         default_keyspace,
@@ -188,7 +178,6 @@ impl Actor for Collector {
             let reqwest_client = self.reqwest_client.clone();
             let requester = super::requester::RequesterBuilder::new()
                 .requester_id(id)
-                .api_endpoints(self.api_endpoints.iter().cloned().collect())
                 .retries_per_endpoint(self.retries_per_endpoint)
                 .reqwest_client(reqwest_client)
                 .build();
@@ -210,7 +199,7 @@ impl Actor for Collector {
         rt.update_status(ServiceStatus::Running).await.ok();
         while let Some(event) = rt.next_event().await {
             match event {
-                CollectorEvent::MessageAndMeta(requester_id, try_ms_index, message_id, opt_full_msg) => {
+                CollectorEvent::MessageAndMeta(try_ms_index, message_id, opt_full_msg) => {
                     if let Some(FullMessage(message, metadata)) = opt_full_msg {
                         let message_id = message_id.expect("Expected message_id in requester response");
                         let partition_id = (try_ms_index % (self.collector_count as u32)) as u8;
@@ -488,32 +477,11 @@ impl Actor for Collector {
                         }
                     }
                 }
-                CollectorEvent::Topology(topology) => match topology {
-                    RequesterTopology::AddEndpoint(url, responder) => {
-                        for handle in requester_handles.handles().await {
-                            let (sender, _) = tokio::sync::oneshot::channel();
-                            handle
-                                .send(RequesterEvent::Topology(RequesterTopology::AddEndpoint(
-                                    url.clone(),
-                                    sender,
-                                )))
-                                .ok();
-                        }
-                        responder.send(Ok(())).ok();
+                CollectorEvent::RequesterTopologyChange => {
+                    for handle in requester_handles.handles().await {
+                        handle.send(RequesterEvent::TopologyChange).ok();
                     }
-                    RequesterTopology::RemoveEndpoint(url, responder) => {
-                        for handle in requester_handles.handles().await {
-                            let (sender, _) = tokio::sync::oneshot::channel();
-                            handle
-                                .send(RequesterEvent::Topology(RequesterTopology::RemoveEndpoint(
-                                    url.clone(),
-                                    sender,
-                                )))
-                                .ok();
-                        }
-                        responder.send(Ok(())).ok();
-                    }
-                },
+                }
                 CollectorEvent::Shutdown => break,
                 CollectorEvent::ReportExit(res) => match res {
                     Ok(_) => break,

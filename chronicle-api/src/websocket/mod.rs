@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use backstage::prefabs::websocket::WebsocketChildren;
-use chronicle_broker::{
-    application::{
-        BrokerEvent,
-        BrokerRequest,
-        ChronicleBroker,
-        ImportType,
-    },
-    requester::RequesterTopology,
+use chronicle_broker::application::{
+    BrokerEvent,
+    BrokerRequest,
+    ChronicleBroker,
+    ImportType,
+    RequesterTopology,
 };
 use serde::{
     Deserialize,
