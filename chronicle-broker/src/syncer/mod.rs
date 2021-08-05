@@ -18,7 +18,6 @@ use std::{
     ops::Deref,
     time::Duration,
 };
-use tokio::sync::oneshot;
 
 /// Syncer events
 pub enum SyncerEvent {
@@ -63,7 +62,6 @@ pub struct Syncer {
     initial_gap_start: u32,
     initial_gap_end: u32,
     prev_closed_log_filename: u32,
-    oneshot: Option<oneshot::Sender<u32>>,
 }
 
 #[build]
@@ -74,7 +72,6 @@ pub fn build_syncer(
     solidifier_count: u8,
     parallelism: Option<u8>,
     first_ask: Option<AskSyncer>,
-    oneshot: Option<oneshot::Sender<u32>>,
 ) -> Syncer {
     let config = chronicle_common::get_config();
     let keyspace = ChronicleKeyspace::new(
@@ -103,7 +100,6 @@ pub fn build_syncer(
         initial_gap_start: 0,
         initial_gap_end: 0,
         prev_closed_log_filename: 0,
-        oneshot,
     }
 }
 
@@ -248,10 +244,6 @@ impl Syncer {
                     .send(ArchiverEvent::MilestoneData(milestone_data, None))
                     .ok();
             }
-            // push the start point to archiver
-            let _ = self.oneshot.take().expect("Expected oneshot channel").send(next);
-            // tell archiver to finish the logfile
-            archiver_handle.send(ArchiverEvent::Close(next)).ok();
             // set the first ask request
             self.complete_or_fillgaps(my_handle, solidifier_handles, archiver_handle)
                 .await;

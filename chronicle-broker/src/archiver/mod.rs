@@ -25,7 +25,6 @@ use tokio::{
         AsyncWriteExt,
         BufReader,
     },
-    sync::oneshot,
 };
 
 /// The maximum bytes size for a given log file;
@@ -41,17 +40,16 @@ pub struct Archiver {
     cleanup: Vec<u32>,
     processed: Vec<std::ops::Range<u32>>,
     milestones_data: BinaryHeap<Ascending<MilestoneData>>,
-    oneshot: Option<oneshot::Receiver<u32>>,
     keyspace: ChronicleKeyspace,
     retries_per_query: usize,
     solidifiers_count: u8,
+    next: u32,
 }
 
 #[build]
 pub fn build_archiver(
     keyspace: ChronicleKeyspace,
     max_log_size: Option<u64>,
-    oneshot: Option<oneshot::Receiver<u32>>,
     solidifiers_count: u8,
     retries_per_query: Option<usize>,
     dir_path: PathBuf,
@@ -65,8 +63,8 @@ pub fn build_archiver(
         keyspace,
         solidifiers_count,
         milestones_data: std::collections::BinaryHeap::new(),
-        oneshot,
         retries_per_query: retries_per_query.unwrap_or(10),
+        next: 0,
     }
 }
 
@@ -94,6 +92,12 @@ impl Actor for Archiver {
                 return Err(anyhow::anyhow!("Unable to create log directory, error: {}", e).into());
             }
         };
+        let sync_data = SyncData::try_fetch(&self.keyspace, &SyncRange::default(), 3).await?;
+        self.next = sync_data.gaps.first().map(|r| r.start).unwrap_or(0);
+        info!(
+            "Archiver will write ahead log files for new incoming data starting with milestone {}",
+            self.next
+        );
         Ok(())
     }
 
@@ -107,22 +111,12 @@ impl Actor for Archiver {
         Sup::Event: SupervisorEvent,
         <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
     {
-        let mut next;
-        if let Ok(index) = self.oneshot.take().unwrap().await {
-            next = index;
-        } else {
-            return Err(anyhow::anyhow!("Could not acquire starting milestone index!").into());
-        }
-        info!(
-            "Archiver will write ahead log files for new incoming data starting: {}",
-            next
-        );
         rt.update_status(ServiceStatus::Running).await.ok();
         while let Some(event) = rt.next_event().await {
             match event {
                 ArchiverEvent::Close(milestone_index) => {
                     // to prevent overlap, we ensure to only close syncer milestone_index when it's less than next
-                    if milestone_index < next {
+                    if milestone_index < self.next {
                         self.close_log_file(milestone_index).await?;
                     }
                 }
@@ -137,42 +131,42 @@ impl Actor for Archiver {
                             self.milestones_data.push(Ascending::new(milestone_data));
                             while let Some(ms_data) = self.milestones_data.pop() {
                                 let ms_index = ms_data.milestone_index();
-                                if next.eq(&ms_index) {
+                                if self.next.eq(&ms_index) {
                                     self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
                                         .await?;
-                                    next += 1;
-                                } else if ms_index > next {
+                                    self.next += 1;
+                                } else if ms_index > self.next {
                                     // Safety check to prevent potential rare race condition
                                     // check if we buffered too much.
                                     if self.milestones_data.len() > self.solidifiers_count as usize {
-                                        error!("Identified gap in the new incoming data: {}..{}", next, ms_index);
+                                        error!("Identified gap in the new incoming data: {}..{}", self.next, ms_index);
                                         // Close the file which we're unable atm to append on top.
-                                        self.close_log_file(next).await?;
+                                        self.close_log_file(self.next).await?;
                                         // this supposed to create new file
                                         self.handle_milestone_data(ms_data.into_inner(), opt_upper_limit)
                                             .await?;
                                         // reset next
-                                        next = ms_index + 1;
+                                        self.next = ms_index + 1;
                                     } else {
                                         self.milestones_data.push(ms_data);
                                         break;
                                     }
                                 } else {
-                                    warn!("Expected: {}, Dropping milestone_data: {}, as the syncer will eventually fill it up", next, ms_index);
+                                    warn!("Expected: {}, Dropping milestone_data: {}, as the syncer will eventually fill it up", self.next, ms_index);
                                 }
                             }
                         }
                         CreatedBy::Syncer | CreatedBy::Exporter => {
                             // to prevent overlap, we ensure to only handle syncer milestone_data when it's less than
                             // next
-                            if milestone_data.milestone_index() < next {
+                            if milestone_data.milestone_index() < self.next {
                                 // handle syncer milestone data;
                                 self.handle_milestone_data(milestone_data, opt_upper_limit).await?;
                                 // it overlaps with the incoming flow.
-                            } else if milestone_data.milestone_index() == next {
+                            } else if milestone_data.milestone_index() == self.next {
                                 // we handle the milestone_data from syncer as Incoming without upper_ms_limit
                                 self.handle_milestone_data(milestone_data, None).await?;
-                                next += 1;
+                                self.next += 1;
                             } else {
                                 // we received a futuristic milestone_data from syncer.
                                 self.milestones_data.push(Ascending::new(milestone_data));

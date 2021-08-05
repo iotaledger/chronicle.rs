@@ -163,7 +163,6 @@ impl Actor for ChronicleBroker {
             .update_sync_data_every(self.complete_gaps_interval)
             .solidifier_count(self.collector_count);
         if let Some(dir_path) = self.logs_dir_path.as_ref() {
-            let (one, recv) = oneshot::channel();
             let max_log_size = config.broker_config.max_log_size.unwrap_or(MAX_LOG_SIZE);
             // create archiver_builder
             let archiver = ArchiverBuilder::new()
@@ -171,9 +170,8 @@ impl Actor for ChronicleBroker {
                 .keyspace(self.default_keyspace.clone())
                 .solidifiers_count(self.collector_count)
                 .max_log_size(max_log_size)
-                .oneshot(recv)
                 .build();
-            syncer_builder = syncer_builder.first_ask(AskSyncer::Complete).oneshot(one);
+            syncer_builder = syncer_builder.first_ask(AskSyncer::Complete);
             // start archiver
             rt.spawn_actor(archiver).await?;
         } else {
