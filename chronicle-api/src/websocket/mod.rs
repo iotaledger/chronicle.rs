@@ -9,6 +9,12 @@ use chronicle_broker::application::{
     ImportType,
     RequesterTopology,
 };
+use chronicle_common::get_config_async;
+use futures::SinkExt;
+use scylla_rs::prelude::websocket::{
+    ScyllaWebsocketEvent,
+    Topology,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -22,7 +28,10 @@ use std::{
     },
     path::PathBuf,
 };
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::Message,
+};
 use url::Url;
 
 pub struct Websocket {
@@ -76,143 +85,6 @@ impl Actor for Websocket {
             } {
                 if let Some(broker) = rt.actor_event_handle::<ChronicleBroker>().await {
                     match msg {
-                        ChronicleRequest::AddMqttMessages(url) => {
-                            let (sender, receiver) = tokio::sync::oneshot::channel();
-                            if broker
-                                .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessages(url, sender)))
-                                .is_ok()
-                            {
-                                if let Ok(res) = receiver.await {
-                                    let res = WebsocketResult::from(res);
-                                    websocket
-                                        .send(WebsocketChildren::Response(addr, res.into()))
-                                        .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                }
-                            }
-                        }
-                        ChronicleRequest::AddMqttMessagesReferenced(url) => {
-                            let (sender, receiver) = tokio::sync::oneshot::channel();
-                            if broker
-                                .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessagesReferenced(
-                                    url, sender,
-                                )))
-                                .is_ok()
-                            {
-                                if let Ok(res) = receiver.await {
-                                    let res = WebsocketResult::from(res);
-                                    websocket
-                                        .send(WebsocketChildren::Response(addr, res.into()))
-                                        .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                }
-                            }
-                        }
-                        ChronicleRequest::RemoveMqttMessages(url) => {
-                            let (sender, receiver) = tokio::sync::oneshot::channel();
-                            if broker
-                                .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessages(url, sender)))
-                                .is_ok()
-                            {
-                                if let Ok(res) = receiver.await {
-                                    let res = WebsocketResult::from(res);
-                                    websocket
-                                        .send(WebsocketChildren::Response(addr, res.into()))
-                                        .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                }
-                            }
-                        }
-                        ChronicleRequest::RemoveMqttMessagesReferenced(url) => {
-                            let (sender, receiver) = tokio::sync::oneshot::channel();
-                            if broker
-                                .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessagesReferenced(
-                                    url, sender,
-                                )))
-                                .is_ok()
-                            {
-                                if let Ok(res) = receiver.await {
-                                    let res = WebsocketResult::from(res);
-                                    websocket
-                                        .send(WebsocketChildren::Response(addr, res.into()))
-                                        .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                }
-                            }
-                        }
-                        ChronicleRequest::Requester(t) => match t {
-                            RequesterTopologyRequest::AddEndpoint(url) => {
-                                let (sender, receiver) = tokio::sync::oneshot::channel();
-                                if broker
-                                    .send(BrokerEvent::Websocket(BrokerRequest::Requester(
-                                        RequesterTopology::AddEndpoint(url, sender),
-                                    )))
-                                    .is_ok()
-                                {
-                                    if let Ok(res) = receiver.await {
-                                        let res = WebsocketResult::from(res);
-                                        websocket
-                                            .send(WebsocketChildren::Response(addr, res.into()))
-                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                    }
-                                }
-                            }
-                            RequesterTopologyRequest::RemoveEndpoint(url) => {
-                                let (sender, receiver) = tokio::sync::oneshot::channel();
-                                if broker
-                                    .send(BrokerEvent::Websocket(BrokerRequest::Requester(
-                                        RequesterTopology::RemoveEndpoint(url, sender),
-                                    )))
-                                    .is_ok()
-                                {
-                                    if let Ok(res) = receiver.await {
-                                        let res = WebsocketResult::from(res);
-                                        websocket
-                                            .send(WebsocketChildren::Response(addr, res.into()))
-                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                    }
-                                }
-                            }
-                        },
-                        ChronicleRequest::Import {
-                            path,
-                            resume,
-                            import_range,
-                            import_type,
-                        } => {
-                            let (responder, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-                            if broker
-                                .send(BrokerEvent::Websocket(BrokerRequest::Import {
-                                    path,
-                                    resume,
-                                    import_range,
-                                    import_type,
-                                    responder,
-                                }))
-                                .is_ok()
-                            {
-                                while let Some(res) = receiver.recv().await {
-                                    websocket
-                                        .send(WebsocketChildren::Response(
-                                            addr,
-                                            serde_json::to_string(&res).unwrap().into(),
-                                        ))
-                                        .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                }
-                            }
-                        }
-                        ChronicleRequest::Export(range) => {
-                            let (responder, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-                            if broker
-                                .send(BrokerEvent::Websocket(BrokerRequest::Export { range, responder }))
-                                .is_ok()
-                            {
-                                while let Some(res) = receiver.recv().await {
-                                    websocket
-                                        .send(WebsocketChildren::Response(
-                                            addr,
-                                            serde_json::to_string(&res).unwrap().into(),
-                                        ))
-                                        .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
-                                }
-                            }
-                        }
                         ChronicleRequest::ExitProgram => {
                             let res = rt.shutdown_scope(&ROOT_SCOPE).await;
                             let res = WebsocketResult::from(res);
@@ -220,6 +92,236 @@ impl Actor for Websocket {
                                 .send(WebsocketChildren::Response(addr, res.into()))
                                 .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
                         }
+                        ChronicleRequest::Broker(req) => match req {
+                            ChronicleBrokerRequest::AddMqttMessages(url) => {
+                                let (sender, receiver) = tokio::sync::oneshot::channel();
+                                if broker
+                                    .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessages(url, sender)))
+                                    .is_ok()
+                                {
+                                    if let Ok(res) = receiver.await {
+                                        let res = WebsocketResult::from(res);
+                                        websocket
+                                            .send(WebsocketChildren::Response(addr, res.into()))
+                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                    }
+                                }
+                            }
+                            ChronicleBrokerRequest::AddMqttMessagesReferenced(url) => {
+                                let (sender, receiver) = tokio::sync::oneshot::channel();
+                                if broker
+                                    .send(BrokerEvent::Websocket(BrokerRequest::AddMqttMessagesReferenced(
+                                        url, sender,
+                                    )))
+                                    .is_ok()
+                                {
+                                    if let Ok(res) = receiver.await {
+                                        let res = WebsocketResult::from(res);
+                                        websocket
+                                            .send(WebsocketChildren::Response(addr, res.into()))
+                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                    }
+                                }
+                            }
+                            ChronicleBrokerRequest::RemoveMqttMessages(url) => {
+                                let (sender, receiver) = tokio::sync::oneshot::channel();
+                                if broker
+                                    .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessages(url, sender)))
+                                    .is_ok()
+                                {
+                                    if let Ok(res) = receiver.await {
+                                        let res = WebsocketResult::from(res);
+                                        websocket
+                                            .send(WebsocketChildren::Response(addr, res.into()))
+                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                    }
+                                }
+                            }
+                            ChronicleBrokerRequest::RemoveMqttMessagesReferenced(url) => {
+                                let (sender, receiver) = tokio::sync::oneshot::channel();
+                                if broker
+                                    .send(BrokerEvent::Websocket(BrokerRequest::RemoveMqttMessagesReferenced(
+                                        url, sender,
+                                    )))
+                                    .is_ok()
+                                {
+                                    if let Ok(res) = receiver.await {
+                                        let res = WebsocketResult::from(res);
+                                        websocket
+                                            .send(WebsocketChildren::Response(addr, res.into()))
+                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                    }
+                                }
+                            }
+                            ChronicleBrokerRequest::Requester(t) => match t {
+                                RequesterTopologyRequest::AddEndpoint(url) => {
+                                    let (sender, receiver) = tokio::sync::oneshot::channel();
+                                    if broker
+                                        .send(BrokerEvent::Websocket(BrokerRequest::Requester(
+                                            RequesterTopology::AddEndpoint(url, sender),
+                                        )))
+                                        .is_ok()
+                                    {
+                                        if let Ok(res) = receiver.await {
+                                            let res = WebsocketResult::from(res);
+                                            websocket
+                                                .send(WebsocketChildren::Response(addr, res.into()))
+                                                .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                        }
+                                    }
+                                }
+                                RequesterTopologyRequest::RemoveEndpoint(url) => {
+                                    let (sender, receiver) = tokio::sync::oneshot::channel();
+                                    if broker
+                                        .send(BrokerEvent::Websocket(BrokerRequest::Requester(
+                                            RequesterTopology::RemoveEndpoint(url, sender),
+                                        )))
+                                        .is_ok()
+                                    {
+                                        if let Ok(res) = receiver.await {
+                                            let res = WebsocketResult::from(res);
+                                            websocket
+                                                .send(WebsocketChildren::Response(addr, res.into()))
+                                                .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                        }
+                                    }
+                                }
+                            },
+                            ChronicleBrokerRequest::Import {
+                                path,
+                                resume,
+                                import_range,
+                                import_type,
+                            } => {
+                                let (responder, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+                                if broker
+                                    .send(BrokerEvent::Websocket(BrokerRequest::Import {
+                                        path,
+                                        resume,
+                                        import_range,
+                                        import_type,
+                                        responder,
+                                    }))
+                                    .is_ok()
+                                {
+                                    while let Some(res) = receiver.recv().await {
+                                        websocket
+                                            .send(WebsocketChildren::Response(
+                                                addr,
+                                                serde_json::to_string(&res).unwrap().into(),
+                                            ))
+                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                    }
+                                }
+                            }
+                            ChronicleBrokerRequest::Export(range) => {
+                                let (responder, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+                                if broker
+                                    .send(BrokerEvent::Websocket(BrokerRequest::Export { range, responder }))
+                                    .is_ok()
+                                {
+                                    while let Some(res) = receiver.recv().await {
+                                        websocket
+                                            .send(WebsocketChildren::Response(
+                                                addr,
+                                                serde_json::to_string(&res).unwrap().into(),
+                                            ))
+                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                    }
+                                }
+                            }
+                        },
+                        ChronicleRequest::Scylla(req) => match req {
+                            ScyllaRequest::Topology(t) => {
+                                let config = get_config_async().await;
+                                if let Ok(ws_url) =
+                                    Url::parse(&format!("ws://{}/", config.storage_config.listen_address))
+                                {
+                                    if let Ok((mut stream, _)) = connect_async(ws_url).await {
+                                        match stream
+                                            .send(Message::text(
+                                                serde_json::to_string(&ScyllaWebsocketEvent::Topology(t)).unwrap(),
+                                            ))
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                websocket
+                                                    .send(WebsocketChildren::Response(
+                                                        addr,
+                                                        WebsocketResult(Ok(())).into(),
+                                                    ))
+                                                    .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                            }
+                                            Err(_) => {
+                                                websocket
+                                                    .send(WebsocketChildren::Response(
+                                                        addr,
+                                                        WebsocketResult(Err(
+                                                            "Unable to send to configured scylla websocket url!"
+                                                                .to_string(),
+                                                        ))
+                                                        .into(),
+                                                    ))
+                                                    .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                            }
+                                        }
+                                    } else {
+                                        websocket
+                                            .send(WebsocketChildren::Response(
+                                                addr,
+                                                WebsocketResult(Err(
+                                                    "Unable to send to configured scylla websocket url!".to_string(),
+                                                ))
+                                                .into(),
+                                            ))
+                                            .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                    }
+                                } else {
+                                    websocket
+                                        .send(WebsocketChildren::Response(
+                                            addr,
+                                            WebsocketResult(Err(
+                                                "Unable to parse configured scylla websocket url!".to_string()
+                                            ))
+                                            .into(),
+                                        ))
+                                        .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                                }
+                            }
+                            ScyllaRequest::ListNodes => {
+                                let mut nodes = None;
+                                if let Some(scylla_handle) = rt.actor_event_handle::<Scylla>().await {
+                                    if let Ok(scylla_tree) = rt.service_tree_for_scope(scylla_handle.scope_id()).await {
+                                        if let Some(cluster_tree) =
+                                            scylla_tree.children.iter().find(|s| s.name().contains("Cluster"))
+                                        {
+                                            nodes = Some(
+                                                cluster_tree
+                                                    .children
+                                                    .iter()
+                                                    .map(|s| {
+                                                        format!(
+                                                            "{} ({:x}) - {}, Uptime {} ms",
+                                                            s.service.name(),
+                                                            s.scope_id().as_fields().0,
+                                                            s.service.status(),
+                                                            s.service.up_since().elapsed().unwrap().as_millis()
+                                                        )
+                                                    })
+                                                    .collect::<Vec<_>>(),
+                                            );
+                                        }
+                                    }
+                                }
+                                let nodes = nodes.unwrap_or_default();
+                                websocket
+                                    .send(WebsocketChildren::Response(
+                                        addr,
+                                        serde_json::to_string(&nodes).unwrap().into(),
+                                    ))
+                                    .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                            }
+                        },
                     }
                 } else {
                     websocket
@@ -247,6 +349,12 @@ impl From<(SocketAddr, Message)> for WebsocketRequest {
 #[derive(Serialize, Deserialize)]
 pub enum ChronicleRequest {
     ExitProgram,
+    Broker(ChronicleBrokerRequest),
+    Scylla(ScyllaRequest),
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ChronicleBrokerRequest {
     /// Add new MQTT Messages feed source
     AddMqttMessages(Url),
     /// Add new MQTT Messages Referenced feed source
@@ -267,6 +375,12 @@ pub enum ChronicleRequest {
         import_type: ImportType,
     },
     Export(Range<u32>),
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ScyllaRequest {
+    Topology(Topology),
+    ListNodes,
 }
 
 #[derive(Serialize, Deserialize)]

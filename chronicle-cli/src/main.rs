@@ -7,7 +7,9 @@ use anyhow::{
 };
 use chronicle_api::{
     websocket::{
+        ChronicleBrokerRequest,
         RequesterTopologyRequest,
+        ScyllaRequest,
         WebsocketResult,
     },
     ChronicleRequest,
@@ -154,12 +156,15 @@ async fn cluster<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         .value_of("remove-nodes")
         .map(|address| address.parse().expect("Invalid address provided!"));
     if !matches.is_present("skip-connection") {
-        let (mut stream, _) =
-            connect_async(Url::parse(&format!("ws://{}/", config.storage_config.listen_address))?).await?;
+        let (mut stream, _) = connect_async(Url::parse(&format!(
+            "ws://{}/",
+            config.broker_config.websocket_address
+        ))?)
+        .await?;
 
         if let Some(address) = add_address {
-            let message = Message::text(serde_json::to_string(&ScyllaWebsocketEvent::Topology(
-                scylla_rs::prelude::websocket::Topology::AddNode(address),
+            let message = Message::text(serde_json::to_string(&ChronicleRequest::Scylla(
+                ScyllaRequest::Topology(scylla_rs::prelude::websocket::Topology::AddNode(address)),
             ))?);
             stream.send(message).await?;
             if let Some(Ok(msg)) = stream.next().await {
@@ -167,8 +172,8 @@ async fn cluster<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             }
         }
         if let Some(address) = rem_address {
-            let message = Message::text(serde_json::to_string(&ScyllaWebsocketEvent::Topology(
-                scylla_rs::prelude::websocket::Topology::RemoveNode(address),
+            let message = Message::text(serde_json::to_string(&ChronicleRequest::Scylla(
+                ScyllaRequest::Topology(scylla_rs::prelude::websocket::Topology::RemoveNode(address)),
             ))?);
             stream.send(message).await?;
             if let Some(Ok(msg)) = stream.next().await {
@@ -177,8 +182,8 @@ async fn cluster<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         }
 
         if matches.is_present("rebuild") {
-            let message = Message::text(serde_json::to_string(&ScyllaWebsocketEvent::Topology(
-                scylla_rs::prelude::websocket::Topology::BuildRing(1),
+            let message = Message::text(serde_json::to_string(&ChronicleRequest::Scylla(
+                ScyllaRequest::Topology(scylla_rs::prelude::websocket::Topology::BuildRing(1)),
             ))?);
             stream.send(message).await?;
             if let Some(Ok(msg)) = stream.next().await {
@@ -187,7 +192,25 @@ async fn cluster<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         }
 
         if matches.is_present("list") {
-            todo!("Print list of nodes");
+            let message = Message::text(serde_json::to_string(&ChronicleRequest::Scylla(
+                ScyllaRequest::ListNodes,
+            ))?);
+            stream.send(message).await?;
+            if let Some(Ok(msg)) = stream.next().await {
+                match msg {
+                    Message::Text(s) => {
+                        if let Ok(nodes) = serde_json::from_str::<Vec<String>>(&s) {
+                            println!("Running Nodes:");
+                            for node in nodes {
+                                println!(" - {}", node);
+                            }
+                        } else {
+                            println!("Received invalid response from the websocket! {}", s)
+                        }
+                    }
+                    _ => println!("Received invalid response from the websocket! {}", msg),
+                }
+            }
         }
     } else {
         if let Some(address) = add_address {
@@ -201,7 +224,7 @@ async fn cluster<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         if matches.is_present("list") {
             println!("Configured Nodes:");
             config.storage_config.nodes.iter().for_each(|n| {
-                println!("\t{}", n);
+                println!(" - {}", n);
             });
         }
     }
@@ -225,18 +248,18 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 let mut messages = Vec::new();
                 if let Some(mqtt_addresses) = mqtt_addresses {
                     for mqtt_address in mqtt_addresses {
-                        messages.push(Message::text(serde_json::to_string(
-                            &ChronicleRequest::AddMqttMessages(mqtt_address.clone()),
-                        )?));
-                        messages.push(Message::text(serde_json::to_string(
-                            &ChronicleRequest::AddMqttMessagesReferenced(mqtt_address),
-                        )?));
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                            ChronicleBrokerRequest::AddMqttMessages(mqtt_address.clone()),
+                        ))?));
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                            ChronicleBrokerRequest::AddMqttMessagesReferenced(mqtt_address),
+                        ))?));
                     }
                 }
                 if let Some(endpoint_addresses) = endpoint_addresses {
                     for address in endpoint_addresses {
-                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Requester(
-                            RequesterTopologyRequest::AddEndpoint(address),
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                            ChronicleBrokerRequest::Requester(RequesterTopologyRequest::AddEndpoint(address)),
                         ))?));
                     }
                 }
@@ -299,18 +322,18 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 let mut messages = Vec::new();
                 if let Some(mqtt_addresses) = mqtt_addresses {
                     for mqtt_address in mqtt_addresses {
-                        messages.push(Message::text(serde_json::to_string(
-                            &ChronicleRequest::RemoveMqttMessages(mqtt_address.clone()),
-                        )?));
-                        messages.push(Message::text(serde_json::to_string(
-                            &ChronicleRequest::RemoveMqttMessagesReferenced(mqtt_address),
-                        )?));
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                            ChronicleBrokerRequest::RemoveMqttMessages(mqtt_address.clone()),
+                        ))?));
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                            ChronicleBrokerRequest::RemoveMqttMessagesReferenced(mqtt_address),
+                        ))?));
                     }
                 }
                 if let Some(endpoint_addresses) = endpoint_addresses {
                     for address in endpoint_addresses {
-                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Requester(
-                            RequesterTopologyRequest::RemoveEndpoint(address),
+                        messages.push(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                            ChronicleBrokerRequest::Requester(RequesterTopologyRequest::RemoveEndpoint(address)),
                         ))?));
                     }
                 }
@@ -453,12 +476,14 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             ))?)
             .await?;
             stream
-                .send(Message::text(serde_json::to_string(&ChronicleRequest::Import {
-                    path,
-                    resume,
-                    import_range: Some(range),
-                    import_type,
-                })?))
+                .send(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                    ChronicleBrokerRequest::Import {
+                        path,
+                        resume,
+                        import_range: Some(range),
+                        import_type,
+                    },
+                ))?))
                 .await?;
             while let Some(msg) = stream.next().await {
                 match msg {
@@ -570,7 +595,9 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             ))?)
             .await?;
             stream
-                .send(Message::text(serde_json::to_string(&ChronicleRequest::Export(range))?))
+                .send(Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                    ChronicleBrokerRequest::Export(range),
+                ))?))
                 .await?;
             pb.enable_steady_tick(200);
             while let Some(msg) = stream.next().await {
