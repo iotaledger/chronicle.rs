@@ -230,6 +230,37 @@ impl Actor for Websocket {
                                     }
                                 }
                             }
+                            ChronicleBrokerRequest::ListBrokers => {
+                                let mut brokers = None;
+                                if let Some(broker_handle) = rt.actor_event_handle::<ChronicleBroker>().await {
+                                    if let Ok(broker_tree) = rt.service_tree_for_scope(broker_handle.scope_id()).await {
+                                        brokers = Some(
+                                            broker_tree
+                                                .children
+                                                .iter()
+                                                .filter_map(|s| {
+                                                    s.name().contains("Mqtt").then(|| {
+                                                        format!(
+                                                            "{} ({:x}) - {}, Uptime {} ms",
+                                                            s.name(),
+                                                            s.scope_id().as_fields().0,
+                                                            s.status(),
+                                                            s.up_since().elapsed().unwrap().as_millis()
+                                                        )
+                                                    })
+                                                })
+                                                .collect::<Vec<_>>(),
+                                        );
+                                    }
+                                }
+                                let brokers = brokers.unwrap_or_default();
+                                websocket
+                                    .send(WebsocketChildren::Response(
+                                        addr,
+                                        serde_json::to_string(&brokers).unwrap().into(),
+                                    ))
+                                    .map_err(|e| anyhow::anyhow!("Websocket error: {}", e))?;
+                            }
                         },
                         ChronicleRequest::Scylla(req) => match req {
                             ScyllaRequest::Topology(t) => {
@@ -302,10 +333,10 @@ impl Actor for Websocket {
                                                     .map(|s| {
                                                         format!(
                                                             "{} ({:x}) - {}, Uptime {} ms",
-                                                            s.service.name(),
+                                                            s.name(),
                                                             s.scope_id().as_fields().0,
-                                                            s.service.status(),
-                                                            s.service.up_since().elapsed().unwrap().as_millis()
+                                                            s.status(),
+                                                            s.up_since().elapsed().unwrap().as_millis()
                                                         )
                                                     })
                                                     .collect::<Vec<_>>(),
@@ -375,6 +406,7 @@ pub enum ChronicleBrokerRequest {
         import_type: ImportType,
     },
     Export(Range<u32>),
+    ListBrokers,
 }
 
 #[derive(Serialize, Deserialize)]

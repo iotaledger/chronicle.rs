@@ -15,7 +15,10 @@ use chronicle_api::{
     ChronicleRequest,
 };
 use chronicle_broker::{
-    application::ImportType,
+    application::{
+        BrokerRequest,
+        ImportType,
+    },
     exporter::ExporterStatus,
     merge::{
         LogPaths,
@@ -45,10 +48,7 @@ use indicatif::{
     ProgressStyle,
 };
 use regex::Regex;
-use scylla_rs::prelude::websocket::{
-    ScyllaWebsocketEvent,
-    Topology,
-};
+use scylla_rs::prelude::websocket::Topology;
 use std::{
     path::{
         Path,
@@ -385,7 +385,30 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     }
     if matches.is_present("list") {
         if !matches.is_present("skip-connection") {
-            todo!("List brokers");
+            let (mut stream, _) = connect_async(Url::parse(&format!(
+                "ws://{}/",
+                config.broker_config.websocket_address
+            ))?)
+            .await?;
+            let message = Message::text(serde_json::to_string(&ChronicleRequest::Broker(
+                ChronicleBrokerRequest::ListBrokers,
+            ))?);
+            stream.send(message).await?;
+            if let Some(Ok(msg)) = stream.next().await {
+                match msg {
+                    Message::Text(s) => {
+                        if let Ok(brokers) = serde_json::from_str::<Vec<String>>(&s) {
+                            println!("Running MQTT brokers:");
+                            for broker in brokers {
+                                println!(" - {}", broker);
+                            }
+                        } else {
+                            println!("Received invalid response from the websocket! {}", s)
+                        }
+                    }
+                    _ => println!("Received invalid response from the websocket! {}", msg),
+                }
+            }
         } else {
             println!("Configured MQTT Addresses:");
             config.broker_config.mqtt_brokers.iter().for_each(|(ty, s)| {
