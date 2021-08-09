@@ -65,10 +65,15 @@ impl Actor for Launcher {
         rt.spawn_actor(ChronicleAPI).await?;
         let ws = format!("ws://{}/", config.storage_config.listen_address);
         let nodes = config.storage_config.nodes.iter().cloned().collect::<Vec<_>>();
-        while let Err(e) = add_nodes(&ws, nodes.clone(), 1).await {
-            log::error!("Error adding nodes: {}", e);
-            log::info!("Trying again after 5 seconds...");
-            tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => return Ok(()),
+            _ = async {
+                while let Err(e) = add_nodes(&ws, nodes.clone(), 1).await {
+                    log::error!("Error adding nodes: {}", e);
+                    log::info!("Trying again after 5 seconds...");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            } => (),
         }
         tokio::task::spawn(ctrl_c(rt.handle()));
         log::info!("{}", rt.service_tree().await);
@@ -93,7 +98,7 @@ impl Actor for Launcher {
                     Children::Scylla => {
                         if s.prev_status == ScyllaStatus::Disconnected.as_str() {
                             if let Err(e) = init_database().await {
-                                log::error!("{}", e);
+                                log::error!("Error initializing database: {}", e);
                                 log::debug!("{}", rt.service_tree().await);
                             } else {
                                 let config = get_config_async().await;

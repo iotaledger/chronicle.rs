@@ -66,6 +66,7 @@ pub struct Syncer {
 
 #[build]
 pub fn build_syncer(
+    keyspace: ChronicleKeyspace,
     sync_data: SyncData,
     update_sync_data_every: Option<Duration>,
     sync_range: Option<SyncRange>,
@@ -73,15 +74,6 @@ pub fn build_syncer(
     parallelism: Option<u8>,
     first_ask: Option<AskSyncer>,
 ) -> Syncer {
-    let config = chronicle_common::get_config();
-    let keyspace = ChronicleKeyspace::new(
-        config
-            .storage_config
-            .keyspaces
-            .first()
-            .and_then(|keyspace| Some(keyspace.name.clone()))
-            .unwrap_or("permanode".to_owned()),
-    );
     Syncer {
         sync_data,
         solidifier_count,

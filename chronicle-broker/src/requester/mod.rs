@@ -79,6 +79,11 @@ impl Actor for Requester {
         <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
     {
         rt.update_status(ServiceStatus::Initializing).await.ok();
+        self.api_endpoints = match rt.resource::<Arc<RwLock<HashSet<Url>>>>().await {
+            Some(e) => e.read().await.iter().cloned().collect(),
+            None => VecDeque::new(),
+        };
+        self.shuffle();
         Ok(())
     }
 

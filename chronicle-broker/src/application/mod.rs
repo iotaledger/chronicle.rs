@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use chronicle_common::config::{
     BrokerConfig,
     Config,
+    PartitionConfig,
 };
 use std::{
     collections::HashSet,
@@ -38,6 +39,7 @@ pub struct ChronicleBroker {
     default_keyspace: ChronicleKeyspace,
     sync_range: SyncRange,
     sync_data: SyncData,
+    partition_config: PartitionConfig,
 }
 
 /// Event type of the broker Application
@@ -128,6 +130,7 @@ pub fn build_broker(config: Config) -> ChronicleBroker {
         sync_range,
         sync_data,
         complete_gaps_interval: Duration::from_secs(config.broker_config.complete_gaps_interval_secs),
+        partition_config: config.storage_config.partition_config,
     }
 }
 
@@ -161,7 +164,8 @@ impl Actor for ChronicleBroker {
             .sync_range(self.sync_range)
             .parallelism(self.parallelism)
             .update_sync_data_every(self.complete_gaps_interval)
-            .solidifier_count(self.collector_count);
+            .solidifier_count(self.collector_count)
+            .keyspace(self.default_keyspace.clone());
         if let Some(dir_path) = self.logs_dir_path.as_ref() {
             let max_log_size = config.broker_config.max_log_size.unwrap_or(MAX_LOG_SIZE);
             // create archiver_builder
@@ -177,6 +181,8 @@ impl Actor for ChronicleBroker {
         } else {
             info!("Initializing Broker without Archiver");
         };
+        rt.add_resource(Arc::new(RwLock::new(config.broker_config.api_endpoints)))
+            .await;
         let reqwest_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.broker_config.request_timeout_secs))
             .build()
@@ -225,8 +231,6 @@ impl Actor for ChronicleBroker {
             self.add_mqtt(rt, MessagesReferenced, MqttType::MessagesReferenced, broker_url)
                 .await?;
         }
-        rt.add_resource(Arc::new(RwLock::new(config.broker_config.api_endpoints)))
-            .await;
 
         Ok(())
     }
@@ -432,7 +436,7 @@ impl ChronicleBroker {
             .build();
         rt.spawn_into_pool_keyed::<MapPool<Mqtt<T>, Url>>(url.clone(), mqtt)
             .await
-            .map_err(|_| anyhow::anyhow!("The Mqtt for url {} already exists!", url))?;
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         let mut new_config = config.clone();
         if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
             list.insert(url);
@@ -501,6 +505,8 @@ impl ChronicleBroker {
                     .retries_per_query(50) // TODO get it from config
                     .chronicle_id(0) // TODO get it from config
                     .responder(responder)
+                    .keyspace(self.default_keyspace.clone())
+                    .partition_config(self.partition_config.clone())
                     .build();
                 rt.spawn_into_pool_keyed::<MapPool<_, _>>(file_path.clone(), importer)
                     .await?;

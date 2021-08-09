@@ -15,10 +15,7 @@ use chronicle_api::{
     ChronicleRequest,
 };
 use chronicle_broker::{
-    application::{
-        BrokerRequest,
-        ImportType,
-    },
+    application::ImportType,
     exporter::ExporterStatus,
     merge::{
         LogPaths,

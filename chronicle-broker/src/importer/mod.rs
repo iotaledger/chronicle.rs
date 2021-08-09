@@ -79,6 +79,8 @@ pub struct Importer<T> {
 
 #[build]
 pub fn build<T>(
+    keyspace: ChronicleKeyspace,
+    partition_config: PartitionConfig,
     file_path: PathBuf,
     retries_per_query: Option<usize>,
     resume: Option<bool>,
@@ -87,19 +89,6 @@ pub fn build<T>(
     chronicle_id: u8,
     responder: tokio::sync::mpsc::UnboundedSender<ImporterSession>,
 ) -> Importer<T> {
-    // Get the first keyspace or default to "permanode"
-    // In order to use multiple keyspaces, the user must
-    // use filters to determine where records go
-    let config = chronicle_common::get_config();
-    let default_keyspace = ChronicleKeyspace::new(
-        config
-            .storage_config
-            .keyspaces
-            .first()
-            .and_then(|keyspace| Some(keyspace.name.clone()))
-            .unwrap_or("permanode".to_owned()),
-    );
-    let partition_config = config.storage_config.partition_config;
     let import_range = import_range.unwrap_or(Range {
         start: 1,
         end: i32::MAX as u32,
@@ -110,7 +99,7 @@ pub fn build<T>(
         log_file_size: 0,
         from_ms: 0,
         to_ms: 0,
-        default_keyspace,
+        default_keyspace: keyspace,
         partition_config,
         parallelism: parallelism.unwrap_or(10),
         chronicle_id,
