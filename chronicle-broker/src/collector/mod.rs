@@ -264,7 +264,7 @@ impl Actor for Collector {
                 }
                 CollectorEvent::Message(message_id, mut message) => {
                     // check if msg already in lru cache(if so then it's already presisted)
-                    if let None = self.lru_msg.get(&message_id) {
+                    if self.lru_msg.get(&message_id).is_none() {
                         // store message
                         self.insert_message(&message_id, &mut message, &solidifier_handles)
                             .await?;
@@ -287,9 +287,9 @@ impl Actor for Collector {
                     if self.est_ms.0 < new_ms {
                         self.est_ms.0 = new_ms;
                     }
-                    // check if msg already in lru cache(if so then it's already presisted)
-                    if let None = self.lru_msg_ref.get(&message_id) {
-                        // add it to the cache in order to not presist it again.
+                    // check if msg already in lru cache (if so then it's already persisted)
+                    if self.lru_msg_ref.get(&message_id).is_none() {
+                        // add it to the cache in order to not persist it again.
                         self.lru_msg_ref.put(message_id, metadata.clone());
                         // check if msg already exist in the cache, if so we push it to solidifier
                         let cached_msg: Option<Message>;

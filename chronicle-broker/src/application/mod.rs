@@ -31,14 +31,11 @@ use tokio::sync::{
 /// Application state
 pub struct ChronicleBroker {
     parallelism: u8,
-    complete_gaps_interval: Duration,
-    parallelism_points: u8,
     in_progress_importers: usize,
     collector_count: u8,
     logs_dir_path: Option<PathBuf>,
     default_keyspace: ChronicleKeyspace,
     sync_range: SyncRange,
-    sync_data: SyncData,
     partition_config: PartitionConfig,
 }
 
@@ -108,11 +105,6 @@ pub fn build_broker(config: Config) -> ChronicleBroker {
         .sync_range
         .and_then(|range| Some(range))
         .unwrap_or(SyncRange::default());
-    let sync_data = SyncData {
-        completed: Vec::new(),
-        synced_but_unlogged: Vec::new(),
-        gaps: Vec::new(),
-    };
     let logs_dir_path;
     if let Some(logs_dir) = config.broker_config.logs_dir {
         logs_dir_path = Some(PathBuf::from_str(&logs_dir).expect("Failed to parse configured logs path!"));
@@ -123,13 +115,10 @@ pub fn build_broker(config: Config) -> ChronicleBroker {
     ChronicleBroker {
         collector_count: config.broker_config.collector_count,
         parallelism,
-        parallelism_points: parallelism,
         in_progress_importers: 0,
         logs_dir_path,
         default_keyspace,
         sync_range,
-        sync_data,
-        complete_gaps_interval: Duration::from_secs(config.broker_config.complete_gaps_interval_secs),
         partition_config: config.storage_config.partition_config,
     }
 }
@@ -152,18 +141,16 @@ impl Actor for ChronicleBroker {
         rt.update_status(ServiceStatus::Initializing).await.ok();
         let config = get_config_async().await;
         // Query sync table
-        self.sync_data = self.query_sync_table().await?;
-        info!("Current: {:#?}", self.sync_data);
+        let sync_data = self.query_sync_table().await?;
+        info!("Current: {:#?}", sync_data);
         // Get the gap_start
-        let gap_start = self.sync_data.gaps.first().unwrap().start;
+        let gap_start = sync_data.gaps.first().unwrap().start;
         // create syncer_builder
 
-        let mut syncer_builder = SyncerBuilder::new()
-            .sync_data(self.sync_data.clone())
-            .first_ask(AskSyncer::FillGaps)
+        let syncer_builder = SyncerBuilder::new()
+            .sync_data(sync_data)
             .sync_range(self.sync_range)
             .parallelism(self.parallelism)
-            .update_sync_data_every(self.complete_gaps_interval)
             .solidifier_count(self.collector_count)
             .keyspace(self.default_keyspace.clone());
         if let Some(dir_path) = self.logs_dir_path.as_ref() {
@@ -175,7 +162,6 @@ impl Actor for ChronicleBroker {
                 .solidifiers_count(self.collector_count)
                 .max_log_size(max_log_size)
                 .build();
-            syncer_builder = syncer_builder.first_ask(AskSyncer::Complete);
             // start archiver
             rt.spawn_actor(archiver).await?;
         } else {
@@ -350,6 +336,15 @@ impl Actor for ChronicleBroker {
                         ChildStates::Importer_Analytics(i) => {
                             self.in_progress_importers -= 1;
                         }
+                        ChildStates::Syncer(s) => {
+                            info!("Syncer completed!")
+                        }
+                        ChildStates::Solidifier(s) => {
+                            info!("{} exited successfully?", s.name())
+                        }
+                        ChildStates::Collector(c) => {
+                            info!("{} exited successfully?", c.name())
+                        }
                         _ => {
                             // TODO
                         }
@@ -362,6 +357,12 @@ impl Actor for ChronicleBroker {
                             }
                             ChildStates::Importer_Analytics(i) => {
                                 self.in_progress_importers -= 1;
+                            }
+                            ChildStates::Solidifier(s) => {
+                                info!("{} exited with error: {}", s.name(), e.error)
+                            }
+                            ChildStates::Collector(c) => {
+                                info!("{} exited with error: {}", c.name(), e.error)
                             }
                             _ => {
                                 // TODO

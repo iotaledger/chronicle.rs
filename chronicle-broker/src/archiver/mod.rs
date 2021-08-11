@@ -122,9 +122,10 @@ impl Actor for Archiver {
                 }
                 ArchiverEvent::MilestoneData(milestone_data, opt_upper_limit) => {
                     info!(
-                        "Archiver received milestone data for index: {}, upper_ms_limit: {:?}",
+                        "Archiver received milestone data for index: {}, upper_ms_limit: {:?}, created by {:?}",
                         milestone_data.milestone_index(),
-                        opt_upper_limit
+                        opt_upper_limit,
+                        milestone_data.created_by()
                     );
                     match milestone_data.created_by() {
                         CreatedBy::Incoming | CreatedBy::Expected => {
@@ -176,6 +177,7 @@ impl Actor for Archiver {
                 }
             }
         }
+        info!("Shutting down archiver!");
         for log in self.logs.iter_mut() {
             if let Err(e) = log.finish(&self.dir_path).await {
                 info!("Unable to finish in progress log file: {}, error: {}", log.filename, e);
@@ -229,14 +231,14 @@ impl Archiver {
                 .await?;
                 // check if now the log_file reached an upper limit to finish the file
                 if log_file.upper_ms_limit == log_file.to_ms_index {
-                    self.cleanup.push(log_file.from_ms_index);
                     Self::finish_log_file(log_file, &self.dir_path).await?;
+                    self.cleanup.push(log_file.from_ms_index);
                 }
             } else {
-                // push it into cleanup
-                self.cleanup.push(log_file.from_ms_index);
                 // Finish it;
                 Self::finish_log_file(log_file, &self.dir_path).await?;
+                // push it into cleanup
+                self.cleanup.push(log_file.from_ms_index);
                 info!(
                     "{} hits filesize limit: {} bytes, contains: {} milestones data",
                     log_file.filename,
@@ -326,10 +328,10 @@ impl Archiver {
                     }
                     // check if the L file needs to be closed
                     if l.upper_ms_limit.eq(&l.to_ms_index) && !l.finished {
-                        // push it into cleanup to get removed and pushed to processed
-                        self.cleanup.push(l.from_ms_index);
                         // finish the file
                         Self::finish_log_file(l, &self.dir_path).await?;
+                        // push it into cleanup to get removed and pushed to processed
+                        self.cleanup.push(l.from_ms_index);
                     }
 
                     prev_log = l;

@@ -40,6 +40,14 @@ pub struct SyncRange {
     /// Last milestone index (exclusive)
     pub to: u32,
 }
+
+impl SyncRange {
+    /// Check if a milestone insdex is contained in this range
+    pub fn contains(&self, index: u32) -> bool {
+        index >= self.from && index < self.to
+    }
+}
+
 impl Default for SyncRange {
     fn default() -> Self {
         Self {

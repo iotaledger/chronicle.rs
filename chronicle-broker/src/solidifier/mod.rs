@@ -25,7 +25,10 @@ use chronicle_common::Synckey;
 use scylla_rs::prelude::stage::Reporter;
 use tokio::sync::mpsc::UnboundedSender;
 
-use std::sync::atomic::Ordering;
+use std::{
+    collections::HashSet,
+    sync::atomic::Ordering,
+};
 
 /// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier {
@@ -35,8 +38,7 @@ pub struct Solidifier {
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneData>,
     in_database: HashMap<u32, InDatabase>,
-    lru_in_database: lru::LruCache<u32, ()>,
-    unreachable: lru::LruCache<u32, ()>,
+    unreachable: HashSet<u32>,
     collector_count: u8,
     message_id_partitioner: MessageIdPartitioner,
     first: Option<u32>,
@@ -59,10 +61,9 @@ pub fn build_solidifier(
         partition_id,
         keyspace,
         chronicle_id: chronicle_id.unwrap_or(0),
-        in_database: HashMap::new(),
-        lru_in_database: lru::LruCache::new(100),
-        unreachable: lru::LruCache::new(100),
-        milestones_data: HashMap::new(),
+        in_database: Default::default(),
+        unreachable: Default::default(),
+        milestones_data: Default::default(),
         collector_count,
         message_id_partitioner: MessageIdPartitioner::new(collector_count),
         first: None,
@@ -126,18 +127,6 @@ impl Actor for Solidifier {
                                         if in_database.check_if_all_in_database() {
                                             // Insert record into sync table
                                             self.handle_in_database(milestone_index, &my_handle)?;
-                                        }
-                                    } else {
-                                        // in rare condition there is a chance that collector will reinsert the same
-                                        // message twice, therefore we ensure to
-                                        // only insert new entry if the milestone_index is not already in
-                                        // lru_in_database cache and not in unreachable
-                                        if self.lru_in_database.get(&milestone_index).is_none()
-                                            && self.unreachable.get(&milestone_index).is_none()
-                                        {
-                                            let mut in_database = InDatabase::new(milestone_index);
-                                            in_database.add_message_id(message_id);
-                                            self.in_database.insert(milestone_index, in_database);
                                         }
                                     }
                                 }
@@ -239,14 +228,12 @@ impl Solidifier {
             self.partition_id, milestone_index
         );
         // check if it's not already in our unreachable cache
-        if self.unreachable.get(&milestone_index).is_none() {
+        if !self.unreachable.contains(&milestone_index) {
             // remove its milestone_data
             if let Some(ms_data) = self.milestones_data.remove(&milestone_index) {
-                // move it out lru_in_database (if any)
-                self.lru_in_database.pop(&milestone_index);
                 self.in_database.remove(&milestone_index);
                 // move to unreachable atm
-                self.unreachable.put(milestone_index, ());
+                self.unreachable.insert(milestone_index);
                 // ensure it's created by syncer
                 if ms_data.created_by.eq(&CreatedBy::Syncer) {
                     // tell syncer to skip it
@@ -272,18 +259,12 @@ impl Solidifier {
         syncer_handle: &Act<Syncer>,
         collector_handles: &Pool<MapPool<Collector, u8>>,
     ) {
-        // open solidify requests only for less than the expected
         if milestone_index >= self.expected {
-            warn!(
-                "SolidifierId: {}, cannot open solidify request for milestone_index: {} >= expected: {}",
-                self.partition_id, milestone_index, self.expected
-            );
-            // tell syncer to skip this atm
-            syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).ok();
-            return ();
+            syncer_handle.send(SyncerEvent::Current(milestone_index)).ok();
+            return;
         }
         // remove it from unreachable (if we already tried to solidify it before)
-        self.unreachable.pop(&milestone_index);
+        self.unreachable.remove(&milestone_index);
         info!(
             "Solidifier id: {}. got solidifiy request for milestone_index: {}",
             self.partition_id, milestone_index
@@ -339,11 +320,15 @@ impl Solidifier {
             milestone_data.remove_from_pending(message_id);
             let check_if_completed = milestone_data.check_if_completed();
             let created_by = milestone_data.created_by;
-            if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
-                self.push_to_logger(milestone_index, my_handle, archiver_handle).await?;
-            } else if check_if_completed {
-                self.push_to_syncer(milestone_index, my_handle, syncer_handle).await?;
-            };
+            if check_if_completed {
+                match created_by {
+                    CreatedBy::Incoming | CreatedBy::Expected => {
+                        self.push_to_logger(milestone_index, my_handle, archiver_handle).await?
+                    }
+                    CreatedBy::Syncer => self.push_to_syncer(milestone_index, my_handle, syncer_handle).await?,
+                    CreatedBy::Exporter => (),
+                }
+            }
         } else {
             if milestone_index < self.expected {
                 warn!("Already deleted milestone data for milestone index: {}, this happens when solidify request has failure", milestone_index)
@@ -423,7 +408,6 @@ impl Solidifier {
     }
     fn handle_in_database(&mut self, milestone_index: u32, my_handle: &Act<Self>) -> anyhow::Result<()> {
         self.in_database.remove(&milestone_index);
-        self.lru_in_database.put(milestone_index, ());
         let sync_key = Synckey;
         let synced_by = Some(self.chronicle_id);
         let synced_record = SyncRecord::new(MilestoneIndex(milestone_index), synced_by, None);
@@ -491,19 +475,23 @@ impl Solidifier {
             // insert milestone into milestone_data
             if let Some(metadata) = metadata {
                 info!(
-                    "solidifier_id: {}, got full milestone {}, in progress: {}",
-                    self.partition_id, milestone_index, ms_count
+                    "solidifier_id: {}, got full milestone {}, in progress: {}, created by {:?}",
+                    self.partition_id, milestone_index, ms_count, milestone_data.created_by
                 );
                 milestone_data.set_milestone(milestone_payload);
                 milestone_data.remove_from_pending(&metadata.message_id);
                 milestone_data.add_full_message(FullMessage::new(message, metadata));
                 let check_if_completed = milestone_data.check_if_completed();
                 let created_by = milestone_data.created_by;
-                if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
-                    self.push_to_logger(milestone_index, my_handle, archiver_handle).await?;
-                } else if check_if_completed {
-                    self.push_to_syncer(milestone_index, my_handle, syncer_handle).await?;
-                };
+                if check_if_completed {
+                    match created_by {
+                        CreatedBy::Incoming | CreatedBy::Expected => {
+                            self.push_to_logger(milestone_index, my_handle, archiver_handle).await?
+                        }
+                        CreatedBy::Syncer => self.push_to_syncer(milestone_index, my_handle, syncer_handle).await?,
+                        CreatedBy::Exporter => (),
+                    }
+                }
             }
         } else {
             if let Some(metadata) = metadata {
@@ -605,11 +593,15 @@ impl Solidifier {
             .await;
             let check_if_completed = milestone_data.check_if_completed();
             let created_by = milestone_data.created_by;
-            if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
-                self.push_to_logger(milestone_index, my_handle, archiver_handle).await?;
-            } else if check_if_completed {
-                self.push_to_syncer(milestone_index, my_handle, syncer_handle).await?;
-            };
+            if check_if_completed {
+                match created_by {
+                    CreatedBy::Incoming | CreatedBy::Expected => {
+                        self.push_to_logger(milestone_index, my_handle, archiver_handle).await?
+                    }
+                    CreatedBy::Syncer => self.push_to_syncer(milestone_index, my_handle, syncer_handle).await?,
+                    CreatedBy::Exporter => (),
+                }
+            }
         } else {
             // We have to decide whether to insert entry for milestone_index or not.
             self.insert_new_entry_or_not(milestone_index, full_message, collector_handles)
@@ -626,8 +618,8 @@ impl Solidifier {
         // do not insert new entry for unreachable milestone_index atm
         // this happens when we get one or few solidify_failures so we deleted an active milestone_data that still
         // getting new messages which will reinvoke insert_new_entry_or_not
-        if self.unreachable.get(&milestone_index).is_some() {
-            return ();
+        if self.unreachable.contains(&milestone_index) {
+            return;
         }
         let partitioner = &self.message_id_partitioner;
         let solidifier_id = self.partition_id;
@@ -785,7 +777,7 @@ struct InDatabase {
     milestone_index: u32,
     analyzed: bool,
     messages_len: usize,
-    in_database: HashMap<MessageId, ()>,
+    in_database: HashSet<MessageId>,
 }
 
 impl InDatabase {
@@ -794,14 +786,14 @@ impl InDatabase {
             milestone_index,
             analyzed: false,
             messages_len: usize::MAX,
-            in_database: HashMap::new(),
+            in_database: Default::default(),
         }
     }
     fn set_messages_len(&mut self, message_len: usize) {
         self.messages_len = message_len
     }
     fn add_message_id(&mut self, message_id: MessageId) {
-        self.in_database.insert(message_id, ());
+        self.in_database.insert(message_id);
     }
     fn set_analyzed(&mut self, analyzed: bool) {
         self.analyzed = analyzed;

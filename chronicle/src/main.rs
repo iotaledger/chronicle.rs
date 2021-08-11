@@ -66,9 +66,9 @@ impl Actor for Launcher {
         let ws = format!("ws://{}/", config.storage_config.listen_address);
         let nodes = config.storage_config.nodes.iter().cloned().collect::<Vec<_>>();
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => return Ok(()),
+            _ = tokio::signal::ctrl_c() => return Err(anyhow::anyhow!("Cancelled adding nodes!").into()),
             _ = async {
-                while let Err(e) = add_nodes(&ws, nodes.clone(), 1).await {
+                while let Err(e) = add_nodes(&ws, nodes.as_ref(), 1).await {
                     log::error!("Error adding nodes: {}", e);
                     log::info!("Trying again after 5 seconds...");
                     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -190,7 +190,9 @@ async fn ctrl_c(shutdown_handle: Act<Launcher>) {
 }
 
 async fn chronicle() {
-    Launcher.start_as_root::<ArcedRegistry>().await.unwrap()
+    if let Err(e) = Launcher.start_as_root::<ArcedRegistry>().await {
+        log::error!("{}", e);
+    }
 }
 
 fn register_metrics() {
