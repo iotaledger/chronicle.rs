@@ -22,6 +22,7 @@ use bee_message::prelude::{
     MilestonePayload,
 };
 use chronicle_common::Synckey;
+use lru::LruCache;
 use scylla_rs::prelude::stage::Reporter;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -38,7 +39,7 @@ pub struct Solidifier {
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneData>,
     in_database: HashMap<u32, InDatabase>,
-    unreachable: HashSet<u32>,
+    unreachable: LruCache<u32, ()>,
     collector_count: u8,
     message_id_partitioner: MessageIdPartitioner,
     first: Option<u32>,
@@ -62,7 +63,7 @@ pub fn build_solidifier(
         keyspace,
         chronicle_id: chronicle_id.unwrap_or(0),
         in_database: Default::default(),
-        unreachable: Default::default(),
+        unreachable: LruCache::new(100),
         milestones_data: Default::default(),
         collector_count,
         message_id_partitioner: MessageIdPartitioner::new(collector_count),
@@ -233,7 +234,7 @@ impl Solidifier {
             if let Some(ms_data) = self.milestones_data.remove(&milestone_index) {
                 self.in_database.remove(&milestone_index);
                 // move to unreachable atm
-                self.unreachable.insert(milestone_index);
+                self.unreachable.put(milestone_index, ());
                 // ensure it's created by syncer
                 if ms_data.created_by.eq(&CreatedBy::Syncer) {
                     // tell syncer to skip it
@@ -264,7 +265,7 @@ impl Solidifier {
             return;
         }
         // remove it from unreachable (if we already tried to solidify it before)
-        self.unreachable.remove(&milestone_index);
+        self.unreachable.pop(&milestone_index);
         info!(
             "Solidifier id: {}. got solidifiy request for milestone_index: {}",
             self.partition_id, milestone_index
