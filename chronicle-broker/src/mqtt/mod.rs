@@ -13,7 +13,10 @@ use futures::{
     stream::StreamExt,
     Stream,
 };
-use std::time::Duration;
+use std::time::{
+    Duration,
+    SystemTime,
+};
 /// Mqtt state
 pub struct Mqtt<T> {
     url: Url,
@@ -199,22 +202,34 @@ where
         let mut client = AsyncClient::new(create_opts)
             .map_err(|e| anyhow::anyhow!("Unable to create AsyncClient: {}, error: {}", config.url.as_str(), e))?;
         info!("Created AsyncClient: {}", &config.url.to_string());
+        let timeout = Duration::from_secs(20);
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
             .keep_alive_interval(Duration::from_secs(120))
             .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
             .clean_session(false)
-            .connect_timeout(Duration::from_secs(60))
+            .connect_timeout(timeout)
             .finalize();
         let stream = client.get_stream(config.stream_capacity);
+        let now = SystemTime::now();
         // connect client with the remote broker
-        client.connect(conn_opts).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Unable to connect AsyncClient: {}, topic: {}, error: {}",
-                &config.url.as_str(),
-                T::name(),
-                e
-            )
-        })?;
+        tokio::select! {
+            res = async {
+                client.connect(conn_opts).await.map_err(|e| {
+                    anyhow::anyhow!(
+                        "Unable to connect AsyncClient: {}, topic: {}, error: {}",
+                        &config.url.as_str(),
+                        T::name(),
+                        e
+                    )
+                })
+            } => {res?;},
+            _ = async {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    log::info!("Waiting to connect to {}. {} seconds until timeout...", &config.url.as_str(), timeout.checked_sub(now.elapsed().unwrap()).unwrap_or_default().as_secs());
+                }
+            } => (),
+        }
         info!("Connected AsyncClient: {}", &config.url.as_str());
         // subscribe to T::name() topic with T::qos()
         client.subscribe(T::name(), T::qos()).await.map_err(|e| {

@@ -139,7 +139,7 @@ impl Actor for ChronicleBroker {
         <Sup::Event as SupervisorEvent>::Children: From<PhantomData<Self>>,
     {
         rt.update_status(ServiceStatus::Initializing).await.ok();
-        let config = get_config_async().await;
+        let mut config = get_config_async().await;
         // Query sync table
         let sync_data = self.query_sync_table().await?;
         info!("Current: {:#?}", sync_data);
@@ -167,7 +167,7 @@ impl Actor for ChronicleBroker {
         } else {
             info!("Initializing Broker without Archiver");
         };
-        rt.add_resource(Arc::new(RwLock::new(config.broker_config.api_endpoints)))
+        rt.add_resource(Arc::new(RwLock::new(config.broker_config.api_endpoints.clone())))
             .await;
         let reqwest_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.broker_config.request_timeout_secs))
@@ -195,29 +195,86 @@ impl Actor for ChronicleBroker {
         }
         // Finalize and Spawn Syncer
         rt.spawn_actor(syncer_builder.build()).await?;
+        let mut mqtt_pool = Vec::new();
         // Spawn mqtt brokers
         for broker_url in config
             .broker_config
             .mqtt_brokers
             .get(&MqttType::Messages)
+            .cloned()
             .iter()
             .flat_map(|v| v.iter())
             .cloned()
         {
-            self.add_mqtt(rt, Messages, MqttType::Messages, broker_url).await?;
+            let mqtt = MqttBuilder::new()
+                .topic(Messages)
+                .url(broker_url.clone())
+                .stream_capacity(config.broker_config.mqtt_stream_capacity)
+                .collector_count(self.collector_count)
+                .build();
+            match rt
+                .init_into_pool_keyed::<MapPool<Mqtt<Messages>, Url>>(broker_url.clone(), mqtt)
+                .await
+            {
+                Ok(init) => mqtt_pool.push(init),
+                Err(e) => {
+                    log::error!("Error creating mqtt: {}", e);
+                    let mut new_config = config.clone();
+                    if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&MqttType::Messages) {
+                        list.remove(&broker_url);
+                    }
+                    if new_config != config {
+                        get_history_mut_async().await.update(new_config.clone().into());
+                        config = new_config;
+                    }
+                }
+            }
         }
+        let mut ref_mqtt_pool = Vec::new();
         for broker_url in config
             .broker_config
             .mqtt_brokers
             .get(&MqttType::MessagesReferenced)
+            .cloned()
             .iter()
             .flat_map(|v| v.iter())
             .cloned()
         {
-            self.add_mqtt(rt, MessagesReferenced, MqttType::MessagesReferenced, broker_url)
-                .await?;
+            let mqtt = MqttBuilder::new()
+                .topic(MessagesReferenced)
+                .url(broker_url.clone())
+                .stream_capacity(config.broker_config.mqtt_stream_capacity)
+                .collector_count(self.collector_count)
+                .build();
+            match rt
+                .init_into_pool_keyed::<MapPool<Mqtt<MessagesReferenced>, Url>>(broker_url.clone(), mqtt)
+                .await
+            {
+                Ok(init) => ref_mqtt_pool.push(init),
+                Err(e) => {
+                    log::error!("Error creating mqtt: {}", e);
+                    let mut new_config = config.clone();
+                    if let Some(list) = new_config
+                        .broker_config
+                        .mqtt_brokers
+                        .get_mut(&MqttType::MessagesReferenced)
+                    {
+                        list.remove(&broker_url);
+                    }
+                    if new_config != config {
+                        get_history_mut_async().await.update(new_config.clone().into());
+                        config = new_config;
+                    }
+                }
+            }
         }
-
+        // Defer the spawns until all mqtts have finished initialization
+        for init in mqtt_pool {
+            init.spawn(rt).await;
+        }
+        for init in ref_mqtt_pool {
+            init.spawn(rt).await;
+        }
         Ok(())
     }
 
@@ -435,16 +492,31 @@ impl ChronicleBroker {
             .stream_capacity(config.broker_config.mqtt_stream_capacity)
             .collector_count(self.collector_count)
             .build();
-        rt.spawn_into_pool_keyed::<MapPool<Mqtt<T>, Url>>(url.clone(), mqtt)
+        match rt
+            .spawn_into_pool_keyed::<MapPool<Mqtt<T>, Url>>(url.clone(), mqtt)
             .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        let mut new_config = config.clone();
-        if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
-            list.insert(url);
+        {
+            Ok(_) => {
+                let mut new_config = config.clone();
+                if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
+                    list.insert(url);
+                }
+                if new_config != config {
+                    get_history_mut_async().await.update(new_config.into());
+                }
+            }
+            Err(e) => {
+                log::error!("Error creating mqtt: {}", e);
+                let mut new_config = config.clone();
+                if let Some(list) = new_config.broker_config.mqtt_brokers.get_mut(&mqtt_type) {
+                    list.remove(&url);
+                }
+                if new_config != config {
+                    get_history_mut_async().await.update(new_config.into());
+                }
+            }
         }
-        if new_config != config {
-            get_history_mut_async().await.update(new_config.into());
-        }
+
         Ok(())
     }
 

@@ -107,13 +107,20 @@ impl BrokerConfig {
                 .map_err(|e| anyhow!("Error verifying mqtt broker {}: {}", mqtt_broker, e))?;
         }
         let client = Client::new();
-        self.api_endpoints = self
+        let adjusted_endpoints = self
             .api_endpoints
             .drain()
             .filter_map(|endpoint| Self::adjust_api_endpoint(endpoint))
-            .collect();
-        for endpoint in self.api_endpoints.iter() {
-            Self::verify_endpoint(&client, endpoint).await?
+            .collect::<Vec<_>>();
+        for endpoint in adjusted_endpoints {
+            match Self::verify_endpoint(&client, &endpoint).await {
+                Ok(_) => {
+                    self.api_endpoints.insert(endpoint);
+                }
+                Err(e) => {
+                    log::error!("{}\nRemoving endpoint from config!", e);
+                }
+            }
         }
         let sync_range = self.sync_range.get_or_insert_with(|| SyncRange::default());
         if sync_range.from == 0 || sync_range.to == 0 {
