@@ -143,6 +143,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                 // Handle abort
                                 if let Err(Need::Abort) = solidifier_status {
                                     if service.is_stopped() {
+                                        supervisor.request_service();
                                         // Pause broker app (is_stopping but awaitting on its event loop till scylla is
                                         // running)
                                         self.shutdown(supervisor, false).await;

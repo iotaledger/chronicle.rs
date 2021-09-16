@@ -334,10 +334,9 @@ where
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
-            } else {
-                self.handle.any_error.store(true, Ordering::Relaxed);
             }
-        } else if self.retries > 0 {
+        }
+        if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
             match self
@@ -351,6 +350,7 @@ where
                 }
                 Err(e) => {
                     error!("{}", e);
+                    self.handle.any_error.store(true, Ordering::Relaxed);
                 }
             }
         } else {
@@ -447,7 +447,8 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
             }
-        } else if self.retries > 0 {
+        }
+        if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
             match self
@@ -461,6 +462,8 @@ where
                 }
                 Err(e) => {
                     error!("{}", e);
+                    let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
+                    let _ = self.handle.send(SolidifierEvent::CqlResult(Err(synced_ms)));
                 }
             }
         } else {
@@ -546,7 +549,8 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 handle_insert_unprepared_error(&self, &self.keyspace, &self.key, &self.value, id, reporter)?;
             }
-        } else if self.retries > 0 {
+        }
+        if self.retries > 0 {
             self.retries -= 1;
             // currently we assume all cql/worker errors are retryable, but we might change this in future
             match self
@@ -560,6 +564,8 @@ where
                 }
                 Err(e) => {
                     error!("{}", e);
+                    let analyzed_ms = CqlResult::AnalyzedMilestone(self.milestone_index);
+                    let _ = self.handle.send(SolidifierEvent::CqlResult(Err(analyzed_ms)));
                 }
             }
         } else {
