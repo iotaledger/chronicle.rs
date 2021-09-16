@@ -2,31 +2,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bee_message::{
+    input::Input,
     prelude::{
         MilestoneIndex,
+        Output,
         OutputId,
     },
     Message,
 };
 use bee_rest_api::types::dtos::{
+    InputDto,
     OutputDto,
     PayloadDto,
+    UnlockBlockDto,
 };
 use chronicle_broker::AnalyticData;
 use chronicle_storage::access::{
     AddressRecord,
     IndexationRecord,
+    InputData,
     LedgerInclusionState,
     MessageMetadata,
     ParentRecord,
     Partitioned,
+    TransactionRes,
+    UnlockRes,
 };
 use serde::{
     Deserialize,
     Serialize,
 };
 use std::{
-    borrow::Cow,
+    borrow::{
+        Borrow,
+        Cow,
+    },
     convert::TryFrom,
 };
 
@@ -151,6 +161,13 @@ pub(crate) enum ListenerResponse {
         is_spent: bool,
         output: OutputDto,
     },
+    /// Response of GET /api/<keyspace>/transactions/<message_id>
+    Transaction(Transaction),
+    /// Response of GET /api/<keyspace>/transactions/ed25519/<address>
+    Transactions {
+        transactions: Vec<Transaction>,
+        state: Option<String>,
+    },
     /// Response of GET /api/<keyspace>/milestone/<index>
     Milestone {
         #[serde(rename = "index")]
@@ -197,7 +214,9 @@ impl From<MessageMetadata> for ListenerResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Record {
     pub id: String,
+    #[serde(rename = "inclusionState")]
     pub inclusion_state: Option<LedgerInclusionState>,
+    #[serde(rename = "milestoneIndex")]
     pub milestone_index: u32,
 }
 
@@ -234,10 +253,82 @@ impl From<Partitioned<ParentRecord>> for Record {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Transaction {
+    /// The created output's message id
+    #[serde(rename = "messageId")]
+    pub message_id: String,
+    /// The confirmation timestamp
+    #[serde(rename = "milestoneIndex")]
+    pub milestone_index: Option<u32>,
+    /// The output
+    pub outputs: Vec<MaybeSpentOutput>,
+    /// The inputs, if they exist
+    pub inputs: Vec<InputDto>,
+}
+
+impl From<TransactionRes> for Transaction {
+    fn from(o: TransactionRes) -> Self {
+        Self {
+            message_id: o.message_id.to_string(),
+            milestone_index: o.milestone_index.map(|ms| ms.0),
+            outputs: o.outputs.into_iter().map(Into::into).collect(),
+            inputs: o
+                .inputs
+                .into_iter()
+                .map(|d| {
+                    match d {
+                        InputData::Utxo(i, _) => Input::Utxo(i),
+                        InputData::Treasury(t) => Input::Treasury(t),
+                    }
+                    .borrow()
+                    .into()
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct MaybeSpentOutput {
+    pub output: OutputDto,
+    #[serde(rename = "spendingMessageId")]
+    pub spending_message_id: Option<String>,
+}
+
+impl From<(Output, Option<UnlockRes>)> for MaybeSpentOutput {
+    fn from((o, u): (Output, Option<UnlockRes>)) -> Self {
+        Self {
+            output: o.borrow().into(),
+            spending_message_id: u.map(|u| u.message_id.to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Unlock {
+    #[serde(rename = "messageId")]
+    pub message_id: String,
+    pub block: UnlockBlockDto,
+}
+
+impl From<UnlockRes> for Unlock {
+    fn from(u: UnlockRes) -> Self {
+        Unlock {
+            message_id: u.message_id.to_string(),
+            block: u.block.borrow().into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct StateData {
+    #[serde(rename = "pagingState")]
     pub paging_state: Option<Vec<u8>>,
+    #[serde(rename = "lastPartitionId")]
     pub last_partition_id: Option<u16>,
+    #[serde(rename = "lastMilestoneIndex")]
     pub last_milestone_index: Option<u32>,
+    #[serde(rename = "partitionIds")]
     pub partition_ids: Vec<(MilestoneIndex, u16)>,
 }
 

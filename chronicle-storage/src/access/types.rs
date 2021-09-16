@@ -323,6 +323,19 @@ pub struct OutputRes {
     pub unlock_blocks: Vec<UnlockRes>,
 }
 
+/// A result struct which holds a retrieved transaction
+#[derive(Debug, Clone)]
+pub struct TransactionRes {
+    /// The transaction's message id
+    pub message_id: MessageId,
+    /// The transaction's milestone index
+    pub milestone_index: Option<MilestoneIndex>,
+    /// The output
+    pub outputs: Vec<(Output, Option<UnlockRes>)>,
+    /// The inputs, if any exist
+    pub inputs: Vec<InputData>,
+}
+
 /// A result struct which holds an unlock row from the `transactions` table
 #[derive(Debug, Clone)]
 pub struct UnlockRes {
@@ -332,6 +345,33 @@ pub struct UnlockRes {
     pub block: UnlockBlock,
     /// This transaction's ledger inclusion state
     pub inclusion_state: Option<LedgerInclusionState>,
+}
+
+/// A "full" message payload, including both message and metadata
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FullMessage(pub Message, pub MessageMetadata);
+
+impl FullMessage {
+    /// Create a new full message
+    pub fn new(message: Message, metadata: MessageMetadata) -> Self {
+        Self(message, metadata)
+    }
+    /// Get the message ID
+    pub fn message_id(&self) -> &MessageId {
+        &self.1.message_id
+    }
+    /// Get the message's metadata
+    pub fn metadata(&self) -> &MessageMetadata {
+        &self.1
+    }
+    /// Get the message
+    pub fn message(&self) -> &Message {
+        &self.0
+    }
+    /// Get the milestone index that references this
+    pub fn ref_ms(&self) -> Option<u32> {
+        self.1.referenced_by_milestone_index
+    }
 }
 
 /// A type alias for partition ids
