@@ -11,10 +11,7 @@ use crate::{
     },
     syncer::Ascending,
 };
-use anyhow::{
-    anyhow,
-    bail,
-};
+use anyhow::bail;
 use chronicle_common::alert;
 use chronicle_storage::access::ChronicleKeyspace;
 use std::{

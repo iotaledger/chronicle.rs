@@ -827,8 +827,8 @@ impl Collector {
     where
         I: Inherent,
         S: 'static + Insert<K, V>,
-        K: 'static + Send + Clone,
-        V: 'static + Send + Clone,
+        K: 'static + Send + Sync + Clone,
+        V: 'static + Send + Sync + Clone,
     {
         let insert_req = keyspace.insert(&key, &value).consistency(Consistency::One).build()?;
         let worker = inherent_worker.inherent_boxed(keyspace.clone(), key, value);
@@ -932,8 +932,8 @@ impl Collector {
     fn delete<K, V>(&self, key: K) -> anyhow::Result<()>
     where
         ChronicleKeyspace: Delete<K, V>,
-        K: 'static + Send + Clone,
-        V: 'static + Send + Clone,
+        K: 'static + Send + Sync + Clone,
+        V: 'static + Send + Sync + Clone,
     {
         let delete_req = self
             .default_keyspace
@@ -976,8 +976,8 @@ trait Inherent {
     fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
     where
         S: 'static + Insert<K, V>,
-        K: 'static + Send + Clone,
-        V: 'static + Send + Clone;
+        K: 'static + Send + Sync + Clone,
+        V: 'static + Send + Sync + Clone;
 }
 
 /// Implement the `Inherent` trait for the simple worker
@@ -985,8 +985,8 @@ impl Inherent for SimpleWorker {
     fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
     where
         S: 'static + Insert<K, V>,
-        K: 'static + Send + Clone,
-        V: 'static + Send + Clone,
+        K: 'static + Send + Sync + Clone,
+        V: 'static + Send + Sync + Clone,
     {
         InsertWorker::boxed(keyspace, key, value, self.retries)
     }
@@ -997,8 +997,8 @@ impl Inherent for AtomicWorker {
     fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
     where
         S: 'static + Insert<K, V>,
-        K: 'static + Send + Clone,
-        V: 'static + Send + Clone,
+        K: 'static + Send + Sync + Clone,
+        V: 'static + Send + Sync + Clone,
     {
         AtomicSolidifierWorker::boxed(self.arc_handle.clone(), keyspace, key, value, self.retries)
     }
