@@ -405,7 +405,7 @@ where
             tokio::spawn(async { req.send_global(self) });
         } else {
             // no more retries
-            self.handle.any_error.store(true, Ordering::Acquire);
+            self.handle.any_error.store(true, Ordering::Relaxed);
         }
         Ok(())
     }
