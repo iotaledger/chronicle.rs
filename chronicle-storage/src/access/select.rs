@@ -6,6 +6,7 @@ use chronicle_common::SyncRange;
 use std::{
     collections::{
         hash_map::Entry,
+        BTreeMap,
         HashMap,
         VecDeque,
     },
@@ -76,6 +77,36 @@ impl RowsDecoder<MessageId, (Option<Message>, Option<MessageMetadata>)> for Chro
         if let Some(row) = Self::Row::rows_iter(decoder)?.next() {
             let row = row.into_inner();
             Ok(Some((row.0, row.1)))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl Select<MessageId, FullMessage> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT message, metadata FROM {}.messages WHERE message_id = ?",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+        builder.value(&message_id.to_string())
+    }
+}
+
+impl RowsDecoder<MessageId, FullMessage> for ChronicleKeyspace {
+    type Row = Record<(Option<Message>, Option<MessageMetadata>)>;
+    fn try_decode(decoder: Decoder) -> anyhow::Result<Option<FullMessage>> {
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
+        if let Some(row) = Self::Row::rows_iter(decoder)?.next() {
+            if let (Some(message), Some(metadata)) = row.into_inner() {
+                Ok(Some(FullMessage::new(message, metadata)))
+            } else {
+                Ok(None)
+            }
         } else {
             Ok(None)
         }
@@ -271,6 +302,72 @@ impl RowsDecoder<OutputId, OutputRes> for ChronicleKeyspace {
             message_id: output.0,
             output: output.1,
             unlock_blocks,
+        }))
+    }
+}
+
+impl Select<TransactionId, TransactionRes> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "SELECT message_id, data, idx, inclusion_state, milestone_index
+            FROM {}.transactions
+            WHERE transaction_id = ?",
+            self.name()
+        )
+        .into()
+    }
+    fn bind_values<T: Values>(builder: T, txn_id: &TransactionId) -> T::Return {
+        builder.value(&txn_id.to_string())
+    }
+}
+
+impl RowsDecoder<TransactionId, TransactionRes> for ChronicleKeyspace {
+    type Row = Record<(
+        MessageId,
+        TransactionData,
+        u16,
+        Option<LedgerInclusionState>,
+        Option<MilestoneIndex>,
+    )>;
+    fn try_decode(decoder: Decoder) -> anyhow::Result<Option<TransactionRes>> {
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
+        let mut outputs = BTreeMap::new();
+        let mut unlock_blocks = BTreeMap::new();
+        let mut inputs = BTreeMap::new();
+        let mut metadata = None;
+        for (message_id, transaction_data, idx, inclusion_state, milestone_index) in
+            Self::Row::rows_iter(decoder)?.map(|row| row.into_inner())
+        {
+            match transaction_data {
+                TransactionData::Output(o) => {
+                    outputs.insert(idx, o);
+                    metadata = metadata.or(Some((message_id, milestone_index)));
+                }
+                TransactionData::Unlock(u) => {
+                    unlock_blocks.insert(
+                        idx,
+                        UnlockRes {
+                            message_id,
+                            block: u.unlock_block,
+                            inclusion_state,
+                        },
+                    );
+                }
+                TransactionData::Input(i) => {
+                    inputs.insert(idx, i);
+                }
+            }
+        }
+        let outputs = outputs
+            .into_iter()
+            .map(|(idx, o)| (o, unlock_blocks.remove(&idx)))
+            .collect();
+        Ok(metadata.map(|(message_id, milestone_index)| TransactionRes {
+            message_id,
+            milestone_index,
+            outputs,
+            inputs: inputs.into_iter().map(|(_, i)| (i)).collect(),
         }))
     }
 }
@@ -480,6 +577,31 @@ impl Row for Record<(MessageId, TransactionData, Option<LedgerInclusionState>)> 
         let data = rows.column_value::<TransactionData>()?;
         let inclusion_state = rows.column_value::<Option<LedgerInclusionState>>()?;
         Ok(Record::new((message_id, data, inclusion_state)))
+    }
+}
+
+impl Row
+    for Record<(
+        MessageId,
+        TransactionData,
+        u16,
+        Option<LedgerInclusionState>,
+        Option<MilestoneIndex>,
+    )>
+{
+    fn try_decode_row<T: ColumnValue>(rows: &mut T) -> anyhow::Result<Self> {
+        let message_id = MessageId::from_str(&rows.column_value::<String>()?)?;
+        let data = rows.column_value::<TransactionData>()?;
+        let idx = rows.column_value::<u16>()?;
+        let inclusion_state = rows.column_value::<Option<LedgerInclusionState>>()?;
+        let milestone_index = rows.column_value::<Option<u32>>()?;
+        Ok(Record::new((
+            message_id,
+            data,
+            idx,
+            inclusion_state,
+            milestone_index.map(MilestoneIndex),
+        )))
     }
 }
 

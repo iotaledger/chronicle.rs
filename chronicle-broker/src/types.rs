@@ -8,14 +8,13 @@ use bee_message::{
         Output,
         Payload,
     },
-    Message,
     MessageId,
 };
 use chronicle_storage::access::{
     AnalyticRecord,
+    FullMessage,
     LedgerInclusionState,
     MessageCount,
-    MessageMetadata,
     TransactionCount,
     TransferredTokens,
 };
@@ -227,33 +226,6 @@ pub enum CreatedBy {
 impl From<CreatedBy> for u8 {
     fn from(value: CreatedBy) -> u8 {
         value as u8
-    }
-}
-
-/// A "full" message payload, including both message and metadata
-#[derive(Debug, Deserialize, Serialize)]
-pub struct FullMessage(pub Message, pub MessageMetadata);
-
-impl FullMessage {
-    /// Create a new full message
-    pub fn new(message: Message, metadata: MessageMetadata) -> Self {
-        Self(message, metadata)
-    }
-    /// Get the message ID
-    pub fn message_id(&self) -> &MessageId {
-        &self.1.message_id
-    }
-    /// Get the message's metadata
-    pub fn metadata(&self) -> &MessageMetadata {
-        &self.1
-    }
-    /// Get the message
-    pub fn message(&self) -> &Message {
-        &self.0
-    }
-    /// Get the milestone index that references this
-    pub fn ref_ms(&self) -> Option<u32> {
-        self.1.referenced_by_milestone_index
     }
 }
 

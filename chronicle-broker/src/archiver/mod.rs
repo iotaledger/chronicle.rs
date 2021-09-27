@@ -11,10 +11,8 @@ use crate::{
     },
     syncer::Ascending,
 };
-use anyhow::{
-    anyhow,
-    bail,
-};
+use anyhow::bail;
+use chronicle_common::alert;
 use chronicle_storage::access::ChronicleKeyspace;
 use std::{
     collections::BinaryHeap,
@@ -120,12 +118,20 @@ impl LogFile {
     ) -> anyhow::Result<LogFile> {
         let filename = format!("{}.part", milestone_index);
         let file_path = dir_path.join(&filename);
-        let file: File = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(file_path)
-            .await
-            .map_err(|e| anyhow!("Unable to create log file: {}, error: {}", filename, e))?;
+        let file: File = match OpenOptions::new().append(true).create(true).open(file_path).await {
+            Ok(f) => f,
+            Err(e) => {
+                // Check if the error was because of disk overflow
+                if let std::io::ErrorKind::WriteZero = e.kind() {
+                    alert!(
+                        "Possible disk overflow occurred while creating archive file {}",
+                        filename
+                    )
+                    .await?;
+                }
+                bail!("Unable to create log file: {}, error: {}", filename, e);
+            }
+        };
         Ok(Self {
             len: 0,
             filename,
@@ -159,6 +165,14 @@ impl LogFile {
         // append to the file
         if let Err(e) = self.file.write_all(line.as_ref()).await {
             self.maybe_corrupted = true;
+            // Check if the error was because of disk overflow
+            if let std::io::ErrorKind::WriteZero = e.kind() {
+                alert!(
+                    "Possible disk overflow occurred while writing to archive file {}",
+                    self.filename
+                )
+                .await?;
+            }
             bail!(
                 "Unable to append milestone data line into the log file: {}, error: {}",
                 self.filename,

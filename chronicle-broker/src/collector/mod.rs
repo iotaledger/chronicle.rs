@@ -167,7 +167,7 @@ pub struct Collector {
     /// The referenced milestone index
     ref_ms: MilestoneIndex,
     /// The LRU cache from message id to (milestone index, message) pair
-    lru_msg: LruCache<MessageId, (MilestoneIndex, Message)>,
+    lru_msg: LruCache<MessageId, (Option<std::time::Instant>, MilestoneIndex, Message)>,
     /// The LRU cache from message id to message metadata
     lru_msg_ref: LruCache<MessageId, MessageMetadata>,
     /// The collector handle
