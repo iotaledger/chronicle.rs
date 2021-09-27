@@ -20,6 +20,8 @@ tags:
     description: Everything about messages.
   - name: UTXO
     description: Everything about UTXOs.
+  - name: transactions
+    description: Everything about transactions.
   - name: milestones
     description: Everything about milestones.
   - name: metrics
@@ -122,7 +124,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MessagesFindResponse"
+                anyOf:
+                  - $ref: "#/components/schemas/MessagesFindResponse"
+                  - $ref: "#/components/schemas/MessagesFindExpandedResponse"
               examples:
                 default:
                   $ref: "#/components/examples/get-messages-by-index-response-example"
@@ -323,7 +327,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MessageChildrenResponse"
+                anyOf:
+                  - $ref: "#/components/schemas/MessageChildrenResponse"
+                  - $ref: "#/components/schemas/MessageChildrenExpandedResponse"
               examples:
                 Children were found:
                   $ref: >-
@@ -408,6 +414,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InternalErrorResponse"
+  "/api/{keyspace}/outputs/{transactionId}/{transactionOutputIndex}":
+    get:
+      tags:
+        - UTXO
+      summary: Find an output by its transaction ID and index.
+      description: Find an output by its transaction ID and index.
+      parameters:
+        - in: path
+          name: keyspace
+          schema:
+            type: string
+          example: chronicle
+          required: true
+          description: Identifier indicating which keyspace to search within.
+        - in: path
+          name: transactionId
+          schema:
+            type: string
+          required: true
+          description: >-
+            Identifier of the transaction encoded in hex. An output is identified by
+            the concatenation of `transaction_id+output_index`.
+        - in: path
+          name: transactionOutputIndex
+          schema:
+            type: number
+          required: true
+          description: >-
+            Index of the output encoded in hex. An output is identified by
+            the concatenation of `transaction_id+output_index`.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutputResponse"
+              examples:
+                default:
+                  $ref: "#/components/examples/get-outputs-by-id-response-example"
+        "400":
+          description: "Unsuccessful operation: indicates that the provided output id is invalid."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestResponse"
+        "404":
+          description: >-
+            Unsuccessful operation: indicates that the requested data was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundResponse"
+        "500":
+          description: >-
+            Unsuccessful operation: indicates that an unexpected, internal
+            server error happened which prevented the node from fulfilling the
+            request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalErrorResponse"
   "/api/{keyspace}/addresses/ed25519/{address}/outputs":
     get:
       tags:
@@ -456,7 +524,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OutputsAddressResponse"
+                anyOf:
+                  - $ref: "#/components/schemas/OutputsAddressResponse"
+                  - $ref: "#/components/schemas/OutputsAddressExpandedResponse"
               examples:
                 default:
                   $ref: "#/components/examples/get-address-outputs-response-example"
@@ -536,10 +606,128 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InternalErrorResponse"
-  "/api/{keyspace}/transactions/{transaction_id}/included-message":
+  "/api/{keyspace}/transactions/ed25519/{address}":
     get:
       tags:
-        - messages
+        - transactions
+      summary: Get all transactions involving given hex-encoded Ed25519 address.
+      description: >-
+        Get all transactions involving a given hex-encoded Ed25519 address.
+      parameters:
+        - in: path
+          name: keyspace
+          schema:
+            type: string
+          example: chronicle
+          required: true
+          description: Identifier indicating which keyspace to search within.
+        - in: path
+          name: address
+          schema:
+            type: string
+          example: efdc112efe262b304bcf379b26c31bad029f616ee3ec4aa6345a366e4c9e43a3
+          required: true
+          description: hex-encoded Ed25519 address that is referenced by the outputs.
+        - in: query
+          name: page_size
+          schema:
+            type: number
+          example: 6000
+          description: Requested page size.
+        - in: query
+          name: state
+          schema:
+            type: string
+          description: The paging state, to be stored and re-used when retrieving additional records. Hex encoded.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionsResponse"
+              examples:
+                default:
+                  $ref: "#/components/examples/get-transactions-response-example"
+        "400":
+          description: "Unsuccessful operation: indicates that the provided address is invalid."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestResponse"
+        "404":
+          description: >-
+            Unsuccessful operation: indicates that the requested data was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundResponse"
+        "500":
+          description: >-
+            Unsuccessful operation: indicates that an unexpected, internal
+            server error happened which prevented the node from fulfilling the
+            request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalErrorResponse"
+  "/api/{keyspace}/transactions/{messageId}":
+    get:
+      tags:
+        - transactions
+      summary: Get the transaction information for a message.
+      description: Get the transaction information for a message.
+      parameters:
+        - in: path
+          name: keyspace
+          schema:
+            type: string
+          example: chronicle
+          required: true
+          description: Identifier indicating which keyspace to search within.
+        - in: path
+          name: messageId
+          schema:
+            type: string
+          example: f532a53545103276b46876c473846d98648ee418468bce76df4868648dd73e5d
+          required: true
+          description: Identifier of the message.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+              examples:
+                default:
+                  $ref: "#/components/examples/get-transaction-response-example"
+        "400":
+          description: "Unsuccessful operation: indicates that the provided messageId is invalid."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestResponse"
+        "404":
+          description: >-
+            Unsuccessful operation: indicates that the requested data was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundResponse"
+        "500":
+          description: >-
+            Unsuccessful operation: indicates that an unexpected, internal
+            server error happened which prevented the node from fulfilling the
+            request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalErrorResponse"
+  "/api/{keyspace}/transactions/{transactionId}/included-message":
+    get:
+      tags:
+        - transactions
       summary: Look up an included message by a transaction id.
       description: Look up an included message by a transaction id.
       parameters:
@@ -551,7 +739,7 @@ paths:
           required: true
           description: Identifier indicating which keyspace to search within.
         - in: path
-          name: transaction_id
+          name: transactionId
           schema:
             type: string
           example: 50a419a1e46b0b8fbac0e38cd20d4c0d6a5285556241c6778b13e578e36938b8
@@ -614,15 +802,12 @@ components:
           count: 2
           messageIds:
             - id: f532a53545103276b46876c473846d98648ee418468bce76df4868648dd73e5d
-              inclusion_state: noTransaction
-              milestone_index: 224118
+              inclusionState: noTransaction
+              milestoneIndex: 224118
             - id: 7ed3d67fc7b619e72e588f51fef2379e43e6e9a856635843b3f29aa3a3f1f006
-              inclusion_state: included
-              milestone_index: 224118
-          state:
-            pagingState: 00000000fa0000002e000000…0000000ffffffff00000000
-            lastPartitionId: 0
-            lastMilestoneIndex: 53624
+              inclusionState: included
+              milestoneIndex: 224118
+          state: "0000000100000000000000383413009100"
     get-message-by-id-response-example-new:
       value:
         data:
@@ -775,10 +960,7 @@ components:
           childrenMessageIds:
             - 1c6943b0487c92fd057d4d22ad844cc37ee27fe6fbe88e5ff0d20b2233f75b9d
             - 7ed3d67fc7b619e72e588f51fef2379e43e6e9a856635843b3f29aa3a3f1f006
-          state:
-            pagingState: 00000000fa0000002e000000…0000000ffffffff00000000
-            lastPartitionId: 0
-            lastMilestoneIndex: 53624
+          state: "0000000100000000000000383413009100"
     get-messages-by-id-response-example-nochildren:
       value:
         data:
@@ -815,10 +997,57 @@ components:
               ee3447d088e3e2c53c5b3e56a38fdc859ca2c4b4161cf256c0462ce4d34731820100
             - >-
               f8bdbfb0f57ade7fbb95d31b11e2dbda9b2a35e9dc0cd3e11cb324e8a6bedc260100
-          state:
-            pagingState: 00000000fa0000002e000000…0000000ffffffff00000000
-            lastPartitionId: 0
-            lastMilestoneIndex: 53624
+          state: "0000000100000000000000383413009100"
+    get-transaction-response-example:
+      value:
+        data:
+          - messageId: 4892799948c3016993485c228a65dc8607cc3a775b542ab40e70b4dae1aa82e3
+            milestoneIndex: 1258552
+            outputs:
+              - output:
+                  address:
+                    type: 0
+                    address: bdee293746b2e4552f2ec55aebf2daffa088361d262b5222dea48b9fce338968
+                  amount: 7379500000
+                  type: 0
+                spendingMessageId: e3e8156f8b0b0d15ca1c03e2ce3a23934e710d3e7a49639903fc75425ca20c6e
+              - output:
+                  address:
+                    type: 0
+                    address: ff986175c1cea708fa15aaae7ec816341fac2b2ad029bf4fffb28fa0b496a2d5
+                  type: 0
+                  amount: 795500000
+                spendingMessageId: null
+            inputs:
+              - type: 0
+                transactionId: f4e76c3121dbe27ce39a779e391fc8aa4668b7a9c868cae1690492d2251fd4a6
+                transactionOutputIndex: 0
+    get-transactions-response-example:
+      value:
+        data:
+          transactions:
+            - messageId: 4892799948c3016993485c228a65dc8607cc3a775b542ab40e70b4dae1aa82e3
+              milestoneIndex: 1258552
+              outputs:
+                - output:
+                    address:
+                      type: 0
+                      address: bdee293746b2e4552f2ec55aebf2daffa088361d262b5222dea48b9fce338968
+                    amount: 7379500000
+                    type: 0
+                  spendingMessageId: e3e8156f8b0b0d15ca1c03e2ce3a23934e710d3e7a49639903fc75425ca20c6e
+                - output:
+                    address:
+                      type: 0
+                      address: ff986175c1cea708fa15aaae7ec816341fac2b2ad029bf4fffb28fa0b496a2d5
+                    type: 0
+                    amount: 795500000
+                  spendingMessageId: null
+              inputs:
+                - type: 0
+                  transactionId: f4e76c3121dbe27ce39a779e391fc8aa4668b7a9c868cae1690492d2251fd4a6
+                  transactionOutputIndex: 0
+          state: "0000000100000000000000383413009100"
     get-treasury-response-example:
       value:
         data:
@@ -1216,6 +1445,39 @@ components:
       required:
         - type
         - amount
+    Record:
+      properties:
+        id:
+          type: string
+          description: The identifier of the record.
+        inclusionState:
+          type: string
+          enum:
+            - included
+            - conflicting
+            - noTransaction
+          description: >-
+            If `included`, the message contains a transaction that has been
+            included in the ledger. If `conflicitng`, the message contains a
+            transaction that has not been included in the ledger because it
+            conflicts with another transaction. If the message does not
+            contain a transaction, `ledgerInclusionState` is set to
+            `noTransaction`.
+        milestoneIndex:
+          type: integer
+          description: >-
+            If set, this message can be considered as a valid milestone
+            message. This field therefore describes the milestone index of
+            the involved milestone. A message can be considered as a valid
+            milestone message if the milestone payload is valid and if the
+            referenced parents in the milestone payload do match the
+            referenced parents in the message itself. Note it's possible to
+            have different milestone messages that all represent the same
+            milestone.
+      required:
+        - id
+        - inclusionState
+        - milestoneIndex
     MetricsResponse:
       description: The metrics generated in the prometheus format
       example: |-
@@ -1364,22 +1626,54 @@ components:
             messageIds:
               type: array
               items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  milestone_index:
-                    type: number
-                  inclusion_state:
-                    type: string
+                type: string
               description: >-
                 The identifiers of the found messages that match the given
                 indexation key.
+            state:
+              type: string
+              description: The state used to get the next page of results.
           required:
             - index
             - maxResults
             - count
             - messageIds
+            - state
+      required:
+        - data
+    MessagesFindExpandedResponse:
+      description: Searches for messages matching a given indexation key with expanded results.
+      properties:
+        data:
+          type: object
+          properties:
+            index:
+              type: string
+              description: >-
+                The provided hex-encoded indexation key that was used to search
+                for.
+            maxResults:
+              type: integer
+              description: The number of results it can return at most.
+            count:
+              type: integer
+              description: The actual number of found results.
+            messageIds:
+              type: array
+              items:
+                $ref: "#/components/schemas/Record"
+              description: >-
+                The identifiers of the found messages that match the given
+                indexation key.
+            state:
+              type: string
+              description: The state used to get the next page of results.
+          required:
+            - index
+            - maxResults
+            - count
+            - messageIds
+            - state
       required:
         - data
     MessageMetadataResponse:
@@ -1489,11 +1783,47 @@ components:
               items:
                 type: string
               description: The message identifiers of the found children.
+            state:
+              type: string
+              description: The state used to get the next page of results.
           required:
             - messageId
             - maxResults
             - count
             - childrenMessageIds
+            - state
+      required:
+        - data
+    MessageChildrenExpandedResponse:
+      description: Returns the children of a given message with expanded results.
+      properties:
+        data:
+          type: object
+          properties:
+            messageId:
+              type: string
+              description: >-
+                The message identifier of the given message that was used to
+                look up its children.
+            maxResults:
+              type: integer
+              description: The number of results it can return at most.
+            count:
+              type: integer
+              description: The actual number of found results.
+            childrenMessageIds:
+              type: array
+              items:
+                $ref: "#/components/schemas/Record"
+            state:
+              type: string
+              description: The state used to get the next page of results.
+          required:
+            - messageId
+            - maxResults
+            - count
+            - childrenMessageIds
+            - state
       required:
         - data
     OutputResponse:
@@ -1527,6 +1857,7 @@ components:
       required:
         - data
     OutputsAddressResponse:
+      description: Results the outputs for a given address.
       properties:
         data:
           type: object
@@ -1548,12 +1879,50 @@ components:
               items:
                 type: string
               description: The identifiers of the outputs that use a certain address.
+            state:
+              type: string
+              description: The state used to get the next page of results.
           required:
             - addressType
             - address
             - maxResults
             - count
             - outputIds
+            - state
+      required:
+        - data
+    OutputsAddressExpandedResponse:
+      description: Results the outputs for a given address with expanded results.
+      properties:
+        data:
+          type: object
+          properties:
+            addressType:
+              type: integer
+              description: The type of the address. Value `0` denotes a Ed25519 address.
+            address:
+              type: string
+              description: The hex-encoded Ed25519 address.
+            maxResults:
+              type: integer
+              description: The number of results it can return at most.
+            count:
+              type: integer
+              description: The actual number of found results.
+            outputIds:
+              type: array
+              items:
+                $ref: "#/components/schemas/Record"
+            state:
+              type: string
+              description: The state used to get the next page of results.
+          required:
+            - addressType
+            - address
+            - maxResults
+            - count
+            - outputIds
+            - state
       required:
         - data
     MilestoneResponse:
@@ -1577,5 +1946,70 @@ components:
             - index
             - messageId
             - timestamp
+      required:
+        - data
+    TransactionResponse:
+      description: A transaction message with inputs and outputs indicating spent funds.
+      properties:
+        messageId:
+          type: string
+          description: >-
+            The identifier of a message which describes this milestone. Note
+            that different messages could describe the same milestone.
+        milestoneIndex:
+          type: integer
+          description: >-
+            If set, this message can be considered as a valid milestone
+            message. This field therefore describes the milestone index of
+            the involved milestone. A message can be considered as a valid
+            milestone message if the milestone payload is valid and if the
+            referenced parents in the milestone payload do match the
+            referenced parents in the message itself. Note it's possible to
+            have different milestone messages that all represent the same
+            milestone.
+        outputs:
+          type: array
+          items:
+            type: object
+            properties:
+              output:
+                anyOf:
+                  - $ref: "#/components/schemas/SigLockedSingleOutput"
+                  - $ref: "#/components/schemas/SigLockedDustAllowanceOutput"
+              spendingMessageId:
+                type: string
+                description: >-
+                  The spending message ID, if one exists. If this is set,
+                  the transaction output is spent.
+            required:
+              - output
+              - spendingMessageId
+        inputs:
+          type: array
+          items:
+            anyOf:
+              - $ref: "#/components/schemas/UTXOInput"
+              - $ref: "#/components/schemas/TreasuryInput"
+      required:
+        - messageId
+        - milestoneIndex
+        - outputs
+        - inputs
+    TransactionsResponse:
+      description: Returns transactions for an address.
+      properties:
+        data:
+          type: object
+          properties:
+            transactions:
+              type: array
+              items:
+                $ref: "#/components/schemas/TransactionResponse"
+            state:
+              type: string
+              description: The state used to get the next page of results.
+          required:
+            - transactions
+            - state
       required:
         - data

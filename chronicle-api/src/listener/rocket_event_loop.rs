@@ -6,6 +6,7 @@ use crate::responses::*;
 use anyhow::anyhow;
 use bee_message::{
     milestone::Milestone,
+    payload::Payload,
     prelude::{
         Ed25519Address,
         Message,
@@ -42,6 +43,10 @@ use chronicle_storage::{
         Partitioned,
     },
     keyspaces::ChronicleKeyspace,
+};
+use futures::{
+    StreamExt,
+    TryStreamExt,
 };
 use hex::FromHex;
 use mpsc::unbounded_channel;
@@ -132,8 +137,11 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
                 get_message_metadata,
                 get_message_children,
                 get_message_by_index,
+                get_output_by_transaction_id,
                 get_output,
                 get_ed25519_outputs,
+                get_transactions_for_address,
+                get_transaction_for_message,
                 get_transaction_included_message,
                 get_milestone,
                 get_analytics
@@ -834,6 +842,24 @@ async fn get_ed25519_outputs(
     }
 }
 
+#[get("/<keyspace>/outputs/<transaction_id>/<idx>")]
+async fn get_output_by_transaction_id(
+    keyspace: String,
+    transaction_id: String,
+    idx: u16,
+    keyspaces: State<'_, HashSet<String>>,
+) -> ListenerResult {
+    get_output(
+        keyspace,
+        TransactionId::from_str(&transaction_id)
+            .and_then(|t| OutputId::new(t, idx))
+            .map_err(|e| ListenerError::BadParse(e.into()))?
+            .to_string(),
+        keyspaces,
+    )
+    .await
+}
+
 #[get("/<keyspace>/outputs/<output_id>")]
 async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
@@ -879,6 +905,81 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
         is_spent,
         output: output_data.output.borrow().into(),
     })
+}
+
+#[get("/<keyspace>/transactions/ed25519/<address>?<page_size>&<state>")]
+async fn get_transactions_for_address(
+    keyspace: String,
+    address: String,
+    page_size: Option<usize>,
+    state: Option<String>,
+    partition_config: State<'_, PartitionConfig>,
+    keyspaces: State<'_, HashSet<String>>,
+) -> ListenerResult {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let mut state = state
+        .map(|state| {
+            hex::decode(state)
+                .map_err(|_| ListenerError::InvalidState)
+                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
+        })
+        .transpose()?;
+
+    let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let page_size = page_size.unwrap_or(100);
+
+    let outputs = page(
+        keyspace.clone(),
+        Hint::address(ed25519_address.to_string()),
+        page_size,
+        &mut state,
+        partition_config.borrow(),
+        ed25519_address,
+    )
+    .await?;
+
+    let transactions = futures::stream::iter(outputs)
+        .map(|o| (o, keyspace.clone()))
+        .then(|(o, keyspace)| async move {
+            query::<TransactionRes, _, _>(ChronicleKeyspace::new(keyspace), o.transaction_id, None, None)
+                .await
+                .map(Into::into)
+        })
+        .try_collect()
+        .await?;
+
+    let state = state
+        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
+        .transpose()
+        .map_err(|e| anyhow!(e))?;
+
+    Ok(ListenerResponse::Transactions { transactions, state })
+}
+
+#[get("/<keyspace>/transactions/<message_id>")]
+async fn get_transaction_for_message(
+    keyspace: String,
+    message_id: String,
+    keyspaces: State<'_, HashSet<String>>,
+) -> ListenerResult {
+    if !keyspaces.contains(&keyspace) {
+        return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let keyspace = ChronicleKeyspace::new(keyspace);
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let message = query::<Message, _, _>(keyspace.clone(), message_id, None, None).await?;
+    let transaction_id = if let Some(payload) = message.payload() {
+        match payload {
+            Payload::Transaction(p) => p.id(),
+            _ => return Err(ListenerError::NoResults),
+        }
+    } else {
+        return Err(ListenerError::NoResults);
+    };
+    let transaction = query::<TransactionRes, _, _>(keyspace, transaction_id, None, None).await?;
+    Ok(ListenerResponse::Transaction(transaction.into()))
 }
 
 #[get("/<keyspace>/transactions/<transaction_id>/included-message")]
