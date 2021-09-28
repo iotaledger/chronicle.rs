@@ -15,11 +15,16 @@ use maplit::{
     hashset,
 };
 use ron::value::Value;
+use serde::Deserializer;
 use std::{
     collections::HashMap,
     convert::TryInto,
     io::Read,
-    net::SocketAddr,
+    iter::FromIterator,
+    net::{
+        SocketAddr,
+        ToSocketAddrs,
+    },
     path::Path,
 };
 pub use storage::*;
@@ -205,6 +210,7 @@ impl Default for VersionedConfig {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Config {
     /// The top-level command websocket listener address
+    #[serde(deserialize_with = "deserialize_socket_addr")]
     pub websocket_address: SocketAddr,
     /// Scylla storage configuration
     pub storage_config: StorageConfig,
@@ -216,6 +222,33 @@ pub struct Config {
     pub historical_config_path: String,
     /// Alert notification config
     pub alert_config: AlertConfig,
+}
+
+fn deserialize_socket_addr<'de, D>(d: D) -> Result<SocketAddr, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    String::deserialize(d)?
+        .to_socket_addrs()
+        .map_err(serde::de::Error::custom)?
+        .next()
+        .ok_or_else(|| serde::de::Error::custom("Invalid socket address"))
+}
+
+fn deserialize_socket_addr_collected<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromIterator<SocketAddr>,
+{
+    Vec::<String>::deserialize(d)?
+        .iter()
+        .map(|s| {
+            s.to_socket_addrs().map_err(serde::de::Error::custom).and_then(|mut i| {
+                i.next()
+                    .ok_or_else(|| serde::de::Error::custom("Invalid socket address"))
+            })
+        })
+        .collect()
 }
 
 impl Default for Config {
@@ -279,7 +312,7 @@ mod test {
     #[test]
     pub fn example_config() {
         let config = Config {
-            websocket_address: ([127, 0, 0, 1], 8081).into(),
+            websocket_address: "localhost:8081".to_socket_addrs().unwrap().next().unwrap(),
             storage_config: StorageConfig {
                 keyspaces: vec![KeyspaceConfig {
                     name: "permanode".to_string(),
@@ -292,11 +325,11 @@ mod test {
                         },
                     },
                 }],
-                listen_address: ([127, 0, 0, 1], 8080).into(),
+                listen_address: "localhost:8080".to_socket_addrs().unwrap().next().unwrap(),
                 thread_count: ThreadCount::CoreMultiple(1),
                 reporter_count: 2,
                 local_datacenter: "datacenter1".to_owned(),
-                nodes: hashset![([127, 0, 0, 1], 9042).into()],
+                nodes: hashset!["localhost:9042".to_socket_addrs().unwrap().next().unwrap()],
                 partition_config: PartitionConfig::default(),
             },
             api_config: ApiConfig {},
@@ -308,7 +341,7 @@ mod test {
                 retries_per_endpoint: 5,
                 retries_per_query: 100,
                 complete_gaps_interval_secs: 3600,
-                websocket_address: ([127, 0, 0, 1], 9000).into(),
+                websocket_address: "localhost:9000".to_socket_addrs().unwrap().next().unwrap(),
                 mqtt_stream_capacity: 10000,
                 mqtt_brokers: hashmap! {
                     MqttType::Messages => hashset![

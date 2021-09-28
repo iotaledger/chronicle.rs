@@ -1,27 +1,27 @@
 (
     version: 3,
     config: (
-        websocket_address: "127.0.0.1:8081",
+        websocket_address: "localhost:8081",
         storage_config: (
             keyspaces: [
                 (
                     name: "permanode",
                     data_centers: {
-                        "USA": (
-                            replication_factor: 2,
-                        ),
                         "Canada": (
                             replication_factor: 1,
+                        ),
+                        "USA": (
+                            replication_factor: 2,
                         ),
                     },
                 ),
             ],
-            listen_address: "127.0.0.1:8080",
+            listen_address: "localhost:8080",
             thread_count: CoreMultiple(1),
-            reporter_count: 1,
+            reporter_count: 2,
             local_datacenter: "datacenter1",
             nodes: [
-                "127.0.0.1:9042",
+                "localhost:9042",
             ],
             partition_config: (
                 partition_count: 1000,
@@ -30,21 +30,21 @@
         ),
         api_config: (),
         broker_config: (
-            websocket_address: "127.0.0.1:9000",
+            websocket_address: "localhost:9000",
             mqtt_brokers: {
-                Messages: [
-                    "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
-                    "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
-                ],
                 MessagesReferenced: [
-                    "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
                     "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
+                    "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
+                ],
+                Messages: [
+                    "tcp://api.hornet-1.testnet.chrysalis2.com:1883",
+                    "tcp://api.hornet-0.testnet.chrysalis2.com:1883",
                 ],
             },
             mqtt_stream_capacity: 10000,
             api_endpoints: [
-                "https://api.hornet-0.testnet.chrysalis2.com/api/v1",
                 "https://api.hornet-1.testnet.chrysalis2.com/api/v1",
+                "https://api.hornet-0.testnet.chrysalis2.com/api/v1",
             ],
             retries_per_endpoint: 5,
             retries_per_query: 100,

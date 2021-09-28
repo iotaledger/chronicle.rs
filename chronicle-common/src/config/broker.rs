@@ -19,6 +19,7 @@ use url::Url;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {
     /// The websocket listener address
+    #[serde(deserialize_with = "super::deserialize_socket_addr")]
     pub websocket_address: SocketAddr,
     /// MQTT addresses the broker will use as feed sources separated by type
     pub mqtt_brokers: HashMap<MqttType, HashSet<Url>>,
