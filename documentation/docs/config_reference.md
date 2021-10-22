@@ -3,7 +3,7 @@
 ## `storage_config`
 
 ### `keyspaces: Vec<KeyspaceConfig>`
-See [KeyspaceConfig](chronicle-storage/src/config.rs#KeyspaceConfig)
+See [KeyspaceConfig](https://github.com/iotaledger/chronicle.rs/blob/a9cfc14289d970251eea6f1e501686d655e2742f/chronicle-common/src/config/storage.rs#L93-L98)
 
 Multiple keyspaces can be configured in order to filter incoming messages. If the `filter` feature is not used, *only the first configured keyspace will be considered* or the default (`chronicle`) if none is provided.
 
@@ -22,7 +22,7 @@ The number of reporters Scylla will spawn.
 The Scylla local datacenter.
 
 ### `partition_config`
-See [PartitionConfig](chronicle-storage/src/config.rs#PartitionConfig)
+See [PartitionConfig](https://github.com/iotaledger/chronicle.rs/blob/a9cfc14289d970251eea6f1e501686d655e2742f/chronicle-common/src/config/storage.rs#L138-L143)
 
 Specifies the number of partitions to use in the database, as well as the number of milestones to use as chunks.
 
