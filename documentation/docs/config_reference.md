@@ -30,7 +30,7 @@ NOTICE: You can't change `partition_config` in future without migration.
 
 ## `api_config`
 
-Nothing at the moment, please refer to [.env](.env).
+Nothing at the moment, please refer to [.env](https://github.com/iotaledger/chronicle.rs/blob/main/.env).
 
 ## `broker_config`
 
