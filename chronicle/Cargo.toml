@@ -17,8 +17,8 @@ path = "src/main.rs"
 required-features = ["application"]
 
 [dependencies]
-backstage = "0.1"
-scylla-rs = "0.1"
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable" }
+scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage" }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-storage = { path = "../chronicle-storage" }

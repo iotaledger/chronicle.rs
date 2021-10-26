@@ -16,9 +16,9 @@ use bee_rest_api::types::dtos::{
     PayloadDto,
     UnlockBlockDto,
 };
-use chronicle_broker::AnalyticData;
 use chronicle_storage::access::{
     AddressRecord,
+    AnalyticData,
     IndexationRecord,
     InputData,
     LedgerInclusionState,

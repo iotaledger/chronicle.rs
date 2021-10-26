@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use chronicle_common::SyncRange;
 use std::{
     collections::{
         hash_map::Entry,
@@ -13,27 +12,27 @@ use std::{
     str::FromStr,
 };
 
-impl Select<MessageId, Message> for ChronicleKeyspace {
+impl Select<Bee<MessageId>, Bee<Message>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!("SELECT message FROM {}.messages WHERE message_id = ?", self.name()).into()
     }
-    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+    fn bind_values<T: Values>(builder: T, message_id: &Bee<MessageId>) -> T::Return {
         builder.value(&message_id.to_string())
     }
 }
 
-impl Select<MessageId, Option<MessageMetadata>> for ChronicleKeyspace {
+impl Select<Bee<MessageId>, Option<MessageMetadata>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!("SELECT metadata FROM {}.messages WHERE message_id = ?", self.name()).into()
     }
-    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+    fn bind_values<T: Values>(builder: T, message_id: &Bee<MessageId>) -> T::Return {
         builder.value(&message_id.to_string())
     }
 }
 
-impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for ChronicleKeyspace {
+impl Select<Bee<MessageId>, (Option<Bee<Message>>, Option<MessageMetadata>)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -42,26 +41,12 @@ impl Select<MessageId, (Option<Message>, Option<MessageMetadata>)> for Chronicle
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
+    fn bind_values<T: Values>(builder: T, message_id: &Bee<MessageId>) -> T::Return {
         builder.value(&message_id.to_string())
     }
 }
 
-impl Select<MessageId, (Option<Bee<Message>>, Option<MessageMetadata>)> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT message, metadata FROM {}.messages WHERE message_id = ?",
-            self.name()
-        )
-        .into()
-    }
-    fn bind_values<T: Values>(builder: T, message_id: &MessageId) -> T::Return {
-        builder.value(&message_id.to_string())
-    }
-}
-
-impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> for ChronicleKeyspace {
+impl Select<Partitioned<Bee<MessageId>>, Paged<VecDeque<Partitioned<ParentRecord>>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -72,7 +57,7 @@ impl Select<Partitioned<MessageId>, Paged<VecDeque<Partitioned<ParentRecord>>>> 
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, message_id: &Partitioned<MessageId>) -> T::Return {
+    fn bind_values<T: Values>(builder: T, message_id: &Partitioned<Bee<MessageId>>) -> T::Return {
         builder
             .value(&message_id.to_string())
             .value(&message_id.partition_id())
@@ -139,7 +124,7 @@ impl RowsDecoder for Paged<VecDeque<Partitioned<IndexationRecord>>> {
     }
 }
 
-impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecord>>>> for ChronicleKeyspace {
+impl Select<Partitioned<Bee<Ed25519Address>>, Paged<VecDeque<Partitioned<AddressRecord>>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -150,7 +135,7 @@ impl Select<Partitioned<Ed25519Address>, Paged<VecDeque<Partitioned<AddressRecor
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, address: &Partitioned<Ed25519Address>) -> T::Return {
+    fn bind_values<T: Values>(builder: T, address: &Partitioned<Bee<Ed25519Address>>) -> T::Return {
         builder
             .value(&address.to_string())
             .value(&address.partition_id())
@@ -307,7 +292,7 @@ impl RowsDecoder for TransactionRes {
     }
 }
 
-impl Select<TransactionId, Option<MessageId>> for ChronicleKeyspace {
+impl Select<TransactionId, Option<Bee<MessageId>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -339,7 +324,7 @@ impl Select<MilestoneIndex, Milestone> for ChronicleKeyspace {
     }
 }
 
-impl Select<Hint, Vec<(MilestoneIndex, PartitionId)>> for ChronicleKeyspace {
+impl Select<Hint, Iter<(Bee<MilestoneIndex>, PartitionId)>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
 
     fn statement(&self) -> std::borrow::Cow<'static, str> {
@@ -374,7 +359,7 @@ impl Select<SyncKey, Iter<SyncRecord>> for ChronicleKeyspace {
     }
 }
 
-impl Select<SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
+impl Select<SyncKey, Iter<AnalyticRecord>> for ChronicleKeyspace {
     type QueryOrPrepared = QueryStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -383,11 +368,11 @@ impl Select<SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
         )
         .into()
     }
-    fn bind_values<T: Values>(builder: T, sync_range: &SyncRange) -> T::Return {
+    fn bind_values<T: Values>(builder: T, sync_key: &SyncKey) -> T::Return {
         builder
             .value(&"permanode")
-            .value(&sync_range.from)
-            .value(&sync_range.to)
+            .value(&sync_key.start())
+            .value(&sync_key.end())
     }
 }
 

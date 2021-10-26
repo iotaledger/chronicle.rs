@@ -28,10 +28,7 @@ struct SomeType;
 impl SomeType {
     fn what<
         S: 'static
-            + scylla_rs::prelude::Select<
-                chronicle_common::SyncRange,
-                scylla_rs::prelude::Iter<crate::access::AnalyticRecord>,
-            >,
+            + scylla_rs::prelude::Select<crate::access::SyncKey, scylla_rs::prelude::Iter<crate::access::AnalyticRecord>>,
     >() {
         println!("bound worked");
     }

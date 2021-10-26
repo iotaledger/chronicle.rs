@@ -3,10 +3,28 @@
 
 use super::*;
 use crate::responses::*;
+use ::rocket::{
+    fairing::{
+        Fairing,
+        Info,
+        Kind,
+    },
+    get,
+    http::ContentType,
+    response::{
+        content,
+        Responder,
+    },
+    serde::json::Json,
+    Build,
+    Data,
+    Request,
+    Response,
+    State,
+};
 use anyhow::anyhow;
 use bee_message::{
     milestone::Milestone,
-    payload::Payload,
     prelude::{
         Ed25519Address,
         Message,
@@ -15,10 +33,6 @@ use bee_message::{
         OutputId,
         TransactionId,
     },
-};
-use chronicle_broker::{
-    AnalyticsData,
-    SyncData,
 };
 use chronicle_common::{
     config::PartitionConfig,
@@ -44,30 +58,7 @@ use chronicle_storage::{
     },
     keyspaces::ChronicleKeyspace,
 };
-use futures::{
-    StreamExt,
-    TryStreamExt,
-};
 use hex::FromHex;
-use mpsc::unbounded_channel;
-use rocket::{
-    fairing::{
-        Fairing,
-        Info,
-        Kind,
-    },
-    get,
-    http::ContentType,
-    response::{
-        Content,
-        Responder,
-    },
-    Data,
-    Request,
-    Response,
-    State,
-};
-use rocket_contrib::json::Json;
 use std::{
     borrow::Borrow,
     collections::{
@@ -76,55 +67,15 @@ use std::{
         VecDeque,
     },
     convert::TryInto,
+    fmt::Debug,
     io::Cursor,
     path::PathBuf,
     str::FromStr,
     time::SystemTime,
 };
-use tokio::sync::mpsc;
 
-#[async_trait]
-impl<H: ChronicleAPIScope> EventLoop<ChronicleAPISender<H>> for Listener<RocketListener> {
-    async fn event_loop(
-        &mut self,
-        _status: Result<(), Need>,
-        supervisor: &mut Option<ChronicleAPISender<H>>,
-    ) -> Result<(), Need> {
-        self.service.update_status(ServiceStatus::Running);
-        if let Some(ref mut supervisor) = supervisor {
-            supervisor
-                .send(ChronicleAPIEvent::Children(ChronicleAPIChild::Listener(
-                    self.service.clone(),
-                )))
-                .map_err(|_| Need::Abort)?;
-        }
-
-        let storage_config = get_config_async().await.storage_config;
-
-        let keyspaces = storage_config
-            .keyspaces
-            .iter()
-            .cloned()
-            .map(|k| k.name)
-            .collect::<HashSet<_>>();
-
-        construct_rocket(
-            self.data
-                .rocket
-                .take()
-                .ok_or_else(|| Need::Abort)?
-                .manage(storage_config.partition_config.clone())
-                .manage(keyspaces)
-                .register(catchers![internal_error, not_found]),
-        )
-        .launch()
-        .await
-        .map_err(|_| Need::Abort)
-    }
-}
-
-fn construct_rocket(rocket: Rocket) -> Rocket {
-    rocket
+pub fn construct_rocket() -> Rocket<Build> {
+    ::rocket::build()
         .mount(
             "/api",
             routes![
@@ -149,13 +100,14 @@ fn construct_rocket(rocket: Rocket) -> Rocket {
         )
         .attach(CORS)
         .attach(RequestTimer)
+        .register("/", catchers![internal_error, not_found])
 }
 
 struct CORS;
 
-#[rocket::async_trait]
+#[::rocket::async_trait]
 impl Fairing for CORS {
-    fn info(&self) -> rocket::fairing::Info {
+    fn info(&self) -> ::rocket::fairing::Info {
         Info {
             name: "Add CORS Headers",
             kind: Kind::Response,
@@ -175,7 +127,7 @@ pub struct RequestTimer;
 #[derive(Copy, Clone)]
 struct TimerStart(Option<SystemTime>);
 
-#[rocket::async_trait]
+#[::rocket::async_trait]
 impl Fairing for RequestTimer {
     fn info(&self) -> Info {
         Info {
@@ -185,7 +137,7 @@ impl Fairing for RequestTimer {
     }
 
     /// Stores the start time of the request in request-local state.
-    async fn on_request(&self, request: &mut Request<'_>, _: &mut Data) {
+    async fn on_request(&self, request: &mut Request<'_>, _: &mut Data<'_>) {
         // Store a `TimerStart` instead of directly storing a `SystemTime`
         // to ensure that this usage doesn't conflict with anything else
         // that might store a `SystemTime` in request-local cache.
@@ -225,7 +177,7 @@ impl Fairing for RequestTimer {
 }
 
 impl<'r> Responder<'r, 'static> for ListenerError {
-    fn respond_to(self, _req: &'r Request<'_>) -> rocket::response::Result<'static> {
+    fn respond_to(self, _req: &'r Request<'_>) -> ::rocket::response::Result<'static> {
         let err = ErrorBody::from(self);
         let string = serde_json::to_string(&err).map_err(|e| {
             error!("JSON failed to serialize: {:?}", e);
@@ -241,14 +193,14 @@ impl<'r> Responder<'r, 'static> for ListenerError {
 }
 
 impl<'r> Responder<'r, 'static> for ListenerResponse {
-    fn respond_to(self, req: &'r Request<'_>) -> rocket::response::Result<'static> {
+    fn respond_to(self, req: &'r Request<'_>) -> ::rocket::response::Result<'static> {
         let success = SuccessBody::from(self);
         let string = serde_json::to_string(&success).map_err(|e| {
             error!("JSON failed to serialize: {:?}", e);
             Status::InternalServerError
         })?;
 
-        Content(ContentType::JSON, string).respond_to(req)
+        content::Json(string).respond_to(req)
     }
 }
 
@@ -258,17 +210,19 @@ type ListenerResult = Result<ListenerResponse, ListenerError>;
 async fn options(_path: PathBuf) {}
 
 #[get("/<keyspace>/info")]
-async fn info(keyspaces: State<'_, HashSet<String>>, keyspace: String) -> ListenerResult {
+async fn info(keyspaces: &State<HashSet<String>>, keyspace: String) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let version = std::env!("CARGO_PKG_VERSION").to_string();
-    let service = SERVICE.read().await;
-    let is_healthy = !std::iter::once(&*service)
+    let service = Scope::lookup::<Service>(0)
+        .await
+        .ok_or_else(|| ListenerError::NotFound)?;
+    let is_healthy = !std::iter::once(&service)
         .chain(service.microservices.values())
-        .any(|service| service.is_degraded() || service.is_maintenance() || service.is_stopped());
+        .any(|service| !service.is_running());
     Ok(ListenerResponse::Info {
-        name: "Chronicle".into(),
+        name: "Chronicle (keyspace)".into(),
         version,
         is_healthy,
     })
@@ -294,17 +248,20 @@ async fn metrics() -> Result<String, ListenerError> {
 }
 
 #[get("/service")]
-async fn service() -> Json<Service> {
-    Json(SERVICE.read().await.clone())
+async fn service() -> Result<Json<Service>, ListenerError> {
+    let service = Scope::lookup::<Service>(0)
+        .await
+        .ok_or_else(|| ListenerError::NotFound)?;
+    Ok(Json(service))
 }
 
 #[get("/<keyspace>/sync")]
-async fn sync(keyspaces: State<'_, HashSet<String>>, keyspace: String) -> Result<Json<SyncData>, ListenerError> {
+async fn sync(keyspaces: &State<HashSet<String>>, keyspace: String) -> Result<Json<SyncData>, ListenerError> {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
-    SyncData::try_fetch(&keyspace, &SyncRange::default(), 3)
+    SyncData::try_fetch(&keyspace, SyncRange::default(), 3)
         .await
         .map(|s| Json(s))
         .map_err(|e| ListenerError::Other(e.into()))
@@ -318,33 +275,22 @@ async fn query<V, S, K>(
 ) -> Result<V, ListenerError>
 where
     S: 'static + Select<K, V>,
-    K: 'static + Send + Clone,
-    V: 'static + Send + Clone,
+    K: 'static + Send + Sync + Clone + TokenEncoder,
+    V: 'static + Send + Sync + Clone + Debug + RowsDecoder,
 {
     let request = keyspace.select::<V>(&key).consistency(Consistency::One);
-    let request = if let Some(page_size) = page_size {
+    if let Some(page_size) = page_size {
         request.page_size(page_size).paging_state(&paging_state)
     } else {
         request.paging_state(&paging_state)
     }
-    .build()?;
-    let (sender, mut inbox) = unbounded_channel::<Result<Option<V>, WorkerError>>();
-    let mut worker = ValueWorker::new(sender, keyspace, key, 0, PhantomData);
-    if let Some(page_size) = page_size {
-        worker = worker.with_paging(page_size, paging_state);
-    }
-    let worker = Box::new(worker);
-
-    request.send_local(worker);
-
-    while let Some(event) = inbox.recv().await {
-        match event {
-            Ok(res) => return res.ok_or_else(|| ListenerError::NoResults),
-            Err(worker_error) => return Err(ListenerError::Other(worker_error.into())),
-        }
-    }
-
-    Err(ListenerError::NoResponseError)
+    .build()?
+    .worker()
+    .with_retries(3)
+    .get_local()
+    .await
+    .map_err(|e| e.into())
+    .and_then(|res| res.ok_or_else(|| ListenerError::NoResults))
 }
 
 async fn page<K, V>(
@@ -356,9 +302,10 @@ async fn page<K, V>(
     key: K,
 ) -> Result<Vec<Partitioned<V>>, ListenerError>
 where
-    K: 'static + Send + Clone,
-    V: 'static + Send + Clone,
+    K: 'static + Send + Sync + Clone + TokenEncoder,
+    V: 'static + Send + Sync + Clone + Debug,
     ChronicleKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
+    Paged<VecDeque<Partitioned<V>>>: RowsDecoder,
 {
     let total_start_time = std::time::Instant::now();
     let mut start_time = total_start_time;
@@ -380,11 +327,12 @@ where
             (latest_milestone, state.partition_ids.clone())
         }
         None => {
-            let mut partition_ids =
-                query::<Vec<(MilestoneIndex, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
+            let partition_ids =
+                query::<Iter<(Bee<MilestoneIndex>, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
             if partition_ids.is_empty() {
                 return Err(ListenerError::NoResults);
             }
+            let mut partition_ids = partition_ids.map(|(ms, p)| (ms.into_inner(), p)).collect::<Vec<_>>();
             let (first_partition_id, latest_milestone) = partition_ids
                 .iter()
                 .max_by_key(|(index, _)| index)
@@ -619,30 +567,36 @@ where
 }
 
 #[get("/<keyspace>/messages/<message_id>")]
-async fn get_message(keyspace: String, message_id: String, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
+async fn get_message(keyspace: String, message_id: String, keyspaces: &State<HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
-    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
-    query::<Message, _, _>(keyspace, message_id, None, None)
+    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
+    query::<Bee<Message>, _, _>(keyspace, message_id, None, None)
         .await
-        .and_then(|message| message.try_into().map_err(|e: Cow<'static, str>| anyhow!(e).into()))
+        .and_then(|message| {
+            message
+                .into_inner()
+                .try_into()
+                .map_err(|e: Cow<'static, str>| anyhow!(e).into())
+        })
 }
 
 #[get("/<keyspace>/messages/<message_id>/metadata")]
 async fn get_message_metadata(
     keyspace: String,
     message_id: String,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
-    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
-    query::<MessageMetadata, _, _>(keyspace, message_id, None, None)
+    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
+    query::<Option<MessageMetadata>, _, _>(keyspace, message_id, None, None)
         .await
+        .and_then(|o| o.ok_or(ListenerError::NotFound))
         .map(|metadata| metadata.into())
 }
 
@@ -653,13 +607,13 @@ async fn get_message_children(
     page_size: Option<usize>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: State<'_, PartitionConfig>,
-    keyspaces: State<'_, HashSet<String>>,
+    partition_config: &State<PartitionConfig>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
-    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
     let page_size = page_size.unwrap_or(100);
 
     let mut state = state
@@ -712,8 +666,8 @@ async fn get_message_by_index(
     utf8: Option<bool>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: State<'_, PartitionConfig>,
-    keyspaces: State<'_, HashSet<String>>,
+    partition_config: &State<PartitionConfig>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -781,8 +735,8 @@ async fn get_ed25519_outputs(
     page_size: Option<usize>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: State<'_, PartitionConfig>,
-    keyspaces: State<'_, HashSet<String>>,
+    partition_config: &State<PartitionConfig>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -795,7 +749,7 @@ async fn get_ed25519_outputs(
         })
         .transpose()?;
 
-    let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let ed25519_address = Bee(Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
     let page_size = page_size.unwrap_or(100);
 
     let mut outputs = page(
@@ -847,7 +801,7 @@ async fn get_output_by_transaction_id(
     keyspace: String,
     transaction_id: String,
     idx: u16,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: State<HashSet<String>>,
 ) -> ListenerResult {
     get_output(
         keyspace,
@@ -861,7 +815,7 @@ async fn get_output_by_transaction_id(
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
-async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
+async fn get_output(keyspace: String, output_id: String, keyspaces: State<HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -888,12 +842,18 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
         }
         if !query_message_ids.is_empty() {
             let queries = query_message_ids.drain().map(|&message_id| {
-                query::<MessageMetadata, _, _>(ChronicleKeyspace::new(keyspace.clone()), message_id.clone(), None, None)
+                query::<Option<MessageMetadata>, _, _>(
+                    ChronicleKeyspace::new(keyspace.clone()),
+                    Bee(message_id.clone()),
+                    None,
+                    None,
+                )
             });
             is_spent = futures::future::join_all(queries)
                 .await
                 .drain(..)
                 .filter_map(|res| res.ok())
+                .flatten()
                 .any(|metadata| metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included));
         }
         is_spent
@@ -913,8 +873,8 @@ async fn get_transactions_for_address(
     address: String,
     page_size: Option<usize>,
     state: Option<String>,
-    partition_config: State<'_, PartitionConfig>,
-    keyspaces: State<'_, HashSet<String>>,
+    partition_config: State<PartitionConfig>,
+    keyspaces: State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -962,7 +922,7 @@ async fn get_transactions_for_address(
 async fn get_transaction_for_message(
     keyspace: String,
     message_id: String,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -986,7 +946,7 @@ async fn get_transaction_for_message(
 async fn get_transaction_included_message(
     keyspace: String,
     transaction_id: String,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -1002,7 +962,7 @@ async fn get_transaction_included_message(
 }
 
 #[get("/<keyspace>/milestones/<index>")]
-async fn get_milestone(keyspace: String, index: u32, keyspaces: State<'_, HashSet<String>>) -> ListenerResult {
+async fn get_milestone(keyspace: String, index: u32, keyspaces: &State<HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
@@ -1022,7 +982,7 @@ async fn get_analytics(
     keyspace: String,
     start: Option<u32>,
     end: Option<u32>,
-    keyspaces: State<'_, HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -1051,7 +1011,7 @@ fn not_found() -> ListenerError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rocket::{
+    use ::rocket::{
         http::{
             ContentType,
             Header,
@@ -1063,15 +1023,6 @@ mod tests {
         },
     };
     use serde_json::Value;
-
-    async fn construct_client() -> Client {
-        let mut keyspaces = HashSet::new();
-        keyspaces.insert("permanode".to_string());
-        let rocket = construct_rocket(rocket::ignite())
-            .manage(PartitionConfig::default())
-            .manage(keyspaces);
-        Client::tracked(rocket).await.expect("Invalid rocket instance!")
-    }
 
     fn check_cors_headers(res: &LocalResponse) {
         assert_eq!(
@@ -1092,7 +1043,14 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    async fn construct_client() -> Client {
+        let mut keyspaces = HashSet::new();
+        keyspaces.insert("permanode".to_string());
+        let rocket = construct_rocket().manage(PartitionConfig::default()).manage(keyspaces);
+        Client::tracked(rocket).await.expect("Invalid rocket instance!")
+    }
+
+    #[::rocket::async_test]
     async fn options() {
         let client = construct_client().await;
 
@@ -1103,7 +1061,7 @@ mod tests {
         assert!(res.into_string().await.is_none());
     }
 
-    #[rocket::async_test]
+    #[::rocket::async_test]
     async fn info() {
         let client = construct_client().await;
 
@@ -1120,7 +1078,7 @@ mod tests {
         }
     }
 
-    #[rocket::async_test]
+    #[::rocket::async_test]
     async fn service() {
         let client = construct_client().await;
 
@@ -1128,11 +1086,11 @@ mod tests {
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
-        let _body: Service = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
-            .expect("Failed to deserialize Service Response!");
+        let _body: ServiceTree = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+            .expect("Failed to deserialize Service Tree Response!");
     }
 
-    #[rocket::async_test]
+    #[::rocket::async_test]
     async fn get_message() {
         let client = construct_client().await;
 

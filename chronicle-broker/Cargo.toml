@@ -12,8 +12,8 @@ path = "src/lib.rs"
 chronicle-common = { path = "../chronicle-common", optional = true }
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-filter = { path = "../chronicle-filter", optional = true }
-backstage = { version = "0.1", optional = true }
-scylla-rs = { version = "0.1", optional = true }
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", optional = true }
+scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 log = { version = "0.4", optional = true }

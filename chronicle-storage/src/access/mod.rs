@@ -45,9 +45,9 @@ use scylla_rs::{
         Row,
         Rows,
         RowsDecoder,
+        TokenEncodeChain,
         TokenEncoder,
         Values,
-        VoidDecoder,
     },
     prelude::*,
 };
@@ -111,7 +111,7 @@ impl<T> Record<T> {
 
 /// A partitioned value marker. Wraps a key type to select
 /// using the partition id and milestone index.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Partitioned<T> {
     inner: T,
     partition: Partition,
@@ -122,6 +122,14 @@ impl<T> Deref for Partitioned<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+impl<T: TokenEncoder> TokenEncoder for Partitioned<T> {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.inner
+            .chain(self.partition.id())
+            .chain(self.partition.milestone_index())
     }
 }
 
@@ -184,7 +192,7 @@ impl<T> TTL<T> {
 }
 
 /// A partition key
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Partition {
     id: u16,
     milestone_index: u32,
