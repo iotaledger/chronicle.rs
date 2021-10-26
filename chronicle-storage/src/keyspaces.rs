@@ -18,7 +18,28 @@ impl ChronicleKeyspace {
 }
 
 impl Keyspace for ChronicleKeyspace {
-    fn name(&self) -> &Cow<'static, str> {
-        &self.name
+    fn name(&self) -> String {
+        self.name.to_string()
     }
+}
+
+struct SomeType;
+
+impl SomeType {
+    fn what<
+        S: 'static
+            + scylla_rs::prelude::Select<
+                chronicle_common::SyncRange,
+                scylla_rs::prelude::Iter<crate::access::AnalyticRecord>,
+            >,
+    >() {
+        println!("bound worked");
+    }
+}
+
+#[test]
+fn test_row_bound() {
+    let keyspace = ChronicleKeyspace::new("test_keyspace".into());
+    SomeType::what::<ChronicleKeyspace>();
+    println!("{:?}", "outer");
 }

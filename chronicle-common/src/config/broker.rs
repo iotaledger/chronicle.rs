@@ -18,8 +18,6 @@ use url::Url;
 /// Broker application config
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BrokerConfig {
-    /// The websocket listener address
-    pub websocket_address: SocketAddr,
     /// MQTT addresses the broker will use as feed sources separated by type
     pub mqtt_brokers: HashMap<MqttType, HashSet<Url>>,
     /// Mqtt stream capacity
@@ -69,7 +67,6 @@ impl Default for BrokerConfig {
             retries_per_endpoint: 5,
             retries_per_query: 100,
             complete_gaps_interval_secs: 60 * 60,
-            websocket_address: ([127, 0, 0, 1], 9000).into(),
             mqtt_stream_capacity: 10000,
             mqtt_brokers: hashmap! {
                 MqttType::Messages => hashset![

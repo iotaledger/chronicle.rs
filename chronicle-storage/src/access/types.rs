@@ -75,7 +75,7 @@ impl<Type> From<Type> for Bee<Type> {
 }
 
 impl<P: Packable> ColumnDecoder for Bee<P> {
-    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
         P::unpack(&mut Cursor::new(slice))
             .map_err(|e| anyhow!("{:?}", e))
             .map(Into::into)
@@ -237,7 +237,7 @@ impl Packable for TransactionData {
 }
 
 impl ColumnDecoder for TransactionData {
-    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
         Self::unpack(&mut Cursor::new(slice)).map(Into::into)
     }
 }
@@ -284,7 +284,7 @@ impl ColumnEncoder for LedgerInclusionState {
 }
 
 impl ColumnDecoder for LedgerInclusionState {
-    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
         bincode_config().deserialize(slice).map_err(Into::into)
     }
 }
@@ -298,7 +298,7 @@ impl ColumnEncoder for MessageMetadata {
 }
 
 impl ColumnDecoder for MessageMetadata {
-    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
         bincode_config().deserialize(slice).map_err(Into::into)
     }
 }
@@ -562,5 +562,33 @@ impl AnalyticRecord {
     /// Gets the transferred tokens
     pub fn transferred_tokens(&self) -> &TransferredTokens {
         &self.transferred_tokens
+    }
+}
+
+#[derive(Debug, Clone)]
+/// Sync key, used to select or insert sync records into sync table;
+pub struct SyncKey {
+    pub(crate) sync_range: SyncRange,
+}
+impl SyncKey {
+    /// The start range
+    pub fn start(&self) -> u32 {
+        self.sync_range.from
+    }
+    /// The end range 
+    pub fn end(&self) -> u32 {
+        self.sync_range.to
+    }
+}
+
+impl From<SyncRange> for SyncKey {
+    fn from(sync_range: SyncRange) -> Self {
+        Self { sync_range }
+    }
+}
+
+impl TokenEncoder for SyncKey {
+    fn token(&self) -> i64 {
+        "permanode".token()
     }
 }

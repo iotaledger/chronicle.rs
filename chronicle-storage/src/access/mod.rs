@@ -55,10 +55,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::{
-    io::Cursor,
-    ops::Deref,
-};
+use std::ops::Deref;
 pub use types::*;
 
 mod delete;
@@ -66,8 +63,6 @@ mod insert;
 mod select;
 mod token;
 mod types;
-
-impl VoidDecoder for ChronicleKeyspace {}
 
 use bincode::config::*;
 #[allow(unused)]
@@ -378,7 +373,7 @@ pub enum TransactionVariant {
 }
 
 impl ColumnDecoder for TransactionVariant {
-    fn try_decode(slice: &[u8]) -> anyhow::Result<Self> {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
         Ok(match std::str::from_utf8(slice)? {
             "input" => TransactionVariant::Input,
             "output" => TransactionVariant::Output,
