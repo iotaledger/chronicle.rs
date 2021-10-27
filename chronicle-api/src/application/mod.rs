@@ -10,28 +10,33 @@ use std::collections::HashSet;
 pub struct ChronicleAPI;
 
 /// A Chronicle API Event
-#[supervise]
 pub enum ChronicleAPIEvent {
-    #[report]
     Report(ScopeId, Service),
-    #[shutdown]
-    Shutdown,
+}
+
+impl<T> ReportEvent<T> for ChronicleAPIEvent {
+    fn report_event(scope_id: ScopeId, service: Service) -> Self {
+        Self::Report(scope_id, service)
+    }
+}
+
+impl<T> EolEvent<T> for ChronicleAPIEvent {
+    fn eol_event(scope_id: ScopeId, service: Service, _: T, r: ActorResult<()>) -> Self {
+        Self::Report(scope_id, service)
+    }
 }
 
 #[async_trait]
-impl<Sup: Send + SupHandle<Self>> Actor<Sup> for ChronicleAPI {
+impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
     type Data = ();
     type Channel = AbortableUnboundedChannel<ChronicleAPIEvent>;
 
     async fn init(&mut self, rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
-        rt.update_status(ServiceStatus::Initializing).await;
-
         let storage_config = rt
             .lookup::<Config>(rt.parent_id().ok_or_else(|| anyhow::anyhow!("No parent id!"))?)
             .await
             .ok_or_else(|| anyhow::anyhow!("No config found!"))?
             .storage_config;
-
         let keyspaces = storage_config
             .keyspaces
             .iter()
@@ -47,13 +52,21 @@ impl<Sup: Send + SupHandle<Self>> Actor<Sup> for ChronicleAPI {
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?,
         );
-        rt.spawn(Some("rocket".to_string()), rocket).await?;
+        rt.spawn("rocket".to_string(), rocket).await?;
         Ok(())
     }
 
     async fn run(&mut self, rt: &mut Rt<Self, Sup>, data: Self::Data) -> ActorResult<()> {
-        rt.update_status(ServiceStatus::Running).await;
-        while let Some(_) = rt.inbox_mut().next().await {}
+        while let Some(event) = rt.inbox_mut().next().await {
+            match event {
+                ChronicleAPIEvent::Report(scope_id, service) => {
+                    rt.upsert_microservice(scope_id, service);
+                    if rt.microservices_stopped() {
+                        break;
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
