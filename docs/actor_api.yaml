@@ -60,7 +60,7 @@ paths:
                 add-node:
                   $ref: "#/components/examples/actorapi-addnode-example"
                 add-endpoints:
-                  $ref: "#/components/examples/actorapi-addendpoints-example"
+                  $ref: "#/components/examples/actorapi-configuretangle-example"
           headers:
             Connection:
               schema:
@@ -120,6 +120,20 @@ paths:
           schema:
             type: string
           required: true
+      requestBody:
+        description: The action requested.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Action"
+            examples:
+              add-node:
+                $ref: "#/components/examples/actorapi-addnode-action-example"
+              add-endpoints:
+                $ref: "#/components/examples/actorapi-addendpoints-action-example"
+              add-mqtt:
+                $ref: "#/components/examples/actorapi-addmqtt-action-example"
       responses:
         200:
           description: Action performed successfully.
@@ -152,6 +166,7 @@ components:
         actions:
           type: array
           items:
+            description: An action an actor can perform.
             type: object
             properties:
               name:
@@ -178,6 +193,34 @@ components:
                       description: >-
                         The type of the property. Can be string, number, array,
                         boolean, integer, or object.
+    Action:
+      description: An action an actor can perform.
+      type: object
+      properties:
+        name:
+          type: string
+          description: The name of the action
+        params:
+          type: array
+          items:
+            type: object
+            description: >-
+              A single parameter with a name and type
+            properties:
+              name:
+                type: string
+                description: The name of the property
+              value:
+                anyOf:
+                  - $ref: "#/components/schemas/String"
+                  - $ref: "#/components/schemas/Number"
+                  - $ref: "#/components/schemas/Array"
+                  - $ref: "#/components/schemas/Boolean"
+                  - $ref: "#/components/schemas/Integer"
+                  - $ref: "#/components/schemas/Object"
+                description: >-
+                  The type of the property. Can be string, number, array,
+                  boolean, integer, or object.
     String:
       description: A String type.
       type: string
@@ -249,7 +292,7 @@ components:
             params:
               - name: Address
                 type: string
-    actorapi-addendpoints-example:
+    actorapi-configuretangle-example:
       summary: Configure Tangle
       value:
         name: Chronicle
@@ -260,7 +303,7 @@ components:
                 type: array
                 items:
                   type: string
-          - name: Add MQTT
+          - name: Add MQTT Subscriptions
             params:
               - name: MQTT Type
                 type: string
@@ -268,3 +311,30 @@ components:
                 type: array
                 items:
                   type: string
+    actorapi-addnode-action-example:
+      summary: Add Node
+      value:
+        name: Add Node
+        params:
+          - name: Address
+            value: "127.0.0.1:9042"
+    actorapi-addendpoints-action-example:
+      summary: Add Endpoints
+      value:
+        name: Add Endpoints
+        params:
+          - name: Addresses
+            value:
+              - "https://api.hornet-0.testnet.chrysalis2.com/api/v1"
+              - "https://api.hornet-1.testnet.chrysalis2.com/api/v1"
+    actorapi-addmqtt-action-example:
+      summary: Add MQTT Subscriptions
+      value:
+        name: Add MQTT Subscriptions
+        params:
+          - name: MQTT Type
+            value: "MessagesReferenced"
+          - name: Addresses
+            value:
+              - "tcp://api.hornet-0.testnet.chrysalis2.com:1883"
+              - "tcp://api.hornet-1.testnet.chrysalis2.com:1883"
