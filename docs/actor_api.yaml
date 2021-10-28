@@ -1,0 +1,270 @@
+openapi: 3.0.3
+info:
+  title: Chronicle Actor API
+  description: This document specifies the Actor API for Chronicle software.
+  contact:
+    email: contact@iota.org
+  license:
+    name: Apache 2.0
+    url: "http://www.apache.org/licenses/LICENSE-2.0.html"
+  version: 1.0.0
+externalDocs:
+  description: Find out more about IOTA
+  url: "https://iota.org"
+servers:
+  - url: "ws://127.0.0.1:8000"
+#tags:
+paths:
+  /actor-api/{dir}:
+    get:
+      summary: Returns an actor's API definition.
+      description: >-
+        Provides an outline of all actions that can be
+        performed on an actor and the required parameters
+        and data types to do so. Uses the dir as the path 
+        starting with the root actor.
+      parameters:
+        - in: path
+          name: dir
+          schema:
+            type: string
+          required: true
+        - name: Connection
+          in: header
+          schema:
+            type: string
+          required: true
+        - name: Upgrade
+          in: header
+          schema:
+            type: string
+          required: true
+        - name: Sec-WebSocket-Key
+          in: header
+          schema:
+            type: string
+          required: true
+        - name: Sec-WebSocket-Version
+          in: header
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: Successful request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActorAPI"
+              examples:
+                add-node:
+                  $ref: "#/components/examples/actorapi-addnode-example"
+                add-endpoints:
+                  $ref: "#/components/examples/actorapi-addendpoints-example"
+          headers:
+            Connection:
+              schema:
+                type: string
+              required: true
+            Upgrade:
+              schema:
+                type: string
+              required: true
+            Sec-WebSocket-Accept:
+              schema:
+                type: string
+              required: true
+        400:
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestResponse"
+        404:
+          description: Actor not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundResponse"
+        500:
+          description: Error while requesting actor API
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalErrorResponse"
+    post:
+      summary: Request an action from an actor.
+      parameters:
+        - in: path
+          name: dir
+          schema:
+            type: string
+          required: true
+        - name: Connection
+          in: header
+          schema:
+            type: string
+          required: true
+        - name: Upgrade
+          in: header
+          schema:
+            type: string
+          required: true
+        - name: Sec-WebSocket-Key
+          in: header
+          schema:
+            type: string
+          required: true
+        - name: Sec-WebSocket-Version
+          in: header
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: Action performed successfully.
+        400:
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestResponse"
+        404:
+          description: Actor not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundResponse"
+        500:
+          description: Error while performing action
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalErrorResponse"
+components:
+  schemas:
+    ActorAPI:
+      description: The API definition an actor provides.
+      properties:
+        name:
+          type: string
+          description: The name of the actor.
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: The name of the action
+              params:
+                type: array
+                items:
+                  type: object
+                  description: >-
+                    A single parameter with a name and type
+                  properties:
+                    name:
+                      type: string
+                      description: The name of the property
+                    type:
+                      anyOf:
+                        - $ref: "#/components/schemas/String"
+                        - $ref: "#/components/schemas/Number"
+                        - $ref: "#/components/schemas/Array"
+                        - $ref: "#/components/schemas/Boolean"
+                        - $ref: "#/components/schemas/Integer"
+                        - $ref: "#/components/schemas/Object"
+                      description: >-
+                        The type of the property. Can be string, number, array,
+                        boolean, integer, or object.
+    String:
+      description: A String type.
+      type: string
+    Number:
+      description: A Numeric type.
+      type: number
+    Array:
+      description: A Numeric type.
+      type: array
+      items:
+        anyOf:
+          - $ref: "#/components/schemas/String"
+          - $ref: "#/components/schemas/Number"
+          - $ref: "#/components/schemas/Array"
+          - $ref: "#/components/schemas/Boolean"
+          - $ref: "#/components/schemas/Integer"
+          - $ref: "#/components/schemas/Object"
+    Boolean:
+      description: A Numeric type.
+      type: boolean
+    Integer:
+      description: A Numeric type.
+      type: integer
+    Object:
+      description: A Numeric type.
+      type: object
+    GeneralResponse:
+      description: A response with a code and message.
+      properties:
+        code:
+          type: string
+          description: The application error code.
+        message:
+          type: string
+          description: The error reason.
+      required:
+        - code
+        - message
+    BadRequestResponse:
+      description: Indicates that the request was bad.
+      allOf:
+        - $ref: "#/components/schemas/GeneralResponse"
+      example:
+        code: 400
+        message: Invalid data provided!
+    NotFoundResponse:
+      description: Indicates that the endpoint or data was not found.
+      allOf:
+        - $ref: "#/components/schemas/GeneralResponse"
+      example:
+        code: 404
+        message: Endpoint or data does not exist!
+    InternalErrorResponse:
+      description: >-
+        Indicates that the server encountered an unexpected condition, which
+        prevented it from fulfilling the request by the client.
+      allOf:
+        - $ref: "#/components/schemas/GeneralResponse"
+      example:
+        code: 500
+        message: Internal server error!
+  examples:
+    actorapi-addnode-example:
+      summary: Add Node
+      value:
+        name: Cluster
+        actions:
+          - name: Add Node
+            params:
+              - name: Address
+                type: string
+    actorapi-addendpoints-example:
+      summary: Configure Tangle
+      value:
+        name: Chronicle
+        actions:
+          - name: Add Endpoints
+            params:
+              - name: Addresses
+                type: array
+                items:
+                  type: string
+          - name: Add MQTT
+            params:
+              - name: MQTT Type
+                type: string
+              - name: Addresses
+                type: array
+                items:
+                  type: string
