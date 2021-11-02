@@ -26,6 +26,7 @@ use std::{
         DerefMut,
     },
     path::PathBuf,
+    str::FromStr,
 };
 
 /// Index type
@@ -54,6 +55,16 @@ impl<Type> Bee<Type> {
     }
 }
 
+impl<Type> Bee<Type> {
+    pub fn as_ref(&self) -> Bee<&Type> {
+        Bee(&self.0)
+    }
+
+    pub fn as_mut(&mut self) -> Bee<&mut Type> {
+        Bee(&mut self.0)
+    }
+}
+
 impl<Type> Deref for Bee<Type> {
     type Target = Type;
 
@@ -74,19 +85,119 @@ impl<Type> From<Type> for Bee<Type> {
     }
 }
 
-impl<P: Packable> ColumnDecoder for Bee<P> {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        P::unpack(&mut Cursor::new(slice))
-            .map_err(|e| anyhow!("{:?}", e))
-            .map(Into::into)
+impl TokenEncoder for Bee<OutputId> {
+    fn encode_token(&self) -> TokenEncodeChain {
+        Bee(self.transaction_id()).chain(&self.index())
     }
 }
 
-impl<P: Packable> ColumnEncoder for Bee<P> {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.pack(buffer).ok();
+impl TokenEncoder for Bee<Milestone> {
+    fn encode_token(&self) -> TokenEncodeChain {
+        Bee(self.message_id()).chain(&self.timestamp())
     }
 }
+
+macro_rules! impl_simple_packable {
+    ($t:ty) => {
+        impl ColumnDecoder for Bee<$t> {
+            fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
+                <$t>::unpack(&mut Cursor::new(slice))
+                    .map_err(|e| anyhow!("{:?}", e))
+                    .map(Into::into)
+            }
+        }
+
+        impl ColumnEncoder for Bee<$t> {
+            fn encode(&self, buffer: &mut Vec<u8>) {
+                self.pack(buffer).ok();
+            }
+        }
+
+        impl TokenEncoder for Bee<$t> {
+            fn encode_token(&self) -> TokenEncodeChain {
+                self.into()
+            }
+        }
+
+        impl ColumnEncoder for Bee<&$t> {
+            fn encode(&self, buffer: &mut Vec<u8>) {
+                self.pack(buffer).ok();
+            }
+        }
+
+        impl TokenEncoder for Bee<&$t> {
+            fn encode_token(&self) -> TokenEncodeChain {
+                self.into()
+            }
+        }
+
+        impl ColumnEncoder for Bee<&mut $t> {
+            fn encode(&self, buffer: &mut Vec<u8>) {
+                self.pack(buffer).ok();
+            }
+        }
+
+        impl TokenEncoder for Bee<&mut $t> {
+            fn encode_token(&self) -> TokenEncodeChain {
+                self.into()
+            }
+        }
+    };
+}
+
+macro_rules! impl_string_packable {
+    ($t:ty) => {
+        impl ColumnDecoder for Bee<$t> {
+            fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
+                <$t>::from_str(&String::try_decode_column(slice)?)
+                    .map_err(|e| anyhow!("{:?}", e))
+                    .map(Into::into)
+            }
+        }
+
+        impl ColumnEncoder for Bee<$t> {
+            fn encode(&self, buffer: &mut Vec<u8>) {
+                self.to_string().encode(buffer)
+            }
+        }
+
+        impl TokenEncoder for Bee<$t> {
+            fn encode_token(&self) -> TokenEncodeChain {
+                self.into()
+            }
+        }
+
+        impl ColumnEncoder for Bee<&$t> {
+            fn encode(&self, buffer: &mut Vec<u8>) {
+                self.to_string().encode(buffer)
+            }
+        }
+
+        impl TokenEncoder for Bee<&$t> {
+            fn encode_token(&self) -> TokenEncodeChain {
+                self.into()
+            }
+        }
+
+        impl ColumnEncoder for Bee<&mut $t> {
+            fn encode(&self, buffer: &mut Vec<u8>) {
+                self.to_string().encode(buffer)
+            }
+        }
+
+        impl TokenEncoder for Bee<&mut $t> {
+            fn encode_token(&self) -> TokenEncodeChain {
+                self.into()
+            }
+        }
+    };
+}
+
+impl_simple_packable!(MilestoneIndex);
+impl_simple_packable!(Message);
+impl_string_packable!(MessageId);
+impl_string_packable!(TransactionId);
+impl_string_packable!(Ed25519Address);
 
 /// A transaction's unlock data, to be stored in a `transactions` row.
 /// Holds a reference to the input which it signs.
@@ -393,6 +504,12 @@ impl ColumnEncoder for Indexation {
     }
 }
 
+impl TokenEncoder for Indexation {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.into()
+    }
+}
+
 /// A hint, used to lookup in the `hints` table
 #[derive(Clone)]
 pub struct Hint {
@@ -425,12 +542,6 @@ impl Hint {
             hint: parent,
             variant: HintVariant::Parent,
         }
-    }
-}
-
-impl TokenEncoder for Hint {
-    fn encode_token(&self) -> TokenEncodeChain {
-        self.hint.chain(&self.variant)
     }
 }
 
@@ -586,34 +697,6 @@ impl AnalyticRecord {
     /// Gets the transferred tokens
     pub fn transferred_tokens(&self) -> &TransferredTokens {
         &self.transferred_tokens
-    }
-}
-
-#[derive(Debug, Clone)]
-/// Sync key, used to select or insert sync records into sync table;
-pub struct SyncKey {
-    pub(crate) sync_range: SyncRange,
-}
-impl SyncKey {
-    /// The start range
-    pub fn start(&self) -> u32 {
-        self.sync_range.from
-    }
-    /// The end range
-    pub fn end(&self) -> u32 {
-        self.sync_range.to
-    }
-}
-
-impl From<SyncRange> for SyncKey {
-    fn from(sync_range: SyncRange) -> Self {
-        Self { sync_range }
-    }
-}
-
-impl TokenEncoder for SyncKey {
-    fn encode_token(&self) -> TokenEncodeChain {
-        "permanode".encode_token()
     }
 }
 
@@ -831,13 +914,13 @@ mod sync {
 
     impl SyncData {
         /// Try to fetch the sync data from the sync table for the provided keyspace and sync range
-        pub async fn try_fetch<S: 'static + Select<SyncKey, Iter<SyncRecord>>>(
+        pub async fn try_fetch<S: 'static + Select<String, SyncRange, Iter<SyncRecord>>>(
             keyspace: &S,
             sync_range: SyncRange,
             retries: usize,
         ) -> anyhow::Result<SyncData> {
             let res = keyspace
-                .select(&sync_range.into())
+                .select(&"permanode".to_string(), &sync_range.into())
                 .consistency(Consistency::One)
                 .build()?
                 .worker()
@@ -1076,7 +1159,7 @@ mod analytic {
 
     impl AnalyticsData {
         /// Try to fetch the analytics data from the analytics table for the provided keyspace and sync range
-        pub async fn try_fetch<S: 'static + Select<SyncKey, Iter<AnalyticRecord>>>(
+        pub async fn try_fetch<S: 'static + Select<String, SyncRange, Iter<AnalyticRecord>>>(
             keyspace: &S,
             sync_range: SyncRange,
             retries: usize,
@@ -1119,7 +1202,10 @@ mod analytic {
                 analytic_data.process(self, records).await;
             }
         }
-        fn query_analytics_table<S: 'static + Select<SyncKey, Iter<AnalyticRecord>>, P: Into<Option<Vec<u8>>>>(
+        fn query_analytics_table<
+            S: 'static + Select<String, SyncRange, Iter<AnalyticRecord>>,
+            P: Into<Option<Vec<u8>>>,
+        >(
             keyspace: &S,
             sync_range: SyncRange,
             retries: usize,
@@ -1129,7 +1215,7 @@ mod analytic {
         ) -> anyhow::Result<()> {
             let paging_state = paging_state.into();
             keyspace
-                .select(&sync_range.into())
+                .select(&"permanode".to_string(), &sync_range.into())
                 .consistency(Consistency::One)
                 .page_size(page_size)
                 .paging_state(&paging_state)

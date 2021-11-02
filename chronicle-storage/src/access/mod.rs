@@ -22,18 +22,10 @@ use bee_message::{
     MessageId,
 };
 use bincode::Options;
-use chronicle_common::{
-    SyncRange,
-    Synckey,
-    Wrapper,
-};
-pub use delete::{
-    Ed25519AddressPK,
-    IndexationPK,
-    ParentPK,
-};
+use chronicle_common::Wrapper;
 use scylla_rs::{
     cql::{
+        Binder,
         ColumnDecoder,
         ColumnEncoder,
         ColumnValue,
@@ -47,7 +39,6 @@ use scylla_rs::{
         RowsDecoder,
         TokenEncodeChain,
         TokenEncoder,
-        Values,
     },
     prelude::*,
 };
@@ -61,7 +52,6 @@ pub use types::*;
 mod delete;
 mod insert;
 mod select;
-mod token;
 mod types;
 
 use bincode::config::*;

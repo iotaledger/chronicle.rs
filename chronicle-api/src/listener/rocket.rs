@@ -25,6 +25,7 @@ use ::rocket::{
 use anyhow::anyhow;
 use bee_message::{
     milestone::Milestone,
+    payload::Payload,
     prelude::{
         Ed25519Address,
         Message,
@@ -58,6 +59,10 @@ use chronicle_storage::{
     },
     keyspaces::ChronicleKeyspace,
 };
+use futures::{
+    StreamExt,
+    TryStreamExt,
+};
 use hex::FromHex;
 use std::{
     borrow::Borrow,
@@ -74,6 +79,7 @@ use std::{
     time::SystemTime,
 };
 
+#[allow(missing_docs)]
 pub fn construct_rocket() -> Rocket<Build> {
     ::rocket::build()
         .mount(
@@ -267,18 +273,20 @@ async fn sync(keyspaces: &State<HashSet<String>>, keyspace: String) -> Result<Js
         .map_err(|e| ListenerError::Other(e.into()))
 }
 
-async fn query<V, S, K>(
+async fn query<O, K, V, S>(
     keyspace: S,
     key: K,
+    variables: V,
     page_size: Option<i32>,
     paging_state: Option<Vec<u8>>,
-) -> Result<V, ListenerError>
+) -> Result<O, ListenerError>
 where
-    S: 'static + Select<K, V>,
+    S: 'static + Select<K, V, O>,
     K: 'static + Send + Sync + Clone + TokenEncoder,
-    V: 'static + Send + Sync + Clone + Debug + RowsDecoder,
+    V: 'static + Send + Sync + Clone,
+    O: 'static + Send + Sync + Clone + Debug + RowsDecoder,
 {
-    let request = keyspace.select::<V>(&key).consistency(Consistency::One);
+    let request = keyspace.select::<O>(&key, &variables).consistency(Consistency::One);
     if let Some(page_size) = page_size {
         request.page_size(page_size).paging_state(&paging_state)
     } else {
@@ -293,19 +301,19 @@ where
     .and_then(|res| res.ok_or_else(|| ListenerError::NoResults))
 }
 
-async fn page<K, V>(
+async fn page<K, O>(
     keyspace: String,
     hint: Hint,
     page_size: usize,
     state: &mut Option<StateData>,
     partition_config: &PartitionConfig,
     key: K,
-) -> Result<Vec<Partitioned<V>>, ListenerError>
+) -> Result<Vec<Partitioned<O>>, ListenerError>
 where
     K: 'static + Send + Sync + Clone + TokenEncoder,
-    V: 'static + Send + Sync + Clone + Debug,
-    ChronicleKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
-    Paged<VecDeque<Partitioned<V>>>: RowsDecoder,
+    O: 'static + Send + Sync + Clone + Debug,
+    ChronicleKeyspace: Select<K, Partition, Paged<VecDeque<Partitioned<O>>>>,
+    Paged<VecDeque<Partitioned<O>>>: RowsDecoder,
 {
     let total_start_time = std::time::Instant::now();
     let mut start_time = total_start_time;
@@ -327,8 +335,14 @@ where
             (latest_milestone, state.partition_ids.clone())
         }
         None => {
-            let partition_ids =
-                query::<Iter<(Bee<MilestoneIndex>, PartitionId)>, _, _>(keyspace.clone(), hint, None, None).await?;
+            let partition_ids = query::<Iter<(Bee<MilestoneIndex>, PartitionId)>, _, _, _>(
+                keyspace.clone(),
+                hint.hint,
+                hint.variant,
+                None,
+                None,
+            )
+            .await?;
             if partition_ids.is_empty() {
                 return Err(ListenerError::NoResults);
             }
@@ -410,33 +424,32 @@ where
             start_time = std::time::Instant::now();
             let fetch_ids =
                 (partition_ind..partition_ind + fetch_size).filter_map(|ind| partition_ids.get(ind).map(|v| v.1));
-            let res = futures::future::join_all(fetch_ids.clone().map(|partition_id| {
-                debug!(
-                    "Fetching results for partition id: {}, milestone: {}, with paging state: {:?}",
-                    partition_id,
-                    latest_milestone,
-                    prev_last_partition_id.map(|id| partition_id == id)
-                );
-                query::<Paged<VecDeque<Partitioned<V>>>, _, _>(
-                    keyspace.clone(),
-                    Partitioned::new(key.clone(), partition_id, latest_milestone),
-                    Some(page_size as i32),
-                    prev_last_partition_id.and_then(|id| {
-                        if partition_id == id {
-                            prev_paging_state.clone()
-                        } else {
-                            None
-                        }
-                    }),
-                )
-            }))
-            .await;
+            let res = futures::stream::iter(fetch_ids.clone())
+                .map(|i| (key.clone(), keyspace.clone(), prev_paging_state.clone(), i))
+                .then(|(key, keyspace, prev_paging_state, partition_id)| async move {
+                    debug!(
+                        "Fetching results for partition id: {}, milestone: {}, with paging state: {:?}",
+                        partition_id,
+                        latest_milestone,
+                        prev_last_partition_id.map(|id| partition_id == id)
+                    );
+                    query::<Paged<VecDeque<Partitioned<O>>>, _, _, _>(
+                        keyspace,
+                        key,
+                        Partition::new(partition_id, latest_milestone),
+                        Some(page_size as i32),
+                        prev_last_partition_id.and_then(|id| if partition_id == id { prev_paging_state } else { None }),
+                    )
+                    .await
+                })
+                .try_collect::<Vec<Paged<VecDeque<Partitioned<O>>>>>()
+                .await?;
             debug!(
                 "Fetch time: {} ms",
                 (std::time::Instant::now() - start_time).as_millis()
             );
             for (partition_id, list) in fetch_ids.zip(res) {
-                list_map.insert(partition_id, list?);
+                list_map.insert(partition_id, list);
             }
         }
         let list = list_map
@@ -527,9 +540,10 @@ where
                     debug!("...and we need more results");
                     if list.paging_state.is_some() {
                         debug!("......so we're querying for them");
-                        *list = query::<Paged<VecDeque<Partitioned<V>>>, _, _>(
+                        *list = query::<Paged<VecDeque<Partitioned<O>>>, _, _, _>(
                             keyspace.clone(),
-                            Partitioned::new(key.clone(), *partition_id, latest_milestone),
+                            key.clone(),
+                            Partition::new(*partition_id, latest_milestone),
                             Some((page_size - results.len()) as i32),
                             list.paging_state.clone(),
                         )
@@ -573,7 +587,7 @@ async fn get_message(keyspace: String, message_id: String, keyspaces: &State<Has
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
     let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
-    query::<Bee<Message>, _, _>(keyspace, message_id, None, None)
+    query::<Bee<Message>, _, _, _>(keyspace, message_id, (), None, None)
         .await
         .and_then(|message| {
             message
@@ -594,7 +608,7 @@ async fn get_message_metadata(
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
     let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
-    query::<Option<MessageMetadata>, _, _>(keyspace, message_id, None, None)
+    query::<Option<MessageMetadata>, _, _, _>(keyspace, message_id, (), None, None)
         .await
         .and_then(|o| o.ok_or(ListenerError::NotFound))
         .map(|metadata| metadata.into())
@@ -801,7 +815,7 @@ async fn get_output_by_transaction_id(
     keyspace: String,
     transaction_id: String,
     idx: u16,
-    keyspaces: State<HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     get_output(
         keyspace,
@@ -815,13 +829,22 @@ async fn get_output_by_transaction_id(
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
-async fn get_output(keyspace: String, output_id: String, keyspaces: State<HashSet<String>>) -> ListenerResult {
+async fn get_output(keyspace: String, output_id: String, keyspaces: &State<HashSet<String>>) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
-    let output_id = OutputId::from_str(&output_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let (transaction_id, index) = OutputId::from_str(&output_id)
+        .map_err(|e| ListenerError::BadParse(e.into()))?
+        .split();
 
-    let output_data = query::<OutputRes, _, _>(ChronicleKeyspace::new(keyspace.clone()), output_id, None, None).await?;
+    let output_data = query::<OutputRes, _, _, _>(
+        ChronicleKeyspace::new(keyspace.clone()),
+        Bee(transaction_id.clone()),
+        index,
+        None,
+        None,
+    )
+    .await?;
     let is_spent = if output_data.unlock_blocks.is_empty() {
         false
     } else {
@@ -842,9 +865,10 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<HashSe
         }
         if !query_message_ids.is_empty() {
             let queries = query_message_ids.drain().map(|&message_id| {
-                query::<Option<MessageMetadata>, _, _>(
+                query::<Option<MessageMetadata>, _, _, _>(
                     ChronicleKeyspace::new(keyspace.clone()),
                     Bee(message_id.clone()),
+                    (),
                     None,
                     None,
                 )
@@ -860,8 +884,8 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<HashSe
     };
     Ok(ListenerResponse::Output {
         message_id: output_data.message_id.to_string(),
-        transaction_id: output_id.transaction_id().to_string(),
-        output_index: output_id.index(),
+        transaction_id: transaction_id.to_string(),
+        output_index: index,
         is_spent,
         output: output_data.output.borrow().into(),
     })
@@ -873,8 +897,8 @@ async fn get_transactions_for_address(
     address: String,
     page_size: Option<usize>,
     state: Option<String>,
-    partition_config: State<PartitionConfig>,
-    keyspaces: State<HashSet<String>>,
+    partition_config: &State<PartitionConfig>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
@@ -887,7 +911,7 @@ async fn get_transactions_for_address(
         })
         .transpose()?;
 
-    let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let ed25519_address = Bee(Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
     let page_size = page_size.unwrap_or(100);
 
     let outputs = page(
@@ -903,7 +927,7 @@ async fn get_transactions_for_address(
     let transactions = futures::stream::iter(outputs)
         .map(|o| (o, keyspace.clone()))
         .then(|(o, keyspace)| async move {
-            query::<TransactionRes, _, _>(ChronicleKeyspace::new(keyspace), o.transaction_id, None, None)
+            query::<TransactionRes, _, _, _>(ChronicleKeyspace::new(keyspace), Bee(o.transaction_id), (), None, None)
                 .await
                 .map(Into::into)
         })
@@ -922,14 +946,14 @@ async fn get_transactions_for_address(
 async fn get_transaction_for_message(
     keyspace: String,
     message_id: String,
-    keyspaces: State<HashSet<String>>,
+    keyspaces: &State<HashSet<String>>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
-    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
-    let message = query::<Message, _, _>(keyspace.clone(), message_id, None, None).await?;
+    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let message = query::<Bee<Message>, _, _, _>(keyspace.clone(), message_id, (), None, None).await?;
     let transaction_id = if let Some(payload) = message.payload() {
         match payload {
             Payload::Transaction(p) => p.id(),
@@ -938,7 +962,7 @@ async fn get_transaction_for_message(
     } else {
         return Err(ListenerError::NoResults);
     };
-    let transaction = query::<TransactionRes, _, _>(keyspace, transaction_id, None, None).await?;
+    let transaction = query::<TransactionRes, _, _, _>(keyspace, Bee(transaction_id), (), None, None).await?;
     Ok(ListenerResponse::Transaction(transaction.into()))
 }
 
@@ -953,12 +977,25 @@ async fn get_transaction_included_message(
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
 
-    let transaction_id = TransactionId::from_str(&transaction_id).map_err(|e| ListenerError::Other(anyhow!(e)))?;
+    let transaction_id = Bee(TransactionId::from_str(&transaction_id).map_err(|e| ListenerError::Other(anyhow!(e)))?);
 
-    let message_id = query::<MessageId, _, _>(keyspace.clone(), transaction_id, None, None).await?;
-    query::<Message, _, _>(keyspace, message_id, None, None)
+    let message_id = query::<Option<Bee<MessageId>>, _, _, _>(
+        keyspace.clone(),
+        transaction_id,
+        LedgerInclusionState::Included,
+        None,
+        None,
+    )
+    .await?
+    .ok_or_else(|| ListenerError::NoResults)?;
+    query::<Bee<Message>, _, _, _>(keyspace, message_id, (), None, None)
         .await
-        .and_then(|message| message.try_into().map_err(|e: Cow<'static, str>| anyhow!(e).into()))
+        .and_then(|message| {
+            message
+                .into_inner()
+                .try_into()
+                .map_err(|e: Cow<'static, str>| anyhow!(e).into())
+        })
 }
 
 #[get("/<keyspace>/milestones/<index>")]
@@ -968,7 +1005,7 @@ async fn get_milestone(keyspace: String, index: u32, keyspaces: &State<HashSet<S
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
 
-    query::<Milestone, _, _>(keyspace, MilestoneIndex::from(index), None, None)
+    query::<Bee<Milestone>, _, _, _>(keyspace, Bee(MilestoneIndex::from(index)), (), None, None)
         .await
         .map(|milestone| ListenerResponse::Milestone {
             milestone_index: index,
@@ -991,7 +1028,7 @@ async fn get_analytics(
 
     let range = start.unwrap_or(1)..end.unwrap_or(i32::MAX as u32);
 
-    let ranges = AnalyticsData::try_fetch(&keyspace, &range.into(), 1, 5000)
+    let ranges = AnalyticsData::try_fetch(&keyspace, range.into(), 1, 5000)
         .await?
         .analytics;
 
@@ -1086,8 +1123,8 @@ mod tests {
         assert_eq!(res.status(), Status::Ok);
         assert_eq!(res.content_type(), Some(ContentType::JSON));
         check_cors_headers(&res);
-        let _body: ServiceTree = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
-            .expect("Failed to deserialize Service Tree Response!");
+        // let _body: Service = serde_json::from_str(&res.into_string().await.expect("No body returned!"))
+        //    .expect("Failed to deserialize Service Tree Response!");
     }
 
     #[::rocket::async_test]

@@ -42,6 +42,18 @@ pub struct SyncRange {
     /// Last milestone index (exclusive)
     pub to: u32,
 }
+
+#[allow(missing_docs)]
+impl SyncRange {
+    pub fn start(&self) -> &u32 {
+        &self.from
+    }
+
+    pub fn end(&self) -> &u32 {
+        &self.to
+    }
+}
+
 impl Default for SyncRange {
     fn default() -> Self {
         Self {
@@ -59,10 +71,6 @@ impl From<Range<u32>> for SyncRange {
         }
     }
 }
-
-/// Sync key
-#[derive(Clone, Copy)]
-pub struct Synckey;
 
 /// Defines a wrapper type which wraps a dereference-able inner value
 pub trait Wrapper: Deref {
