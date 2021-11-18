@@ -160,7 +160,7 @@ impl Insert<Bee<TransactionId>, TransactionRecord> for ChronicleKeyspace {
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index)
-            VALUES (?, ?, ?, ?, ?, ?, ?) using TTL ?",
+            VALUES (?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
         .into()
