@@ -49,6 +49,7 @@ impl EventLoop<CollectorHandle> for Requester {
         Ok(())
     }
 }
+
 use std::str::FromStr;
 
 impl Requester {

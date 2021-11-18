@@ -96,7 +96,11 @@ impl TokenEncoder for Bee<Milestone> {
         Bee(self.message_id()).chain(&self.timestamp())
     }
 }
-
+impl TokenEncoder for Hint {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.hint.encode_token()
+    }
+}
 macro_rules! impl_simple_packable {
     ($t:ty) => {
         impl ColumnDecoder for Bee<$t> {
@@ -495,7 +499,7 @@ impl FullMessage {
 pub type PartitionId = u16;
 
 /// An index in plain-text, unhashed
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Indexation(pub String);
 
 impl ColumnEncoder for Indexation {
@@ -511,7 +515,7 @@ impl TokenEncoder for Indexation {
 }
 
 /// A hint, used to lookup in the `hints` table
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Hint {
     /// The hint string
     pub hint: String,
@@ -546,7 +550,7 @@ impl Hint {
 }
 
 /// Hint variants
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum HintVariant {
     /// An address
     Address,
@@ -720,7 +724,8 @@ pub struct MilestoneData {
 }
 
 impl MilestoneData {
-    pub(crate) fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
+    /// Create new milestone data
+    pub fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
             milestone_index,
             milestone: None,
@@ -777,17 +782,20 @@ impl MilestoneData {
         // Return the analytic record
         Ok(analytic_record)
     }
-    pub(crate) fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
+    pub fn set_milestone(&mut self, boxed_milestone_payload: Box<MilestonePayload>) {
         self.milestone.replace(boxed_milestone_payload);
     }
     /// Check if the milestone exists
     pub fn milestone_exist(&self) -> bool {
         self.milestone.is_some()
     }
-    pub(crate) fn add_full_message(&mut self, full_message: FullMessage) {
+    pub fn add_full_message(&mut self, full_message: FullMessage) {
         self.messages.insert(*full_message.message_id(), full_message);
     }
-    pub(crate) fn remove_from_pending(&mut self, message_id: &MessageId) {
+    pub fn add_pending(&mut self, parent_id: MessageId) {
+        self.pending.insert(parent_id);
+    }
+    pub fn remove_from_pending(&mut self, message_id: &MessageId) {
         self.pending.remove(message_id);
     }
     /// Get the milestone's messages
@@ -801,6 +809,10 @@ impl MilestoneData {
     /// Get the source this was created by
     pub fn created_by(&self) -> &CreatedBy {
         &self.created_by
+    }
+    /// Set created by
+    pub fn set_created_by(&mut self, created_by: CreatedBy) {
+        self.created_by = created_by
     }
     /// Check if the milestone data is completed
     pub fn check_if_completed(&self) -> bool {
@@ -905,22 +917,22 @@ mod sync {
     #[derive(Debug, Clone, Default, Serialize)]
     pub struct SyncData {
         /// The completed(synced and logged) milestones data
-        pub(crate) completed: Vec<Range<u32>>,
+        pub completed: Vec<Range<u32>>,
         /// Synced milestones data but unlogged
-        pub(crate) synced_but_unlogged: Vec<Range<u32>>,
+        pub synced_but_unlogged: Vec<Range<u32>>,
         /// Gaps/missings milestones data
-        pub(crate) gaps: Vec<Range<u32>>,
+        pub gaps: Vec<Range<u32>>,
     }
 
     impl SyncData {
         /// Try to fetch the sync data from the sync table for the provided keyspace and sync range
         pub async fn try_fetch<S: 'static + Select<String, SyncRange, Iter<SyncRecord>>>(
             keyspace: &S,
-            sync_range: SyncRange,
+            sync_range: &SyncRange,
             retries: usize,
         ) -> anyhow::Result<SyncData> {
             let res = keyspace
-                .select(&"permanode".to_string(), &sync_range.into())
+                .select(&"permanode".to_string(), &sync_range.clone().into())
                 .consistency(Consistency::One)
                 .build()?
                 .worker()
@@ -1161,7 +1173,7 @@ mod analytic {
         /// Try to fetch the analytics data from the analytics table for the provided keyspace and sync range
         pub async fn try_fetch<S: 'static + Select<String, SyncRange, Iter<AnalyticRecord>>>(
             keyspace: &S,
-            sync_range: SyncRange,
+            sync_range: &SyncRange,
             retries: usize,
             page_size: i32,
         ) -> anyhow::Result<AnalyticsData> {
@@ -1207,7 +1219,7 @@ mod analytic {
             P: Into<Option<Vec<u8>>>,
         >(
             keyspace: &S,
-            sync_range: SyncRange,
+            sync_range: &SyncRange,
             retries: usize,
             tx: tokio::sync::mpsc::UnboundedSender<Result<Option<Iter<AnalyticRecord>>, scylla_rs::app::WorkerError>>,
             page_size: i32,
@@ -1215,7 +1227,7 @@ mod analytic {
         ) -> anyhow::Result<()> {
             let paging_state = paging_state.into();
             keyspace
-                .select(&"permanode".to_string(), &sync_range.into())
+                .select(&"permanode".to_string(), sync_range)
                 .consistency(Consistency::One)
                 .page_size(page_size)
                 .paging_state(&paging_state)

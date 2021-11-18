@@ -70,8 +70,9 @@ impl Insert<Partitioned<Bee<Ed25519Address>>, AddressRecord> for ChronicleKeyspa
     }
     fn bind_values<B: Binder>(
         builder: B,
-        Partitioned { inner, partition }: &Partitioned<Bee<Ed25519Address>>,
+        Partitioned { inner, partition_id }: &Partitioned<Bee<Ed25519Address>>,
         AddressRecord {
+            milestone_index,
             transaction_id,
             index,
             amount,
@@ -81,10 +82,10 @@ impl Insert<Partitioned<Bee<Ed25519Address>>, AddressRecord> for ChronicleKeyspa
     ) -> B {
         builder
             .value(inner)
-            .value(partition.id())
-            .value(partition.milestone_index())
+            .value(partition_id)
+            .value(Bee(milestone_index))
             .value(output_type)
-            .value(&Bee(transaction_id))
+            .value(Bee(transaction_id))
             .value(index)
             .value(amount)
             .value(&Ed25519Address::KIND)
@@ -105,16 +106,17 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for ChronicleKeyspace {
     }
     fn bind_values<B: Binder>(
         builder: B,
-        Partitioned { inner, partition }: &Partitioned<Indexation>,
+        Partitioned { inner, partition_id }: &Partitioned<Indexation>,
         IndexationRecord {
+            milestone_index,
             message_id,
             ledger_inclusion_state,
         }: &IndexationRecord,
     ) -> B {
         builder
             .value(&inner.0)
-            .value(partition.id())
-            .value(partition.milestone_index())
+            .value(partition_id)
+            .value(Bee(milestone_index))
             .value(Bee(message_id))
             .value(ledger_inclusion_state)
     }
@@ -133,16 +135,17 @@ impl Insert<Partitioned<Bee<MessageId>>, ParentRecord> for ChronicleKeyspace {
     }
     fn bind_values<B: Binder>(
         builder: B,
-        Partitioned { inner, partition }: &Partitioned<Bee<MessageId>>,
+        Partitioned { inner, partition_id }: &Partitioned<Bee<MessageId>>,
         ParentRecord {
+            milestone_index,
             message_id,
             ledger_inclusion_state,
         }: &ParentRecord,
     ) -> B {
         builder
             .value(inner)
-            .value(partition.id())
-            .value(partition.milestone_index())
+            .value(partition_id)
+            .value(Bee(milestone_index))
             .value(Bee(message_id))
             .value(ledger_inclusion_state)
     }
@@ -152,19 +155,19 @@ impl Insert<Partitioned<Bee<MessageId>>, ParentRecord> for ChronicleKeyspace {
 /// -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
 /// -output variant: (OutputTransactionId, OutputIndex) -> Output data column
 /// -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
-impl Insert<(Bee<TransactionId>, Index), TransactionRecord> for ChronicleKeyspace {
+impl Insert<Bee<TransactionId>, TransactionRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index)
-            VALUES (?, ?, ?, ?, ?, ?, ?)",
+            VALUES (?, ?, ?, ?, ?, ?, ?) using TTL ?",
             self.name()
         )
         .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
-        (transaction_id, index): &(Bee<TransactionId>, Index),
+        transaction_id: &Bee<TransactionId>,
         transaction_record: &TransactionRecord,
     ) -> B {
         let milestone_index;
@@ -175,44 +178,12 @@ impl Insert<(Bee<TransactionId>, Index), TransactionRecord> for ChronicleKeyspac
         }
         builder
             .value(transaction_id)
-            .value(index)
+            .value(transaction_record.idx)
             .value(&transaction_record.variant)
             .value(&Bee(transaction_record.message_id))
             .value(&transaction_record.data)
             .value(&transaction_record.inclusion_state)
             .value(&milestone_index)
-    }
-}
-
-/// Insert Output into Transactions table
-impl Insert<OutputId, TransactionRecord> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            self.name()
-        )
-        .into()
-    }
-    fn bind_values<B: Binder>(builder: B, output_id: &OutputId, transaction_record: &TransactionRecord) -> B {
-        if let TransactionData::Output(_) = &transaction_record.data {
-            let milestone_index;
-            if let Some(ms) = transaction_record.milestone_index {
-                milestone_index = Some(ms.0);
-            } else {
-                milestone_index = None;
-            }
-            builder
-                .value(&Bee(output_id.transaction_id()))
-                .value(&output_id.index())
-                .value(&transaction_record.variant)
-                .value(&transaction_record.message_id.to_string())
-                .value(&transaction_record.data)
-                .value(&transaction_record.inclusion_state)
-                .value(&milestone_index)
-        } else {
-            panic!("Provided invalid TransactionData for an output")
-        }
     }
 }
 
@@ -235,7 +206,7 @@ impl Insert<Hint, Partition> for ChronicleKeyspace {
     }
 }
 
-impl Insert<MilestoneIndex, (Bee<MessageId>, Box<MilestonePayload>)> for ChronicleKeyspace {
+impl Insert<Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -246,7 +217,7 @@ impl Insert<MilestoneIndex, (Bee<MessageId>, Box<MilestonePayload>)> for Chronic
     }
     fn bind_values<B: Binder>(
         builder: B,
-        milestone_index: &MilestoneIndex,
+        milestone_index: &Bee<MilestoneIndex>,
         (message_id, milestone_payload): &(Bee<MessageId>, Box<MilestonePayload>),
     ) -> B {
         let mut milestone_payload_bytes = Vec::new();
@@ -254,7 +225,7 @@ impl Insert<MilestoneIndex, (Bee<MessageId>, Box<MilestonePayload>)> for Chronic
             .pack(&mut milestone_payload_bytes)
             .expect("Error occurred packing MilestonePayload");
         builder
-            .value(&milestone_index.0)
+            .value(&milestone_index.0 .0)
             .value(message_id)
             .value(&milestone_payload.essence().timestamp())
             .value(&milestone_payload_bytes.as_slice())

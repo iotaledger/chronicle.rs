@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub use scylla_rs::prelude::Keyspace;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::borrow::Cow;
 
 /// The Chronicle keyspace
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct ChronicleKeyspace {
     name: Cow<'static, str>,
 }
@@ -17,30 +21,8 @@ impl ChronicleKeyspace {
     }
 }
 
-impl Keyspace for ChronicleKeyspace {
-    fn name(&self) -> String {
-        self.name.to_string()
+impl std::fmt::Display for ChronicleKeyspace {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.name)
     }
-}
-
-struct SomeType;
-
-impl SomeType {
-    fn what<
-        S: 'static
-            + scylla_rs::prelude::Select<
-                String,
-                chronicle_common::SyncRange,
-                scylla_rs::prelude::Iter<crate::access::AnalyticRecord>,
-            >,
-    >() {
-        println!("bound worked");
-    }
-}
-
-#[test]
-fn test_row_bound() {
-    let keyspace = ChronicleKeyspace::new("test_keyspace".into());
-    SomeType::what::<ChronicleKeyspace>();
-    println!("{:?}", "outer");
 }

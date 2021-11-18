@@ -407,7 +407,6 @@ impl Collector {
     fn insert_message(&mut self, message_id: &MessageId, message: &mut Message) -> anyhow::Result<()> {
         // Check if metadata already exist in the cache
         let ledger_inclusion_state;
-
         #[cfg(feature = "filter")]
         let keyspace = self.get_keyspace_for_message(message);
         #[cfg(not(feature = "filter"))]
@@ -596,9 +595,6 @@ impl Collector {
         mut message: Message,
         metadata: MessageMetadata,
     ) -> anyhow::Result<()> {
-        #[cfg(feature = "filter")]
-        let keyspace = self.get_keyspace_for_message(&mut message);
-        #[cfg(not(feature = "filter"))]
         let keyspace = self.get_keyspace();
         let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms);
         let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries_per_query);

@@ -3,7 +3,9 @@
 use super::*;
 
 /// Delete Address record from addresses table
-impl Delete<Bee<Ed25519Address>, (Partition, u8, Bee<TransactionId>, u16), AddressRecord> for ChronicleKeyspace {
+impl Delete<(Bee<Ed25519Address>, PartitionId), (Bee<MilestoneIndex>, u8, Bee<TransactionId>, Index), AddressRecord>
+    for ChronicleKeyspace
+{
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -14,13 +16,13 @@ impl Delete<Bee<Ed25519Address>, (Partition, u8, Bee<TransactionId>, u16), Addre
     }
     fn bind_values<B: Binder>(
         builder: B,
-        address: &Bee<Ed25519Address>,
-        (partition, output_type, transaction_id, index): &(Partition, u8, Bee<TransactionId>, u16),
+        (address, partition_id): &(Bee<Ed25519Address>, PartitionId),
+        (milestone_index, output_type, transaction_id, index): &(Bee<MilestoneIndex>, u8, Bee<TransactionId>, Index),
     ) -> B {
         builder
             .value(address)
-            .value(partition.id())
-            .value(partition.milestone_index())
+            .value(partition_id)
+            .value(milestone_index)
             .value(output_type)
             .value(transaction_id)
             .value(index)
@@ -28,7 +30,7 @@ impl Delete<Bee<Ed25519Address>, (Partition, u8, Bee<TransactionId>, u16), Addre
 }
 
 /// Delete Index record from Indexes table
-impl Delete<Indexation, (Partition, Bee<MessageId>), IndexationRecord> for ChronicleKeyspace {
+impl Delete<(Indexation, PartitionId), (Bee<MilestoneIndex>, Bee<MessageId>), IndexationRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -39,19 +41,19 @@ impl Delete<Indexation, (Partition, Bee<MessageId>), IndexationRecord> for Chron
     }
     fn bind_values<B: Binder>(
         builder: B,
-        indexation: &Indexation,
-        (partition, message_id): &(Partition, Bee<MessageId>),
+        (indexation, partition_id): &(Indexation, PartitionId),
+        (milestone_index, message_id): &(Bee<MilestoneIndex>, Bee<MessageId>),
     ) -> B {
         builder
             .value(&indexation.0)
-            .value(partition.id())
-            .value(partition.milestone_index())
+            .value(partition_id)
+            .value(milestone_index)
             .value(message_id)
     }
 }
 
 /// Delete Parent record from Parents table
-impl Delete<Bee<MessageId>, (Partition, Bee<MessageId>), ParentRecord> for ChronicleKeyspace {
+impl Delete<(Bee<MessageId>, PartitionId), (Bee<MilestoneIndex>, Bee<MessageId>), ParentRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -62,13 +64,13 @@ impl Delete<Bee<MessageId>, (Partition, Bee<MessageId>), ParentRecord> for Chron
     }
     fn bind_values<B: Binder>(
         builder: B,
-        parent_id: &Bee<MessageId>,
-        (partition, message_id): &(Partition, Bee<MessageId>),
+        (parent_id, partition_id): &(Bee<MessageId>, PartitionId),
+        (milestone_index, message_id): &(Bee<MilestoneIndex>, Bee<MessageId>),
     ) -> B {
         builder
             .value(parent_id)
-            .value(partition.id())
-            .value(partition.milestone_index())
+            .value(partition_id)
+            .value(milestone_index)
             .value(message_id)
     }
 }

@@ -1,11 +1,11 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::MilestoneData;
 use anyhow::{
     anyhow,
     bail,
 };
+use chronicle_storage::access::MilestoneData;
 use indicatif::{
     ProgressBar,
     ProgressStyle,

@@ -1,246 +1,346 @@
-// Copyright 2021 IOTA Stiftung
-// SPDX-License-Identifier: Apache-2.0
-use super::*;
-use crate::{
-    archiver::*,
-    collector::*,
-    importer::*,
-    listener::*,
-    mqtt::*,
-    solidifier::*,
-    syncer::*,
-    websocket::*,
+use super::{
+    archiver::Archiver,
+    syncer::Syncer,
 };
+use crate::SyncRange;
+use anyhow::*;
 use async_trait::async_trait;
-use chronicle_common::config::BrokerConfig;
+use backstage::core::{
+    Actor,
+    ActorError,
+    ActorRequest,
+    ActorResult,
+    EolEvent,
+    Event,
+    ReportEvent,
+    Rt,
+    ScopeId,
+    Service,
+    ServiceStatus,
+    ShutdownEvent,
+    StreamExt,
+    SupHandle,
+    UnboundedChannel,
+    UnboundedHandle,
+};
+use chronicle_common::config::PartitionConfig;
+use chronicle_filter::SelectiveBuilder;
+use chronicle_storage::{
+    access::SyncData,
+    keyspaces::ChronicleKeyspace,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
-    ops::Range,
-    str::FromStr,
+    collections::HashSet,
+    path::PathBuf,
     time::Duration,
 };
+use url::Url;
 
-mod event_loop;
-mod init;
-mod starter;
-mod terminating;
-
-/// Define the application scope trait
-pub trait ChronicleBrokerScope: LauncherSender<ChronicleBrokerBuilder<Self>> {}
-impl<H: LauncherSender<ChronicleBrokerBuilder<H>>> ChronicleBrokerScope for H {}
-
-// Broker builder
-builder!(
-    #[derive(Clone)]
-    ChronicleBrokerBuilder<H> {
-        listener_handle: ListenerHandle,
-        complete_gaps_interval_secs: u64,
-        parallelism: u8,
-        collector_count: u8
-});
-
-/// BrokerHandle to be passed to the children
-pub struct BrokerHandle<H: ChronicleBrokerScope> {
-    tx: tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>,
-}
-/// BrokerInbox used to recv events
-pub struct BrokerInbox<H: ChronicleBrokerScope> {
-    rx: tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>,
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+/// Chronicle Broker config/state
+pub struct ChronicleBroker<T: SelectiveBuilder> {
+    pub parallelism: u8,
+    pub complete_gaps_interval: Duration,
+    pub partition_count: u8,
+    pub logs_dir: Option<PathBuf>,
+    pub max_log_size: Option<u64>,
+    pub mqtt_brokers: HashSet<Url>,
+    pub api_endpoints: HashSet<Url>,
+    pub keyspace: ChronicleKeyspace,
+    pub partition_config: PartitionConfig,
+    pub sync_range: SyncRange,
+    pub selective_builder: T,
 }
 
-impl<H: ChronicleBrokerScope> Clone for BrokerHandle<H> {
-    fn clone(&self) -> Self {
-        BrokerHandle::<H> { tx: self.tx.clone() }
+impl<T: SelectiveBuilder> Default for ChronicleBroker<T> {
+    fn default() -> Self {
+        Self {
+            parallelism: 25,
+            complete_gaps_interval: Duration::from_secs(60 * 60),
+            partition_count: 10,
+            logs_dir: Some("chronicle/logs/".into()),
+            max_log_size: Some(super::archiver::MAX_LOG_SIZE),
+            ..Default::default()
+        }
     }
 }
 
-/// Application state
-pub struct ChronicleBroker<H: ChronicleBrokerScope> {
-    service: Service,
-    websockets: HashMap<String, WsTx>,
-    listener_handle: Option<ListenerHandle>,
-    mqtt_handles: HashMap<String, MqttHandle>,
-    importer_handles: HashMap<String, ImporterHandle>,
-    asked_to_shutdown: HashMap<String, ()>,
-    parallelism: u8,
-    complete_gaps_interval: Duration,
-    parallelism_points: u8,
-    pending_imports: Vec<BrokerTopology>,
-    in_progress_importers: usize,
-    collector_count: u8,
-    collector_handles: HashMap<u8, CollectorHandle>,
-    solidifier_handles: HashMap<u8, SolidifierHandle>,
-    logs_dir_path: Option<PathBuf>,
-    handle: Option<BrokerHandle<H>>,
-    inbox: BrokerInbox<H>,
-    default_keyspace: ChronicleKeyspace,
-    sync_range: SyncRange,
-    sync_data: SyncData,
-    syncer_handle: Option<SyncerHandle>,
-}
-
-/// SubEvent type, indicates the children
-pub enum BrokerChild {
-    /// Used by Listener to keep broker up to date with its service
-    Listener(Service),
-    /// Used by Mqtt to keep Broker up to date with its service
-    Mqtt(Service, Option<MqttHandle>, Result<(), Need>),
-    /// Used by Collector(s) to keep Broker up to date with its service
-    Collector(Service),
-    /// Used by Solidifier(s) to keep Broker up to date with its service
-    Solidifier(Service, Result<(), Need>),
-    /// Used by Archiver to keep Broker up to date with its service
-    Archiver(Service, Result<(), Need>),
-    /// Used by Syncer to keep Broker up to date with its service
-    Syncer(Service, Result<(), Need>),
-    /// Used by Importer to keep Broker up to date with its service, u8 is parallelism
-    Importer(Service, Result<(), Need>, u8),
-    /// Used by Websocket to keep Broker up to date with its service
-    Websocket(Service, Option<WsTx>),
+impl<T: SelectiveBuilder> ChronicleBroker<T> {
+    /// Create new chronicle broker instance
+    pub fn new(
+        keyspace: ChronicleKeyspace,
+        partition_config: chronicle_common::config::PartitionConfig,
+        parallelism: u8,
+        gaps_interval: Duration,
+        partition_count: u8,
+        logs_dir: Option<PathBuf>,
+        mut max_log_size: Option<u64>,
+        sync_range: SyncRange,
+        selective_builder: T,
+    ) -> Self {
+        if logs_dir.is_some() && max_log_size.is_none() {
+            max_log_size = Some(super::archiver::MAX_LOG_SIZE);
+        }
+        Self {
+            keyspace,
+            parallelism,
+            complete_gaps_interval: gaps_interval,
+            partition_count,
+            logs_dir,
+            sync_range,
+            partition_config,
+            max_log_size,
+            mqtt_brokers: HashSet::new(),
+            api_endpoints: HashSet::new(),
+            selective_builder,
+        }
+    }
+    /// Add mqtt broker, and verify it.
+    pub async fn add_mqtt(&mut self, mqtt: Url) -> Result<&mut Self> {
+        let random_id: u64 = rand::random();
+        let create_opts = paho_mqtt::create_options::CreateOptionsBuilder::new()
+            .server_uri(mqtt.as_str())
+            .client_id(&format!("{}|{}", "verifier", random_id))
+            .persistence(None)
+            .finalize();
+        let _client = paho_mqtt::AsyncClient::new(create_opts)
+            .map_err(|e| anyhow::anyhow!("Error verifying mqtt broker {}: {}", mqtt, e))?;
+        self.mqtt_brokers.insert(mqtt);
+        Ok(self)
+    }
+    /// Add api endpoint, and verify it.
+    pub async fn add_endpoint(&mut self, endpoint: &mut Url) -> Result<&mut Self> {
+        let path = endpoint.as_str();
+        if path.is_empty() {
+            bail!("Empty endpoint provided!");
+        }
+        if !path.ends_with("/") {
+            *endpoint = format!("{}/", path).parse()?;
+        }
+        Self::verify_endpoint(endpoint).await?;
+        self.api_endpoints.insert(endpoint.clone());
+        Ok(self)
+    }
+    /// Verify if the IOTA api endpoint is active and correct
+    async fn verify_endpoint(endpoint: &Url) -> anyhow::Result<()> {
+        let client = reqwest::Client::new();
+        let res = client
+            .get(
+                endpoint
+                    .join("info")
+                    .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?,
+            )
+            .send()
+            .await
+            .map_err(|e| anyhow!("Error verifying endpoint {}: {}", endpoint, e))?;
+        if !res.status().is_success() {
+            let url = res.url().clone();
+            let err = res.json::<serde_json::Value>().await;
+            bail!(
+                "Error verifying endpoint \"{}\"\nRequest URL: \"{}\"\nResult: {:#?}",
+                endpoint,
+                url,
+                err
+            );
+        }
+        Ok(())
+    }
+    /// Remove mqtt broker
+    pub fn remove_mqtt(&mut self, mqtt: &Url) -> bool {
+        self.mqtt_brokers.remove(mqtt)
+    }
+    /// Remove api endpoint
+    pub fn remove_endpoint(&mut self, endpoint: &Url) -> bool {
+        self.api_endpoints.remove(endpoint)
+    }
 }
 
 /// Event type of the broker Application
-pub enum BrokerEvent<T> {
-    /// Importer Session
-    Importer(ImporterSession),
-    /// It's the passthrough event, which the scylla application will receive from
-    Passthrough(T),
-    /// Used by broker children to push their service
-    Children(BrokerChild),
-    /// Used by Scylla to keep Broker up to date with scylla status
-    Scylla(Service),
+//#[derive(Debug)]
+pub enum BrokerEvent {
+    /// Request the cluster handle
+    Topology(Topology),
+    /// Used by scylla children to push their service
+    Microservice(ScopeId, Service, Option<ActorResult<()>>),
+    /// Scylla Service (outsourcing)
+    Scylla(Event<Service>),
+    /// Shutdown signal
+    Shutdown,
 }
 
-/// implementation of the AppBuilder
-impl<H: ChronicleBrokerScope> AppBuilder<H> for ChronicleBrokerBuilder<H> {}
-
-/// implementation of through type
-impl<H: ChronicleBrokerScope> ThroughType for ChronicleBrokerBuilder<H> {
-    type Through = ChronicleBrokerThrough;
+impl<T> EolEvent<T> for BrokerEvent {
+    fn eol_event(scope_id: ScopeId, service: Service, _actor: T, r: ActorResult<()>) -> Self {
+        Self::Microservice(scope_id, service, Some(r))
+    }
 }
 
-/// implementation of builder
-impl<H: ChronicleBrokerScope> Builder for ChronicleBrokerBuilder<H> {
-    type State = ChronicleBroker<H>;
-    fn build(self) -> Self::State {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let handle = Some(BrokerHandle { tx });
-        let inbox = BrokerInbox { rx };
-        let config = get_config();
-        let default_keyspace = ChronicleKeyspace::new(
-            config
-                .storage_config
-                .keyspaces
-                .first()
-                .and_then(|keyspace| Some(keyspace.name.clone()))
-                .unwrap_or("permanode".to_owned()),
-        );
-        let sync_range = config
-            .broker_config
-            .sync_range
-            .and_then(|range| Some(range))
-            .unwrap_or(SyncRange::default());
-        let sync_data = SyncData {
-            completed: Vec::new(),
-            synced_but_unlogged: Vec::new(),
-            gaps: Vec::new(),
-        };
-        let logs_dir_path;
-        if let Some(logs_dir) = config.broker_config.logs_dir {
-            logs_dir_path = Some(PathBuf::from_str(&logs_dir).expect("Failed to parse configured logs path!"));
+impl<T> ReportEvent<T> for BrokerEvent {
+    fn report_event(scope_id: ScopeId, service: Service) -> Self {
+        Self::Microservice(scope_id, service, None)
+    }
+}
+
+impl ShutdownEvent for BrokerEvent {
+    fn shutdown_event() -> Self {
+        Self::Shutdown
+    }
+}
+
+#[derive(Debug)]
+pub enum Topology {
+    Import,
+}
+
+impl From<Event<Service>> for BrokerEvent {
+    fn from(service_event: Event<Service>) -> Self {
+        Self::Scylla(service_event)
+    }
+}
+
+#[async_trait]
+impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
+    type Data = (Service, T::State);
+    type Channel = UnboundedChannel<BrokerEvent>;
+    async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        // register self as resource
+        rt.add_resource(self.clone()).await;
+        // subscribe to scylla service
+        let scylla_scope_id = rt.sibling("scylla").scope_id().await.ok_or_else(|| {
+            log::error!("Scylla doesn't exist as sibling");
+            ActorError::exit_msg("ChronicleBroker doesn't have Scylla as grandparent")
+        })?;
+        let scylla_service = rt
+            .subscribe::<Service>(scylla_scope_id, "scylla".into())
+            .await
+            .map_err(|e| {
+                log::error!(
+                    "ChronicleBroker cannot proceed initializing without an existing scylla in scope: {}",
+                    e
+                );
+                ActorError::exit(e)
+            })?
+            .ok_or_else(|| {
+                log::error!("ChronicleBroker cannot proceed initializing without scylla service");
+                ActorError::exit_msg("ChronicleBroker cannot proceed initializing without scylla service")
+            })?;
+        // build Selective mode
+        let selective = self.selective_builder.clone().build().await.map_err(|e| {
+            log::error!("Broker unable to build selective");
+            ActorError::exit_msg(format!("Broker unable to build selective: {}", e))
+        })?;
+        if let Ok(sync_data) = self.query_sync_table().await {
+            // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
+            self.maybe_start(rt, sync_data).await; //?
         } else {
-            logs_dir_path = None;
+            rt.update_status(ServiceStatus::Idle).await;
+        };
+        Ok((scylla_service, selective))
+    }
+    async fn run(&mut self, rt: &mut Rt<Self, S>, (mut scylla_service, selective): Self::Data) -> ActorResult<()> {
+        while let Some(event) = rt.inbox_mut().next().await {
+            match event {
+                BrokerEvent::Topology(topology) => {
+                    todo!()
+                }
+                BrokerEvent::Microservice(scope_id, service, mut service_result) => {
+                    // exit broker if any child had an exit error
+                    match service_result.as_ref() {
+                        Some(Err(ActorError {
+                            request: Some(ActorRequest::Exit),
+                            ..
+                        })) => service_result.expect("Failed to unwrap service_result in broker")?,
+                        Some(Err(_)) => {
+                            // a child might shutdown due to overload in scylla, where scylla still running
+                            rt.shutdown_children().await;
+                        }
+                        _ => {}
+                    }
+                    rt.upsert_microservice(scope_id, service);
+                    // if children got shutdown but scylla is running
+                    if !rt.service().is_stopping() {
+                        if rt.microservices_stopped() && (scylla_service.is_running() || scylla_service.is_degraded()) {
+                            if let Ok(sync_data) = self.query_sync_table().await {
+                                // todo maybe sleep for 5 seconds in-case the shutdown was due to overload in scylla
+                                self.maybe_start(rt, sync_data).await;
+                            }
+                        }
+                    }
+                }
+                BrokerEvent::Scylla(service) => {
+                    if let Event::Published(_, _, scylla_service_res) = service {
+                        // check if children already started
+                        let children_dont_exist = rt.service().microservices().is_empty();
+                        // start children if not already started
+                        if (scylla_service_res.is_running() || scylla_service_res.is_degraded()) && children_dont_exist
+                        {
+                            if let Ok(sync_data) = self.query_sync_table().await {
+                                self.maybe_start(rt, sync_data).await;
+                            } else {
+                                return Err(ActorError::restart_msg(
+                                    format!("Unable to query sync table, scylla is {}", scylla_service_res.status()),
+                                    Some(std::time::Duration::from_secs(60)),
+                                ));
+                            }
+                        } else if scylla_service_res.is_idle() | scylla_service_res.is_outage() {
+                            // shutdown children (if any)
+                            rt.shutdown_children().await;
+                        }
+                        scylla_service = scylla_service_res;
+                    } else {
+                        // is dropped, stop the whole broker with Restart request
+                        return Err(ActorError::restart_msg("Scylla service got stopped", None));
+                    }
+                    todo!()
+                }
+                BrokerEvent::Shutdown => break,
+            }
         }
-        let parallelism = self.parallelism.unwrap_or(25);
-        ChronicleBroker::<H> {
-            service: Service::new(),
-            websockets: HashMap::new(),
-            listener_handle: self.listener_handle,
-            mqtt_handles: HashMap::new(),
-            importer_handles: HashMap::new(),
-            asked_to_shutdown: HashMap::new(),
-            collector_count: self.collector_count.unwrap_or(10),
-            collector_handles: HashMap::new(),
-            solidifier_handles: HashMap::new(),
-            syncer_handle: None,
-            parallelism,
-            parallelism_points: parallelism,
-            pending_imports: Vec::new(),
-            in_progress_importers: 0,
-            logs_dir_path,
-            handle,
-            inbox,
-            default_keyspace,
-            sync_range,
-            sync_data,
-            complete_gaps_interval: Duration::from_secs(self.complete_gaps_interval_secs.unwrap()),
+        Ok(())
+    }
+}
+
+impl<T: SelectiveBuilder> ChronicleBroker<T> {
+    async fn maybe_start<S: SupHandle<Self>>(&self, rt: &mut Rt<Self, S>, sync_data: SyncData) -> ActorResult<()> {
+        // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
+        if self.mqtt_brokers.is_empty() || self.api_endpoints.is_empty() {
+            log::warn!("Cannot start children of the broker without at least one broker and endpoint!");
+            rt.update_status(ServiceStatus::Idle).await;
+            return Ok(());
         }
-        .set_name()
-    }
-}
-
-/// implementation of passthrough functionality
-impl<H: ChronicleBrokerScope> Passthrough<ChronicleBrokerThrough> for BrokerHandle<H> {
-    fn launcher_status_change(&mut self, _service: &Service) {}
-    fn app_status_change(&mut self, service: &Service) {
-        if service.is_running() && service.get_name() == "Scylla" {
-            let _ = self.send(BrokerEvent::Scylla(service.clone()));
+        // -- (optional) start archiver
+        if let Some(dir_path) = self.logs_dir.as_ref() {
+            let keyspace = self.keyspace.clone();
+            let next = sync_data.gaps.first().map(|r| r.start).unwrap_or(1);
+            let max_log_size = self.max_log_size;
+            let archiver = Archiver::new(dir_path, keyspace, next, max_log_size);
+            rt.start("archiver".to_string(), archiver).await?;
         }
-    }
-    fn passthrough(&mut self, _event: ChronicleBrokerThrough, _from_app_name: String) {}
-    fn service(&mut self, service: &Service) {
-        if let Some(service) = service.microservices.get("Scylla") {
-            let _ = self.send(BrokerEvent::Scylla(service.clone()));
-        }
-    }
-}
-
-/// implementation of shutdown functionality
-impl<H: ChronicleBrokerScope> Shutdown for BrokerHandle<H> {
-    fn shutdown(self) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let broker_shutdown: H::AppsEvents = serde_json::from_str("{\"ChronicleBroker\": \"Shutdown\"}").unwrap();
-        let _ = self.send(BrokerEvent::Passthrough(broker_shutdown));
-        None
+        // -- spawn feed sources (mqtt)
+        // (set to outage(and spawn task to keep trying adding them later) if we were unable to spawn all the mqtt)
+        // -- spawn collectors and solidifiers
+        // -- add solidifiers handles and collectors hadles as resources
+        // -- start syncer
+        let sync_range = self.sync_range;
+        let update_sync_data_every = self.complete_gaps_interval;
+        let parallelism = self.parallelism;
+        let keyspace = self.keyspace.clone();
+        let syncer = Syncer::new(sync_data, sync_range, update_sync_data_every, parallelism, keyspace);
+        rt.start("syncer".to_string(), syncer).await?;
+        // -- ensure all are initialized
+        todo!()
     }
 }
-
-impl<H: ChronicleBrokerScope> Deref for BrokerHandle<H> {
-    type Target = tokio::sync::mpsc::UnboundedSender<BrokerEvent<H::AppsEvents>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.tx
-    }
-}
-
-impl<H: ChronicleBrokerScope> DerefMut for BrokerHandle<H> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.tx
-    }
-}
-
-impl<H: ChronicleBrokerScope> Deref for BrokerInbox<H> {
-    type Target = tokio::sync::mpsc::UnboundedReceiver<BrokerEvent<H::AppsEvents>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rx
-    }
-}
-
-impl<H: ChronicleBrokerScope> DerefMut for BrokerInbox<H> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.rx
-    }
-}
-
-/// impl name of the application
-impl<H: ChronicleBrokerScope> Name for ChronicleBroker<H> {
-    fn set_name(mut self) -> Self {
-        self.service.update_name("ChronicleBroker".to_string());
-        self
-    }
-    fn get_name(&self) -> String {
-        self.service.get_name()
+impl<T: SelectiveBuilder> ChronicleBroker<T> {
+    pub(super) async fn query_sync_table(&self) -> ActorResult<SyncData> {
+        SyncData::try_fetch(&self.keyspace, &self.sync_range, 10)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                ActorError::restart(e, std::time::Duration::from_secs(60))
+            })
     }
 }

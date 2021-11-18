@@ -71,7 +71,10 @@ use std::{
         HashSet,
         VecDeque,
     },
-    convert::TryInto,
+    convert::{
+        TryFrom,
+        TryInto,
+    },
     fmt::Debug,
     io::Cursor,
     path::PathBuf,
@@ -267,7 +270,7 @@ async fn sync(keyspaces: &State<HashSet<String>>, keyspace: String) -> Result<Js
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
-    SyncData::try_fetch(&keyspace, SyncRange::default(), 3)
+    SyncData::try_fetch(&keyspace, &SyncRange::default(), 3)
         .await
         .map(|s| Json(s))
         .map_err(|e| ListenerError::Other(e.into()))
@@ -300,7 +303,6 @@ where
     .map_err(|e| e.into())
     .and_then(|res| res.ok_or_else(|| ListenerError::NoResults))
 }
-
 async fn page<K, O>(
     keyspace: String,
     hint: Hint,
@@ -311,8 +313,8 @@ async fn page<K, O>(
 ) -> Result<Vec<Partitioned<O>>, ListenerError>
 where
     K: 'static + Send + Sync + Clone + TokenEncoder,
-    O: 'static + Send + Sync + Clone + Debug,
-    ChronicleKeyspace: Select<K, Partition, Paged<VecDeque<Partitioned<O>>>>,
+    O: 'static + Send + Sync + Clone + Debug + HasMilestoneIndex,
+    ChronicleKeyspace: Select<(K, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Partitioned<O>>>>,
     Paged<VecDeque<Partitioned<O>>>: RowsDecoder,
 {
     let total_start_time = std::time::Instant::now();
@@ -435,8 +437,8 @@ where
                     );
                     query::<Paged<VecDeque<Partitioned<O>>>, _, _, _>(
                         keyspace,
-                        key,
-                        Partition::new(partition_id, latest_milestone),
+                        (key, partition_id),
+                        Bee(MilestoneIndex(latest_milestone)),
                         Some(page_size as i32),
                         prev_last_partition_id.and_then(|id| if partition_id == id { prev_paging_state } else { None }),
                     )
@@ -542,8 +544,8 @@ where
                         debug!("......so we're querying for them");
                         *list = query::<Paged<VecDeque<Partitioned<O>>>, _, _, _>(
                             keyspace.clone(),
-                            key.clone(),
-                            Partition::new(*partition_id, latest_milestone),
+                            (key.clone(), *partition_id),
+                            Bee(MilestoneIndex(latest_milestone)),
                             Some((page_size - results.len()) as i32),
                             list.paging_state.clone(),
                         )
@@ -1027,11 +1029,8 @@ async fn get_analytics(
     let keyspace = ChronicleKeyspace::new(keyspace);
 
     let range = start.unwrap_or(1)..end.unwrap_or(i32::MAX as u32);
-
-    let ranges = AnalyticsData::try_fetch(&keyspace, range.into(), 1, 5000)
-        .await?
-        .analytics;
-
+    let range = SyncRange::try_from(range).map_err(|e| ListenerError::BadParse(e))?;
+    let ranges = AnalyticsData::try_fetch(&keyspace, &range, 1, 5000).await?.analytics;
     Ok(ListenerResponse::Analytics { ranges })
 }
 

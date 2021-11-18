@@ -35,6 +35,7 @@ pub mod metrics;
 use lazy_static::lazy_static;
 
 /// Defines a range of milestone indexes to be synced
+// todo impl checked deserialize which verify the range
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub struct SyncRange {
     /// First milestone index (inclusive)
@@ -43,8 +44,23 @@ pub struct SyncRange {
     pub to: u32,
 }
 
+impl std::convert::TryFrom<Range<u32>> for SyncRange {
+    type Error = anyhow::Error;
+    fn try_from(r: Range<u32>) -> Result<Self, Self::Error> {
+        Self::try_new(r.start, r.end)
+    }
+}
+
 #[allow(missing_docs)]
 impl SyncRange {
+    pub fn try_new(from: u32, to: u32) -> anyhow::Result<Self> {
+        if from == 0 || to == 0 {
+            anyhow::bail!("Error verifying sync from/to, zero provided!\nPlease provide non-zero milestone index");
+        } else if from >= to {
+            anyhow::bail!("Error verifying sync from/to, greater or equal provided!\nPlease provide lower \"Sync range from\" milestone index");
+        }
+        Ok(SyncRange { from, to })
+    }
     pub fn start(&self) -> &u32 {
         &self.from
     }
@@ -59,15 +75,6 @@ impl Default for SyncRange {
         Self {
             from: 1,
             to: i32::MAX as u32,
-        }
-    }
-}
-
-impl From<Range<u32>> for SyncRange {
-    fn from(range: Range<u32>) -> Self {
-        Self {
-            from: range.start,
-            to: range.end,
         }
     }
 }

@@ -48,7 +48,9 @@ impl Select<Bee<MessageId>, (), (Option<Bee<Message>>, Option<MessageMetadata>)>
     }
 }
 
-impl Select<Bee<MessageId>, Partition, Paged<VecDeque<Partitioned<ParentRecord>>>> for ChronicleKeyspace {
+impl Select<(Bee<MessageId>, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Partitioned<ParentRecord>>>>
+    for ChronicleKeyspace
+{
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -59,11 +61,12 @@ impl Select<Bee<MessageId>, Partition, Paged<VecDeque<Partitioned<ParentRecord>>
         )
         .into()
     }
-    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, partition: &Partition) -> B {
-        builder
-            .value(message_id)
-            .value(partition.id())
-            .value(partition.milestone_index())
+    fn bind_values<B: Binder>(
+        builder: B,
+        (message_id, partition_id): &(Bee<MessageId>, PartitionId),
+        milestone_index: &Bee<MilestoneIndex>,
+    ) -> B {
+        builder.value(message_id).value(partition_id).value(milestone_index)
     }
 }
 
@@ -77,9 +80,8 @@ impl RowsDecoder for Paged<VecDeque<Partitioned<ParentRecord>>> {
             .map(|(partition_id, milestone_index, message_id, inclusion_state)| {
                 let message_id = MessageId::from_str(&message_id).map_err(|e| anyhow::Error::new(e))?;
                 Ok(Partitioned::new(
-                    ParentRecord::new(message_id, inclusion_state),
+                    ParentRecord::new(MilestoneIndex(milestone_index), message_id, inclusion_state),
                     partition_id,
-                    milestone_index,
                 ))
             })
             .collect::<anyhow::Result<_>>()?;
@@ -87,7 +89,9 @@ impl RowsDecoder for Paged<VecDeque<Partitioned<ParentRecord>>> {
     }
 }
 
-impl Select<Indexation, Partition, Paged<VecDeque<Partitioned<IndexationRecord>>>> for ChronicleKeyspace {
+impl Select<(Indexation, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Partitioned<IndexationRecord>>>>
+    for ChronicleKeyspace
+{
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
@@ -98,11 +102,12 @@ impl Select<Indexation, Partition, Paged<VecDeque<Partitioned<IndexationRecord>>
         )
         .into()
     }
-    fn bind_values<B: Binder>(builder: B, index: &Indexation, partition: &Partition) -> B {
-        builder
-            .value(&index.0)
-            .value(partition.id())
-            .value(partition.milestone_index())
+    fn bind_values<B: Binder>(
+        builder: B,
+        (index, partition_id): &(Indexation, PartitionId),
+        milestone_index: &Bee<MilestoneIndex>,
+    ) -> B {
+        builder.value(&index.0).value(partition_id).value(milestone_index)
     }
 }
 
@@ -116,9 +121,8 @@ impl RowsDecoder for Paged<VecDeque<Partitioned<IndexationRecord>>> {
             .map(|(partition_id, milestone_index, message_id, inclusion_state)| {
                 let message_id = MessageId::from_str(&message_id).map_err(|e| anyhow::Error::new(e))?;
                 Ok(Partitioned::new(
-                    IndexationRecord::new(message_id, inclusion_state),
+                    IndexationRecord::new(milestone_index.into(), message_id, inclusion_state),
                     partition_id,
-                    milestone_index,
                 ))
             })
             .collect::<anyhow::Result<_>>()?;
@@ -126,22 +130,25 @@ impl RowsDecoder for Paged<VecDeque<Partitioned<IndexationRecord>>> {
     }
 }
 
-impl Select<Bee<Ed25519Address>, Partition, Paged<VecDeque<Partitioned<AddressRecord>>>> for ChronicleKeyspace {
+impl Select<(Bee<Ed25519Address>, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Partitioned<AddressRecord>>>>
+    for ChronicleKeyspace
+{
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> std::borrow::Cow<'static, str> {
         format!(
-            "SELECT partition_id, milestone_index, output_type, transaction_id, idx, amount, inclusion_state
-            FROM {}.addresses
-            WHERE address = ? AND partition_id = ? AND milestone_index <= ?",
+            "SELECT partition_id, milestone_index, output_type,
+             transaction_id, idx, amount, inclusion_state
+             FROM {}.addresses WHERE address = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
         .into()
     }
-    fn bind_values<B: Binder>(builder: B, address: &Bee<Ed25519Address>, partition: &Partition) -> B {
-        builder
-            .value(address)
-            .value(partition.id())
-            .value(partition.milestone_index())
+    fn bind_values<B: Binder>(
+        builder: B,
+        (address, partition_id): &(Bee<Ed25519Address>, PartitionId),
+        milestone_index: &Bee<MilestoneIndex>,
+    ) -> B {
+        builder.value(address).value(partition_id).value(milestone_index)
     }
 }
 
@@ -164,9 +171,15 @@ impl RowsDecoder for Paged<VecDeque<Partitioned<AddressRecord>>> {
         for (partition_id, milestone_index, output_type, transaction_id, index, amount, inclusion_state) in iter {
             let transaction_id = TransactionId::from_str(&transaction_id).map_err(|e| anyhow::Error::new(e))?;
             let record = Partitioned::new(
-                AddressRecord::new(output_type, transaction_id, index, amount, inclusion_state),
+                AddressRecord::new(
+                    milestone_index.into(),
+                    output_type,
+                    transaction_id,
+                    index,
+                    amount,
+                    inclusion_state,
+                ),
                 partition_id,
-                milestone_index,
             );
             if let Ok(output_id) = OutputId::new(transaction_id, index) {
                 match map.entry(output_id) {

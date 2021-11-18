@@ -19,9 +19,6 @@ use tokio::sync::mpsc::{
     unbounded_channel,
     UnboundedSender,
 };
-use websocket::*;
-
-mod websocket;
 
 launcher!
 (
@@ -244,7 +241,7 @@ async fn init_database() -> anyhow::Result<()> {
                 logged_by tinyint,
                 PRIMARY KEY (key, milestone_index)
             ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-            
+
             CREATE TABLE IF NOT EXISTS {0}.analytics (
                 key text,
                 milestone_index int,

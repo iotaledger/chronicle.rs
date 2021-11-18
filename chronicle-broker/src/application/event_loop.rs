@@ -136,7 +136,7 @@ impl<H: ChronicleBrokerScope> EventLoop<H> for ChronicleBroker<H> {
                                     // check if we finished all in_progress_importers
                                     self.try_close_importer_session().await;
                                 } else {
-                                    self.service.update_microservice(service.get_name(), service.clone());
+                                    self.service.updatel_microservice(service.get_name(), service.clone());
                                 }
                             }
                             BrokerChild::Solidifier(service, solidifier_status) => {

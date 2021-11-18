@@ -1,67 +1,164 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+// use super::{
+// collector::{
+// CollectorEvent,
+// CollectorHandle,
+// MessageIdPartitioner,
+// },
+// ,
+// };
 use super::{
     collector::{
         CollectorEvent,
-        CollectorHandle,
+        CollectorHandles,
         MessageIdPartitioner,
     },
     *,
 };
+use backstage::core::MqttChannel;
 use futures::stream::StreamExt;
-use std::{
-    collections::HashMap,
-    time::Duration,
-};
+use std::time::Duration;
 
-mod event_loop;
-mod init;
-mod terminating;
+#[async_trait]
+impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
+    async fn build_channel<S>(&mut self) -> ActorResult<MqttChannel> {
+        // create async client
+        let random_id: u64 = rand::random();
+        let create_opts = CreateOptionsBuilder::new()
+            .server_uri(&self.url.as_str()[..])
+            .client_id(&format!("{}|{}", T::name(), random_id))
+            .persistence(None)
+            .finalize();
+        let mut client = AsyncClient::new(create_opts).map_err(|e| {
+            error!("Unable to create AsyncClient: {}, error: {}", &self.url.as_str(), e);
+            ActorError::exit(e)
+        })?;
+        info!("Created AsyncClient: {}", &self.url.to_string());
+        let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
+            .keep_alive_interval(Duration::from_secs(120))
+            .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
+            .clean_session(false)
+            .connect_timeout(Duration::from_secs(60))
+            .finalize();
 
-// Mqtt builder
-builder!(MqttBuilder<T> {
-    url: Url,
-    topic: T,
-    collectors_handles: HashMap<u8, CollectorHandle>,
-    stream_capacity: usize
-});
-
-/// MqttHandle to be passed to the supervisor in order to shutdown
-#[derive(Clone)]
-pub struct MqttHandle {
-    client: std::sync::Arc<AsyncClient>,
-}
-/// MqttInbox is used to recv events from topic
-pub struct MqttInbox {
-    stream: futures::channel::mpsc::Receiver<Option<paho_mqtt::Message>>,
-}
-
-impl Shutdown for MqttHandle {
-    fn shutdown(self) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.client.disconnect(None);
-        None
+        let stream = client.get_stream(self.stream_capacity);
+        // connect client with the remote broker
+        client.connect(conn_opts).await.map_err(|e| {
+            error!(
+                "Unable to connect AsyncClient: {}, topic: {}, error: {}",
+                &self.url.as_str(),
+                T::name(),
+                e
+            );
+            ActorError::restart(e, None)
+        })?;
+        info!("Connected AsyncClient: {}", &self.url.as_str());
+        // subscribe to T::name() topic with T::qos()
+        client.subscribe(T::name(), T::qos()).await.map_err(|e| {
+            error!(
+                "Unable to subscribe AsyncClient: {}, topic: {}, error: {}",
+                &self.url.as_str(),
+                T::name(),
+                e
+            );
+            ActorError::restart(e, None)
+        })?;
+        let mqtt_channel = MqttChannel::new(client, self.stream_capacity, stream);
+        Ok(mqtt_channel)
     }
 }
+
+impl<T: Topic> Mqtt<T> {
+    async fn initialize<S>(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<CollectorHandles>
+    where
+        S: SupHandle<Self>,
+        Self: Actor<S>,
+    {
+        let parent_id = rt
+            .parent_id()
+            .ok_or_else(|| ActorError::exit_msg("mqtt without parent"))?;
+        let collector_handles = rt.depends_on(parent_id).await?;
+        Ok(collector_handles)
+    }
+    async fn reconnecting<S>(rt: &mut Rt<Self, S>) -> ActorResult<()>
+    where
+        S: SupHandle<Self>,
+        Self: Actor<S, Channel = MqttChannel>,
+    {
+        warn!("Mqtt: {} topic, lost connection", T::name());
+        rt.update_status(ServiceStatus::Outage).await;
+        loop {
+            if let Err(e) = rt.inbox_mut().reconnect_after(Duration::from_secs(5)).await? {
+                error!("unable to {}", e);
+            } else {
+                // resubscribe
+                rt.inbox_mut().subscribe(T::name(), T::qos()).await;
+                // update the status to running
+                rt.update_status(ServiceStatus::Running).await;
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
+    type Data = CollectorHandles;
+    type Channel = MqttChannel;
+    async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        self.initialize::<S>(rt).await
+    }
+    async fn run(&mut self, rt: &mut Rt<Self, S>, collectors_handles: Self::Data) -> ActorResult<()> {
+        while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
+            if let Some(msg) = msg_opt {
+                if let Ok(msg) = Message::unpack(&mut msg.payload()) {
+                    let (message_id, _) = msg.id();
+                    // partitioning based on first byte of the message_id
+                    let collector_partition_id = self.partitioner.partition_id(&message_id);
+                    if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
+                        collector_handle.send(CollectorEvent::Message(message_id, msg)).ok();
+                    }
+                };
+            } else {
+                Self::reconnecting::<S>(rt).await?
+            }
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadata> {
+    type Data = CollectorHandles;
+    type Channel = MqttChannel;
+    async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        self.initialize(rt).await
+    }
+    async fn run(&mut self, rt: &mut Rt<Self, S>, collectors_handles: Self::Data) -> ActorResult<()> {
+        while let Some(msg_ref_opt) = rt.inbox_mut().stream().next().await {
+            if let Some(msg_ref) = msg_ref_opt {
+                if let Ok(msg_ref) = serde_json::from_str::<MessageMetadata>(&msg_ref.payload_str()) {
+                    // partitioning based on first byte of the message_id
+                    let collector_partition_id = self.partitioner.partition_id(&msg_ref.message_id);
+                    if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
+                        collector_handle.send(CollectorEvent::MessageReferenced(msg_ref)).ok();
+                    }
+                };
+            } else {
+                Self::reconnecting(rt).await?
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Mqtt state
 pub struct Mqtt<T> {
-    service: Service,
     url: Url,
     stream_capacity: usize,
-    collectors_handles: HashMap<u8, CollectorHandle>,
     partitioner: MessageIdPartitioner,
-    handle: Option<MqttHandle>,
-    inbox: Option<MqttInbox>,
-    _topic: T,
-}
-
-impl<T> Mqtt<T> {
-    pub(crate) fn clone_service(&self) -> Service {
-        self.service.clone()
-    }
+    _topic: std::marker::PhantomData<T>,
 }
 
 /// MQTT topics
@@ -91,10 +188,7 @@ pub trait Topic: Send + 'static {
     fn qos() -> i32;
 }
 
-/// Mqtt Messages topic
-pub(crate) struct Messages;
-
-impl Topic for Messages {
+impl Topic for Message {
     fn name() -> &'static str {
         "messages"
     }
@@ -103,70 +197,11 @@ impl Topic for Messages {
     }
 }
 
-/// Mqtt MessagesReferenced topic
-pub(crate) struct MessagesReferenced;
-
-impl Topic for MessagesReferenced {
+impl Topic for MessageMetadata {
     fn name() -> &'static str {
         "messages/referenced"
     }
     fn qos() -> i32 {
-        0
-    }
-}
-
-/// Mqtt "milestones/latest" topic
-pub(crate) struct LatestMilestone;
-
-impl Topic for LatestMilestone {
-    fn name() -> &'static str {
-        "milestones/latest"
-    }
-    fn qos() -> i32 {
-        0
-    }
-}
-
-impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<Messages> {}
-impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for MqttBuilder<MessagesReferenced> {}
-
-/// implementation of builder
-impl<T: Topic> Builder for MqttBuilder<T> {
-    type State = Mqtt<T>;
-    fn build(self) -> Self::State {
-        let collectors_handles = self.collectors_handles.expect("Expected collectors handles");
-        let collector_count = collectors_handles.len() as u8;
-        Self::State {
-            service: Service::new(),
-            url: self.url.unwrap(),
-            collectors_handles,
-            partitioner: MessageIdPartitioner::new(collector_count),
-            stream_capacity: self.stream_capacity.unwrap_or(10000),
-            handle: None,
-            inbox: None,
-            _topic: self.topic.unwrap(),
-        }
-        .set_name()
-    }
-}
-
-/// impl name of the Mqtt<T>
-impl<T: Topic> Name for Mqtt<T> {
-    fn set_name(mut self) -> Self {
-        let name = format!("{}@{}", T::name(), self.url.as_str());
-        self.service.update_name(name);
-        self
-    }
-    fn get_name(&self) -> String {
-        self.service.get_name()
-    }
-}
-
-#[async_trait::async_trait]
-impl<T: Topic, H: ChronicleBrokerScope> AknShutdown<Mqtt<T>> for BrokerHandle<H> {
-    async fn aknowledge_shutdown(self, mut _state: Mqtt<T>, status: Result<(), Need>) {
-        _state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Mqtt(_state.service.clone(), None, status));
-        let _ = self.send(event);
+        1
     }
 }

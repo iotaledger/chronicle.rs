@@ -11,206 +11,374 @@ use super::{
     },
     *,
 };
-use chronicle_common::Wrapper;
 use chronicle_storage::keyspaces::ChronicleKeyspace;
 use std::{
-    ops::{
-        Deref,
-        DerefMut,
-    },
+    ops::Deref,
     time::Duration,
 };
-use tokio::sync::oneshot::Sender;
-mod event_loop;
-mod init;
-mod terminating;
+pub(crate) type SyncerHandle = UnboundedHandle<SyncerEvent>;
 
-// Syncer builder
-builder!(SyncerBuilder {
-    sync_data: SyncData,
-    update_sync_data_every: Duration,
-    sync_range: SyncRange,
-    solidifier_handles: HashMap<u8, SolidifierHandle>,
-    parallelism: u8,
-    archiver_handle: ArchiverHandle,
-    first_ask: AskSyncer,
-    oneshot: Sender<u32>,
-    handle: SyncerHandle,
-    inbox: SyncerInbox
-});
+#[async_trait]
+impl<S: SupHandle<Self>> Actor<S> for Syncer {
+    type Data = (HashMap<u8, SolidifierHandle>, Option<ArchiverHandle>); // solidifiers_handles and archiver handle
+    type Channel = AbortableUnboundedChannel<SyncerEvent>;
+    async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        let solidifier_handles = rt
+            .depends_on(
+                rt.parent_id()
+                    .ok_or_else(|| anyhow::anyhow!("Syncer without parent!"))?,
+            )
+            .await?;
+        if let Some(archiver_scope_id) = rt.sibling("archiver").scope_id().await {
+            let archiver_handle_opt = rt.lookup(archiver_scope_id).await;
+            Ok((solidifier_handles, archiver_handle_opt))
+        } else {
+            Ok((solidifier_handles, None))
+        }
+    }
+    async fn run(&mut self, rt: &mut Rt<Self, S>, (solidifiers, archiver): Self::Data) -> ActorResult<()> {
+        if archiver.is_some() {
+            self.complete(rt, &solidifiers, &archiver).await?;
+        } else {
+            self.fill_gaps(rt, &solidifiers).await?;
+        }
+        while let Some(event) = rt.inbox_mut().next().await {
+            match event {
+                SyncerEvent::Unreachable(milestone_index) => {
+                    // This happens when all the peers don't have the requested milestone_index
+                    // alert!(
+                    // "Chronicle syncer is unable to reach milestone index {} because no peers were able to provide
+                    // it!", milestone_index
+                    // ).await.ok();
+                    self.handle_skip(rt, &solidifiers, &archiver).await?;
+                }
+                SyncerEvent::MilestoneData(milestone_data) => {
+                    self.handle_milestone_data(rt, milestone_data, &solidifiers, &archiver)
+                        .await;
+                }
+            }
+        }
+        Ok(())
+    }
+}
 
 /// Syncer events
 pub enum SyncerEvent {
-    /// Ask for sync data
-    Ask(AskSyncer),
     /// Sync milestone data
     MilestoneData(MilestoneData),
     /// Notify of an unreachable cluster
     Unreachable(u32),
-    /// Shutdown the syncer
-    Shutdown,
-}
-
-/// Commands that can be given to the syncer
-#[derive(Debug)]
-pub enum AskSyncer {
-    /// Complete Everything.
-    /// NOTE: Complete means it's synced and logged
-    Complete,
-    /// Fill the missing gaps
-    FillGaps,
-    /// Update sync data to the most up to date version from sync table.
-    // (This is still work in progress)
-    UpdateSyncData,
-}
-
-/// Syncer handle
-#[derive(Clone)]
-pub struct SyncerHandle {
-    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<SyncerEvent>,
-}
-
-impl Deref for SyncerHandle {
-    type Target = tokio::sync::mpsc::UnboundedSender<SyncerEvent>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.tx
-    }
-}
-
-impl DerefMut for SyncerHandle {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.tx
-    }
-}
-
-/// SyncerInbox is used to recv requests from collector
-pub struct SyncerInbox {
-    pub(crate) rx: tokio::sync::mpsc::UnboundedReceiver<SyncerEvent>,
-}
-
-impl Deref for SyncerInbox {
-    type Target = tokio::sync::mpsc::UnboundedReceiver<SyncerEvent>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rx
-    }
-}
-
-impl DerefMut for SyncerInbox {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.rx
-    }
-}
-
-impl Shutdown for SyncerHandle {
-    fn shutdown(self) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.send(SyncerEvent::Shutdown).ok();
-        None
-    }
 }
 
 /// Syncer state
 pub struct Syncer {
-    service: Service,
     sync_data: SyncData,
     update_sync_data_every: Duration,
     keyspace: ChronicleKeyspace,
-    sync_range: Option<SyncRange>,
-    solidifier_handles: HashMap<u8, SolidifierHandle>,
-    solidifier_count: u8,
+    sync_range: SyncRange,
     parallelism: u8,
     active: Option<Active>,
-    first_ask: Option<AskSyncer>,
-    archiver_handle: Option<ArchiverHandle>,
-    milestones_data: std::collections::BinaryHeap<Ascending<MilestoneData>>,
-    highest: u32,
+    milestones_data: BinaryHeap<Ascending<MilestoneData>>,
     pending: u32,
-    eof: bool,
     next: u32,
     skip: bool,
     initial_gap_start: u32,
     initial_gap_end: u32,
     prev_closed_log_filename: u32,
-    oneshot: Option<Sender<u32>>,
-    handle: SyncerHandle,
-    inbox: SyncerInbox,
 }
 
-impl<H: ChronicleBrokerScope> ActorBuilder<BrokerHandle<H>> for SyncerBuilder {}
-
-/// implementation of builder
-impl Builder for SyncerBuilder {
-    type State = Syncer;
-    fn build(self) -> Self::State {
-        let solidifier_handles = self.solidifier_handles.unwrap();
-        let solidifier_count = solidifier_handles.len() as u8;
-        let sync_data = self.sync_data.unwrap();
-        let config = chronicle_common::get_config();
-        let keyspace = ChronicleKeyspace::new(
-            config
-                .storage_config
-                .keyspaces
-                .first()
-                .and_then(|keyspace| Some(keyspace.name.clone()))
-                .unwrap_or("permanode".to_owned()),
-        );
-        Self::State {
-            service: Service::new(),
+impl Syncer {
+    pub(super) fn new(
+        sync_data: SyncData,
+        sync_range: SyncRange,
+        update_sync_data_every: Duration,
+        parallelism: u8,
+        keyspace: ChronicleKeyspace,
+    ) -> Self {
+        Self {
             sync_data,
-            solidifier_handles,
-            solidifier_count,
-            sync_range: self.sync_range,
+            update_sync_data_every,
             keyspace,
-            update_sync_data_every: self
-                .update_sync_data_every
-                .unwrap_or(std::time::Duration::from_secs(60 * 60)),
-            parallelism: self.parallelism.unwrap_or(solidifier_count),
+            sync_range,
+            parallelism,
             active: None,
-            first_ask: self.first_ask,
-            archiver_handle: self.archiver_handle,
-            milestones_data: std::collections::BinaryHeap::new(),
-            highest: 0,
-            pending: solidifier_count as u32,
+            milestones_data: BinaryHeap::new(),
+            pending: 0,
             next: 0,
-            eof: false,
             skip: false,
             initial_gap_start: 0,
             initial_gap_end: 0,
             prev_closed_log_filename: 0,
-            oneshot: self.oneshot,
-            handle: self.handle.unwrap(),
-            inbox: self.inbox.unwrap(),
         }
-        .set_name()
     }
 }
+
 #[derive(Debug)]
 enum Active {
     Complete(std::ops::Range<u32>),
     FillGaps(std::ops::Range<u32>),
 }
-/// impl name of the Syncer
-impl Name for Syncer {
-    fn set_name(mut self) -> Self {
-        let name = format!("Syncer");
-        self.service.update_name(name);
-        self
-    }
-    fn get_name(&self) -> String {
-        self.service.get_name()
-    }
-}
 
-#[async_trait::async_trait]
-impl<H: ChronicleBrokerScope> AknShutdown<Syncer> for BrokerHandle<H> {
-    async fn aknowledge_shutdown(self, mut state: Syncer, status: Result<(), Need>) {
-        state.service.update_status(ServiceStatus::Stopped);
-        let event = BrokerEvent::Children(BrokerChild::Syncer(state.service.clone(), status));
-        let _ = self.send(event);
+impl Syncer {
+    async fn update_sync<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        archiver: &Option<ArchiverHandle>,
+    ) -> ActorResult<()> {
+        info!("Scheduling update sync after: {:?}", self.update_sync_data_every);
+        rt.abortable(tokio::time::sleep(self.update_sync_data_every))
+            .await
+            .map_err(|_| {
+                warn!("Syncer got aborted while sleeping");
+                ActorError::aborted_msg("Syncer got aborted while sleeping")
+            })?;
+        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, &self.sync_range, 10).await {
+            info!("Updated the sync data");
+            self.sync_data = sync_data;
+            if archiver.is_some() {
+                self.complete(rt, solidifier_handles, archiver).await?
+            } else {
+                self.fill_gaps(rt, solidifier_handles).await?
+            }
+        } else {
+            // todo replace with alerts
+            error!("Unable to update sync data");
+            rt.abortable(tokio::time::sleep(self.update_sync_data_every))
+                .await
+                .map_err(|_| {
+                    warn!("Syncer got aborted while sleeping");
+                    ActorError::aborted_msg("Syncer got aborted while sleeping")
+                })?
+        }
+        Ok(())
+    }
+
+    async fn handle_milestone_data<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        milestone_data: MilestoneData,
+        solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        archiver_handle: &Option<ArchiverHandle>,
+    ) -> ActorResult<()> {
+        self.milestones_data.push(Ascending::new(milestone_data));
+        if !self.skip {
+            self.pending -= 1;
+            self.try_solidify_one_more(solidifier_handles);
+            let upper_ms_limit = Some(self.initial_gap_end);
+            // check if we could send the next expected milestone_index
+            while let Some(ms_data) = self.milestones_data.pop() {
+                let ms_index = ms_data.milestone_index();
+                if self.next.eq(&ms_index) {
+                    // push it to archiver
+                    archiver_handle.as_ref().and_then(|h| {
+                        h.send(ArchiverEvent::MilestoneData(ms_data.into(), upper_ms_limit))
+                            .ok()
+                    });
+                    self.next += 1;
+                } else {
+                    // put it back and then break
+                    self.milestones_data.push(ms_data);
+                    break;
+                }
+            }
+            self.trigger_process_more(rt, solidifier_handles, archiver_handle)
+                .await?
+        } else {
+            self.handle_skip(rt, solidifier_handles, archiver_handle).await?
+        }
+        Ok(())
+    }
+    async fn handle_skip<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        archiver_handle: &Option<ArchiverHandle>,
+    ) -> ActorResult<()> {
+        self.pending -= 1;
+        self.skip = true;
+        // we should skip/drop the current active slot but only when pending == 0
+        if self.pending.eq(&0) {
+            self.skip = false;
+            while let Some(d) = self.milestones_data.pop() {
+                let d: MilestoneData = d.into();
+                error!("We got milestone data for index: {}, but we're skipping it due to previous unreachable indexes within the same gap range", d.milestone_index());
+            }
+            if let Some(mut active) = self.active.take() {
+                match active {
+                    Active::Complete(ref mut range) => {
+                        error!("Complete: Skipping the remaining gap range: {:?}", range);
+                        // we just consume the range in order for the trigger_process_more to move further
+                        self.close_log_file(archiver_handle);
+                        self.complete(rt, solidifier_handles, archiver_handle).await?
+                    }
+                    Active::FillGaps(ref mut range) => {
+                        error!("FillGaps: Skipping the remaining gap range: {:?}", range);
+                        self.close_log_file(archiver_handle);
+                        self.fill_gaps(rt, solidifier_handles).await?
+                    }
+                };
+            }
+        }
+        Ok(())
+    }
+
+    fn close_log_file(&mut self, archiver: &Option<ArchiverHandle>) {
+        let created_log_file = self.initial_gap_start != self.next;
+        if self.prev_closed_log_filename != self.initial_gap_start && created_log_file {
+            if let Some(archiver_handle) = archiver.as_ref() {
+                info!(
+                    "Informing Archiver to close {}.part, and should be renamed to: {}to{}.log",
+                    self.initial_gap_start, self.initial_gap_start, self.next
+                );
+                // We should close any part file related to the current gap
+                let _ = archiver_handle.send(ArchiverEvent::Close(self.next));
+            };
+            self.prev_closed_log_filename = self.initial_gap_start;
+        }
+    }
+
+    fn try_solidify_one_more(&mut self, solidifier_handles: &HashMap<u8, SolidifierHandle>) {
+        match self.active.as_mut().unwrap() {
+            Active::Complete(ref mut range) => {
+                if let Some(milestone_index) = range.next() {
+                    Self::request_solidify(solidifier_handles, milestone_index);
+                    self.pending += 1;
+                }
+            }
+            Active::FillGaps(ref mut range) => {
+                if let Some(milestone_index) = range.next() {
+                    Self::request_solidify(solidifier_handles, milestone_index);
+                    self.pending += 1;
+                }
+            }
+        };
+    }
+    async fn process_more<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        archiver_handle: &Option<ArchiverHandle>,
+    ) -> ActorResult<()> {
+        if let Some(ref mut active) = self.active {
+            match active {
+                Active::Complete(range) => {
+                    for _ in 0..self.parallelism {
+                        if let Some(milestone_index) = range.next() {
+                            Self::request_solidify(solidifier_handles, milestone_index);
+                            // update pending
+                            self.pending += 1;
+                        } else {
+                            // move to next gap (only if pending is zero)
+                            if self.pending.eq(&0) {
+                                // We should close any part file related to the current(above finished range) gap
+                                self.close_log_file(archiver_handle);
+                                // Finished the current active range, therefore we drop it
+                                self.active.take();
+                                self.complete(rt, solidifier_handles, archiver_handle).await?
+                            }
+                            break;
+                        }
+                    }
+                }
+                Active::FillGaps(range) => {
+                    for _ in 0..self.parallelism {
+                        if let Some(milestone_index) = range.next() {
+                            Self::request_solidify(solidifier_handles, milestone_index);
+                            // update pending
+                            self.pending += 1;
+                        } else {
+                            // move to next gap (only if pending is zero)
+                            if self.pending.eq(&0) {
+                                // We should close any part file related to the current(above finished range) gap
+                                self.close_log_file(archiver_handle);
+                                // Finished the current active range, therefore we drop it
+                                self.active.take();
+                                self.fill_gaps(rt, solidifier_handles).await?
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            info!("SyncData reached EOF");
+            self.update_sync(rt, solidifier_handles, archiver_handle).await?
+        }
+        Ok(())
+    }
+    fn request_solidify(solidifier_handles: &HashMap<u8, SolidifierHandle>, milestone_index: u32) {
+        let solidifier_id = (milestone_index % (solidifier_handles.len() as u32)) as u8;
+        let solidifier_handle = solidifier_handles.get(&solidifier_id).unwrap();
+        let solidify_event = SolidifierEvent::Solidify(Ok(milestone_index));
+        let _ = solidifier_handle.send(solidify_event);
+    }
+    #[async_recursion::async_recursion]
+    async fn trigger_process_more<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        archiver: &Option<ArchiverHandle>,
+    ) -> ActorResult<()> {
+        // move to next range (only if pending is zero)
+        if self.pending.eq(&0) {
+            // start processing it
+            self.process_more(rt, solidifier_handles, archiver).await?
+        }
+        Ok(())
+    }
+    async fn complete<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        archiver: &Option<ArchiverHandle>,
+    ) -> ActorResult<()> {
+        // start from the lowest uncomplete
+        if let Some(mut gap) = self.sync_data.take_lowest_uncomplete() {
+            // ensure gap.end != i32::MAX
+            if !gap.end.eq(&(i32::MAX as u32)) {
+                info!("Completing the gap {:?}", gap);
+                // set next to be the start
+                self.next = gap.start;
+                self.initial_gap_start = self.next;
+                self.initial_gap_end = gap.end;
+                self.active.replace(Active::Complete(gap));
+                self.trigger_process_more(rt, solidifier_handles, archiver).await?
+            } else {
+                info!("There are no more gaps neither unlogged in the current sync data");
+                self.trigger_process_more(rt, solidifier_handles, archiver).await?
+            }
+        } else {
+            info!("There are no more gaps neither unlogged in the current sync data");
+            self.trigger_process_more(rt, solidifier_handles, archiver).await?
+        }
+        Ok(())
+    }
+    async fn fill_gaps<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        solidifier_handles: &HashMap<u8, SolidifierHandle>,
+    ) -> ActorResult<()> {
+        // start from the lowest gap
+        if let Some(mut gap) = self.sync_data.take_lowest_gap() {
+            // ensure gap.end != i32::MAX
+            if !gap.end.eq(&(i32::MAX as u32)) {
+                info!("Filling the gap {:?}", gap);
+                // set next to be the start
+                self.next = gap.start;
+                self.initial_gap_start = self.next;
+                self.initial_gap_end = gap.end;
+                self.active.replace(Active::FillGaps(gap));
+                self.trigger_process_more(rt, solidifier_handles, &None).await?
+            } else {
+                info!("There are no more gaps in the current sync data");
+                self.trigger_process_more(rt, solidifier_handles, &None).await?
+            }
+        } else {
+            info!("There are no more gaps in the current sync data");
+            self.trigger_process_more(rt, solidifier_handles, &None).await?
+        }
+        Ok(())
     }
 }
 
@@ -227,8 +395,8 @@ impl<T> Deref for Ascending<T> {
     }
 }
 
-impl<T> Wrapper for Ascending<T> {
-    fn into_inner(self) -> Self::Target {
+impl std::convert::Into<MilestoneData> for Ascending<MilestoneData> {
+    fn into(self) -> MilestoneData {
         self.inner
     }
 }
