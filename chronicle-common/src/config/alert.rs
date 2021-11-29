@@ -1,7 +1,14 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use arc_swap::ArcSwap;
+use ron::value::Value;
 use url::Url;
+
+lazy_static! {
+    /// Lazy static holding the alert config
+    pub static ref ALERT_CONFIG: ArcSwap<AlertConfig> = Default::default();
+}
 
 /// An alert request that will be sent to a given url
 ///
@@ -36,9 +43,7 @@ pub struct AlertConfig {
     pub requests: Vec<AlertRequest>,
 }
 
-impl AlertConfig {
-    /// Verify the alert configuration
-    pub async fn verify(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
+/// Store new alert config
+pub fn init(alert_config: AlertConfig) {
+    ALERT_CONFIG.store(alert_config.into())
 }

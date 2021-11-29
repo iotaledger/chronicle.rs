@@ -219,8 +219,8 @@ type ListenerResult = Result<ListenerResponse, ListenerError>;
 async fn options(_path: PathBuf) {}
 
 #[get("/<keyspace>/info")]
-async fn info(keyspaces: &State<HashSet<String>>, keyspace: String) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+async fn info(keyspaces: &State<HashMap<String, PartitionConfig>>, keyspace: String) -> ListenerResult {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let version = std::env!("CARGO_PKG_VERSION").to_string();
@@ -265,8 +265,11 @@ async fn service() -> Result<Json<Service>, ListenerError> {
 }
 
 #[get("/<keyspace>/sync")]
-async fn sync(keyspaces: &State<HashSet<String>>, keyspace: String) -> Result<Json<SyncData>, ListenerError> {
-    if !keyspaces.contains(&keyspace) {
+async fn sync(
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
+    keyspace: String,
+) -> Result<Json<SyncData>, ListenerError> {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
@@ -583,8 +586,12 @@ where
 }
 
 #[get("/<keyspace>/messages/<message_id>")]
-async fn get_message(keyspace: String, message_id: String, keyspaces: &State<HashSet<String>>) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+async fn get_message(
+    keyspace: String,
+    message_id: String,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
+) -> ListenerResult {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
@@ -603,9 +610,9 @@ async fn get_message(keyspace: String, message_id: String, keyspaces: &State<Has
 async fn get_message_metadata(
     keyspace: String,
     message_id: String,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
@@ -623,10 +630,12 @@ async fn get_message_children(
     page_size: Option<usize>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: &State<PartitionConfig>,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    let mut partition_config;
+    if let Some(keyspace_partition_config) = keyspaces.get(&keyspace) {
+        partition_config = keyspace_partition_config;
+    } else {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
@@ -682,10 +691,12 @@ async fn get_message_by_index(
     utf8: Option<bool>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: &State<PartitionConfig>,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    let partition_config;
+    if let Some(keyspace_partition_config) = keyspaces.get(&keyspace) {
+        partition_config = keyspace_partition_config;
+    } else {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     if let Some(true) = utf8 {
@@ -715,7 +726,7 @@ async fn get_message_by_index(
         Hint::index(index.clone()),
         page_size,
         &mut state,
-        partition_config.borrow(),
+        partition_config,
         indexation,
     )
     .await?;
@@ -751,10 +762,12 @@ async fn get_ed25519_outputs(
     page_size: Option<usize>,
     expanded: Option<bool>,
     state: Option<String>,
-    partition_config: &State<PartitionConfig>,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    let partition_config;
+    if let Some(keyspace_partition_config) = keyspaces.get(&keyspace) {
+        partition_config = keyspace_partition_config;
+    } else {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let mut state = state
@@ -773,7 +786,7 @@ async fn get_ed25519_outputs(
         Hint::address(ed25519_address.to_string()),
         page_size,
         &mut state,
-        partition_config.borrow(),
+        partition_config,
         ed25519_address,
     )
     .await?;
@@ -817,7 +830,7 @@ async fn get_output_by_transaction_id(
     keyspace: String,
     transaction_id: String,
     idx: u16,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
     get_output(
         keyspace,
@@ -831,8 +844,12 @@ async fn get_output_by_transaction_id(
 }
 
 #[get("/<keyspace>/outputs/<output_id>")]
-async fn get_output(keyspace: String, output_id: String, keyspaces: &State<HashSet<String>>) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+async fn get_output(
+    keyspace: String,
+    output_id: String,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
+) -> ListenerResult {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let (transaction_id, index) = OutputId::from_str(&output_id)
@@ -899,10 +916,12 @@ async fn get_transactions_for_address(
     address: String,
     page_size: Option<usize>,
     state: Option<String>,
-    partition_config: &State<PartitionConfig>,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    let partition_config;
+    if let Some(keyspace_partition_config) = keyspaces.get(&keyspace) {
+        partition_config = keyspace_partition_config;
+    } else {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let mut state = state
@@ -921,7 +940,7 @@ async fn get_transactions_for_address(
         Hint::address(ed25519_address.to_string()),
         page_size,
         &mut state,
-        partition_config.borrow(),
+        partition_config,
         ed25519_address,
     )
     .await?;
@@ -948,9 +967,9 @@ async fn get_transactions_for_address(
 async fn get_transaction_for_message(
     keyspace: String,
     message_id: String,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
@@ -972,9 +991,9 @@ async fn get_transaction_for_message(
 async fn get_transaction_included_message(
     keyspace: String,
     transaction_id: String,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
@@ -1001,8 +1020,12 @@ async fn get_transaction_included_message(
 }
 
 #[get("/<keyspace>/milestones/<index>")]
-async fn get_milestone(keyspace: String, index: u32, keyspaces: &State<HashSet<String>>) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+async fn get_milestone(
+    keyspace: String,
+    index: u32,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
+) -> ListenerResult {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);
@@ -1021,9 +1044,9 @@ async fn get_analytics(
     keyspace: String,
     start: Option<u32>,
     end: Option<u32>,
-    keyspaces: &State<HashSet<String>>,
+    keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    if !keyspaces.contains(&keyspace) {
+    if !keyspaces.contains_key(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
     }
     let keyspace = ChronicleKeyspace::new(keyspace);

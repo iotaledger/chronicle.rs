@@ -27,52 +27,23 @@ pub mod solidifier;
 /// Milestone syncer
 #[cfg(feature = "application")]
 pub mod syncer;
-/// Websocket command router
-//#[cfg(feature = "application")]
-// pub mod websocket;
+
 #[cfg(feature = "application")]
 mod app {
     use super::*;
-    pub use anyhow::{
-        anyhow,
-        bail,
-        ensure,
-    };
+    pub use anyhow::{anyhow, bail, ensure};
     pub use bee_common::packable::Packable;
-    pub use bee_message::{
-        Message,
-        MessageId,
-    };
-    pub use chronicle_common::{
-        config::MqttType,
-        get_config,
-        get_config_async,
-        SyncRange,
-    };
+    pub use bee_message::{Message, MessageId};
+    pub use chronicle_common::SyncRange;
     pub use chronicle_storage::access::*;
     pub use log::*;
-    pub use paho_mqtt::{
-        AsyncClient,
-        CreateOptionsBuilder,
-    };
+    pub use paho_mqtt::{AsyncClient, CreateOptionsBuilder};
     pub use scylla_rs::prelude::*;
-    pub use serde::{
-        Deserialize,
-        Serialize,
-    };
+    pub use serde::{Deserialize, Serialize};
     pub use std::{
-        collections::{
-            BinaryHeap,
-            HashMap,
-        },
-        convert::{
-            TryFrom,
-            TryInto,
-        },
-        ops::{
-            Deref,
-            DerefMut,
-        },
+        collections::{BinaryHeap, HashMap},
+        convert::{TryFrom, TryInto},
+        ops::{Deref, DerefMut},
         path::PathBuf,
     };
     pub use url::Url;
@@ -80,14 +51,11 @@ mod app {
 #[cfg(feature = "application")]
 pub(crate) use app::*;
 
-#[cfg(feature = "application")]
-pub(crate) mod helper;
 #[cfg(feature = "merge")]
 /// Provide the archive file merger functionality;
 pub mod merge;
 mod types;
 use async_trait::async_trait;
 use backstage::core::*;
-use helper::retry_send;
 use scylla_rs::prelude::*;
 pub use types::*;

@@ -3,290 +3,192 @@
 
 #![warn(missing_docs)]
 //! # Chronicle
-use anyhow::bail;
+use async_trait::async_trait;
+use backstage::core::*;
 use chronicle_api::application::*;
 use chronicle_broker::application::*;
 use chronicle_common::{
-    config::*,
-    get_config,
-    get_config_async,
-    get_history_mut,
+    alert,
+    config::AlertConfig,
     metrics::*,
 };
-use chronicle_storage::access::ChronicleKeyspace;
 use scylla_rs::prelude::*;
-use tokio::sync::mpsc::{
-    unbounded_channel,
-    UnboundedSender,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
-launcher!
-(
-    builder: AppsBuilder
-    {
-        [] -> ChronicleBroker<Sender>: ChronicleBrokerBuilder<Sender>,
-        [] -> ChronicleAPI<Sender>: ChronicleAPIBuilder<Sender>,
-        [] -> Websocket<Sender>: WebsocketBuilder<Sender>,
-        [ChronicleBroker, ChronicleAPI] -> Scylla<Sender>: ScyllaBuilder<Sender>
-    },
-    state: Apps {}
-);
+const TOKIO_THREAD_STACK_SIZE: usize = 4 * 4 * 1024 * 1024;
 
-impl Builder for AppsBuilder {
-    type State = Apps;
+/// Chronicle system struct
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
+pub struct Chronicle {
+    /// Scylla application
+    scylla: Scylla,
+    /// Broker application
+    #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+    broker: ChronicleBroker<chronicle_filter::PermanodeConfig>,
+    // todo add selective permanode feature
+    /// The Api application
+    api: ChronicleAPI,
+    /// Alert config
+    alert: AlertConfig,
+}
 
-    fn build(self) -> Self::State {
-        let config = get_config();
-        let storage_config = config.storage_config;
-        let broker_config = config.broker_config;
-        let chronicle_api_builder = ChronicleAPIBuilder::new();
-        let chronicle_broker_builder = ChronicleBrokerBuilder::new()
-            .collector_count(broker_config.collector_count)
-            .parallelism(broker_config.parallelism)
-            .complete_gaps_interval_secs(broker_config.complete_gaps_interval_secs);
-        let scylla_builder = ScyllaBuilder::new()
-            .listen_address(storage_config.listen_address.to_string())
-            .thread_count(match storage_config.thread_count {
-                ThreadCount::Count(c) => c,
-                ThreadCount::CoreMultiple(c) => num_cpus::get() * c,
-            })
-            .reporter_count(storage_config.reporter_count)
-            .local_dc(storage_config.local_datacenter.clone());
-        let websocket_builder = WebsocketBuilder::new();
+/// Chronicle event type
+pub enum ChronicleEvent {
+    /// Get up to date scylla config copy
+    Scylla(Event<Scylla>),
+    /// Get up to date -api copy
+    Api(Event<ChronicleAPI>),
+    /// Get up to date -broker copy
+    #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+    Broker(Event<ChronicleBroker<PermanodeBuilder>>),
+    // todo add selective
+    /// Report and Eol variant used by children
+    MicroService(ScopeId, Service, Option<ActorResult<()>>),
+    /// Shutdown chronicle variant
+    Shutdown,
+}
 
-        self.ChronicleAPI(chronicle_api_builder)
-            .ChronicleBroker(chronicle_broker_builder)
-            .Scylla(scylla_builder)
-            .Websocket(websocket_builder)
-            .to_apps()
+impl ShutdownEvent for ChronicleEvent {
+    fn shutdown_event() -> Self {
+        Self::Shutdown
+    }
+}
+
+impl<T> ReportEvent<T> for ChronicleEvent {
+    fn report_event(scope_id: ScopeId, service: Service) -> Self {
+        Self::MicroService(scope_id, service, None)
+    }
+}
+
+impl<T> EolEvent<T> for ChronicleEvent {
+    fn eol_event(scope_id: ScopeId, service: Service, _actor: T, r: ActorResult<()>) -> Self {
+        Self::MicroService(scope_id, service, Some(r))
+    }
+}
+
+impl From<Event<Scylla>> for ChronicleEvent {
+    fn from(e: Event<Scylla>) -> Self {
+        Self::Scylla(e)
+    }
+}
+impl From<Event<ChronicleAPI>> for ChronicleEvent {
+    fn from(e: Event<ChronicleAPI>) -> Self {
+        Self::Api(e)
+    }
+}
+
+#[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+impl From<Event<ChronicleBroker<PermanodeBuilder>>> for ChronicleEvent {
+    fn from(e: Event<ChronicleBroker<PermanodeBuilder>>) -> Self {
+        Self::Broker(e)
+    }
+}
+
+/// Chronicle system actor implementation
+#[async_trait]
+impl<S> Actor<S> for Chronicle
+where
+    S: SupHandle<Self>,
+{
+    type Data = ();
+    type Channel = UnboundedChannel<ChronicleEvent>;
+    async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        // init the alert
+        alert::init(self.alert.clone());
+        //
+        // - Scylla
+        let scylla_scope_id = rt.start("scylla".to_string(), self.scylla.clone()).await?.scope_id();
+        if let Some(scylla) = rt.subscribe::<Scylla>(scylla_scope_id, "scylla".to_string()).await? {
+            if self.scylla != scylla {
+                self.scylla = scylla;
+                rt.publish(self.scylla.clone()).await;
+            }
+        }
+        //
+        // - broker
+        #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+        let broker = self.broker.clone();
+        #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
+        let broker_scope_id = rt.start("broker".to_string(), broker).await?.scope_id();
+        #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+        {
+            if let Some(broker) = rt.subscribe::<Broker>(broker_scope_id, "broker".to_string()).await? {
+                if self.broker != broker {
+                    self.broker = broker;
+                    rt.publish(self.broker.clone()).await;
+                }
+            }
+        }
+        // todo selective permanode
+        //
+        // - api
+        let api_scope_id = rt.start("api".to_string(), self.api.clone()).await?.scope_id();
+        if let Some(api) = rt.subscribe::<ChronicleAPI>(api_scope_id, "api".to_string()).await? {
+            if self.api != api {
+                self.api = api;
+                rt.publish(self.api.clone()).await;
+            }
+        }
+        Ok(())
+    }
+    async fn run(&mut self, rt: &mut Rt<Self, S>, data: Self::Data) -> ActorResult<Self::Data> {
+        while let Some(event) = rt.inbox_mut().next().await {
+            match event {
+                #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
+                ChronicleEvent::Broker(broker_event) => {
+                    if let Event::Published(_, _, broker) = broker_event {
+                        self.broker = broker;
+                        rt.publish(self.broker.clone()).await;
+                    }
+                }
+                ChronicleEvent::Scylla(scylla_event) => {
+                    if let Event::Published(_, _, scylla) = scylla_event {
+                        self.scylla = scylla;
+                        rt.publish(self.scylla.clone()).await;
+                    }
+                }
+                ChronicleEvent::Api(api_event) => {
+                    if let Event::Published(_, _, api) = api_event {
+                        self.api = api;
+                        rt.publish(self.api.clone()).await;
+                    }
+                }
+                ChronicleEvent::MicroService(scope_id, service, result_opt) => {
+                    rt.upsert_microservice(scope_id, service);
+                    if rt.microservices_stopped() {
+                        break;
+                    }
+                }
+                ChronicleEvent::Shutdown => rt.inbox_mut().close(),
+            }
+        }
+        Ok(())
     }
 }
 
 fn main() {
     dotenv::dotenv().ok();
-    env_logger::init();
-    register_metrics();
-    let config = get_config();
-    let thread_count;
-    match config.storage_config.thread_count {
-        ThreadCount::Count(c) => {
-            thread_count = c;
-        }
-        ThreadCount::CoreMultiple(c) => {
-            thread_count = num_cpus::get() * c;
-        }
+    #[cfg(not(feature = "console"))]
+    {
+        let env = env_logger::Env::new().filter_or("RUST_LOG", "info");
+        env_logger::Builder::from_env(env).init();
     }
-    let apps = AppsBuilder::new().build();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .worker_threads(thread_count)
-        .thread_name("chronicle")
-        .thread_stack_size(apps.app_count * 4 * 1024 * 1024)
+        .thread_stack_size(TOKIO_THREAD_STACK_SIZE)
         .build()
         .expect("Expected to build tokio runtime");
-    let verified_config = runtime.block_on(config.clone().verify()).unwrap();
-    if verified_config != config {
-        get_history_mut().update(verified_config.into());
-    }
-    runtime.block_on(chronicle(apps));
+    runtime.block_on(chronicle());
 }
 
-async fn chronicle(apps: Apps) {
-    apps.Scylla()
+async fn chronicle() {
+    Runtime::from_config::<Chronicle>()
         .await
-        .future(|apps| async {
-            let storage_config = get_config_async().await.storage_config;
-            let uniform_rf = storage_config.try_get_uniform_rf().expect("Expected Unifrom RF");
-            debug!("Adding nodes: {:?}", storage_config.nodes);
-            let ws = format!("ws://{}/", storage_config.listen_address);
-            add_nodes(&ws, storage_config.nodes.iter().cloned().collect(), uniform_rf)
-                .await
-                .ok();
-            init_database().await.ok();
-            apps
-        })
+        .expect("Chronicle Runtime to run")
+        .block_on()
         .await
-        .ChronicleAPI()
-        .await
-        .ChronicleBroker()
-        .await
-        .Websocket()
-        .await
-        .start(None)
-        .await;
-}
-
-fn register_metrics() {
-    REGISTRY
-        .register(Box::new(INCOMING_REQUESTS.clone()))
-        .expect("Could not register collector");
-
-    REGISTRY
-        .register(Box::new(RESPONSE_CODE_COLLECTOR.clone()))
-        .expect("Could not register collector");
-
-    REGISTRY
-        .register(Box::new(RESPONSE_TIME_COLLECTOR.clone()))
-        .expect("Could not register collector");
-
-    REGISTRY
-        .register(Box::new(CONFIRMATION_TIME_COLLECTOR.clone()))
-        .expect("Could not register collector");
-}
-
-async fn init_database() -> anyhow::Result<()> {
-    let storage_config = get_config_async().await.storage_config;
-
-    for keyspace_config in storage_config.keyspaces.first().iter() {
-        let keyspace = ChronicleKeyspace::new(keyspace_config.name.clone());
-        let datacenters = keyspace_config
-            .data_centers
-            .iter()
-            .map(|(datacenter_name, datacenter_config)| {
-                format!("'{}': {}", datacenter_name, datacenter_config.replication_factor)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let (sender, mut inbox) = unbounded_channel::<Result<(), WorkerError>>();
-        let worker = BatchWorker::boxed(sender.clone());
-        let token = 1;
-        let keyspace_statement = Query::new()
-            .statement(&format!(
-                "CREATE KEYSPACE IF NOT EXISTS {0}
-                WITH replication = {{'class': 'NetworkTopologyStrategy', {1}}}
-                AND durable_writes = true;",
-                keyspace.name(),
-                datacenters
-            ))
-            .consistency(Consistency::One)
-            .build()?;
-        send_local(token, keyspace_statement.0, worker, keyspace.name().to_string());
-        if let Some(msg) = inbox.recv().await {
-            match msg {
-                Ok(_) => (),
-                Err(e) => bail!(e),
-            }
-        } else {
-            bail!("Could not verify if keyspace was created!")
-        }
-        let table_queries = format!(
-            "CREATE TABLE IF NOT EXISTS {0}.messages (
-                message_id text PRIMARY KEY,
-                message blob,
-                metadata blob,
-            );
-
-            CREATE TABLE IF NOT EXISTS {0}.addresses  (
-                address text,
-                partition_id smallint,
-                milestone_index int,
-                output_type tinyint,
-                transaction_id text,
-                idx smallint,
-                amount bigint,
-                address_type tinyint,
-                inclusion_state blob,
-                PRIMARY KEY ((address, partition_id), milestone_index, output_type, transaction_id, idx)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC, output_type DESC, transaction_id DESC, idx DESC);
-
-            CREATE TABLE IF NOT EXISTS {0}.indexes  (
-                indexation text,
-                partition_id smallint,
-                milestone_index int,
-                message_id text,
-                inclusion_state blob,
-                PRIMARY KEY ((indexation, partition_id), milestone_index, message_id)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-
-            CREATE TABLE IF NOT EXISTS {0}.parents  (
-                parent_id text,
-                partition_id smallint,
-                milestone_index int,
-                message_id text,
-                inclusion_state blob,
-                PRIMARY KEY ((parent_id, partition_id), milestone_index, message_id)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-
-            CREATE TABLE IF NOT EXISTS {0}.transactions  (
-                transaction_id text,
-                idx smallint,
-                variant text,
-                message_id text,
-                data blob,
-                inclusion_state blob,
-                milestone_index int,
-                PRIMARY KEY (transaction_id, idx, variant, message_id, data)
-            );
-
-            CREATE TABLE IF NOT EXISTS {0}.milestones  (
-                milestone_index int,
-                message_id text,
-                timestamp bigint,
-                payload blob,
-                PRIMARY KEY (milestone_index, message_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS {0}.hints  (
-                hint text,
-                variant text,
-                partition_id smallint,
-                milestone_index int,
-                PRIMARY KEY (hint, variant, partition_id)
-            ) WITH CLUSTERING ORDER BY (variant DESC, partition_id DESC);
-
-            CREATE TABLE IF NOT EXISTS {0}.sync  (
-                key text,
-                milestone_index int,
-                synced_by tinyint,
-                logged_by tinyint,
-                PRIMARY KEY (key, milestone_index)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-
-            CREATE TABLE IF NOT EXISTS {0}.analytics (
-                key text,
-                milestone_index int,
-                message_count int,
-                transaction_count int,
-                transferred_tokens bigint,
-                PRIMARY KEY (key, milestone_index)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);",
-            keyspace.name()
-        );
-        for query in table_queries.split(";").map(str::trim).filter(|s| !s.is_empty()) {
-            let worker = BatchWorker::boxed(sender.clone());
-            let statement = Query::new().statement(query).consistency(Consistency::One).build()?;
-            send_local(token, statement.0, worker, keyspace.name().to_string());
-            if let Some(msg) = inbox.recv().await {
-                match msg {
-                    Ok(_) => (),
-                    Err(e) => bail!(e),
-                }
-            } else {
-                bail!("Could not verify if table was created!")
-            }
-        }
-    }
-    Ok(())
-}
-
-struct BatchWorker {
-    sender: UnboundedSender<Result<(), WorkerError>>,
-}
-
-impl BatchWorker {
-    pub fn boxed(sender: UnboundedSender<Result<(), WorkerError>>) -> Box<Self> {
-        Box::new(Self { sender: sender.into() })
-    }
-}
-
-impl Worker for BatchWorker {
-    fn handle_response(self: Box<Self>, _giveload: Vec<u8>) -> anyhow::Result<()> {
-        self.sender.send(Ok(()))?;
-        Ok(())
-    }
-
-    fn handle_error(self: Box<Self>, error: WorkerError, _reporter: &Option<ReporterHandle>) -> anyhow::Result<()> {
-        self.sender.send(Err(error))?;
-        Ok(())
-    }
+        .expect("Runtime to shutdown gracefully");
 }

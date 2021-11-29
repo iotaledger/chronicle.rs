@@ -13,9 +13,10 @@ path = "src/main.rs"
 required-features = ["application"]
 
 [dependencies]
-backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features= ["paho-mqtt"] }
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features= ["paho-mqtt", "ron_config"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage" }
 chronicle-common = { path = "../chronicle-common" }
+chronicle-filter = { path = "../chronicle-filter" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-broker = { path = "../chronicle-broker", default-features = false }
@@ -31,10 +32,11 @@ serde_json = "1.0"
 tokio-tungstenite = "0.14"
 url = "2.2"
 anyhow = "1.0"
-tokio = "1.5"
+tokio = "1.14"
 
 [features]
 default = ["rocket", "application"]
 application = ["chronicle-broker/application"]
-filter = ["chronicle-broker/filter"]
+permanode = []
+selective-permanode = [] 
 rocket = ["chronicle-api/rocket_listener"]

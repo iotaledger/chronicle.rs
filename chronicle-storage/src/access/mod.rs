@@ -2,50 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub use crate::keyspaces::ChronicleKeyspace;
-use anyhow::{
-    anyhow,
-    bail,
-    ensure,
-};
+use anyhow::{anyhow, bail, ensure};
 use bee_common::packable::Packable;
 use bee_message::{
     address::Ed25519Address,
     milestone::Milestone,
-    prelude::{
-        MilestoneIndex,
-        MilestonePayload,
-        Output,
-        OutputId,
-        TransactionId,
-    },
-    Message,
-    MessageId,
+    prelude::{MilestoneIndex, MilestonePayload, Output, OutputId, TransactionId},
+    Message, MessageId,
 };
 use bincode::Options;
-use chronicle_common::Wrapper;
 use scylla_rs::{
     cql::{
-        Binder,
-        ColumnDecoder,
-        ColumnEncoder,
-        ColumnValue,
-        Decoder,
-        Frame,
-        Iter,
-        PreparedStatement,
-        QueryStatement,
-        Row,
-        Rows,
-        RowsDecoder,
-        TokenEncodeChain,
-        TokenEncoder,
+        Binder, ColumnDecoder, ColumnEncoder, ColumnValue, Decoder, Frame, Iter, PreparedStatement, QueryStatement,
+        Row, Rows, RowsDecoder, TokenEncodeChain, TokenEncoder,
     },
     prelude::*,
 };
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 pub use types::*;
 
@@ -166,40 +139,6 @@ impl HasMilestoneIndex for AddressRecord {
     /// Return the milestone index of the address record
     fn milestone_index(&self) -> u32 {
         self.milestone_index.0
-    }
-}
-/// Defines the max time-to-live for chronicle records: 20 years
-pub const MAX_TTL: u32 = 20 * 365 * 24 * 60 * 60;
-
-/// A time-to-live specifier
-pub struct TTL<T> {
-    inner: T,
-    ttl: u32,
-}
-
-impl<T> Deref for TTL<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T> Wrapper for TTL<T> {
-    fn into_inner(self) -> Self::Target {
-        self.inner
-    }
-}
-
-impl<T> TTL<T> {
-    /// Creates a new time-to-live
-    pub fn new(inner: T, ttl: u32) -> Self {
-        Self { inner, ttl }
-    }
-
-    /// Get the time to live
-    pub fn time_to_live(&self) -> u32 {
-        self.ttl
     }
 }
 

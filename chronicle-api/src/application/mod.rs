@@ -2,12 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use chronicle_common::config::Config;
-use std::collections::HashSet;
+use chronicle_common::config::PartitionConfig;
+use std::{
+    collections::{
+        HashMap,
+        HashSet,
+    },
+    hash::{
+        Hash,
+        Hasher,
+    },
+    iter::FromIterator,
+};
 
 /// The Chronicle API. Defines endpoints which can be used to
 /// retrieve data from the scylla database.
-pub struct ChronicleAPI;
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
+pub struct ChronicleAPI {
+    keyspaces: HashSet<KeyspacePartitionConfig>,
+}
 
 /// A Chronicle API Event
 pub enum ChronicleAPIEvent {
@@ -32,21 +45,10 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
     type Channel = AbortableUnboundedChannel<ChronicleAPIEvent>;
 
     async fn init(&mut self, rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
-        let storage_config = rt
-            .lookup::<Config>(rt.parent_id().ok_or_else(|| anyhow::anyhow!("No parent id!"))?)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("No config found!"))?
-            .storage_config;
-        let keyspaces = storage_config
-            .keyspaces
-            .iter()
-            .cloned()
-            .map(|k| k.name)
-            .collect::<HashSet<_>>();
-
+        register_metrics();
+        let keyspaces: HashMap<String, PartitionConfig> = self.keyspaces.clone().into_iter().collect();
         let rocket = backstage::prefab::rocket::RocketServer::new(
             super::listener::construct_rocket()
-                .manage(storage_config.partition_config.clone())
                 .manage(keyspaces)
                 .ignite()
                 .await
@@ -69,4 +71,49 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
+pub struct KeyspacePartitionConfig {
+    name: KeyspaceName,
+    partition_config: PartitionConfig,
+}
+
+impl Hash for KeyspacePartitionConfig {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl FromIterator<KeyspacePartitionConfig> for HashMap<String, PartitionConfig> {
+    fn from_iter<I: IntoIterator<Item = KeyspacePartitionConfig>>(iter: I) -> Self {
+        let mut c = HashMap::new();
+
+        for i in iter {
+            c.insert(i.name, i.partition_config);
+        }
+
+        c
+    }
+}
+
+/// metrics
+
+fn register_metrics() {
+    use chronicle_common::metrics::*;
+    REGISTRY
+        .register(Box::new(INCOMING_REQUESTS.clone()))
+        .expect("Could not register collector");
+
+    REGISTRY
+        .register(Box::new(RESPONSE_CODE_COLLECTOR.clone()))
+        .expect("Could not register collector");
+
+    REGISTRY
+        .register(Box::new(RESPONSE_TIME_COLLECTOR.clone()))
+        .expect("Could not register collector");
+
+    REGISTRY
+        .register(Box::new(CONFIRMATION_TIME_COLLECTOR.clone()))
+        .expect("Could not register collector");
 }

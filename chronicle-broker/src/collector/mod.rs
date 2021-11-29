@@ -3,10 +3,7 @@
 use super::*;
 use crate::{
     application::*,
-    requester::{
-        RequesterHandle,
-        *,
-    },
+    requester::{RequesterHandle, *},
     solidifier::*,
 };
 use anyhow::bail;
@@ -16,36 +13,20 @@ use bee_message::{
     output::Output,
     parents::Parents,
     payload::{
-        transaction::{
-            Essence,
-            TransactionPayload,
-        },
+        transaction::{Essence, TransactionPayload},
         Payload,
     },
-    prelude::{
-        MilestoneIndex,
-        TransactionId,
-    },
+    prelude::{MilestoneIndex, TransactionId},
 };
 use chronicle_common::metrics::CONFIRMATION_TIME_COLLECTOR;
-use chronicle_filter::{
-    Selected,
-    Selective,
-    SelectiveBuilder,
-};
+use chronicle_filter::{Selected, Selective, SelectiveBuilder};
 use std::{
-    collections::{
-        BinaryHeap,
-        VecDeque,
-    },
+    collections::{BinaryHeap, VecDeque},
     fmt::Debug,
     sync::Arc,
 };
 
-use chronicle_common::config::{
-    PartitionConfig,
-    StorageConfig,
-};
+use chronicle_common::config::PartitionConfig;
 use lru::LruCache;
 
 use reqwest::Client;
@@ -1063,7 +1044,7 @@ where
         if let Err(RequestError::Ring(r)) = insert_req.send_local_with_worker(worker) {
             let keyspace_name = self.keyspace.name();
             if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                worker.handle_error(WorkerError::NoRing, None);
+                worker.handle_error(WorkerError::NoRing, None)?;
             };
         };
         Ok(())
@@ -1165,7 +1146,7 @@ where
             .build()
             .map_err(|e| ActorError::exit(e))?;
         let worker = BasicWorker::new();
-        delete_req.send_local_with_worker(worker);
+        delete_req.send_local_with_worker(worker).ok();
         Ok(())
     }
 }

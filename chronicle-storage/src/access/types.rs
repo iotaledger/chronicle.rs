@@ -5,30 +5,17 @@ use super::*;
 use bee_common::packable::Packable;
 use bee_message::{
     payload::Payload,
-    prelude::{
-        Essence,
-        Output,
-        TransactionId,
-        TreasuryInput,
-        UnlockBlock,
-        UtxoInput,
-    },
+    prelude::{Essence, Output, TransactionId, TreasuryInput, UnlockBlock, UtxoInput},
     MessageId,
 };
+use chronicle_common::Wrapper;
 use std::{
-    collections::{
-        BTreeMap,
-        HashSet,
-    },
+    collections::{BTreeMap, HashSet},
     io::Cursor,
-    ops::{
-        Deref,
-        DerefMut,
-    },
+    ops::{Deref, DerefMut},
     path::PathBuf,
     str::FromStr,
 };
-
 /// Index type
 pub type Index = u16;
 /// Amount type
@@ -628,6 +615,7 @@ impl<T> Wrapper for JsonData<T> {
         self.data
     }
 }
+
 #[derive(Clone, Debug)]
 /// Wrapper around MessageCount u32
 pub struct MessageCount(pub u32);
@@ -905,12 +893,7 @@ pub use sync::*;
 mod sync {
     use super::*;
     use chronicle_common::SyncRange;
-    use scylla_rs::prelude::{
-        Consistency,
-        GetStaticSelectRequest,
-        Iter,
-        Select,
-    };
+    use scylla_rs::prelude::{Consistency, GetStaticSelectRequest, Iter, Select};
     use std::ops::Range;
 
     /// Representation of the database sync data
@@ -1088,12 +1071,7 @@ pub use analytic::*;
 mod analytic {
     use super::*;
     use chronicle_common::SyncRange;
-    use scylla_rs::prelude::{
-        Consistency,
-        GetStaticSelectRequest,
-        Iter,
-        Select,
-    };
+    use scylla_rs::prelude::{Consistency, GetStaticSelectRequest, Iter, Select};
     use std::ops::Range;
 
     /// Representation of vector of analytic data

@@ -1,14 +1,6 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-// use super::{
-// collector::{
-// CollectorEvent,
-// CollectorHandle,
-// MessageIdPartitioner,
-// },
-// ,
-// };
 use super::{
     collector::{
         CollectorEvent,
@@ -23,7 +15,7 @@ use std::time::Duration;
 
 #[async_trait]
 impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
-    async fn build_channel<S>(&mut self) -> ActorResult<MqttChannel> {
+    async fn build_channel(&mut self) -> ActorResult<MqttChannel> {
         // create async client
         let random_id: u64 = rand::random();
         let create_opts = CreateOptionsBuilder::new()

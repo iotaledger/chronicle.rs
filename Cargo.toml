@@ -11,3 +11,7 @@ members = [
 default-members = [
     "chronicle",
 ]
+
+# `iota-crypto` uses bee-ternary. We patch it to use our local version to avoid importing it twice.
+[patch.crates-io]
+bee-ternary = { git = "https://github.com/iotaledger/bee.git", branch = "dev", optional = true }

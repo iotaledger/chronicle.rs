@@ -1,15 +1,9 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use bee_message::{
-    Message,
-    MessageId,
-};
+use bee_message::{Message, MessageId};
 use chronicle_storage::access::MessageMetadata;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
 use wildmatch::WildMatch;
@@ -57,10 +51,9 @@ pub trait Selective: Clone + Sized + Send {
     // todo add async fn selected_messages()
 }
 
-// todo move these to the root bin crate
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, Copy)]
 pub struct PermanodeConfig;
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default, Copy)]
 pub struct Permanode;
 
 #[async_trait::async_trait]

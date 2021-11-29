@@ -1,14 +1,14 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use crate::get_config_async;
+pub use crate::config::alert::init;
+use crate::config::ALERT_CONFIG;
 use log::debug;
-
 /// Send an alert message using the configured endpoints and format
 pub async fn send_alert(msg: String) -> anyhow::Result<()> {
-    let config = get_config_async().await;
+    let alert_config = ALERT_CONFIG.load();
     let client = reqwest::Client::new();
     let mut errors = Vec::new();
-    for request in config.alert_config.requests.iter() {
+    for request in alert_config.requests.iter() {
         if let Some(mut json) = request.json.clone() {
             // Create a stack of references so we can search the json for $msg tokens
             let mut values = vec![&mut json];
