@@ -5,14 +5,27 @@ use super::*;
 use bee_common::packable::Packable;
 use bee_message::{
     payload::Payload,
-    prelude::{Essence, Output, TransactionId, TreasuryInput, UnlockBlock, UtxoInput},
+    prelude::{
+        Essence,
+        Output,
+        TransactionId,
+        TreasuryInput,
+        UnlockBlock,
+        UtxoInput,
+    },
     MessageId,
 };
 use chronicle_common::Wrapper;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{
+        BTreeMap,
+        HashSet,
+    },
     io::Cursor,
-    ops::{Deref, DerefMut},
+    ops::{
+        Deref,
+        DerefMut,
+    },
     path::PathBuf,
     str::FromStr,
 };
@@ -849,51 +862,18 @@ impl From<CreatedBy> for u8 {
     }
 }
 
-/// Enum used by importer to keep the sockets up to date with most recent progress.
-#[derive(Deserialize, Serialize, Debug)]
-pub enum ImporterSession {
-    /// Create/update progress bar state
-    ProgressBar {
-        /// Total size of the logfile
-        log_file_size: u64,
-        /// LogFile start range
-        from_ms: u32,
-        /// LogFile end range
-        to_ms: u32,
-        /// milestone data bytes size
-        ms_bytes_size: usize,
-        /// Milestone index
-        milestone_index: u32,
-        /// Identify whether it skipped/resume the milestone_index or imported.
-        skipped: bool,
-    },
-    /// Finish the progress bar with message
-    Finish {
-        /// LogFile start range
-        from_ms: u32,
-        /// LogFile end range
-        to_ms: u32,
-        /// Finish the progress bar using this msg.
-        msg: String,
-    },
-    /// Return error
-    PathError {
-        /// Invalid dir or file path
-        path: PathBuf,
-        /// Useful debug message
-        msg: String,
-    },
-    /// Close session
-    Close,
-}
-
 #[cfg(feature = "sync")]
 pub use sync::*;
 #[cfg(feature = "sync")]
 mod sync {
     use super::*;
     use chronicle_common::SyncRange;
-    use scylla_rs::prelude::{Consistency, GetStaticSelectRequest, Iter, Select};
+    use scylla_rs::prelude::{
+        Consistency,
+        GetStaticSelectRequest,
+        Iter,
+        Select,
+    };
     use std::ops::Range;
 
     /// Representation of the database sync data
@@ -1071,7 +1051,12 @@ pub use analytic::*;
 mod analytic {
     use super::*;
     use chronicle_common::SyncRange;
-    use scylla_rs::prelude::{Consistency, GetStaticSelectRequest, Iter, Select};
+    use scylla_rs::prelude::{
+        Consistency,
+        GetStaticSelectRequest,
+        Iter,
+        Select,
+    };
     use std::ops::Range;
 
     /// Representation of vector of analytic data

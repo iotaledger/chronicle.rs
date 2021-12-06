@@ -31,19 +31,41 @@ pub mod syncer;
 #[cfg(feature = "application")]
 mod app {
     use super::*;
-    pub use anyhow::{anyhow, bail, ensure};
+    pub use anyhow::{
+        anyhow,
+        bail,
+        ensure,
+    };
     pub use bee_common::packable::Packable;
-    pub use bee_message::{Message, MessageId};
+    pub use bee_message::{
+        Message,
+        MessageId,
+    };
     pub use chronicle_common::SyncRange;
     pub use chronicle_storage::access::*;
     pub use log::*;
-    pub use paho_mqtt::{AsyncClient, CreateOptionsBuilder};
+    pub use paho_mqtt::{
+        AsyncClient,
+        CreateOptionsBuilder,
+    };
     pub use scylla_rs::prelude::*;
-    pub use serde::{Deserialize, Serialize};
+    pub use serde::{
+        Deserialize,
+        Serialize,
+    };
     pub use std::{
-        collections::{BinaryHeap, HashMap},
-        convert::{TryFrom, TryInto},
-        ops::{Deref, DerefMut},
+        collections::{
+            BinaryHeap,
+            HashMap,
+        },
+        convert::{
+            TryFrom,
+            TryInto,
+        },
+        ops::{
+            Deref,
+            DerefMut,
+        },
         path::PathBuf,
     };
     pub use url::Url;
@@ -54,8 +76,6 @@ pub(crate) use app::*;
 #[cfg(feature = "merge")]
 /// Provide the archive file merger functionality;
 pub mod merge;
-mod types;
 use async_trait::async_trait;
 use backstage::core::*;
 use scylla_rs::prelude::*;
-pub use types::*;

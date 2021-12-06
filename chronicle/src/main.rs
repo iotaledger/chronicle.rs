@@ -25,10 +25,12 @@ const TOKIO_THREAD_STACK_SIZE: usize = 4 * 4 * 1024 * 1024;
 pub struct Chronicle {
     /// Scylla application
     scylla: Scylla,
-    /// Broker application
     #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+    /// Permanode application
     broker: ChronicleBroker<chronicle_filter::PermanodeConfig>,
-    // todo add selective permanode feature
+    /// Selective Permanode application
+    #[cfg(all(feature = "selective-permanode", not(feature = "permanode")))]
+    broker: ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>,
     /// The Api application
     api: ChronicleAPI,
     /// Alert config
@@ -43,8 +45,9 @@ pub enum ChronicleEvent {
     Api(Event<ChronicleAPI>),
     /// Get up to date -broker copy
     #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
-    Broker(Event<ChronicleBroker<PermanodeBuilder>>),
-    // todo add selective
+    Broker(Event<ChronicleBroker<chronicle_filter::PermanodeConfig>>),
+    #[cfg(all(feature = "selective-permanode", not(feature = "permanode")))]
+    Broker(Event<ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>>),
     /// Report and Eol variant used by children
     MicroService(ScopeId, Service, Option<ActorResult<()>>),
     /// Shutdown chronicle variant
@@ -81,8 +84,15 @@ impl From<Event<ChronicleAPI>> for ChronicleEvent {
 }
 
 #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
-impl From<Event<ChronicleBroker<PermanodeBuilder>>> for ChronicleEvent {
-    fn from(e: Event<ChronicleBroker<PermanodeBuilder>>) -> Self {
+impl From<Event<ChronicleBroker<chronicle_filter::PermanodeConfig>>> for ChronicleEvent {
+    fn from(e: Event<ChronicleBroker<chronicle_filter::PermanodeConfig>>) -> Self {
+        Self::Broker(e)
+    }
+}
+
+#[cfg(all(feature = "selective-permanode", not(feature = "permanode")))]
+impl From<Event<ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>>> for ChronicleEvent {
+    fn from(e: Event<ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>>) -> Self {
         Self::Broker(e)
     }
 }
@@ -101,28 +111,32 @@ where
         //
         // - Scylla
         let scylla_scope_id = rt.start("scylla".to_string(), self.scylla.clone()).await?.scope_id();
+        log::info!("Chronicle Started Scylla");
         if let Some(scylla) = rt.subscribe::<Scylla>(scylla_scope_id, "scylla".to_string()).await? {
             if self.scylla != scylla {
                 self.scylla = scylla;
+                log::info!("Chronicle published new Scylla");
                 rt.publish(self.scylla.clone()).await;
             }
         }
+        log::info!("Chronicle subscribed to Scylla");
+
         //
-        // - broker
-        #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+        // - brokern
+        #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
         let broker = self.broker.clone();
         #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
         let broker_scope_id = rt.start("broker".to_string(), broker).await?.scope_id();
-        #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
+        #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
         {
-            if let Some(broker) = rt.subscribe::<Broker>(broker_scope_id, "broker".to_string()).await? {
+            if let Some(broker) = rt.subscribe(broker_scope_id, "broker".to_string()).await? {
                 if self.broker != broker {
                     self.broker = broker;
                     rt.publish(self.broker.clone()).await;
                 }
             }
         }
-        // todo selective permanode
+        log::info!("Chronicle Started Broker");
         //
         // - api
         let api_scope_id = rt.start("api".to_string(), self.api.clone()).await?.scope_id();
@@ -132,9 +146,10 @@ where
                 rt.publish(self.api.clone()).await;
             }
         }
+        log::info!("Chronicle Started Api");
         Ok(())
     }
-    async fn run(&mut self, rt: &mut Rt<Self, S>, data: Self::Data) -> ActorResult<Self::Data> {
+    async fn run(&mut self, rt: &mut Rt<Self, S>, _data: Self::Data) -> ActorResult<Self::Data> {
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
                 #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
@@ -156,7 +171,7 @@ where
                         rt.publish(self.api.clone()).await;
                     }
                 }
-                ChronicleEvent::MicroService(scope_id, service, result_opt) => {
+                ChronicleEvent::MicroService(scope_id, service, _result_opt) => {
                     rt.upsert_microservice(scope_id, service);
                     if rt.microservices_stopped() {
                         break;

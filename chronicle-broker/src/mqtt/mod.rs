@@ -146,11 +146,23 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadata> {
 }
 
 /// Mqtt state
-pub struct Mqtt<T> {
+pub struct Mqtt<T: Topic> {
     url: Url,
     stream_capacity: usize,
     partitioner: MessageIdPartitioner,
     _topic: std::marker::PhantomData<T>,
+}
+
+impl<T: Topic> Mqtt<T> {
+    /// Create new mqtt actor struct
+    pub(super) fn new(url: Url, stream_capacity: usize, partitioner: MessageIdPartitioner) -> Self {
+        Self {
+            url,
+            stream_capacity,
+            partitioner,
+            _topic: std::marker::PhantomData,
+        }
+    }
 }
 
 /// MQTT topics

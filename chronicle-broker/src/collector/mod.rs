@@ -3,7 +3,10 @@
 use super::*;
 use crate::{
     application::*,
-    requester::{RequesterHandle, *},
+    requester::{
+        RequesterHandle,
+        *,
+    },
     solidifier::*,
 };
 use anyhow::bail;
@@ -13,15 +16,28 @@ use bee_message::{
     output::Output,
     parents::Parents,
     payload::{
-        transaction::{Essence, TransactionPayload},
+        transaction::{
+            Essence,
+            TransactionPayload,
+        },
         Payload,
     },
-    prelude::{MilestoneIndex, TransactionId},
+    prelude::{
+        MilestoneIndex,
+        TransactionId,
+    },
 };
 use chronicle_common::metrics::CONFIRMATION_TIME_COLLECTOR;
-use chronicle_filter::{Selected, Selective, SelectiveBuilder};
+use chronicle_filter::{
+    Selected,
+    Selective,
+    SelectiveBuilder,
+};
 use std::{
-    collections::{BinaryHeap, VecDeque},
+    collections::{
+        BinaryHeap,
+        VecDeque,
+    },
     fmt::Debug,
     sync::Arc,
 };
@@ -60,6 +76,7 @@ pub enum AskCollector {
     MilestoneMessage(u32),
 }
 
+#[derive(Clone, Copy)]
 pub struct MessageIdPartitioner {
     count: u8,
 }

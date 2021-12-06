@@ -7,19 +7,19 @@ use anyhow::{
 };
 
 use chronicle_broker::{
+    application::{
+        ImportType,
+        ImporterSession,
+    },
     merge::{
         LogPaths,
         Merger,
         ValidationLevel,
     },
-    BrokerTopology,
-    ChronicleBrokerThrough,
     *,
 };
-use chronicle_common::config::{
-    MqttType,
-    VersionedConfig,
-};
+
+use backstage::prefab::websocket::*;
 use clap::{
     load_yaml,
     App,
@@ -46,17 +46,16 @@ use tokio_tungstenite::{
     tungstenite::Message,
 };
 use url::Url;
-
 #[tokio::main]
 async fn main() {
     process().await.unwrap();
 }
 
 async fn process() -> anyhow::Result<()> {
+    let websocket_address: std::net::SocketAddr = std::env::var("WEBSOCKET_ADDR")?.parse()?;
     let yaml = load_yaml!("../cli.yaml");
     let app = App::from_yaml(yaml).version(std::env!("CARGO_PKG_VERSION"));
     let matches = app.get_matches();
-
     match matches.subcommand() {
         ("start", Some(matches)) => {
             // Assume the chronicle exe is in the same location as this one
@@ -102,88 +101,77 @@ async fn process() -> anyhow::Result<()> {
             }
         }
         ("stop", Some(_matches)) => {
-            let config = VersionedConfig::load(None)?.verify().await?;
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-            let message = Message::text(serde_json::to_string(&BrokerSocketMsg::ChronicleBroker(
-                ChronicleBrokerThrough::ExitProgram,
-            ))?);
-            stream.send(message).await?;
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            let actor_path = ActorPath::new();
+            let shutdown_request = Interface::new(actor_path, Event::shutdown());
+            stream.send(shutdown_request.to_message()).await?;
         }
         ("rebuild", Some(_matches)) => {
-            let config = VersionedConfig::load(None)?.verify().await?;
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-            let message = Message::text(serde_json::to_string(&SocketMsg::Scylla(ScyllaThrough::Topology(
-                scylla_rs::prelude::Topology::BuildRing(1),
-            )))?);
-            stream.send(message).await?;
+            use scylla_rs::app::cluster::Topology;
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            let actor_path = ActorPath::new().push("scylla".into()).push("cluster".into());
+            let rebuild_event = Topology::BuildRing;
+            let rebuild_json = serde_json::to_string(&rebuild_event)?;
+            let rebuild_request = Interface::new(actor_path, Event::Call(rebuild_json.into()));
+            stream.send(rebuild_request.to_message()).await?;
+            let rebuild_response = stream.next().await.ok_or_else(|| {
+                anyhow::anyhow!("Stream closed before receiving response for scylla rebuild ring request")
+            })??;
+            println!("{}", rebuild_response);
         }
-        ("config", Some(matches)) => {
-            let config = VersionedConfig::load(None)?.verify().await?;
-            if matches.is_present("print") {
-                println!("{:#?}", config);
-            }
-            if matches.is_present("rollback") {
-                let (mut stream, _) =
-                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-                let message = Message::text(serde_json::to_string(&SocketMsg::General(ConfigCommand::Rollback))?);
-                stream.send(message).await?;
-            }
-        }
-        ("nodes", Some(matches)) => nodes(matches).await?,
-        ("brokers", Some(matches)) => brokers(matches).await?,
-        ("archive", Some(matches)) => archive(matches).await?,
+        ("nodes", Some(matches)) => nodes(matches, &websocket_address).await?,
+        ("brokers", Some(matches)) => brokers(matches, &websocket_address).await?,
+        ("archive", Some(matches)) => archive(matches, &websocket_address).await?,
         _ => (),
     }
     Ok(())
 }
 
-async fn nodes<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
-    let mut config = VersionedConfig::load(None)?.verify().await?;
+async fn nodes<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::SocketAddr) -> anyhow::Result<()> {
+    use scylla_rs::app::cluster::Topology;
     let add_address = matches
         .value_of("add")
         .map(|address| address.parse().expect("Invalid address provided!"));
     let rem_address = matches
         .value_of("remove")
         .map(|address| address.parse().expect("Invalid address provided!"));
-    if !matches.is_present("skip-connection") {
-        let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
+    let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
 
-        if let Some(address) = add_address {
-            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla_rs::prelude::Topology::AddNode(address)));
-            let message = Message::text(serde_json::to_string(&message)?);
-            stream.send(message).await?;
-        }
-        if let Some(address) = rem_address {
-            let message = SocketMsg::Scylla(ScyllaThrough::Topology(scylla_rs::prelude::Topology::RemoveNode(
-                address,
-            )));
-            let message = Message::text(serde_json::to_string(&message)?);
-            stream.send(message).await?;
-        }
-        if matches.is_present("list") {
-            todo!("Print list of nodes");
-        }
-    } else {
-        if let Some(address) = add_address {
-            config.storage_config.nodes.insert(address);
-            config.save(None).expect("Failed to save config!");
-        }
-        if let Some(address) = rem_address {
-            config.storage_config.nodes.remove(&address);
-            config.save(None).expect("Failed to save config!");
-        }
-        if matches.is_present("list") {
-            println!("Configured Nodes:");
-            config.storage_config.nodes.iter().for_each(|n| {
-                println!("\t{}", n);
-            });
-        }
+    if let Some(address) = add_address {
+        let actor_path = ActorPath::new().push("scylla".into()).push("cluster".into());
+        let add_node_json = serde_json::to_string(&Topology::AddNode(address))?;
+        let add_node_request = Interface::new(actor_path, Event::Call(add_node_json.into()));
+        stream.send(add_node_request.to_message()).await?;
+        let add_node_response = stream.next().await.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Stream closed before receiving response for scylla/cluster add node: '{}' request",
+                address
+            )
+        })??;
+        println!("{}", add_node_response);
     }
+    if let Some(address) = rem_address {
+        let actor_path = ActorPath::new().push("scylla".into()).push("cluster".into());
+        let remove_node_json = serde_json::to_string(&Topology::RemoveNode(address))?;
+        let remove_node_request = Interface::new(actor_path, Event::Call(remove_node_json.into()));
+        stream.send(remove_node_request.to_message()).await?;
+        let remove_node_response = stream.next().await.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Stream closed before receiving response for scylla/cluster remove node: '{}' request",
+                address
+            )
+        })??;
+        println!("{}", remove_node_response);
+    }
+    if matches.is_present("list") {
+        todo!("Print list of nodes");
+    }
+
     Ok(())
 }
 
-async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
-    let mut config = VersionedConfig::load(None)?.verify().await?;
+async fn brokers<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::SocketAddr) -> anyhow::Result<()> {
+    use chronicle_broker::application::Topology;
     match matches.subcommand() {
         ("add", Some(subcommand)) => {
             let mqtt_addresses = subcommand
@@ -193,38 +181,19 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 .filter_map(|r: anyhow::Result<Url>| r.ok());
             let _endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
-
-            if !matches.is_present("skip-connection") {
-                let mut messages = Vec::new();
-                for mqtt_address in mqtt_addresses.clone() {
-                    messages.push(Message::text(serde_json::to_string(
-                        &BrokerSocketMsg::ChronicleBroker(ChronicleBrokerThrough::Topology(
-                            BrokerTopology::AddMqttMessages(mqtt_address.clone()),
-                        )),
-                    )?));
-                    messages.push(Message::text(serde_json::to_string(
-                        &BrokerSocketMsg::ChronicleBroker(ChronicleBrokerThrough::Topology(
-                            BrokerTopology::AddMqttMessagesReferenced(mqtt_address),
-                        )),
-                    )?));
-                }
-                let (mut stream, _) =
-                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-                for message in messages.drain(..) {
-                    stream.send(message).await?;
-                }
-            } else {
-                config
-                    .broker_config
-                    .mqtt_brokers
-                    .get_mut(&MqttType::Messages)
-                    .map(|m| m.extend(mqtt_addresses.clone()));
-                config
-                    .broker_config
-                    .mqtt_brokers
-                    .get_mut(&MqttType::MessagesReferenced)
-                    .map(|m| m.extend(mqtt_addresses));
-                config.save(None).expect("Failed to save config!");
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            let actor_path = ActorPath::new().push("broker".into());
+            for mqtt_address in mqtt_addresses {
+                let add_mqtt_json = serde_json::to_string(&Topology::AddMqtt(mqtt_address.clone()))?;
+                let add_mqtt_request = Interface::new(actor_path.clone(), Event::Call(add_mqtt_json.into()));
+                stream.send(add_mqtt_request.to_message()).await?;
+                let add_mqtt_response = stream.next().await.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Stream closed before receiving response for broker add mqtt: '{}' request",
+                        mqtt_address
+                    )
+                })??;
+                println!("{}", add_mqtt_response);
             }
         }
         ("remove", Some(subcommand)) => {
@@ -235,69 +204,35 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 .filter_map(|r: anyhow::Result<Url>| r.ok());
             let _endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
-
-            if !matches.is_present("skip-connection") {
-                let mut messages = Vec::new();
-                for mqtt_address in mqtt_addresses.clone() {
-                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                        ChronicleBrokerThrough::Topology(BrokerTopology::RemoveMqttMessages(mqtt_address.clone())),
-                    ))?));
-                    messages.push(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                        ChronicleBrokerThrough::Topology(BrokerTopology::RemoveMqttMessagesReferenced(mqtt_address)),
-                    ))?));
-                }
-                let (mut stream, _) =
-                    connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-                for message in messages.drain(..) {
-                    stream.send(message).await?;
-                }
-            } else {
-                config.broker_config.mqtt_brokers.get_mut(&MqttType::Messages).map(|m| {
-                    mqtt_addresses.clone().for_each(|u| {
-                        m.remove(&u);
-                    })
-                });
-                config
-                    .broker_config
-                    .mqtt_brokers
-                    .get_mut(&MqttType::MessagesReferenced)
-                    .map(|m| {
-                        mqtt_addresses.for_each(|u| {
-                            m.remove(&u);
-                        })
-                    });
-                config.save(None).expect("Failed to save config!");
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            let actor_path = ActorPath::new().push("broker".into());
+            for mqtt_address in mqtt_addresses {
+                let remove_mqtt_json = serde_json::to_string(&Topology::RemoveMqtt(mqtt_address.clone()))?;
+                let remove_mqtt_request = Interface::new(actor_path.clone(), Event::Call(remove_mqtt_json.into()));
+                stream.send(remove_mqtt_request.to_message()).await?;
+                let remove_mqtt_response = stream.next().await.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Stream closed before receiving response for broker remove mqtt: '{}' request",
+                        mqtt_address
+                    )
+                })??;
+                println!("{}", remove_mqtt_response);
             }
         }
         _ => (),
     }
     if matches.is_present("list") {
-        if !matches.is_present("skip-connection") {
-            todo!("List brokers");
-        } else {
-            println!("Configured MQTT Addresses:");
-            config.broker_config.mqtt_brokers.iter().for_each(|(ty, s)| {
-                println!("\t{:?}", ty);
-                for url in s.iter() {
-                    println!("\t\t{}", url);
-                }
-            });
-        }
+        todo!("list broker")
     }
     Ok(())
 }
 
-async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
-    let config = VersionedConfig::load(None)?.verify().await?;
+async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::SocketAddr) -> anyhow::Result<()> {
+    use chronicle_broker::application::Topology;
     match matches.subcommand() {
         ("import", Some(subcommand)) => {
             let dir = subcommand.value_of("directory").unwrap_or("");
-            let mut path = PathBuf::from(dir);
-            if path.is_relative() {
-                if let Some(logs_dir) = config.broker_config.logs_dir.as_ref() {
-                    path = Path::new(&logs_dir).join(path);
-                }
-            }
+            let path = PathBuf::from(dir);
             let resume = subcommand.is_present("resume");
             let (is_url, is_file) = Url::parse(dir)
                 .map(|url| (true, Path::new(url.path()).extension().is_some()))
@@ -339,17 +274,16 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
             let pb = ProgressBar::new(0);
             pb.set_style(sty.clone());
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", config.websocket_address))?).await?;
-            stream
-                .send(Message::text(serde_json::to_string(&SocketMsg::Broker(
-                    ChronicleBrokerThrough::Topology(BrokerTopology::Import {
-                        path,
-                        resume,
-                        import_range: Some(range),
-                        import_type,
-                    }),
-                ))?))
-                .await?;
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            let actor_path = ActorPath::new().push("broker".into());
+            let import_json = serde_json::to_string(&Topology::Import {
+                path,
+                resume,
+                import_range: Some(range),
+                import_type,
+            })?;
+            let import_request = Interface::new(actor_path, Event::Call(import_json.into()));
+            stream.send(import_request.to_message()).await?;
             while let Some(msg) = stream.next().await {
                 match msg {
                     Ok(msg) => {
@@ -441,13 +375,20 @@ async fn archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
             }
         }
         ("cleanup", Some(matches)) => cleanup_archive(matches).await?,
-        ("validate", Some(_matches)) => validate_archive().await?,
+        ("validate", Some(matches)) => validate_archive(matches).await?,
         _ => (),
     }
     Ok(())
 }
 
 async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
+    let max_log_size: u64;
+    if let Some(log_size) = matches.value_of("log-size") {
+        max_log_size = log_size.parse()?;
+    } else {
+        println!("Please provide the log size");
+        return Ok(());
+    };
     let backup_logs = !matches.is_present("no-backup");
     let val_level = matches
         .value_of("validation-level")
@@ -465,13 +406,11 @@ async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         .unwrap_or_default();
     let exit_on_val_err = !matches.is_present("no-exit-on-val-err");
     let include_finalized = matches.is_present("include-finalized");
-    let config = VersionedConfig::load(None)?.verify().await?;
-    let logs_dir;
-    let max_log_size = config.broker_config.max_log_size.clone().unwrap_or(u32::MAX as u64);
-    if let Some(dir) = config.broker_config.logs_dir.as_ref() {
-        logs_dir = PathBuf::from(dir);
-    } else {
-        println!("No LogsDir in the config, Chronicle is running without archiver");
+    let dir = matches.value_of("directory").unwrap_or("");
+    let logs_dir = PathBuf::from(dir);
+    let is_empty = logs_dir.read_dir()?.next().is_none();
+    if is_empty {
+        println!("LogsDir is empty, probably Chronicle is running without archiver");
         return Ok(());
     }
     Merger::new(
@@ -488,14 +427,24 @@ async fn cleanup_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn validate_archive() -> anyhow::Result<()> {
-    let config = VersionedConfig::load(None)?.verify().await?;
+async fn validate_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
+    let max_log_size: u64;
+    if let Some(log_size) = matches.value_of("log-size") {
+        max_log_size = log_size.parse()?;
+    } else {
+        println!("Please provide the log size");
+        return Ok(());
+    };
     let logs_dir;
-    let max_log_size = config.broker_config.max_log_size.clone().unwrap_or(u32::MAX as u64);
-    if let Some(dir) = config.broker_config.logs_dir.as_ref() {
+    if let Some(dir) = matches.value_of("directory") {
         logs_dir = PathBuf::from(dir);
     } else {
-        println!("No LogsDir in the config, Chronicle is running without archiver");
+        println!("Please provide the logs directory");
+        return Ok(());
+    };
+    let is_empty = logs_dir.read_dir()?.next().is_none();
+    if is_empty {
+        println!("LogsDir is empty, probably Chronicle is running without archiver");
         return Ok(());
     }
     LogPaths::new(&logs_dir, true)?.validate(max_log_size, true).await

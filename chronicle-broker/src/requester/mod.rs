@@ -2,18 +2,32 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
     application::ChronicleBroker,
-    collector::{CollectorEvent, CollectorHandle, CollectorId},
+    collector::{
+        CollectorEvent,
+        CollectorHandle,
+        CollectorId,
+    },
     *,
 };
 use backstage::core::Event;
-use bee_rest_api::types::{dtos::MessageDto, responses::MilestoneResponse};
+use bee_rest_api::types::{
+    dtos::MessageDto,
+    responses::MilestoneResponse,
+};
 use chronicle_common::Wrapper;
 use chronicle_filter::SelectiveBuilder;
 use collector::CollectorHandles;
-use rand::{prelude::SliceRandom, thread_rng};
+use rand::{
+    prelude::SliceRandom,
+    thread_rng,
+};
 use reqwest::Client;
 use serde_json::Value;
-use std::{collections::VecDeque, iter::FromIterator, str::FromStr};
+use std::{
+    collections::VecDeque,
+    iter::FromIterator,
+    str::FromStr,
+};
 use url::Url;
 pub(crate) type RequesterHandle<T: SelectiveBuilder> = UnboundedHandle<RequesterEvent<T>>;
 

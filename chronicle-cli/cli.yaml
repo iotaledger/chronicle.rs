@@ -155,6 +155,17 @@ subcommands:
             short: c
             about: Cleanup log file directory to normalize the file sizes.
             args:
+              - directory:
+                  short: d
+                  long: dir
+                  takes_value: true
+                  value_name: DIR
+                  help: The directory containing archive files to import. Defaults to the configured output directory.
+              - log-size:
+                  short: s
+                  long: log-size
+                  help: >-
+                    Specify the log max size you want to merge logs as they are merged.
               - no-backup:
                   short: x
                   long: no-backup

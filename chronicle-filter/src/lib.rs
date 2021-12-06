@@ -1,9 +1,15 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use bee_message::{Message, MessageId};
+use bee_message::{
+    Message,
+    MessageId,
+};
 use chronicle_storage::access::MessageMetadata;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use std::fmt::Debug;
 use wildmatch::WildMatch;
@@ -28,13 +34,15 @@ impl Selected {
 }
 
 #[async_trait::async_trait]
-pub trait SelectiveBuilder: 'static + Debug + PartialEq + Eq + Sized + Send + Clone + Serialize + Sync {
+pub trait SelectiveBuilder:
+    'static + Debug + PartialEq + Eq + Sized + Send + Clone + Serialize + Sync + std::default::Default
+{
     type State: Selective;
     async fn build(self) -> anyhow::Result<Self::State>;
 }
 
 #[async_trait::async_trait]
-pub trait Selective: Clone + Sized + Send {
+pub trait Selective: Clone + Sized + Send + Sync {
     /// Define if the trait is being implemented on permanode(true) or selective-permanode(false)
     const PERMANODE: bool;
     /// Check if this is running in permanode mode.
@@ -78,18 +86,36 @@ impl Selective for Permanode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// NOTE the selective impl not complete
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SelectivePermanodeConfig {
-    indexation_keys: Vec<u8>,
+    // indexation_keys: Vec<u8>,
 }
 
-// #[async_trait::async_trait]
-// impl SelectiveBuilder for SelectivePermanodeConfig {
-// type State = ();
-// async fn build(self) -> Result<(), Box<dyn std::error::Error>> {
-// Ok(())
-// }
-// }
+#[derive(Clone, Debug, Default, Copy)]
+pub struct SelectivePermanode;
+
+#[async_trait::async_trait]
+impl SelectiveBuilder for SelectivePermanodeConfig {
+    type State = SelectivePermanode;
+    async fn build(self) -> anyhow::Result<Self::State> {
+        Ok(SelectivePermanode)
+    }
+}
+
+#[async_trait::async_trait]
+impl Selective for SelectivePermanode {
+    const PERMANODE: bool = true;
+    #[inline]
+    async fn filter_message(
+        &mut self,
+        message_id: &MessageId,
+        message: &Message,
+        metadata: Option<&MessageMetadata>,
+    ) -> anyhow::Result<Option<Selected>> {
+        Ok(Some(Selected::select()))
+    }
+}
 
 // todo impl deserialize and serialize
 pub enum IndexationKey {
