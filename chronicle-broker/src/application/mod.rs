@@ -578,6 +578,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                 BrokerEvent::Shutdown => break,
             }
         }
+        log::info!("ChronicleBroker exited its event loop");
         Ok(())
     }
 }

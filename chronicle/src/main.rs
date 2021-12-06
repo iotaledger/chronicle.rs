@@ -12,6 +12,7 @@ use chronicle_common::{
     config::AlertConfig,
     metrics::*,
 };
+use chronicle_storage::keyspaces::ChronicleKeyspace;
 use scylla_rs::prelude::*;
 use serde::{
     Deserialize,
@@ -112,15 +113,23 @@ where
         // - Scylla
         let scylla_scope_id = rt.start("scylla".to_string(), self.scylla.clone()).await?.scope_id();
         log::info!("Chronicle Started Scylla");
-        if let Some(scylla) = rt.subscribe::<Scylla>(scylla_scope_id, "scylla".to_string()).await? {
-            if self.scylla != scylla {
-                self.scylla = scylla;
-                log::info!("Chronicle published new Scylla");
-                rt.publish(self.scylla.clone()).await;
-            }
+        let scylla = rt
+            .subscribe::<Scylla>(scylla_scope_id, "scylla".to_string())
+            .await?
+            .expect("Expected scylla to publish itself");
+        if self.scylla != scylla {
+            self.scylla = scylla;
+            log::info!("Chronicle published new Scylla");
+            rt.publish(self.scylla.clone()).await;
         }
         log::info!("Chronicle subscribed to Scylla");
-
+        let keyspaces = self.scylla.keyspaces.iter();
+        for keyspace_config in keyspaces {
+            init_database(keyspace_config).await.map_err(|e| {
+                log::error!("{}", e);
+                e
+            })?;
+        }
         //
         // - brokern
         #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
@@ -206,4 +215,129 @@ async fn chronicle() {
         .block_on()
         .await
         .expect("Runtime to shutdown gracefully");
+}
+
+async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
+    log::warn!(
+        "Initializing Chronicle data model for keyspace: {}",
+        keyspace_config.name
+    );
+    let datacenters = keyspace_config
+        .data_centers
+        .iter()
+        .map(|(datacenter_name, datacenter_config)| {
+            format!("'{}': {}", datacenter_name, datacenter_config.replication_factor)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "CREATE KEYSPACE IF NOT EXISTS {0}
+            WITH replication = {{'class': 'NetworkTopologyStrategy', {1}}}
+            AND durable_writes = true;",
+        keyspace_config.name, datacenters
+    )
+    .as_execute_query(&[])
+    .consistency(Consistency::All)
+    .build()?
+    .get_local()
+    .await
+    .map_err(|e| anyhow::Error::msg(format!("Could not verify if keyspace was created! error: {}", e)))?;
+    log::info!("Created Chronicle keyspace with name: {}", keyspace_config.name);
+    let table_queries = format!(
+        "CREATE TABLE IF NOT EXISTS {0}.messages (
+                message_id text PRIMARY KEY,
+                message blob,
+                metadata blob,
+            );
+            CREATE TABLE IF NOT EXISTS {0}.addresses  (
+                address text,
+                partition_id smallint,
+                milestone_index int,
+                output_type tinyint,
+                transaction_id text,
+                idx smallint,
+                amount bigint,
+                address_type tinyint,
+                inclusion_state blob,
+                PRIMARY KEY ((address, partition_id), milestone_index, output_type, transaction_id, idx)
+            ) WITH CLUSTERING ORDER BY (milestone_index DESC, output_type DESC, transaction_id DESC, idx DESC);
+            CREATE TABLE IF NOT EXISTS {0}.indexes  (
+                indexation text,
+                partition_id smallint,
+                milestone_index int,
+                message_id text,
+                inclusion_state blob,
+                PRIMARY KEY ((indexation, partition_id), milestone_index, message_id)
+            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+            CREATE TABLE IF NOT EXISTS {0}.parents  (
+                parent_id text,
+                partition_id smallint,
+                milestone_index int,
+                message_id text,
+                inclusion_state blob,
+                PRIMARY KEY ((parent_id, partition_id), milestone_index, message_id)
+            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+            CREATE TABLE IF NOT EXISTS {0}.transactions  (
+                transaction_id text,
+                idx smallint,
+                variant text,
+                message_id text,
+                data blob,
+                inclusion_state blob,
+                milestone_index int,
+                PRIMARY KEY (transaction_id, idx, variant, message_id, data)
+            );
+            CREATE TABLE IF NOT EXISTS {0}.milestones  (
+                milestone_index int,
+                message_id text,
+                timestamp bigint,
+                payload blob,
+                PRIMARY KEY (milestone_index, message_id)
+            );
+            CREATE TABLE IF NOT EXISTS {0}.hints  (
+                hint text,
+                variant text,
+                partition_id smallint,
+                milestone_index int,
+                PRIMARY KEY (hint, variant, partition_id)
+            ) WITH CLUSTERING ORDER BY (variant DESC, partition_id DESC);
+            CREATE TABLE IF NOT EXISTS {0}.sync  (
+                key text,
+                milestone_index int,
+                synced_by tinyint,
+                logged_by tinyint,
+                PRIMARY KEY (key, milestone_index)
+            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+
+            CREATE TABLE IF NOT EXISTS {0}.analytics (
+                key text,
+                milestone_index int,
+                message_count int,
+                transaction_count int,
+                transferred_tokens bigint,
+                PRIMARY KEY (key, milestone_index)
+            ) WITH CLUSTERING ORDER BY (milestone_index DESC);",
+        keyspace_config.name,
+    );
+
+    for query in table_queries.split(";").map(str::trim).filter(|s| !s.is_empty()) {
+        query
+            .as_execute_query(&[])
+            .consistency(Consistency::All)
+            .build()?
+            .get_global()
+            .await
+            .map_err(|e| {
+                anyhow::Error::msg(format!(
+                    "Could not verify if table: {}, was created! error: {}",
+                    query, e
+                ))
+            })?;
+    }
+    log::info!("Created Chronicle tables for keyspace name: {}", keyspace_config.name);
+    log::info!(
+        "Initialized Chronicle data model for keyspace: {}",
+        keyspace_config.name
+    );
+    Ok(())
 }

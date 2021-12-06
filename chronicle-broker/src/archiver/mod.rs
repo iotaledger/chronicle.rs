@@ -66,7 +66,8 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
     type Data = ();
     type Channel = UnboundedChannel<ArchiverEvent>;
 
-    async fn init(&mut self, rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
+    async fn init(&mut self, _rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
+        log::info!("Archiver is initializing");
         // try to create directory first
         if let Err(e) = tokio::fs::create_dir(self.dir_path.clone().into_boxed_path()).await {
             if e.kind() != std::io::ErrorKind::AlreadyExists {
@@ -81,6 +82,7 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
     }
 
     async fn run(&mut self, rt: &mut Rt<Self, Sup>, data: Self::Data) -> ActorResult<()> {
+        log::info!("Archiver is running");
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
                 ArchiverEvent::Close(milestone_index) => {
@@ -172,6 +174,7 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
             }
         }
         self.finish_in_progress().await;
+        log::info!("Archiver exited its event loop");
         Ok(())
     }
 }
