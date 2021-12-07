@@ -615,7 +615,6 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             let dir = format!("messages@{}", url);
             match rt.spawn(dir, mqtt_messages).await {
                 Ok((h, _signal)) => {
-                    h.shutdown().await;
                     // try to start mqtt_msg_ref feed_source
                     let dir = format!("referenced@{}", url);
                     if let Err(e) = rt.spawn(dir, mqtt_msg_ref).await {

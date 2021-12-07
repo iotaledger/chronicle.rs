@@ -69,10 +69,11 @@ impl<T: Topic> Mqtt<T> {
         S: SupHandle<Self>,
         Self: Actor<S>,
     {
+        info!("{:?} is initializing", &rt.service().directory());
         let parent_id = rt
             .parent_id()
             .ok_or_else(|| ActorError::exit_msg("mqtt without parent"))?;
-        let collector_handles = rt.depends_on(parent_id).await?;
+        let collector_handles = rt.link(parent_id, true).await?;
         info!("{:?} got initialized", &rt.service().directory());
         Ok(collector_handles)
     }
@@ -108,6 +109,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
         self.initialize::<S>(rt).await
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, collectors_handles: Self::Data) -> ActorResult<()> {
+        log::info!("{:?} is running", &rt.service().directory());
         while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
             if let Some(msg) = msg_opt {
                 if let Ok(msg) = Message::unpack(&mut msg.payload()) {
