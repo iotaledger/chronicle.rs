@@ -8,7 +8,7 @@ use super::{
     mqtt::Mqtt,
     requester::{
         Requester,
-        RequesterHandle,
+        RequesterHandles,
     },
     solidifier::{
         Solidifier,
@@ -606,7 +606,7 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             // try to start mqtt_message feed_source
             let dir = format!("messages@{}", url);
             match rt.spawn(dir, mqtt_messages).await {
-                Ok((h, signal)) => {
+                Ok((h, _signal)) => {
                     // try to start mqtt_msg_ref feed_source
                     let dir = format!("referenced@{}", url);
                     if let Err(e) = rt.spawn(dir, mqtt_msg_ref).await {
@@ -649,10 +649,10 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
         // First remove the old resources ( if any, as this is possible if maybe_start is invoked to restart the
         // children)
         rt.remove_resource::<HashMap<u8, CollectorHandle>>().await;
-        rt.remove_resource::<HashMap<u8, RequesterHandle<T>>>().await;
+        rt.remove_resource::<RequesterHandles<T>>().await;
         rt.remove_resource::<HashMap<u8, SolidifierHandle>>().await;
         let mut collector_handles = HashMap::new();
-        let mut requester_handles = HashMap::new();
+        let mut requester_handles = RequesterHandles::<T>::new();
         let mut solidifier_handles = HashMap::new();
         let mut initialized_rx = Vec::new();
         let reqwest_client = reqwest::Client::builder()
@@ -685,7 +685,7 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             initialized_rx.push(signal);
             let requester = Requester::<T>::new(reqwest_client.clone(), self.retries);
             let (r_handle, signal) = rt.spawn(format!("requester{}", partition_id), requester).await?;
-            requester_handles.insert(partition_id, r_handle);
+            requester_handles.push_front(r_handle);
             initialized_rx.push(signal);
         }
         // -- publish solidifiers handles, collectors handles and requester handles as resources
@@ -701,8 +701,11 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
         rt.start("syncer".to_string(), syncer).await?;
         // -- ensure all spawned are initialized
         for i in initialized_rx {
-            i.initialized().await?;
+            rt.abortable(i.initialized())
+                .await
+                .map_err(|e| ActorError::aborted(e))??;
         }
+        log::info!("ChronicleBroker successfully started");
         Ok(())
     }
 }

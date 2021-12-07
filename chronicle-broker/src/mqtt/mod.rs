@@ -104,6 +104,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
     type Data = CollectorHandles;
     type Channel = MqttChannel;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        info!("Mqtt: messages is initializing");
         let data = self.initialize::<S>(rt).await?;
         info!("Mqtt: messages got initialized");
         Ok(data)

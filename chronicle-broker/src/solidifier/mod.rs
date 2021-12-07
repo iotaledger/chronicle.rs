@@ -164,6 +164,7 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
     type Data = (Option<ArchiverHandle>, SyncerHandle, HashMap<u8, CollectorHandle>);
     type Channel = UnboundedChannel<SolidifierEvent>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        log::info!("{:?} is initializing", &rt.service().directory());
         let parent_id = rt
             .parent_id()
             .ok_or_else(|| ActorError::exit_msg("solidifier without parent id"))?;
@@ -177,6 +178,7 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
         rt: &mut Rt<Self, S>,
         (archiver, syncer, collector_handles): Self::Data,
     ) -> ActorResult<()> {
+        log::info!("{:?} is running", &rt.service().directory());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
                 SolidifierEvent::Message(full_message) => {

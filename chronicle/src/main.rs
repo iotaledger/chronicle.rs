@@ -130,7 +130,7 @@ where
                 e
             })?;
         }
-        // 
+        //
         // - api
         let api_scope_id = rt.start("api".to_string(), self.api.clone()).await?.scope_id();
         if let Some(api) = rt.subscribe::<ChronicleAPI>(api_scope_id, "api".to_string()).await? {

@@ -162,6 +162,7 @@ where
     type Data = (HashMap<u8, SolidifierHandle>, RequesterHandles<T>);
     type Channel = UnboundedChannel<CollectorEvent>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        log::info!("{:?} is initializing", rt.service().directory());
         let parent_id = rt
             .parent_id()
             .ok_or_else(|| ActorError::exit_msg("Collector without parent"))?;

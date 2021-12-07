@@ -23,6 +23,7 @@ impl<S: SupHandle<Self>> Actor<S> for Syncer {
     type Data = (HashMap<u8, SolidifierHandle>, Option<ArchiverHandle>); // solidifiers_handles and archiver handle
     type Channel = AbortableUnboundedChannel<SyncerEvent>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        log::info!("{:?} is initializing", &rt.service().directory());
         let solidifier_handles = rt
             .depends_on(
                 rt.parent_id()
@@ -54,7 +55,7 @@ impl<S: SupHandle<Self>> Actor<S> for Syncer {
                 }
                 SyncerEvent::MilestoneData(milestone_data) => {
                     self.handle_milestone_data(rt, milestone_data, &solidifiers, &archiver)
-                        .await;
+                        .await?;
                 }
             }
         }

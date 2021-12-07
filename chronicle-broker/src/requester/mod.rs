@@ -89,6 +89,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
     type Data = (ChronicleBroker<T>, CollectorHandles);
     type Channel = UnboundedChannel<RequesterEvent<T>>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+        log::info!("{:?} is initializing", &rt.service().directory());
         let parent_id = rt
             .parent_id()
             .ok_or_else(|| ActorError::exit_msg("Requester without parent"))?;
@@ -96,11 +97,14 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
             .subscribe(parent_id, "ChronicleBroker".to_string())
             .await?
             .ok_or_else(|| ActorError::exit_msg("Unable to get the first ChronicleBroker copy"))?;
+        log::info!("{:?} is got broker config", &rt.service().directory());
         self.update_endpoints(&chronicle_broker);
         let collector_handles = rt.depends_on(parent_id).await?;
+        log::info!("{:?} is got collector handles", &rt.service().directory());
         Ok((chronicle_broker, collector_handles))
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, (mut broker, collector_handles): Self::Data) -> ActorResult<()> {
+        log::info!("{:?} is {}", &rt.service().directory(), rt.service().status());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
                 RequesterEvent::RequestFullMessage(collector_id, message_id, try_ms_index) => {
