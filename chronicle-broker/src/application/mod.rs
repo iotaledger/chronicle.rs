@@ -68,6 +68,7 @@ use std::{
         HashMap,
         HashSet,
     },
+    ops::Range,
     path::PathBuf,
     time::Duration,
 };
@@ -95,7 +96,6 @@ pub struct ChronicleBroker<T: SelectiveBuilder> {
 
 impl<T: SelectiveBuilder> Default for ChronicleBroker<T> {
     fn default() -> Self {
-        let keyspace = ChronicleKeyspace::default();
         Self {
             parallelism: 25,
             complete_gaps_interval: Duration::from_secs(60 * 60),
@@ -251,8 +251,8 @@ impl From<Event<Service>> for BrokerEvent {
     }
 }
 
-use std::ops::Range;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+/// The topology enum of the broker
 pub enum Topology {
     // Import,
     /// Add mqtt feed source
@@ -414,9 +414,9 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         Topology::AddMqtt(mqtt) => {
                             // check if it's already exit
                             if self.contain_mqtt(&mqtt) {
-                                log::warn!("Cannot add an existing mqtt: {}", mqtt);
                                 // todo!("responde to responder")
                                 if let Some(responder) = responder_opt.as_ref() {
+                                    log::warn!("Cannot add an existing mqtt: {}", mqtt);
                                     let ok_response: Result<_, TopologyErr> =
                                         Err(TopologyErr::new(format!("Cannot add an existing mqtt: {}", mqtt)));
                                     responder.reply(ok_response).await.ok();
@@ -605,11 +605,11 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             let mqtt_msg_ref = Mqtt::<MessageMetadata>::new(url.clone(), self.cache_capacity, partitioner);
             // try to start mqtt_message feed_source
             let dir = format!("messages@{}", url);
-            match rt.start(dir, mqtt_messages).await {
-                Ok(h) => {
+            match rt.spawn(dir, mqtt_messages).await {
+                Ok((h, signal)) => {
                     // try to start mqtt_msg_ref feed_source
                     let dir = format!("referenced@{}", url);
-                    if let Err(e) = rt.start(dir, mqtt_msg_ref).await {
+                    if let Err(e) = rt.spawn(dir, mqtt_msg_ref).await {
                         log::error!("{}", e);
                         // shutdown the messages feeder
                         h.shutdown().await;

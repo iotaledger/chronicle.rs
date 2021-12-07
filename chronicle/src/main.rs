@@ -130,6 +130,16 @@ where
                 e
             })?;
         }
+        // 
+        // - api
+        let api_scope_id = rt.start("api".to_string(), self.api.clone()).await?.scope_id();
+        if let Some(api) = rt.subscribe::<ChronicleAPI>(api_scope_id, "api".to_string()).await? {
+            if self.api != api {
+                self.api = api;
+                rt.publish(self.api.clone()).await;
+            }
+        }
+        log::info!("Chronicle Started Api");
         //
         // - brokern
         #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
@@ -146,16 +156,6 @@ where
             }
         }
         log::info!("Chronicle Started Broker");
-        //
-        // - api
-        let api_scope_id = rt.start("api".to_string(), self.api.clone()).await?.scope_id();
-        if let Some(api) = rt.subscribe::<ChronicleAPI>(api_scope_id, "api".to_string()).await? {
-            if self.api != api {
-                self.api = api;
-                rt.publish(self.api.clone()).await;
-            }
-        }
-        log::info!("Chronicle Started Api");
         Ok(())
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, _data: Self::Data) -> ActorResult<Self::Data> {

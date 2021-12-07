@@ -32,7 +32,7 @@ impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
             .keep_alive_interval(Duration::from_secs(120))
             .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
             .clean_session(false)
-            .connect_timeout(Duration::from_secs(60))
+            .connect_timeout(Duration::from_secs(5))
             .finalize();
 
         let stream = client.get_stream(self.stream_capacity);
@@ -57,6 +57,7 @@ impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
             );
             ActorError::restart(e, None)
         })?;
+        info!("Subscribed AsyncClient: {}, topic: {}", &self.url.as_str(), T::name());
         let mqtt_channel = MqttChannel::new(client, self.stream_capacity, stream);
         Ok(mqtt_channel)
     }
@@ -86,9 +87,13 @@ impl<T: Topic> Mqtt<T> {
                 error!("unable to {}", e);
             } else {
                 // resubscribe
-                rt.inbox_mut().subscribe(T::name(), T::qos()).await;
-                // update the status to running
-                rt.update_status(ServiceStatus::Running).await;
+                if let Err(error) = rt.inbox_mut().subscribe(T::name(), T::qos()).await {
+                    error!("unable to subscribe, error: {}", error);
+                } else {
+                    // update the status to running
+                    rt.update_status(ServiceStatus::Running).await;
+                    return Ok(());
+                };
             }
         }
     }
@@ -99,7 +104,9 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
     type Data = CollectorHandles;
     type Channel = MqttChannel;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
-        self.initialize::<S>(rt).await
+        let data = self.initialize::<S>(rt).await?;
+        info!("Mqtt: messages got initialized");
+        Ok(data)
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, collectors_handles: Self::Data) -> ActorResult<()> {
         while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
