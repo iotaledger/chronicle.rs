@@ -73,6 +73,7 @@ impl<T: Topic> Mqtt<T> {
             .parent_id()
             .ok_or_else(|| ActorError::exit_msg("mqtt without parent"))?;
         let collector_handles = rt.depends_on(parent_id).await?;
+        info!("{:?} got initialized", &rt.service().directory());
         Ok(collector_handles)
     }
     async fn reconnecting<S>(rt: &mut Rt<Self, S>) -> ActorResult<()>
@@ -104,10 +105,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
     type Data = CollectorHandles;
     type Channel = MqttChannel;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
-        info!("Mqtt: messages is initializing");
-        let data = self.initialize::<S>(rt).await?;
-        info!("Mqtt: messages got initialized");
-        Ok(data)
+        self.initialize::<S>(rt).await
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, collectors_handles: Self::Data) -> ActorResult<()> {
         while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
@@ -137,6 +135,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadata> {
         self.initialize(rt).await
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, collectors_handles: Self::Data) -> ActorResult<()> {
+        log::info!("{:?} is running", &rt.service().directory());
         while let Some(msg_ref_opt) = rt.inbox_mut().stream().next().await {
             if let Some(msg_ref) = msg_ref_opt {
                 if let Ok(msg_ref) = serde_json::from_str::<MessageMetadata>(&msg_ref.payload_str()) {

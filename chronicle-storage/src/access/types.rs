@@ -197,7 +197,31 @@ macro_rules! impl_string_packable {
     };
 }
 
-impl_simple_packable!(MilestoneIndex);
+impl ColumnDecoder for Bee<MilestoneIndex> {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
+        let ms_index = u32::try_decode_column(slice)?;
+        Ok(Bee(MilestoneIndex(ms_index)))
+    }
+}
+
+impl ColumnEncoder for Bee<MilestoneIndex> {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.0 .0.encode(buffer)
+    }
+}
+
+impl TokenEncoder for Bee<MilestoneIndex> {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.into()
+    }
+}
+
+impl ColumnEncoder for Bee<&MilestoneIndex> {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.0 .0.encode(buffer)
+    }
+}
+
 impl_simple_packable!(Message);
 impl_string_packable!(MessageId);
 impl_string_packable!(TransactionId);

@@ -387,11 +387,9 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
         if let Ok(sync_data) = self.query_sync_table().await {
             // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
             self.maybe_start(rt, sync_data, &selective).await?; //?
-            println!("started it",);
         } else {
             rt.update_status(ServiceStatus::Idle).await;
         };
-        println!("before running",);
         Ok((scylla_service, selective))
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, (mut scylla_service, selective): Self::Data) -> ActorResult<()> {
@@ -536,7 +534,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         })) => service_result.expect("Failed to unwrap service_result in broker")?,
                         Some(Err(e)) => {
                             // a child might shutdown due to overload in scylla, where scylla still running
-                            rt.shutdown_children().await;
+                            // todo rt.shutdown_children().await;
                         }
                         _ => {}
                     }
@@ -546,7 +544,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         if rt.microservices_stopped() && (scylla_service.is_running() || scylla_service.is_degraded()) {
                             if let Ok(sync_data) = self.query_sync_table().await {
                                 // todo maybe sleep for 10 seconds in-case the shutdown was due to overload in scylla
-                                self.maybe_start(rt, sync_data, &selective).await?;
+                                // todo self.maybe_start(rt, sync_data, &selective).await?;
                             }
                         }
                     } else {
@@ -563,7 +561,6 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         if (scylla_service_res.is_running() || scylla_service_res.is_degraded()) && children_dont_exist
                         {
                             if let Ok(sync_data) = self.query_sync_table().await {
-                                println!("before scylla maybe_start");
                                 self.maybe_start(rt, sync_data, &selective).await?;
                             } else {
                                 return Err(ActorError::restart_msg(
@@ -581,7 +578,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         return Err(ActorError::restart_msg("Scylla service got stopped", None));
                     }
                 }
-                BrokerEvent::Shutdown => rt.shutdown_children().await,
+                BrokerEvent::Shutdown => rt.stop().await,
             }
         }
         log::info!("ChronicleBroker exited its event loop");
@@ -618,6 +615,7 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             let dir = format!("messages@{}", url);
             match rt.spawn(dir, mqtt_messages).await {
                 Ok((h, _signal)) => {
+                    h.shutdown().await;
                     // try to start mqtt_msg_ref feed_source
                     let dir = format!("referenced@{}", url);
                     if let Err(e) = rt.spawn(dir, mqtt_msg_ref).await {

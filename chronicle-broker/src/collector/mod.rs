@@ -1158,14 +1158,15 @@ where
         K: 'static + Send + Sync + Clone + TokenEncoder,
         V: 'static + Send + Sync + Clone,
     {
-        let delete_req = self
-            .keyspace
+        self.keyspace
             .delete(&key, &variables)
-            .consistency(Consistency::One)
+            .consistency(Consistency::Quorum)
             .build()
-            .map_err(|e| ActorError::exit(e))?;
-        let worker = BasicWorker::new();
-        delete_req.send_local_with_worker(worker).ok();
+            .map_err(|e| ActorError::exit(e))?
+            .worker()
+            .with_retries(self.retries as usize)
+            .send_local()
+            .ok();
         Ok(())
     }
 }
@@ -1197,6 +1198,7 @@ impl AtomicWorker {
 }
 
 /// A simple worker with only a field which specifies the number of retires
+#[derive(Debug, Clone)]
 pub struct SimpleWorker {
     /// The number of retires
     retries: u8,
@@ -1213,14 +1215,13 @@ trait Inherent {
 
 /// Implement the `Inherent` trait for the simple worker
 impl Inherent for SimpleWorker {
-    fn inherent_boxed<S, K, V>(&self, _keyspace: S, _key: K, _value: V) -> Box<dyn Worker>
+    fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
     where
         S: 'static + Insert<K, V> + Debug,
         K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
         V: 'static + Send + Sync + Clone + Debug,
     {
-        // todo replace it with retryable worker
-        BasicWorker::new()
+        InsertWorker::boxed(keyspace, key, value, self.retries)
     }
 }
 
@@ -1233,5 +1234,83 @@ impl Inherent for AtomicWorker {
         V: 'static + Send + Sync + Clone + Debug,
     {
         AtomicSolidifierWorker::boxed(self.arc_handle.clone(), keyspace, key, value, self.retries)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct InsertWorker<S: Insert<K, V>, K, V> {
+    keyspace: S,
+    key: K,
+    value: V,
+    retries: u8,
+}
+
+impl<S: Insert<K, V>, K, V> InsertWorker<S, K, V>
+where
+    S: 'static + Insert<K, V>,
+    K: 'static + Send + Sync + Clone + TokenEncoder,
+    V: 'static + Send + Sync + Clone,
+{
+    /// Create a new insert worker with a number of retries
+    pub fn new(keyspace: S, key: K, value: V, retries: u8) -> Self {
+        Self {
+            keyspace,
+            key,
+            value,
+            retries,
+        }
+    }
+    /// Create a new boxed insert worker with a number of retries
+    pub fn boxed(keyspace: S, key: K, value: V, retries: u8) -> Box<Self> {
+        Box::new(Self::new(keyspace, key, value, retries))
+    }
+}
+
+impl<S, K, V> Worker for InsertWorker<S, K, V>
+where
+    S: 'static + Insert<K, V> + Debug,
+    K: 'static + Send + Sync + Clone + TokenEncoder + Debug,
+    V: 'static + Send + Sync + Clone + Debug,
+{
+    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
+        Decoder::try_from(giveload)?;
+        Ok(())
+    }
+
+    fn handle_error(
+        mut self: Box<Self>,
+        mut error: WorkerError,
+        reporter: Option<&ReporterHandle>,
+    ) -> anyhow::Result<()> {
+        if let WorkerError::Cql(ref mut cql_error) = error {
+            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
+                let keyspace_name = self.keyspace.name();
+                let statement = self.keyspace.statement();
+                PrepareWorker::new(&keyspace_name, id, &statement)
+                    .send_to_reporter(reporter)
+                    .ok();
+            }
+        }
+
+        if self.retries > 0 {
+            self.retries -= 1;
+            // currently we assume all cql/worker errors are retryable, but we might change this in future
+            let req = self
+                .keyspace
+                .insert_query(&self.key, &self.value)
+                .consistency(Consistency::One)
+                .build()?;
+            let keyspace_name = self.keyspace.name();
+            if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
+                if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                    // todo? maybe spawn future task
+                    worker.handle_error(WorkerError::NoRing, None)?
+                };
+            };
+        } else {
+            bail!("Basic Inserter worker consumed all retries")
+        }
+
+        Ok(())
     }
 }

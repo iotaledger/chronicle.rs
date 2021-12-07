@@ -173,8 +173,9 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                 ArchiverEvent::Shutdown => rt.inbox_mut().close(),
             }
         }
-        self.finish_in_progress().await;
         log::info!("Archiver exited its event loop");
+        self.finish_in_progress().await;
+        log::info!("Archiver finished");
         Ok(())
     }
 }

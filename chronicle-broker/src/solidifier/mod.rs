@@ -880,6 +880,10 @@ impl AtomicSolidifierHandle {
             any_error,
         }
     }
+    /// set any_error to true
+    pub(crate) fn set_error(&self) {
+        self.any_error.store(true, Ordering::Relaxed);
+    }
 }
 impl<S: Insert<K, V>, K, V> AtomicSolidifierWorker<S, K, V>
 where
@@ -945,18 +949,18 @@ where
                     let keyspace_name = self.keyspace.name();
                     if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
                         if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                            worker.handle_error(WorkerError::NoRing, reporter)?
+                            worker.handle_error(WorkerError::NoRing, None)?
                         };
                     };
                 }
                 Err(e) => {
                     error!("{}", e);
-                    self.handle.any_error.store(true, Ordering::Relaxed);
+                    self.handle.set_error();
                 }
             }
         } else {
             // no more retries
-            self.handle.any_error.store(true, Ordering::Relaxed);
+            self.handle.set_error();
         }
         Ok(())
     }
