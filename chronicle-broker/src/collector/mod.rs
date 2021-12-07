@@ -450,6 +450,7 @@ where
                 CollectorEvent::Shutdown => break,
             }
         }
+        log::info!("{:?} exited its event loop", &rt.service().directory());
         Ok(())
     }
 }

@@ -181,14 +181,23 @@ where
                     }
                 }
                 ChronicleEvent::MicroService(scope_id, service, _result_opt) => {
+                    let is_stopped = service.is_stopped();
                     rt.upsert_microservice(scope_id, service);
+                    if !rt.service().is_stopping() {
+                        if is_stopped {
+                            rt.stop().await;
+                        }
+                    } else {
+                        rt.update_status(ServiceStatus::Stopping).await;
+                    }
                     if rt.microservices_stopped() {
-                        break;
+                        rt.inbox_mut().close();
                     }
                 }
-                ChronicleEvent::Shutdown => rt.inbox_mut().close(),
+                ChronicleEvent::Shutdown => rt.stop().await,
             }
         }
+        log::info!("Chronicle exited its event loop");
         Ok(())
     }
 }
@@ -209,12 +218,22 @@ fn main() {
 }
 
 async fn chronicle() {
+    let backserver_addr: std::net::SocketAddr = std::env::var("BACKSERVER").map_or_else(
+        |_| ([127, 0, 0, 1], 9999).into(),
+        |n| {
+            n.parse()
+                .expect("Invalid BACKSERVER env, use this format '127.0.0.1:9999' ")
+        },
+    );
     Runtime::from_config::<Chronicle>()
         .await
-        .expect("Chronicle Runtime to run")
+        .expect("Failed to run chronicle system")
+        .backserver(backserver_addr)
+        .await
+        .expect("Failed to run backserver")
         .block_on()
         .await
-        .expect("Runtime to shutdown gracefully");
+        .expect("Failed to shutdown the runtime gracefully");
 }
 
 async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {

@@ -168,8 +168,18 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
         let parent_id = rt
             .parent_id()
             .ok_or_else(|| ActorError::exit_msg("solidifier without parent id"))?;
-        let archiver_handle = rt.lookup(parent_id).await;
-        let syncer_handle = rt.depends_on(parent_id).await?;
+        let archiver_handle;
+        if let Some(archiver_id) = rt.sibling("archiver").scope_id().await {
+            archiver_handle = rt.lookup(archiver_id).await;
+        } else {
+            archiver_handle = None;
+        };
+        let syncer_id = rt
+            .sibling("syncer")
+            .scope_id()
+            .await
+            .ok_or_else(|| ActorError::aborted_msg("Solidifier unable to get syncer scope id"))?;
+        let syncer_handle = rt.depends_on(syncer_id).await?;
         let collector_handles = rt.depends_on(parent_id).await?;
         Ok((archiver_handle, syncer_handle, collector_handles))
     }
@@ -303,6 +313,7 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
                 SolidifierEvent::Shutdown => break,
             }
         }
+        log::info!("{:?} exited its event loop", &rt.service().directory());
         Ok(())
     }
 }

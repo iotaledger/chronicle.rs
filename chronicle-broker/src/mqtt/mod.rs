@@ -124,6 +124,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
                 Self::reconnecting::<S>(rt).await?
             }
         }
+        log::warn!("{:?} exited its event loop", &rt.service().directory());
         Ok(())
     }
 }

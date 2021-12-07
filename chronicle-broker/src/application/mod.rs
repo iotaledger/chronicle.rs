@@ -387,9 +387,11 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
         if let Ok(sync_data) = self.query_sync_table().await {
             // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
             self.maybe_start(rt, sync_data, &selective).await?; //?
+            println!("started it",);
         } else {
             rt.update_status(ServiceStatus::Idle).await;
         };
+        println!("before running",);
         Ok((scylla_service, selective))
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, (mut scylla_service, selective): Self::Data) -> ActorResult<()> {
@@ -532,7 +534,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                             request: Some(ActorRequest::Exit),
                             ..
                         })) => service_result.expect("Failed to unwrap service_result in broker")?,
-                        Some(Err(_)) => {
+                        Some(Err(e)) => {
                             // a child might shutdown due to overload in scylla, where scylla still running
                             rt.shutdown_children().await;
                         }
@@ -547,6 +549,10 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                                 self.maybe_start(rt, sync_data, &selective).await?;
                             }
                         }
+                    } else {
+                        if rt.microservices_stopped() {
+                            rt.inbox_mut().close();
+                        }
                     }
                 }
                 BrokerEvent::Scylla(service) => {
@@ -557,6 +563,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         if (scylla_service_res.is_running() || scylla_service_res.is_degraded()) && children_dont_exist
                         {
                             if let Ok(sync_data) = self.query_sync_table().await {
+                                println!("before scylla maybe_start");
                                 self.maybe_start(rt, sync_data, &selective).await?;
                             } else {
                                 return Err(ActorError::restart_msg(
@@ -573,9 +580,8 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         // is dropped, stop the whole broker with Restart request
                         return Err(ActorError::restart_msg("Scylla service got stopped", None));
                     }
-                    todo!()
                 }
-                BrokerEvent::Shutdown => break,
+                BrokerEvent::Shutdown => rt.shutdown_children().await,
             }
         }
         log::info!("ChronicleBroker exited its event loop");
@@ -596,6 +602,11 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             rt.update_status(ServiceStatus::Idle).await;
             return Ok(());
         }
+        // First remove the old resources ( if any, as this is possible if maybe_start is invoked to restart the
+        // children)
+        rt.remove_resource::<HashMap<u8, CollectorHandle>>().await;
+        rt.remove_resource::<RequesterHandles<T>>().await;
+        rt.remove_resource::<HashMap<u8, SolidifierHandle>>().await;
         // -- spawn feed sources (mqtt)
         let mqtt_brokers = self.mqtt_brokers.iter();
         let mut balanced = false;
@@ -646,19 +657,22 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             let archiver = Archiver::new(dir_path, keyspace, next, max_log_size);
             rt.start("archiver".to_string(), archiver).await?;
         }
-        // First remove the old resources ( if any, as this is possible if maybe_start is invoked to restart the
-        // children)
-        rt.remove_resource::<HashMap<u8, CollectorHandle>>().await;
-        rt.remove_resource::<RequesterHandles<T>>().await;
-        rt.remove_resource::<HashMap<u8, SolidifierHandle>>().await;
         let mut collector_handles = HashMap::new();
         let mut requester_handles = RequesterHandles::<T>::new();
         let mut solidifier_handles = HashMap::new();
         let mut initialized_rx = Vec::new();
+        let gap_start = sync_data.gaps.first().expect("Invalid gap start").start;
         let reqwest_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(self.request_timeout_secs.into()))
             .build()
             .expect("Expected reqwest client to build correctly");
+        // -- spawn syncer
+        let sync_range = self.sync_range;
+        let update_sync_data_every = self.complete_gaps_interval;
+        let parallelism = self.parallelism;
+        let keyspace = self.keyspace.clone();
+        let syncer = Syncer::new(sync_data, sync_range, update_sync_data_every, parallelism, keyspace);
+        rt.spawn("syncer".to_string(), syncer).await?;
         // -- spawn collectors and solidifiers
         for partition_id in 0..self.partition_count {
             let collector = Collector::<T>::new(
@@ -677,7 +691,7 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
                 self.keyspace.clone(),
                 partition_id,
                 MessageIdPartitioner::new(self.partition_count),
-                sync_data.gaps.first().expect("Invalid gap start").start,
+                gap_start,
                 self.retries,
             );
             let (s_handle, signal) = rt.spawn(format!("solidifier{}", partition_id), solidifier).await?;
@@ -692,13 +706,6 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
         rt.publish(collector_handles).await;
         rt.publish(requester_handles).await;
         rt.publish(solidifier_handles).await;
-        // -- start syncer
-        let sync_range = self.sync_range;
-        let update_sync_data_every = self.complete_gaps_interval;
-        let parallelism = self.parallelism;
-        let keyspace = self.keyspace.clone();
-        let syncer = Syncer::new(sync_data, sync_range, update_sync_data_every, parallelism, keyspace);
-        rt.start("syncer".to_string(), syncer).await?;
         // -- ensure all spawned are initialized
         for i in initialized_rx {
             rt.abortable(i.initialized())

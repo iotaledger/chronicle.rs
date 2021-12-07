@@ -45,6 +45,7 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
     type Channel = AbortableUnboundedChannel<ChronicleAPIEvent>;
 
     async fn init(&mut self, rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
+        log::info!("{:?} is initializing", &rt.service().directory());
         register_metrics();
         let keyspaces: HashMap<String, PartitionConfig> = self.keyspaces.clone().into_iter().collect();
         let rocket = backstage::prefab::rocket::RocketServer::new(
@@ -58,7 +59,8 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
         Ok(())
     }
 
-    async fn run(&mut self, rt: &mut Rt<Self, Sup>, data: Self::Data) -> ActorResult<()> {
+    async fn run(&mut self, rt: &mut Rt<Self, Sup>, _data: Self::Data) -> ActorResult<()> {
+        log::info!("{:?} is running", &rt.service().directory());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
                 ChronicleAPIEvent::Report(scope_id, service) => {
@@ -69,6 +71,7 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
                 }
             }
         }
+        log::info!("{:?} exited its event loop", &rt.service().directory());
         Ok(())
     }
 }

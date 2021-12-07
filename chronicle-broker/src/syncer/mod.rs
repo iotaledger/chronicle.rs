@@ -16,7 +16,7 @@ use std::{
     ops::Deref,
     time::Duration,
 };
-pub(crate) type SyncerHandle = UnboundedHandle<SyncerEvent>;
+pub(crate) type SyncerHandle = AbortableUnboundedHandle<SyncerEvent>;
 
 #[async_trait]
 impl<S: SupHandle<Self>> Actor<S> for Syncer {
@@ -38,6 +38,7 @@ impl<S: SupHandle<Self>> Actor<S> for Syncer {
         }
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, (solidifiers, archiver): Self::Data) -> ActorResult<()> {
+        log::info!("{:?} is running", &rt.service().directory());
         if archiver.is_some() {
             self.complete(rt, &solidifiers, &archiver).await?;
         } else {
@@ -59,11 +60,13 @@ impl<S: SupHandle<Self>> Actor<S> for Syncer {
                 }
             }
         }
+        log::info!("{:?} exited its event loop", &rt.service().directory());
         Ok(())
     }
 }
 
 /// Syncer events
+#[derive(Debug)]
 pub enum SyncerEvent {
     /// Sync milestone data
     MilestoneData(MilestoneData),

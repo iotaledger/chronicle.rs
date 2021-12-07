@@ -132,6 +132,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
                 RequesterEvent::Shutdown => break,
             }
         }
+        log::info!("{:?} exited its event loop", &rt.service().directory());
         Ok(())
     }
 }
