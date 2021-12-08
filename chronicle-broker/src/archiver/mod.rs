@@ -4,6 +4,7 @@
 use super::*;
 use crate::syncer::Ascending;
 use anyhow::bail;
+use bee_message::prelude::MilestoneIndex;
 use chronicle_common::alert;
 use chronicle_storage::access::ChronicleKeyspace;
 use std::{
@@ -26,7 +27,7 @@ use tokio::{
 pub(crate) type ArchiverHandle = UnboundedHandle<ArchiverEvent>;
 /// The maximum bytes size for a given log file;
 pub const MAX_LOG_SIZE: u64 = u32::MAX as u64;
-const MAX_MILESTONE_DATA_LEN: usize = 10;
+const MAX_MILESTONE_DATA_LEN: usize = 4;
 
 /// Archiver state
 pub struct Archiver {
@@ -319,23 +320,19 @@ impl Archiver {
         milestone_data_line: &Vec<u8>,
         ms_index: u32,
         keyspace: &ChronicleKeyspace,
-        retries_per_query: usize,
+        retries: usize,
     ) -> anyhow::Result<()> {
         log_file.append_line(&milestone_data_line).await?;
         // insert into the DB, without caring about the response
-        // let sync_key = chronicle_common::Synckey;
-        todo!("make use of -storage");
-        // let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
-        // keyspace
-        // .insert(&sync_key, &synced_record)
-        // .consistency(Consistency::One)
-        // .build()?
-        // .send_local(InsertWorker::boxed(
-        // keyspace.clone(),
-        // sync_key,
-        // synced_record,
-        // retries_per_query,
-        // ));
+        let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
+        keyspace
+            .insert(&"permanode".to_string(), &synced_record)
+            .consistency(Consistency::Quorum)
+            .build()?
+            .worker()
+            .with_retries(retries)
+            .send_local()
+            .ok();
         Ok(())
     }
     async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> anyhow::Result<()> {
