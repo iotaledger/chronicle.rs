@@ -50,7 +50,9 @@ use url::Url;
 pub(crate) type CollectorId = u8;
 pub(crate) type CollectorHandle = UnboundedHandle<CollectorEvent>;
 pub(crate) type CollectorHandles = HashMap<CollectorId, CollectorHandle>;
+
 /// Collector events
+#[derive(Debug)]
 pub enum CollectorEvent {
     /// Requested Message and Metadata, u32 is the milestoneindex
     MessageAndMeta(u32, Option<MessageId>, Option<FullMessage>),
@@ -68,6 +70,7 @@ impl ShutdownEvent for CollectorEvent {
         Self::Shutdown
     }
 }
+#[derive(Debug)]
 /// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id

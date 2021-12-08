@@ -110,7 +110,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
                 RequesterEvent::RequestFullMessage(collector_id, message_id, try_ms_index) => {
                     if let Some(collector_handle) = collector_handles.get(&collector_id) {
                         self.request_full_message_with_retries(collector_handle, message_id, try_ms_index)
-                            .await;
+                            .await?;
                     } else {
                         error!("Invalid collector_id, unable to request full message {}", message_id);
                     }
@@ -118,7 +118,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
                 RequesterEvent::RequestMilestone(collector_id, milestone_index) => {
                     if let Some(collector_handle) = collector_handles.get(&collector_id) {
                         self.request_milestone_message_with_retries(collector_handle, milestone_index)
-                            .await;
+                            .await?;
                     } else {
                         error!("Invalid collector_id, unable to request milestone {}", milestone_index);
                     }
@@ -162,13 +162,18 @@ impl<T: SelectiveBuilder> Requester<T> {
         collector_handle: &CollectorHandle,
         message_id: MessageId,
         try_ms_index: u32,
-    ) {
+    ) -> ActorResult<()> {
         let mut retries = self.retries;
         loop {
             if retries > 0 {
                 if let Some(remote_url) = self.api_endpoints.pop_front() {
                     if let Ok(full_message) = self.request_message_and_metadata(&remote_url, message_id).await {
-                        self.respond_to_collector(collector_handle, try_ms_index, Some(message_id), Some(full_message));
+                        self.respond_to_collector(
+                            collector_handle,
+                            try_ms_index,
+                            Some(message_id),
+                            Some(full_message),
+                        )?;
                         self.api_endpoints.push_front(remote_url);
                         break;
                     } else {
@@ -179,33 +184,38 @@ impl<T: SelectiveBuilder> Requester<T> {
                         continue;
                     }
                 } else {
-                    self.respond_to_collector(collector_handle, try_ms_index, None, None);
+                    self.respond_to_collector(collector_handle, try_ms_index, None, None)?;
                     break;
                 };
             } else {
-                self.respond_to_collector(collector_handle, try_ms_index, None, None);
+                self.respond_to_collector(collector_handle, try_ms_index, None, None)?;
                 break;
             }
         }
+        Ok(())
     }
     async fn request_milestone_message_with_retries(
         &mut self,
         collector_handle: &CollectorHandle,
         milestone_index: u32,
-    ) {
+    ) -> ActorResult<()> {
         let mut retries = self.retries;
         loop {
             if retries > 0 {
                 if let Some(remote_url) = self.api_endpoints.pop_front() {
                     if let Ok(full_message) = self.request_milestone_message(&remote_url, milestone_index).await {
-                        self.respond_to_collector(
+                        if let Err(e) = self.respond_to_collector(
                             collector_handle,
                             milestone_index,
                             Some(full_message.metadata().message_id),
                             Some(full_message),
-                        );
-                        self.api_endpoints.push_front(remote_url);
-                        break;
+                        ) {
+                            self.api_endpoints.push_front(remote_url);
+                            return Err(e);
+                        } else {
+                            self.api_endpoints.push_front(remote_url);
+                            break;
+                        }
                     } else {
                         self.api_endpoints.push_back(remote_url);
                         retries -= 1;
@@ -214,14 +224,15 @@ impl<T: SelectiveBuilder> Requester<T> {
                         continue;
                     }
                 } else {
-                    self.respond_to_collector(collector_handle, milestone_index, None, None);
+                    self.respond_to_collector(collector_handle, milestone_index, None, None)?;
                     break;
                 };
             } else {
-                self.respond_to_collector(collector_handle, milestone_index, None, None);
+                self.respond_to_collector(collector_handle, milestone_index, None, None)?;
                 break;
             }
         }
+        Ok(())
     }
     fn respond_to_collector(
         &self,
@@ -229,9 +240,11 @@ impl<T: SelectiveBuilder> Requester<T> {
         ms_index: u32,
         opt_message_id: Option<MessageId>,
         opt_full_message: Option<FullMessage>,
-    ) {
+    ) -> ActorResult<()> {
         let collector_event = CollectorEvent::MessageAndMeta(ms_index, opt_message_id, opt_full_message);
-        let _ = collector_handle.send(collector_event);
+        collector_handle
+            .send(collector_event)
+            .map_err(|e| ActorError::aborted(e))
     }
     async fn request_milestone_message(&mut self, remote_url: &Url, milestone_index: u32) -> Result<FullMessage, ()> {
         let get_milestone_url = remote_url.join(&format!("milestones/{}", milestone_index)).unwrap();
