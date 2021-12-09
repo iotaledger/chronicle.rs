@@ -186,6 +186,9 @@ where
                     if !rt.service().is_stopping() {
                         if is_stopped {
                             rt.stop().await;
+                        } else {
+                            let same_status = rt.service().status().clone();
+                            rt.update_status(same_status).await;
                         }
                     } else {
                         rt.update_status(ServiceStatus::Stopping).await;

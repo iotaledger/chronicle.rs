@@ -27,14 +27,13 @@ impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
             error!("Unable to create AsyncClient: {}, error: {}", &self.url.as_str(), e);
             ActorError::exit(e)
         })?;
-        info!("Created AsyncClient: {}", &self.url.to_string());
+        info!("Created AsyncClient: {}, topic: {}", &self.url.to_string(), T::name());
         let conn_opts = paho_mqtt::ConnectOptionsBuilder::new()
-            .keep_alive_interval(Duration::from_secs(120))
+            .keep_alive_interval(Duration::from_secs(60))
             .mqtt_version(paho_mqtt::MQTT_VERSION_3_1_1)
             .clean_session(false)
             .connect_timeout(Duration::from_secs(5))
             .finalize();
-
         let stream = client.get_stream(self.stream_capacity);
         // connect client with the remote broker
         client.connect(conn_opts).await.map_err(|e| {
@@ -46,7 +45,7 @@ impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
             );
             ActorError::restart(e, None)
         })?;
-        info!("Connected AsyncClient: {}", &self.url.as_str());
+        info!("Connected AsyncClient: {}, topic: {}", &self.url.as_str(), T::name());
         // subscribe to T::name() topic with T::qos()
         client.subscribe(T::name(), T::qos()).await.map_err(|e| {
             error!(
@@ -70,10 +69,11 @@ impl<T: Topic> Mqtt<T> {
         Self: Actor<S>,
     {
         info!("{:?} is initializing", &rt.service().directory());
-        let parent_id = rt
-            .parent_id()
-            .ok_or_else(|| ActorError::exit_msg("mqtt without parent"))?;
-        let collector_handles = rt.link(parent_id, true).await?;
+        let parent_id = rt.parent_id().ok_or_else(|| {
+            log::error!("Invalid mqtt without parent");
+            ActorError::exit_msg("invalid mqtt without parent")
+        })?;
+        let collector_handles = rt.depends_on(parent_id).await?;
         info!("{:?} got initialized", &rt.service().directory());
         Ok(collector_handles)
     }

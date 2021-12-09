@@ -211,13 +211,13 @@ impl Syncer {
             if let Some(mut active) = self.active.take() {
                 match active {
                     Active::Complete(ref mut range) => {
-                        error!("Complete: Skipping the remaining gap range: {:?}", range);
+                        warn!("Complete: Skipping the remaining gap range: {:?}", range);
                         // we just consume the range in order for the trigger_process_more to move further
                         self.close_log_file(archiver_handle);
                         self.complete(rt, solidifier_handles, archiver_handle).await?
                     }
                     Active::FillGaps(ref mut range) => {
-                        error!("FillGaps: Skipping the remaining gap range: {:?}", range);
+                        warn!("FillGaps: Skipping the remaining gap range: {:?}", range);
                         self.close_log_file(archiver_handle);
                         self.fill_gaps(rt, solidifier_handles).await?
                     }
@@ -338,7 +338,7 @@ impl Syncer {
         archiver: &Option<ArchiverHandle>,
     ) -> ActorResult<()> {
         // start from the lowest uncomplete
-        if let Some(mut gap) = self.sync_data.take_lowest_uncomplete() {
+        if let Some(gap) = self.sync_data.take_lowest_uncomplete() {
             // ensure gap.end != i32::MAX
             if !gap.end.eq(&(i32::MAX as u32)) {
                 info!("Completing the gap {:?}", gap);

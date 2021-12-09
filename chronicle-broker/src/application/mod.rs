@@ -64,6 +64,7 @@ use serde::{
     Serialize,
 };
 use std::{
+    any::TypeId,
     collections::{
         HashMap,
         HashSet,
@@ -385,6 +386,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
             ActorError::exit_msg(format!("Broker unable to build selective: {}", e))
         })?;
         if let Ok(sync_data) = self.query_sync_table().await {
+            log::info!("{:#?}", sync_data);
             // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
             self.maybe_start(rt, sync_data, &selective).await?; //?
         } else {
@@ -526,25 +528,106 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                     }
                 }
                 BrokerEvent::Microservice(scope_id, service, service_result) => {
+                    let mut service_status = rt.service().status().clone();
+                    if service.is_stopped() {
+                        let mqtt_message_type_id = TypeId::of::<Mqtt<Message>>();
+                        let mqtt_msg_ref_type_id = TypeId::of::<Mqtt<MessageMetadata>>();
+                        // check if it's mqtt
+                        if service.actor_type_id == mqtt_message_type_id
+                            || service.actor_type_id == mqtt_msg_ref_type_id
+                        {
+                            // todo ensure to shutdown the other mqtt broker
+                            // deserialize the url
+                            let mqtt_url = service
+                                .directory()
+                                .as_ref()
+                                .and_then(|dir| {
+                                    dir.split('@').last().and_then(|url| {
+                                        if let Ok(url) = Url::parse(url) {
+                                            Some(url)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
+                                .ok_or_else(|| {
+                                    log::error!("Invalid MicroService directory for stopped mqtt");
+                                    ActorError::exit_msg("Invalid MicroService directory for stopped mqtt")
+                                })?;
+                            if self.contain_mqtt(&mqtt_url) {
+                                rt.upsert_microservice(scope_id, service.clone());
+                            } else {
+                                rt.remove_microservice(scope_id);
+                            }
+                            // check if the mqtt are still in balanced state
+                            if !self.mqtt_brokers.iter().any(|u| {
+                                rt.service()
+                                    .microservices()
+                                    .iter()
+                                    .filter(|(_, ms)| {
+                                        ms.directory()
+                                            .as_ref()
+                                            .expect("Invalid directory in broker microservices")
+                                            .ends_with(u.as_str())
+                                    })
+                                    .all(|(scope_id, _)| {
+                                        if let Some(ms_node) = rt.service().microservices().get(&scope_id) {
+                                            ms_node.is_running()
+                                        } else {
+                                            false
+                                        }
+                                    })
+                            }) {
+                                // unbalanced state (not enough feed sources)
+                                // change the status to outage (only if it's not stopping)
+                                if service_status != ServiceStatus::Stopping {
+                                    service_status = ServiceStatus::Outage;
+                                    // shutting down the children will force the broker to enter into pause state
+                                    rt.shutdown_children().await;
+                                }
+                            }
+                        } else {
+                            // rest micro service
+                            // replace todo remove it only if it's importer or exporter service
+                            if false {
+                                rt.remove_microservice(scope_id);
+                            } else {
+                                rt.upsert_microservice(scope_id, service.clone());
+                            }
+                        };
+                    } else {
+                        rt.upsert_microservice(scope_id, service.clone());
+                    }
                     // exit broker if any child had an exit error
                     match service_result.as_ref() {
                         Some(Err(ActorError {
                             request: Some(ActorRequest::Exit),
                             ..
                         })) => service_result.expect("Failed to unwrap service_result in broker")?,
-                        Some(Err(e)) => {
-                            // a child might shutdown due to overload in scylla, where scylla still running
-                            // todo rt.shutdown_children().await;
+                        _ => {
+                            if (service.is_type::<Collector<T>>()
+                                || service.is_type::<Solidifier>()
+                                || service.is_type::<Syncer>()
+                                || service.is_type::<Archiver>())
+                                && service_result.is_some()
+                            {
+                                if !rt.service().is_stopping() {
+                                    // a child might shutdown due to overload in scylla, where scylla still running
+                                    rt.shutdown_children().await;
+                                    service_status = ServiceStatus::Outage;
+                                }
+                            }
                         }
-                        _ => {}
                     }
-                    rt.upsert_microservice(scope_id, service);
+                    rt.update_status(service_status).await;
                     // if children got shutdown but scylla is running
                     if !rt.service().is_stopping() {
+                        // todo check if it's critical core microservice
                         if rt.microservices_stopped() && (scylla_service.is_running() || scylla_service.is_degraded()) {
                             if let Ok(sync_data) = self.query_sync_table().await {
-                                // todo maybe sleep for 10 seconds in-case the shutdown was due to overload in scylla
-                                // todo self.maybe_start(rt, sync_data, &selective).await?;
+                                // maybe sleep for 10 seconds in-case the shutdown was due to overload in scylla
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                self.maybe_start(rt, sync_data, &selective).await?;
                             }
                         }
                     } else {
@@ -578,7 +661,12 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         return Err(ActorError::restart_msg("Scylla service got stopped", None));
                     }
                 }
-                BrokerEvent::Shutdown => rt.stop().await,
+                BrokerEvent::Shutdown => {
+                    rt.stop().await;
+                    if rt.microservices_stopped() {
+                        rt.inbox_mut().close();
+                    }
+                }
             }
         }
         log::info!("ChronicleBroker exited its event loop");

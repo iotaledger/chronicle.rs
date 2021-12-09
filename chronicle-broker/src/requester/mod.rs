@@ -29,7 +29,8 @@ use std::{
     str::FromStr,
 };
 use url::Url;
-pub(crate) type RequesterHandle<T: SelectiveBuilder> = UnboundedHandle<RequesterEvent<T>>;
+
+pub(crate) type RequesterHandle<T> = UnboundedHandle<RequesterEvent<T>>;
 
 /// Requester events
 #[derive(Debug)]
@@ -97,10 +98,8 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
             .subscribe(parent_id, "ChronicleBroker".to_string())
             .await?
             .ok_or_else(|| ActorError::exit_msg("Unable to get the first ChronicleBroker copy"))?;
-        log::info!("{:?} is got broker config", &rt.service().directory());
         self.update_endpoints(&chronicle_broker);
         let collector_handles = rt.depends_on(parent_id).await?;
-        log::info!("{:?} is got collector handles", &rt.service().directory());
         Ok((chronicle_broker, collector_handles))
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, (mut broker, collector_handles): Self::Data) -> ActorResult<()> {
@@ -253,13 +252,13 @@ impl<T: SelectiveBuilder> Requester<T> {
             .get(get_milestone_url)
             .send()
             .await
-            .map_err(|e| error!("Error sending request for milestone: {}", e));
+            .map_err(|e| error!("Error sending request for milestone: {}\n {:#}", milestone_index, e));
         if let Ok(milestone_response) = milestone_response {
             if milestone_response.status().is_success() {
                 let milestone = milestone_response
                     .json::<JsonData<MilestoneResponse>>()
                     .await
-                    .map_err(|e| error!("Error deserializing milestone: {}", e));
+                    .map_err(|e| error!("Error deserializing milestone: {}\n {:#}", milestone_index, e));
                 if let Ok(milestone) = milestone {
                     let milestone = milestone.into_inner();
                     let message_id = MessageId::from_str(&milestone.message_id).expect("Expected message_id as string");
@@ -287,23 +286,23 @@ impl<T: SelectiveBuilder> Requester<T> {
             .get(get_message_url)
             .send()
             .await
-            .map_err(|e| error!("Error sending request for message: {}", e));
+            .map_err(|e| error!("Error sending request for message: {}\n {:#}", message_id, e));
         let metadata_response = self
             .reqwest_client
             .get(get_metadata_url)
             .send()
             .await
-            .map_err(|e| error!("Error sending request for metadata: {}", e));
+            .map_err(|e| error!("Error sending request for metadata: {}\n {:#}", message_id, e));
         if let (Ok(message_response), Ok(metadata_response)) = (message_response, metadata_response) {
             if message_response.status().is_success() && metadata_response.status().is_success() {
                 let message = message_response
                     .json::<JsonData<MessageDto>>()
                     .await
-                    .map_err(|e| error!("Error deserializing message: {}", e));
+                    .map_err(|e| error!("Error deserializing message: {}\n {:#}", message_id, e));
                 let metadata = metadata_response
                     .json::<JsonData<MessageMetadata>>()
                     .await
-                    .map_err(|e| error!("Error deserializing metadata: {}", e));
+                    .map_err(|e| error!("Error deserializing metadata: {}\n {:#}", message_id, e));
                 if let (Ok(message), Ok(metadata)) = (message, metadata) {
                     let message_dto = message.into_inner();
                     let message = Message::try_from(&message_dto).unwrap();
