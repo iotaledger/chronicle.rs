@@ -403,7 +403,6 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                     if rt.service().is_stopping() {
                         // response
                         log::warn!("Cannot configure topology while the broker is stopping");
-                        // todo!("responde to responder")
                         if let Some(responder) = responder_opt.as_ref() {
                             let ok_response: Result<_, TopologyErr> = Err(TopologyErr::new(format!(
                                 "Cannot configure topology while the broker is stopping",
@@ -414,14 +413,128 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                     }
                     match topology {
                         Topology::AddMqtt(mqtt) => {
-                            // check if it's already exit
+                            if !scylla_service.is_running() || !scylla_service.is_degraded() {
+                                if let Some(responder) = responder_opt.as_ref() {
+                                    log::warn!(
+                                        "Cannot add an mqtt: {}, while scylla is {}",
+                                        mqtt,
+                                        scylla_service.status()
+                                    );
+                                    let ok_response: Result<_, TopologyErr> = Err(TopologyErr::new(format!(
+                                        "Cannot add an mqtt: {}, while scylla is {}",
+                                        mqtt,
+                                        scylla_service.status()
+                                    )));
+                                    responder.reply(ok_response).await.ok();
+                                } else {
+                                    log::warn!(
+                                        "Skip re-adding mqtt {}, cuz scylla is {}",
+                                        mqtt,
+                                        scylla_service.status()
+                                    );
+                                }
+                                continue;
+                            }
+
+                            if rt.service().is_outage() {
+                                // ensure all children are stopped, else ask the admin to try later
+                                if rt.microservices_stopped() {
+                                    if !self.contain_mqtt(&mqtt) {
+                                        if let Some(responder) = responder_opt.as_ref() {
+                                            match self.query_sync_table().await {
+                                                Ok(sync_data) => {
+                                                    log::info!("Updated sync data: {:#?}", sync_data);
+                                                    if let Err(err) = self.add_mqtt(mqtt.clone()).await {
+                                                        log::error!("Unable to add mqtt: {}, error: {}", &mqtt, err);
+                                                        let error_response: Result<_, TopologyErr> =
+                                                            Err(TopologyErr::new(format!(
+                                                                "Unable to add mqtt: {}, error: {}",
+                                                                &mqtt, err
+                                                            )));
+                                                        responder.reply(error_response).await.ok();
+                                                    } else {
+                                                        log::info!("Successfully inserted mqtt: {}", &mqtt);
+                                                        let ok_response: Result<_, TopologyErr> =
+                                                            Ok(Topology::AddMqtt(mqtt));
+                                                        responder.reply(ok_response).await.ok();
+                                                        self.maybe_start(rt, sync_data, &selective).await?;
+                                                    };
+                                                }
+                                                Err(err) => {
+                                                    // oops we lost scylla, c'mon scylla;
+                                                    log::error!("Unable to add mqtt: {}, error: {}", &mqtt, err);
+                                                    let error_response: Result<_, TopologyErr> = Err(TopologyErr::new(
+                                                        format!("Unable to add mqtt: {}, error: {}", &mqtt, err),
+                                                    ));
+                                                    responder.reply(error_response).await.ok();
+                                                }
+                                            };
+                                        } else {
+                                            log::warn!("skipping re-adding a {} mqtt, as it got removed", mqtt);
+                                        }
+                                    } else {
+                                        if let Some(responder) = responder_opt.as_ref() {
+                                            log::warn!("Cannot add an existing mqtt: {}", mqtt);
+                                            let err_response: Result<_, TopologyErr> =
+                                                Err(TopologyErr::new(format!("Cannot add an existing mqtt: {}", mqtt)));
+                                            responder.reply(err_response).await.ok();
+                                            continue;
+                                        }
+                                        // we are trying to re-add mqtt while broker is in outage which will require
+                                        // invoking maybe_start
+                                        match self.query_sync_table().await {
+                                            Ok(sync_data) => {
+                                                // try to resume
+                                                self.maybe_start(rt, sync_data, &selective).await?;
+                                            }
+                                            Err(err) => {
+                                                log::error!("Unable to query sync table to resume the broker while re-adding mqtt: {}, error: {}", mqtt, err);
+                                                // unable to resume the broker, so we reschedule it again
+                                                log::warn!("Rescheduling re-add mqtt: {}", mqtt);
+                                                rt.handle().send_after(
+                                                    BrokerEvent::Topology(Topology::AddMqtt(mqtt.clone()), None),
+                                                    Duration::from_secs(10),
+                                                );
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    if let Some(responder) = responder_opt.as_ref() {
+                                        log::warn!(
+                                            "Cannot add mqtt: {}, while the broker children are not fully stopped",
+                                            mqtt
+                                        );
+                                        let err_response: Result<_, TopologyErr> = Err(TopologyErr::new(format!(
+                                            "Cannot add mqtt: {}, while the broker children are not fully stopped",
+                                            mqtt
+                                        )));
+                                        responder.reply(err_response).await.ok();
+                                    } else {
+                                        if self.contain_mqtt(&mqtt) {
+                                            // reschedule to add it later, this happens due to rare race condition
+                                            // unable to resume the broker, so we reschedule it again
+                                            log::warn!(
+                                                "Rescheduling re-add mqtt: {}, till broker microservices are stopped",
+                                                mqtt
+                                            );
+                                            rt.handle().send_after(
+                                                BrokerEvent::Topology(Topology::AddMqtt(mqtt.clone()), None),
+                                                Duration::from_secs(10),
+                                            );
+                                        } else {
+                                            log::warn!("skipping re-adding a {} mqtt, as it got removed. And broker children are not fully stopped", mqtt);
+                                        }
+                                    }
+                                }
+                                continue;
+                            };
+                            // check if it's exit already
                             if self.contain_mqtt(&mqtt) {
-                                // todo!("responde to responder")
                                 if let Some(responder) = responder_opt.as_ref() {
                                     log::warn!("Cannot add an existing mqtt: {}", mqtt);
-                                    let ok_response: Result<_, TopologyErr> =
+                                    let err_response: Result<_, TopologyErr> =
                                         Err(TopologyErr::new(format!("Cannot add an existing mqtt: {}", mqtt)));
-                                    responder.reply(ok_response).await.ok();
+                                    responder.reply(err_response).await.ok();
                                     continue;
                                 } // else the mqtt will be readded
                             } else if responder_opt.is_none() {
@@ -434,11 +547,11 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                             let mqtt_msg_ref =
                                 Mqtt::<MessageMetadata>::new(mqtt.clone(), self.cache_capacity, partitioner);
                             let dir = format!("messages@{}", mqtt);
-                            match rt.start(dir, mqtt_messages).await {
-                                Ok(h) => {
+                            match rt.spawn(dir, mqtt_messages).await {
+                                Ok((h, _)) => {
                                     // try to start mqtt_msg_ref feed_source
                                     let dir = format!("referenced@{}", mqtt);
-                                    if let Err(e) = rt.start(dir, mqtt_msg_ref).await {
+                                    if let Err(e) = rt.spawn(dir, mqtt_msg_ref).await {
                                         log::error!("{}", e);
                                         // shutdown the messages feeder
                                         rt.shutdown_child(&h.scope_id())
@@ -529,9 +642,9 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                 }
                 BrokerEvent::Microservice(scope_id, service, service_result) => {
                     let mut service_status = rt.service().status().clone();
+                    let mqtt_message_type_id = TypeId::of::<Mqtt<Message>>();
+                    let mqtt_msg_ref_type_id = TypeId::of::<Mqtt<MessageMetadata>>();
                     if service.is_stopped() {
-                        let mqtt_message_type_id = TypeId::of::<Mqtt<Message>>();
-                        let mqtt_msg_ref_type_id = TypeId::of::<Mqtt<MessageMetadata>>();
                         // check if it's mqtt
                         if service.actor_type_id == mqtt_message_type_id
                             || service.actor_type_id == mqtt_msg_ref_type_id
@@ -597,6 +710,42 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         };
                     } else {
                         rt.upsert_microservice(scope_id, service.clone());
+                        // adjust the service_status based on the change
+                        if !self.mqtt_brokers.iter().any(|u| {
+                            rt.service()
+                                .microservices()
+                                .iter()
+                                .filter(|(_, ms)| {
+                                    ms.directory()
+                                        .as_ref()
+                                        .expect("Invalid directory in broker microservices")
+                                        .ends_with(u.as_str())
+                                })
+                                .all(|(scope_id, _)| {
+                                    if let Some(ms_mqtt) = rt.service().microservices().get(&scope_id) {
+                                        ms_mqtt.is_running() || ms_mqtt.is_initializing()
+                                    } else {
+                                        false
+                                    }
+                                })
+                        }) {
+                            // unbalanced state (not enough feed sources)
+                            // change the status to outage (only if it's not stopping)
+                            if service_status != ServiceStatus::Stopping {
+                                service_status = ServiceStatus::Outage;
+                                // shutting down the children will force the broker to enter into pause state
+                                rt.shutdown_children().await;
+                            }
+                        } else {
+                            // balanced ensure to
+                            // check if we were in outage due to the lack of feed sources
+                            // if rt.service().is_outage()
+                        }
+                        if rt.microservices_all(|ms| ms.is_running()) && !scylla_service.is_outage() {
+                            if service_status != ServiceStatus::Stopping {
+                                service_status = ServiceStatus::Running;
+                            }
+                        }
                     }
                     // exit broker if any child had an exit error
                     match service_result.as_ref() {
@@ -639,13 +788,17 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                 BrokerEvent::Scylla(service) => {
                     if let Event::Published(_, _, scylla_service_res) = service {
                         // check if children already started
-                        let children_dont_exist = rt.service().microservices().is_empty();
+                        log::warn!("Broker received scylla status: {} change", scylla_service_res.status(),);
                         // start children if not already started
-                        if (scylla_service_res.is_running() || scylla_service_res.is_degraded()) && children_dont_exist
+                        if (scylla_service_res.is_running() || scylla_service_res.is_degraded())
+                            && rt.microservices_stopped()
                         {
                             if let Ok(sync_data) = self.query_sync_table().await {
                                 self.maybe_start(rt, sync_data, &selective).await?;
                             } else {
+                                log::warn!(
+                                    "Broker unable to query sync table, will ask the supervisor to restart us later"
+                                );
                                 return Err(ActorError::restart_msg(
                                     format!("Unable to query sync table, scylla is {}", scylla_service_res.status()),
                                     Some(std::time::Duration::from_secs(60)),
@@ -657,6 +810,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         }
                         scylla_service = scylla_service_res;
                     } else {
+                        log::warn!("Scylla dropped its service");
                         // is dropped, stop the whole broker with Restart request
                         return Err(ActorError::restart_msg("Scylla service got stopped", None));
                     }
@@ -675,6 +829,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
 }
 
 impl<T: SelectiveBuilder> ChronicleBroker<T> {
+    // Note: It should never be invoked if scylla were in outage, or self service is stopping
     async fn maybe_start<S: SupHandle<Self>>(
         &self,
         rt: &mut Rt<Self, S>,
@@ -686,15 +841,15 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             log::warn!("Cannot start children of the broker without at least one broker and endpoint!");
             rt.update_status(ServiceStatus::Idle).await;
             return Ok(());
-        }
-        // First remove the old resources ( if any, as this is possible if maybe_start is invoked to restart the
-        // children)
+        } // todo verfiy at least one endpoint is working, else return Ok(()) and set outage status
+          // First remove the old resources ( if any, as this is possible if maybe_start is invoked to restart the
+          // children)
         rt.remove_resource::<HashMap<u8, CollectorHandle>>().await;
         rt.remove_resource::<RequesterHandles<T>>().await;
         rt.remove_resource::<HashMap<u8, SolidifierHandle>>().await;
         // -- spawn feed sources (mqtt)
         let mqtt_brokers = self.mqtt_brokers.iter();
-        let mut balanced = false;
+        let mut balanced = 0;
         for url in mqtt_brokers {
             let partitioner = MessageIdPartitioner::new(self.partition_count);
             let mqtt_messages = Mqtt::<Message>::new(url.clone(), self.cache_capacity, partitioner);
@@ -715,7 +870,7 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
                             Duration::from_secs(10),
                         );
                     } else {
-                        balanced = true;
+                        balanced += 1;
                     }
                 }
                 Err(e) => {
@@ -728,12 +883,21 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
                 }
             }
         }
+        let mqtt_pair_count = self.mqtt_brokers.len();
         // check if mqtts are in healthy state, else we shutdown everything;
-        if !balanced {
+        if balanced == 0 {
             log::error!("Unable to reach balanced feed sources state");
             rt.update_status(ServiceStatus::Outage).await;
             return Ok(());
+        } else if balanced == mqtt_pair_count {
+            log::info!("Successfully reached balanced feed source state");
+            rt.update_status(ServiceStatus::Running).await;
+        } else if balanced < mqtt_pair_count {
+            log::warn!("Unable to reach optimal feed sources state, use the topology to remove any dead mqtt");
+            // set as degraded if not all feed sources are working
+            rt.update_status(ServiceStatus::Degraded).await;
         }
+        // if balanced < self
         // -- (optional) start archiver
         if let Some(dir_path) = self.logs_dir.as_ref() {
             let keyspace = self.keyspace.clone();
