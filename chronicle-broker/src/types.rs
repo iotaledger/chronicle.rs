@@ -281,7 +281,10 @@ mod sync {
         Select,
         ValueWorker,
     };
-    use std::ops::Range;
+    use std::{
+        collections::VecDeque,
+        ops::Range,
+    };
 
     /// Representation of the database sync data
     #[derive(Debug, Clone, Default, Serialize)]
@@ -293,7 +296,34 @@ mod sync {
         /// Gaps/missings milestones data
         pub(crate) gaps: Vec<Range<u32>>,
     }
-
+    // TODO make this struct generic and move it to Scylla.rs crate;
+    struct PagedSyncData {
+        pages: VecDeque<Iter<SyncRecord>>,
+    }
+    impl PagedSyncData {
+        fn add_next_page(&mut self, page: Iter<SyncRecord>) {
+            self.pages.push_back(page)
+        }
+    }
+    impl Iterator for PagedSyncData {
+        type Item = SyncRecord;
+        fn next(&mut self) -> Option<Self::Item> {
+            loop {
+                if let Some(front_page) = self.pages.front_mut() {
+                    let r = front_page.next();
+                    if r.is_none() {
+                        // front page is/became empty
+                        self.pages.pop_front();
+                        continue; // to iter over the next page
+                    } else {
+                        return r;
+                    }
+                } else {
+                    return None;
+                }
+            }
+        }
+    }
     impl SyncData {
         /// Try to fetch the sync data from the sync table for the provided keyspace and sync range
         pub async fn try_fetch<S: 'static + Select<SyncRange, Iter<SyncRecord>>>(
@@ -305,26 +335,54 @@ mod sync {
             let _ = keyspace
                 .select(sync_range)
                 .consistency(Consistency::One)
+                .page_size(200000)
                 .build()?
                 .send_local(ValueWorker::boxed(
-                    tx,
+                    tx.clone(),
                     keyspace.clone(),
                     sync_range.clone(),
                     retries,
                     std::marker::PhantomData,
                 ));
-            let select_response = rx
-                .recv()
-                .await
-                .ok_or_else(|| anyhow::anyhow!("Expected Rx inbox to receive the sync data response"))??;
+            //
+            let mut pages = PagedSyncData { pages: VecDeque::new() };
+            while let Some(p) = rx.recv().await {
+                if let Some(mut page) = p? {
+                    // check if it has more pages
+                    if page.has_more_pages() {
+                        // query next page;
+                        keyspace
+                            .select(sync_range)
+                            .consistency(Consistency::One)
+                            .page_size(200000)
+                            .paging_state(&page.take_paging_state())
+                            .build()?
+                            .send_local(ValueWorker::boxed(
+                                tx.clone(),
+                                keyspace.clone(),
+                                sync_range.clone(),
+                                retries,
+                                std::marker::PhantomData,
+                            ));
+                        pages.add_next_page(page);
+                    } else {
+                        pages.add_next_page(page);
+                        // no more pages
+                        break;
+                    };
+                } else {
+                    // no more pages
+                    break;
+                }
+            }
             let mut sync_data = SyncData::default();
-            if let Some(mut sync_rows) = select_response {
-                // Get the first row, note: the first row is always with the largest milestone_index
-                let SyncRecord {
-                    milestone_index,
-                    logged_by,
-                    ..
-                } = sync_rows.next().unwrap();
+            // Get the first row, note: the first row is always with the largest milestone_index
+            if let Some(SyncRecord {
+                milestone_index,
+                logged_by,
+                ..
+            }) = pages.next()
+            {
                 // push missing row/gap (if any)
                 sync_data.process_gaps(sync_range.to, *milestone_index);
                 sync_data.process_rest(&logged_by, *milestone_index, &None);
@@ -335,7 +393,7 @@ mod sync {
                     milestone_index,
                     logged_by,
                     ..
-                }) = sync_rows.next()
+                }) = pages.next()
                 {
                     // check if there are any missings
                     sync_data.process_gaps(*pre_ms, *milestone_index);
