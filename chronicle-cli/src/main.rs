@@ -196,7 +196,7 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow!("No mqtt addresses received!"))?
                 .map(|mqtt_address| Ok(Url::parse(mqtt_address)?))
                 .filter_map(|r: anyhow::Result<Url>| r.ok());
-            let endpoint_addresses = subcommand.values_of("endpoint-address");
+            let _endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
 
             if !matches.is_present("skip-connection") {
@@ -238,7 +238,7 @@ async fn brokers<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow!("No mqtt addresses received!"))?
                 .map(|mqtt_address| Ok(Url::parse(mqtt_address)?))
                 .filter_map(|r: anyhow::Result<Url>| r.ok());
-            let endpoint_addresses = subcommand.values_of("endpoint-address");
+            let _endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
 
             if !matches.is_present("skip-connection") {

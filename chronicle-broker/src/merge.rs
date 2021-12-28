@@ -127,9 +127,13 @@ impl Default for ValidationLevel {
 #[derive(Debug, Deserialize)]
 struct LightMilestoneData {
     milestone_index: u32,
+    #[allow(unused)]
     milestone: Value,
+    #[allow(unused)]
     messages: Value,
+    #[allow(unused)]
     pending: Value,
+    #[allow(unused)]
     created_by: Value,
 }
 

@@ -1,8 +1,8 @@
 [package]
 name = "chronicle-api"
 version = "0.3.0"
-authors = ["Alex Coats <alexandcoats@gmail.com>"]
-edition = "2018"
+authors = ["IOTA Stiftung"]
+edition = "2021"
 
 [lib]
 name = "chronicle_api"
