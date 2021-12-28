@@ -1,16 +1,12 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use super::*;
 use maplit::{
     hashmap,
     hashset,
 };
-
-use super::*;
-use std::{
-    collections::HashSet,
-    net::SocketAddr,
-};
+use std::collections::HashSet;
 
 /// Type alias for datacenter names
 pub type DatacenterName = String;
@@ -40,6 +36,7 @@ pub struct StorageConfig {
     /// they will pull data from
     pub keyspaces: Vec<KeyspaceConfig>,
     /// The Scylla listen address
+    #[serde(deserialize_with = "super::deserialize_socket_addr")]
     pub listen_address: SocketAddr,
     /// The Scylla thread count
     pub thread_count: ThreadCount,
@@ -48,6 +45,7 @@ pub struct StorageConfig {
     /// The name of the local datacenter
     pub local_datacenter: String,
     /// Nodes to initialize in the cluster
+    #[serde(deserialize_with = "super::deserialize_socket_addr_collected")]
     pub nodes: HashSet<SocketAddr>,
     /// The partition config
     #[serde(default)]
