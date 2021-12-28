@@ -55,6 +55,7 @@ pub struct VersionedConfig {
 #[derive(Debug, Deserialize, Clone)]
 struct VersionedValue {
     version: u32,
+    #[allow(unused)]
     config: Value,
 }
 
