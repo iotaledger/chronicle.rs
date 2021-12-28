@@ -2,19 +2,37 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::MilestoneData;
-use anyhow::{anyhow, bail};
-use indicatif::{ProgressBar, ProgressStyle};
+use anyhow::{
+    anyhow,
+    bail,
+};
+use indicatif::{
+    ProgressBar,
+    ProgressStyle,
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
     fmt::Display,
-    ops::{Deref, DerefMut, Range},
+    ops::{
+        Deref,
+        DerefMut,
+        Range,
+    },
     path::PathBuf,
 };
 use thiserror::Error;
 use tokio::{
-    fs::{File, OpenOptions},
-    io::{AsyncBufReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
+    fs::{
+        File,
+        OpenOptions,
+    },
+    io::{
+        AsyncBufReadExt,
+        AsyncSeekExt,
+        AsyncWriteExt,
+        BufReader,
+    },
 };
 
 #[derive(Error, Debug)]
