@@ -5,7 +5,7 @@ ARG TARGETARCH
 ARG TARGETVARIANT
 
 
-FROM rust:1.51.0 as builder
+FROM rust:1.57 as builder
 
 WORKDIR /app
 COPY . .
