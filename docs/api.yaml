@@ -502,17 +502,23 @@ paths:
           required: true
           description: hex-encoded Ed25519 address that is referenced by the outputs.
         - in: query
-          name: page_size
-          schema:
-            type: number
-          example: 6000
-          description: Requested page size.
-        - in: query
           name: expanded
           schema:
             type: boolean
           example: true
           description: Requests additional data for each output if included and true.
+        - in: query
+          name: included
+          schema:
+            type: boolean
+          example: false
+          description: Determines whether only ledger-included outputs are shown.
+        - in: query
+          name: page_size
+          schema:
+            type: number
+          example: 6000
+          description: Requested page size.
         - in: query
           name: state
           schema:

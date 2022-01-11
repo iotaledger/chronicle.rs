@@ -632,12 +632,11 @@ async fn get_message_children(
     state: Option<String>,
     keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
-    let mut partition_config;
-    if let Some(keyspace_partition_config) = keyspaces.get(&keyspace) {
-        partition_config = keyspace_partition_config;
+    let partition_config = if let Some(keyspace_partition_config) = keyspaces.get(&keyspace) {
+        keyspace_partition_config
     } else {
         return Err(ListenerError::InvalidKeyspace(keyspace));
-    }
+    };
     let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
     let page_size = page_size.unwrap_or(100);
 
@@ -755,12 +754,13 @@ async fn get_message_by_index(
     }
 }
 
-#[get("/<keyspace>/addresses/ed25519/<address>/outputs?<page_size>&<expanded>&<state>")]
+#[get("/<keyspace>/addresses/ed25519/<address>/outputs?<included>&<expanded>&<page_size>&<state>")]
 async fn get_ed25519_outputs(
     keyspace: String,
     address: String,
-    page_size: Option<usize>,
     expanded: Option<bool>,
+    included: Option<bool>,
+    page_size: Option<usize>,
     state: Option<String>,
     keyspaces: &State<HashMap<String, PartitionConfig>>,
 ) -> ListenerResult {
@@ -790,6 +790,10 @@ async fn get_ed25519_outputs(
         ed25519_address,
     )
     .await?;
+
+    if included.unwrap_or(true) {
+        outputs.retain(|record| record.ledger_inclusion_state == Some(LedgerInclusionState::Included))
+    }
 
     let state = state
         .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
