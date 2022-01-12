@@ -6,6 +6,7 @@ use bee_message::{
     input::Input,
     payload::Payload,
     prelude::{
+        Payload,
         MilestoneIndex,
         TransactionId,
     },
@@ -140,15 +141,14 @@ impl<H: ChronicleBrokerScope, T: ImportMode> EventLoop<BrokerHandle<H>> for Impo
         }
     }
 }
-impl<T> Importer<T> {
+
+impl<T: ImportMode> Importer<T> {
     pub(crate) fn get_keyspace(&self) -> ChronicleKeyspace {
         self.default_keyspace.clone()
     }
     fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
         self.partition_config.partition_id(milestone_index.0)
     }
-}
-impl<T: ImportMode> Importer<T> {
     pub(crate) fn insert_message_with_metadata<I: Inherent>(
         &mut self,
         inherent_worker: &I,

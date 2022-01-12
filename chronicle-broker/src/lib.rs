@@ -13,8 +13,8 @@ pub mod archiver;
 #[cfg(feature = "application")]
 pub mod collector;
 /// The importer, which enables to import write-ahead-logs
-//#[cfg(feature = "application")]
-// pub mod importer;
+#[cfg(feature = "application")]
+pub mod importer;
 /// MQTT handler
 #[cfg(feature = "application")]
 pub mod mqtt;
