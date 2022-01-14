@@ -73,10 +73,12 @@ use std::{
         HashMap,
         HashSet,
     },
+    convert::TryFrom,
     ops::Range,
     path::PathBuf,
-    time::Duration, convert::TryFrom,
+    time::Duration,
 };
+pub type BrokerHandle = UnboundedHandle<BrokerEvent>;
 use thiserror::Error;
 use url::Url;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -227,6 +229,8 @@ pub enum BrokerEvent {
     Microservice(ScopeId, Service, Option<ActorResult<()>>),
     /// Scylla Service (outsourcing)
     Scylla(Event<Service>),
+    /// Importer session
+    ImporterSession(ImporterSession),
     /// Shutdown signal
     Shutdown,
 }
@@ -425,6 +429,11 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
         log::info!("ChronicleBroker is {}", rt.service().status());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
+                BrokerEvent::ImporterSession(importer_session) => {
+                    // let socket_msg = BrokerSocketMsg::ChronicleBroker(importer_session);
+                    // self.response_to_sockets(&socket_msg).await;
+                }
+
                 BrokerEvent::Topology(topology, responder_opt) => {
                     // only configure topology if it's not stopping
                     if rt.service().is_stopping() {

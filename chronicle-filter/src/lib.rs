@@ -49,14 +49,15 @@ pub trait Selective: Clone + Sized + Send + Sync {
     fn is_permanode(&self) -> bool {
         Self::PERMANODE
     }
-    /// invoked when you
     async fn filter_message(
         &mut self,
         message_id: &MessageId,
         message: &Message,
         metadata: Option<&MessageMetadata>,
     ) -> anyhow::Result<Option<Selected>>;
-    // todo add async fn selected_messages()
+    // async fn selected_messages(milestone_data: &MilestoneData, selected_message_ids_with_proofs: HashMap<MessageId,
+    // Proof>)  { to make use of the proofs at the solidifier level
+    // };
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, Copy)]
