@@ -676,8 +676,11 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         Topology::Export { range: ms_range } => {
                             let responder =
                                 responder_opt.ok_or_else(|| ActorError::exit_msg("Responder required for export"))?;
-                            let exporter = Exporter::new(ms_range, self.keyspace.clone(), responder.clone());
-                            match rt.spawn("exporter".to_string(), exporter).await {
+                            let exporter = Exporter::new(ms_range.clone(), self.keyspace.clone(), responder.clone());
+                            match rt
+                                .spawn(format!("exporter_{}_to_{}", ms_range.start, ms_range.end), exporter)
+                                .await
+                            {
                                 Err(e) => {
                                     log::error!("Error creating exporter: {}", e);
                                     responder.reply(Err(TopologyErr::new(e.to_string()))).await.ok();
@@ -749,7 +752,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         } else {
                             // rest micro service
                             // replace todo remove it only if it's importer or exporter service
-                            if false {
+                            if service.actor_type_id == TypeId::of::<Exporter>() {
                                 rt.remove_microservice(scope_id);
                             } else {
                                 rt.upsert_microservice(scope_id, service.clone());

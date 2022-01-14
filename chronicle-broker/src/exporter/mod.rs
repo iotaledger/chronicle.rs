@@ -69,7 +69,6 @@ where
     }
 
     async fn run(&mut self, rt: &mut Rt<Self, S>, archiver: Self::Data) -> ActorResult<()> {
-        rt.update_status(ServiceStatus::Running).await;
         for ms in self.ms_range.clone() {
             debug!("Processing milestone {}", ms);
             self.responder
@@ -164,6 +163,15 @@ where
                 archiver
                     .send(ArchiverEvent::MilestoneData(milestone_data, Some(self.ms_range.end)))
                     .map_err(|e| anyhow!("Error sending to archiver: {}", e))?;
+            } else {
+                self.responder
+                    .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
+                        "Missing milestone for index: {}!",
+                        ms
+                    )))))
+                    .await
+                    .ok();
+                return Err(anyhow!("Missing milestone for index: {}!", ms).into());
             }
         }
         archiver.send(ArchiverEvent::Close(self.ms_range.end)).ok();
@@ -171,7 +179,6 @@ where
             .reply(Ok(TopologyOk::Export(ExporterStatus::Done)))
             .await
             .ok();
-        rt.update_status(ServiceStatus::Stopped).await;
         Ok(())
     }
 }
