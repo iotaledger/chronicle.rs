@@ -366,12 +366,19 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                             synced_record,
                             self.retries.into(),
                         );
-                        self.default_keyspace
+                        if let Err(RequestError::Ring(r)) = self
+                            .default_keyspace
                             .insert_prepared(&"permanode".to_string(), &analytic_record)
-                            .consistency(Consistency::One)
+                            .consistency(Consistency::Quorum)
                             .build()
                             .map_err(|e| ActorError::exit(e))?
-                            .send_local_with_worker(worker); // todo handle potential error
+                            .send_local_with_worker(worker)
+                        {
+                            let keyspace_name = self.default_keyspace.name();
+                            if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                                worker.handle_error(WorkerError::NoRing, None)?;
+                            };
+                        };
                     }
                     // put it back
                     self.in_progress_milestones_data
@@ -522,11 +529,19 @@ impl Importer<Analytics> {
             analytic_record.clone(),
             self.retries as usize,
         );
-        self.default_keyspace
+        if let Err(RequestError::Ring(r)) = self
+            .default_keyspace
             .insert_prepared(&"permanode".to_string(), analytic_record)
-            .consistency(Consistency::One)
+            .consistency(Consistency::Quorum)
             .build()?
-            .send_local_with_worker(worker);
+            .send_local_with_worker(worker)
+        {
+            let keyspace_name = self.default_keyspace.name();
+            if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                worker.handle_error(WorkerError::NoRing, None)?;
+            };
+        };
+
         Ok(())
     }
 }
@@ -640,9 +655,14 @@ where
             let req = self
                 .keyspace
                 .insert_query(&self.key, &self.value)
-                .consistency(Consistency::One)
+                .consistency(Consistency::Quorum)
                 .build()?;
-            tokio::spawn(async { req.send_global_with_worker(self) });
+            let keyspace_name = self.keyspace.name();
+            if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
+                if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                    worker.handle_error(WorkerError::NoRing, None)?
+                };
+            };
         } else {
             // no more retries
             self.handle.any_error.store(true, Ordering::Relaxed);
@@ -736,12 +756,18 @@ where
             // set it to be analyzed, as this response is for analytic record
             self.analyzed = true;
             // insert sync record
-            let req = self
+            let keyspace_name = self.keyspace.name();
+            if let Err(RequestError::Ring(r)) = self
                 .keyspace
                 .insert_prepared(&"permanode".to_string(), &self.synced_record)
-                .consistency(Consistency::One)
-                .build()?;
-            req.send_local_with_worker(self);
+                .consistency(Consistency::Quorum)
+                .build()?
+                .send_local_with_worker(self)
+            {
+                if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                    worker.handle_error(WorkerError::NoRing, None)?;
+                };
+            };
         }
         Ok(())
     }
@@ -772,18 +798,27 @@ where
                 let req = self
                     .keyspace
                     .insert_query(&"permanode".to_string(), &self.synced_record)
-                    .consistency(Consistency::One)
+                    .consistency(Consistency::Quorum)
                     .build()?;
-
-                tokio::spawn(async { req.send_global_with_worker(self) });
+                let keyspace_name = self.keyspace.name();
+                if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
+                    if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                        worker.handle_error(WorkerError::NoRing, None)?
+                    };
+                };
             } else {
                 // retry inserting an analytic record
                 let req = self
                     .keyspace
                     .insert_query(&"permanode".to_string(), &self.analytic_record)
-                    .consistency(Consistency::One)
+                    .consistency(Consistency::Quorum)
                     .build()?;
-                tokio::spawn(async { req.send_global_with_worker(self) });
+                let keyspace_name = self.keyspace.name();
+                if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
+                    if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                        worker.handle_error(WorkerError::NoRing, None)?
+                    };
+                };
             }
         } else {
             // no more retries
@@ -910,9 +945,14 @@ where
             let req = self
                 .keyspace
                 .insert_query(&"permanode".to_string(), &self.analytic_record)
-                .consistency(Consistency::One)
+                .consistency(Consistency::Quorum)
                 .build()?;
-            tokio::spawn(async { req.send_global_with_worker(self) });
+            let keyspace_name = self.keyspace.name();
+            if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
+                if let Err(worker) = retry_send(&keyspace_name, r, 2) {
+                    worker.handle_error(WorkerError::NoRing, None)?
+                };
+            };
         } else {
             // no more retries
             // respond with error
@@ -1266,7 +1306,7 @@ impl<T: ImportMode> Importer<T> {
         let insert_req = self
             .default_keyspace
             .insert(&key, &value)
-            .consistency(Consistency::One)
+            .consistency(Consistency::Quorum)
             .build()?;
         let worker = inherent_worker.inherent_boxed(key, value);
         if let Err(RequestError::Ring(r)) = insert_req.send_local_with_worker(worker) {

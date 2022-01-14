@@ -340,7 +340,7 @@ impl TopologyResponder {
     }
 }
 
-/// The topology response, sent after the cluster processes a topology event
+/// The topology response, sent after the broker processes a topology event
 pub type TopologyResponse = Result<Topology, TopologyErr>;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Error)]
@@ -402,7 +402,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
                 BrokerEvent::ImporterSession(importer_session) => {
-                    //let socket_msg = BrokerSocketMsg::ChronicleBroker(importer_session);
+                    // let socket_msg = BrokerSocketMsg::ChronicleBroker(importer_session);
                     // self.response_to_sockets(&socket_msg).await;
                 }
 
