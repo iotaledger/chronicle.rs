@@ -73,6 +73,8 @@ mod app {
     };
     pub use url::Url;
 }
+use std::fmt::Debug;
+
 #[cfg(feature = "application")]
 pub(crate) use app::*;
 
@@ -82,3 +84,13 @@ pub mod merge;
 use async_trait::async_trait;
 use backstage::core::*;
 use scylla_rs::prelude::*;
+
+/// The inherent trait to return a boxed worker for a given key/value pair in a keyspace
+pub(crate) trait Inherent<S, K, V> {
+    type Output: Worker;
+    fn inherent_boxed(&self, keyspace: S, key: K, value: V) -> Box<Self::Output>
+    where
+        S: 'static + Insert<K, V> + Debug,
+        K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
+        V: 'static + Send + Sync + Clone + Debug;
+}

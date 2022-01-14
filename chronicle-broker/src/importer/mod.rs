@@ -10,6 +10,7 @@ use crate::{
     archiver::LogFile,
 };
 use bee_message::{
+    address::Ed25519Address,
     output::Output,
     payload::transaction::{
         Essence,
@@ -19,6 +20,7 @@ use bee_message::{
         Address,
         Input,
         MilestoneIndex,
+        MilestonePayload,
         Payload,
         TransactionId,
     },
@@ -386,7 +388,7 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                     // NOTE: we only delete it once we get Ok CqlResult
                 }
                 ImporterEvent::Shutdown => {
-                    rt.update_status(ServiceStatus::Stopping);
+                    rt.update_status(ServiceStatus::Stopping).await;
                     let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
                         from_ms: self.from_ms,
                         to_ms: self.to_ms,
@@ -644,7 +646,7 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.insert_statement::<K, V>();
-                PrepareWorker::new(&keyspace_name, id, &statement)
+                PrepareWorker::new(Some(keyspace_name), id, statement.into())
                     .send_to_reporter(reporter)
                     .ok();
             }
@@ -785,7 +787,7 @@ where
                 } else {
                     statement = self.keyspace.insert_statement::<String, AnalyticRecord>();
                 }
-                PrepareWorker::new(&keyspace_name, id, &statement)
+                PrepareWorker::new(Some(keyspace_name), id, statement.into())
                     .send_to_reporter(reporter)
                     .ok();
             }
@@ -854,23 +856,21 @@ where
     }
 }
 
-/// The inherent trait to return a boxed worker for a given key/value pair
-pub(crate) trait Inherent {
-    fn inherent_boxed<K, V>(&self, key: K, value: V) -> Box<dyn Worker>
-    where
-        ChronicleKeyspace: 'static + Insert<K, V> + Insert<String, SyncRecord> + std::fmt::Debug,
-        K: 'static + Send + Clone + std::fmt::Debug + Sync + TokenEncoder,
-        V: 'static + Send + Clone + std::fmt::Debug + Sync;
-}
-
 /// Implement the `Inherent` trait for the milestone data worker, so we can get the atomic importer worker
 /// which contains the atomic importer handle of the milestone data worker
-impl Inherent for MilestoneDataWorker<ChronicleKeyspace> {
-    fn inherent_boxed<K, V>(&self, key: K, value: V) -> Box<dyn Worker>
+impl<K, V> Inherent<ChronicleKeyspace, K, V> for MilestoneDataWorker<ChronicleKeyspace>
+where
+    K: 'static + Send + Sync + Clone + TokenEncoder + Debug,
+    V: 'static + Send + Sync + Clone + Debug,
+    ChronicleKeyspace: Insert<K, V>,
+{
+    type Output = AtomicImporterWorker<ChronicleKeyspace, K, V>;
+
+    fn inherent_boxed(&self, _keyspace: ChronicleKeyspace, key: K, value: V) -> Box<Self::Output>
     where
-        ChronicleKeyspace: 'static + Insert<K, V> + Insert<String, SyncRecord>,
-        K: 'static + Send + Clone + std::fmt::Debug + Sync + TokenEncoder,
-        V: 'static + Send + Clone + std::fmt::Debug + Sync,
+        ChronicleKeyspace: 'static + Insert<K, V> + Debug,
+        K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
+        V: 'static + Send + Sync + Clone + Debug,
     {
         AtomicImporterWorker::boxed(self.arc_handle.clone(), key, value)
     }
@@ -933,7 +933,7 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(&keyspace_name, id, &statement)
+                PrepareWorker::new(Some(keyspace_name), id, statement.into())
                     .send_to_reporter(reporter)
                     .ok();
             }
@@ -970,7 +970,15 @@ impl<T: ImportMode> Importer<T> {
     fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
         self.partition_config.partition_id(milestone_index.0)
     }
-    pub(crate) fn insert_message_with_metadata<I: Inherent>(
+    pub(crate) fn insert_message_with_metadata<
+        I: Inherent<ChronicleKeyspace, Bee<MessageId>, (Message, MessageMetadata)>
+            + Inherent<ChronicleKeyspace, Partitioned<Bee<MessageId>>, ParentRecord>
+            + Inherent<ChronicleKeyspace, Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)>
+            + Inherent<ChronicleKeyspace, Hint, Partition>
+            + Inherent<ChronicleKeyspace, Partitioned<Indexation>, IndexationRecord>
+            + Inherent<ChronicleKeyspace, Partitioned<Bee<Ed25519Address>>, AddressRecord>
+            + Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>,
+    >(
         &mut self,
         inherent_worker: &I,
         message_id: MessageId,
@@ -1005,7 +1013,10 @@ impl<T: ImportMode> Importer<T> {
         self.insert(inherent_worker, Bee(message_id), message_tuple)
     }
 
-    fn insert_parents<I: Inherent>(
+    fn insert_parents<
+        I: Inherent<ChronicleKeyspace, Partitioned<Bee<MessageId>>, ParentRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>,
+    >(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -1025,7 +1036,13 @@ impl<T: ImportMode> Importer<T> {
         }
         Ok(())
     }
-    fn insert_payload<I: Inherent>(
+    fn insert_payload<
+        I: Inherent<ChronicleKeyspace, Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)>
+            + Inherent<ChronicleKeyspace, Partitioned<Indexation>, IndexationRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>
+            + Inherent<ChronicleKeyspace, Partitioned<Bee<Ed25519Address>>, AddressRecord>
+            + Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>,
+    >(
         &mut self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -1074,7 +1091,10 @@ impl<T: ImportMode> Importer<T> {
         }
         Ok(())
     }
-    fn insert_index<I: Inherent>(
+    fn insert_index<
+        I: Inherent<ChronicleKeyspace, Partitioned<Indexation>, IndexationRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>,
+    >(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -1091,7 +1111,13 @@ impl<T: ImportMode> Importer<T> {
         let partition = Partition::new(partition_id, *milestone_index);
         self.insert(inherent_worker, hint, partition)
     }
-    fn insert_transaction<I: Inherent>(
+    fn insert_transaction<
+        I: Inherent<ChronicleKeyspace, Partitioned<Bee<Ed25519Address>>, AddressRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>
+            + Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>
+            + Inherent<ChronicleKeyspace, Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)>
+            + Inherent<ChronicleKeyspace, Partitioned<Indexation>, IndexationRecord>,
+    >(
         &mut self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -1188,7 +1214,7 @@ impl<T: ImportMode> Importer<T> {
         };
         Ok(())
     }
-    fn insert_input<I: Inherent>(
+    fn insert_input<I: Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>>(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -1204,7 +1230,7 @@ impl<T: ImportMode> Importer<T> {
             TransactionRecord::input(index, *message_id, input_data, inclusion_state, milestone_index);
         self.insert(inherent_worker, input_id, transaction_record)
     }
-    fn insert_unlock<I: Inherent>(
+    fn insert_unlock<I: Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>>(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -1220,7 +1246,7 @@ impl<T: ImportMode> Importer<T> {
             TransactionRecord::unlock(utxo_index, *message_id, unlock_data, inclusion_state, milestone_index);
         self.insert(inherent_worker, utxo_id, transaction_record)
     }
-    fn insert_output<I: Inherent>(
+    fn insert_output<I: Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>>(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -1236,7 +1262,10 @@ impl<T: ImportMode> Importer<T> {
             TransactionRecord::output(index, *message_id, output, inclusion_state, milestone_index);
         self.insert(inherent_worker, output_id, transaction_record)
     }
-    fn insert_address<I: Inherent>(
+    fn insert_address<
+        I: Inherent<ChronicleKeyspace, Partitioned<Bee<Ed25519Address>>, AddressRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>,
+    >(
         &self,
         inherent_worker: &I,
         output: &Output,
@@ -1298,7 +1327,7 @@ impl<T: ImportMode> Importer<T> {
     /// The low-level insert function to insert a key/value pair through an inherent worker
     fn insert<I, K, V>(&self, inherent_worker: &I, key: K, value: V) -> anyhow::Result<()>
     where
-        I: Inherent,
+        I: Inherent<ChronicleKeyspace, K, V>,
         ChronicleKeyspace: 'static + Insert<K, V>,
         K: 'static + Send + Sync + Clone + std::fmt::Debug + TokenEncoder,
         V: 'static + Send + Sync + Clone + std::fmt::Debug,
@@ -1308,7 +1337,7 @@ impl<T: ImportMode> Importer<T> {
             .insert(&key, &value)
             .consistency(Consistency::Quorum)
             .build()?;
-        let worker = inherent_worker.inherent_boxed(key, value);
+        let worker = inherent_worker.inherent_boxed(self.get_keyspace(), key, value);
         if let Err(RequestError::Ring(r)) = insert_req.send_local_with_worker(worker) {
             let keyspace_name = self.default_keyspace.name();
             if let Err(worker) = retry_send(&keyspace_name, r, 2) {
