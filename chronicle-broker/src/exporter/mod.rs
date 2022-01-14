@@ -162,7 +162,7 @@ where
                 debug!("Finished processing milestone {}", ms);
                 debug!("Milestone Data:\n{:?}", milestone_data);
                 archiver
-                    .send(ArchiverEvent::MilestoneData(milestone_data, None))
+                    .send(ArchiverEvent::MilestoneData(milestone_data, Some(self.ms_range.end)))
                     .map_err(|e| anyhow!("Error sending to archiver: {}", e))?;
             }
         }

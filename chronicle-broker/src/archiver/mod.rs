@@ -205,6 +205,7 @@ impl Archiver {
         let mut milestone_data_json = serde_json::to_string(&milestone_data).unwrap();
         milestone_data_json.push('\n');
         let milestone_data_line: Vec<u8> = milestone_data_json.into();
+
         // check the logs files to find if any has already existing log file
         if let Some(log_file) = self
             .logs
@@ -232,7 +233,7 @@ impl Archiver {
                 );
                 // check if the milestone_index already belongs to an existing processed logs
                 let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
-                if not_processed {
+                if not_processed || milestone_data.created_by() == &CreatedBy::Exporter {
                     // create new file
                     info!(
                         "Creating new log file starting from milestone index: {}",
@@ -245,7 +246,8 @@ impl Archiver {
             }
         } else {
             // check if the milestone_index already belongs to an existing processed files/ranges;
-            if !self.processed.iter().any(|r| r.contains(&milestone_index)) {
+            let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
+            if not_processed || milestone_data.created_by() == &CreatedBy::Exporter {
                 info!(
                     "Creating new log file starting from milestone index: {}",
                     milestone_index
@@ -314,6 +316,7 @@ impl Archiver {
         info!("Logged Range: {:?}", r);
         self.processed.push(r);
         self.processed.sort_by(|a, b| b.start.cmp(&a.start));
+        self.processed.dedup();
     }
     async fn append(
         log_file: &mut LogFile,

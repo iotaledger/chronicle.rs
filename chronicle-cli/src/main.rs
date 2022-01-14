@@ -276,6 +276,9 @@ async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
             } else {
                 ImportType::All
             };
+            println!("Connecting to Chronicle backserver: {}", websocket_address);
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let sty = ProgressStyle::default_bar()
                 .template(
                     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} {msg} ({eta})",
@@ -284,9 +287,6 @@ async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
             let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
             let pb = ProgressBar::new(0);
             pb.set_style(sty.clone());
-            println!("Connecting to Chronicle backserver: {}", websocket_address);
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
-            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let actor_path = ActorPath::new().push("broker".into());
             let import_json = serde_json::to_string(&Topology::Import {
                 path,
@@ -400,15 +400,15 @@ async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
                     .unwrap_or(start + 1);
                 Ok(start..end)
             })?;
+            println!("Connecting to Chronicle backserver: {}", websocket_address);
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let sty = ProgressStyle::default_bar()
                 .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} ({eta})")
                 .progress_chars("##-");
             let pb = ProgressBar::new(0);
             pb.set_style(sty.clone());
             pb.set_length(range.len() as u64);
-            println!("Connecting to Chronicle backserver: {}", websocket_address);
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
-            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let actor_path = ActorPath::new().push("broker".into());
             let export_json = serde_json::to_string(&Topology::Export { range })?;
             let export_request = Interface::new(actor_path, Event::Call(export_json.into()));
