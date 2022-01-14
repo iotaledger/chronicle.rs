@@ -23,8 +23,6 @@ subcommands:
               - no-exit
   - stop:
       about: Stop a running Chronicle instance
-  - rebuild:
-      about: Rebuild the RING
   - config:
       about: Manage the Chronicle configuration files
       settings:
@@ -38,27 +36,29 @@ subcommands:
             long: rollback
             short: r
             help: Roll the configuration back to the previous revision
-  - nodes:
-      about: Manage scylla nodes
+  - cluster:
+      about: Manage the scylla cluster
       settings:
         - ArgRequiredElseHelp
       args:
-        - add:
-            long: add
+        - add-node:
+            long: add-node
             short: a
             takes_value: true
             value_name: SCYLLA_DB_ADDRESS
-            conflicts_with:
-              - remove
             help: Add a scylla node for the given address
-        - remove:
-            long: rem
+        - remove-node:
+            long: rem-node
             short: r
             takes_value: true
             value_name: SCYLLA_DB_ADDRESS
-            conflicts_with:
-              - add
             help: Remove the scylla node for the given address
+        - rebuild:
+            long: rebuild
+            short: b
+            conflicts_with:
+              - skip-connection
+            help: Rebuild the scylla RING
         - list:
             long: list
             short: l
@@ -91,14 +91,12 @@ subcommands:
                   short: m
                   takes_value: true
                   value_name: MQTT_ADDRESSES
-                  required: true
                   multiple: true
                   help: The MQTT addresses which will be subscribed to receive messages (ex. tcp://api.hornet-0.testnet.chrysalis2.com:1883)
               - endpoint-address:
                   short: e
                   takes_value: true
                   value_name: ENDPOINT_ADDRESSES
-                  required: false
                   multiple: true
                   help: The endpoint addresses which will be used to fetch missing messages (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
         - remove:
@@ -111,14 +109,12 @@ subcommands:
                   short: m
                   takes_value: true
                   value_name: MQTT_ADDRESSES
-                  required: true
                   multiple: true
                   help: The MQTT addresses to remove (ex. tcp://api.hornet-0.testnet.chrysalis2.com:1883)
               - endpoint-address:
                   short: e
                   takes_value: true
                   value_name: ENDPOINT_ADDRESSES
-                  required: false
                   multiple: true
                   help: The endpoint addresses to remove (ex. https://api.hornet-0.testnet.chrysalis2.com/api/v1)
   - archive:
@@ -151,6 +147,17 @@ subcommands:
               - resume:
                   long: resume
                   help: Resume the importing the process by skipping synced milestone range(s).
+        - export:
+            short: e
+            about: Export a range of milestone to archive files
+            args:
+              - range:
+                  takes_value: true
+                  required: true
+                  value_name: RANGE
+                  help: >-
+                    The range of milestone indexes to export. Can be a single milestone (ex. 100) 
+                    or any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
         - cleanup:
             short: c
             about: Cleanup log file directory to normalize the file sizes.

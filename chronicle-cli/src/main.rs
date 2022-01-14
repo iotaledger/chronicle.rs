@@ -6,11 +6,14 @@ use anyhow::{
     bail,
 };
 
+use backstage::prefab::websocket::*;
 use chronicle_broker::{
     application::{
         ImportType,
         ImporterSession,
+        TopologyResponse,
     },
+    exporter::ExporterStatus,
     merge::{
         LogPaths,
         Merger,
@@ -18,8 +21,6 @@ use chronicle_broker::{
     },
     *,
 };
-
-use backstage::prefab::websocket::*;
 use clap::{
     load_yaml,
     App,
@@ -52,7 +53,8 @@ async fn main() {
 }
 
 async fn process() -> anyhow::Result<()> {
-    let websocket_address: std::net::SocketAddr = std::env::var("WEBSOCKET_ADDR")?.parse()?;
+    dotenv::dotenv()?;
+    let websocket_address: std::net::SocketAddr = std::env::var("BACKSERVER_ADDR")?.parse()?;
     let yaml = load_yaml!("../cli.yaml");
     let app = App::from_yaml(yaml).version(std::env!("CARGO_PKG_VERSION"));
     let matches = app.get_matches();
@@ -106,20 +108,7 @@ async fn process() -> anyhow::Result<()> {
             let shutdown_request = Interface::new(actor_path, Event::shutdown());
             stream.send(shutdown_request.to_message()).await?;
         }
-        ("rebuild", Some(_matches)) => {
-            use scylla_rs::app::cluster::Topology;
-            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
-            let actor_path = ActorPath::new().push("scylla".into()).push("cluster".into());
-            let rebuild_event = Topology::BuildRing;
-            let rebuild_json = serde_json::to_string(&rebuild_event)?;
-            let rebuild_request = Interface::new(actor_path, Event::Call(rebuild_json.into()));
-            stream.send(rebuild_request.to_message()).await?;
-            let rebuild_response = stream.next().await.ok_or_else(|| {
-                anyhow::anyhow!("Stream closed before receiving response for scylla rebuild ring request")
-            })??;
-            println!("{}", rebuild_response);
-        }
-        ("nodes", Some(matches)) => nodes(matches, &websocket_address).await?,
+        ("cluster", Some(matches)) => cluster(matches, &websocket_address).await?,
         ("brokers", Some(matches)) => brokers(matches, &websocket_address).await?,
         ("archive", Some(matches)) => archive(matches, &websocket_address).await?,
         _ => (),
@@ -127,13 +116,13 @@ async fn process() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn nodes<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::SocketAddr) -> anyhow::Result<()> {
+async fn cluster<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::SocketAddr) -> anyhow::Result<()> {
     use scylla_rs::app::cluster::Topology;
     let add_address = matches
-        .value_of("add")
+        .value_of("add-nodes")
         .map(|address| address.parse().expect("Invalid address provided!"));
     let rem_address = matches
-        .value_of("remove")
+        .value_of("remove-nodes")
         .map(|address| address.parse().expect("Invalid address provided!"));
     let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
 
@@ -162,6 +151,18 @@ async fn nodes<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Socke
             )
         })??;
         println!("{}", remove_node_response);
+    }
+    if matches.is_present("rebuild") {
+        let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+        let actor_path = ActorPath::new().push("scylla".into()).push("cluster".into());
+        let rebuild_event = Topology::BuildRing;
+        let rebuild_json = serde_json::to_string(&rebuild_event)?;
+        let rebuild_request = Interface::new(actor_path, Event::Call(rebuild_json.into()));
+        stream.send(rebuild_request.to_message()).await?;
+        let rebuild_response = stream.next().await.ok_or_else(|| {
+            anyhow::anyhow!("Stream closed before receiving response for scylla rebuild ring request")
+        })??;
+        println!("{}", rebuild_response);
     }
     if matches.is_present("list") {
         todo!("Print list of nodes");
@@ -367,6 +368,101 @@ async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
                             _ => (),
                         }
                     }
+                    Err(e) => {
+                        println!("Error received from Chronicle: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+        ("export", Some(subcommand)) => {
+            let range = subcommand.value_of("range").unwrap();
+            let matches = Regex::new(r"(\d+)(?:\D+(\d+))?")?
+                .captures(range)
+                .ok_or_else(|| anyhow!("Malformatted range!"));
+            let range = matches.and_then(|c| {
+                let start = c.get(1).unwrap().as_str().parse::<u32>()?;
+                let end = c
+                    .get(2)
+                    .map(|s| s.as_str().parse::<u32>())
+                    .transpose()?
+                    .unwrap_or(start + 1);
+                Ok(start..end)
+            })?;
+            let sty = ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} ({eta})")
+                .progress_chars("##-");
+            let pb = ProgressBar::new(0);
+            pb.set_style(sty.clone());
+            pb.set_length(range.len() as u64);
+            let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            let actor_path = ActorPath::new().push("broker".into());
+            let export_json = serde_json::to_string(&Topology::Export { range })?;
+            let export_request = Interface::new(actor_path, Event::Call(export_json.into()));
+            stream.send(export_request.to_message()).await?;
+            pb.enable_steady_tick(200);
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    Ok(msg) => match msg {
+                        Message::Text(ref s) => {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
+                                if let Some(res) = json.get("Response") {
+                                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(res.as_str().unwrap()) {
+                                        match serde_json::from_value::<TopologyResponse>(json) {
+                                            Ok(session) => match session {
+                                                Ok(o) => match o {
+                                                    application::TopologyOk::Export(e) => match e {
+                                                        ExporterStatus::InProgress {
+                                                            current,
+                                                            completed,
+                                                            total: _,
+                                                        } => {
+                                                            pb.set_position(completed as u64);
+                                                            pb.set_message(format!("Current milestone: {}", current));
+                                                        }
+                                                        ExporterStatus::Done => {
+                                                            pb.finish_with_message("Done");
+                                                            break;
+                                                        }
+                                                        ExporterStatus::Failed(e) => {
+                                                            pb.println(format!("Error: {}", e));
+                                                            pb.finish_with_message(format!("Error: {}", e));
+                                                            break;
+                                                        }
+                                                    },
+                                                    _ => {
+                                                        println!("Invalid Export response: {:?}", o);
+                                                        break;
+                                                    }
+                                                },
+                                                Err(e) => {
+                                                    println!("Error: {:?}", e);
+                                                    break;
+                                                }
+                                            },
+                                            Err(e) => {
+                                                println!("Invalid message from Chronicle: {:?}", e);
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        println!("Json message from Chronicle: {:?}", json);
+                                    }
+                                } else {
+                                    println!("Json message from Chronicle: {:#}", json);
+                                }
+                            } else {
+                                println!("Text message from Chronicle: {:?}", msg);
+                            }
+                        }
+                        Message::Close(c) => {
+                            if let Some(c) = c {
+                                println!("Closed connection: {}", c);
+                            }
+                            break;
+                        }
+                        _ => (),
+                    },
                     Err(e) => {
                         println!("Error received from Chronicle: {}", e);
                         break;

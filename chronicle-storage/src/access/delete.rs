@@ -7,12 +7,11 @@ impl Delete<(Bee<Ed25519Address>, PartitionId), (Bee<MilestoneIndex>, u8, Bee<Tr
     for ChronicleKeyspace
 {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "DELETE FROM {}.addresses WHERE address = ? AND partition_id = ? AND milestone_index = ? AND output_type = ? AND transaction_id = ? AND idx = ?",
+    fn statement(&self) -> DeleteStatement {
+        parse_statement!(
+            "DELETE FROM #.addresses WHERE address = ? AND partition_id = ? AND milestone_index = ? AND output_type = ? AND transaction_id = ? AND idx = ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -32,12 +31,11 @@ impl Delete<(Bee<Ed25519Address>, PartitionId), (Bee<MilestoneIndex>, u8, Bee<Tr
 /// Delete Index record from Indexes table
 impl Delete<(Indexation, PartitionId), (Bee<MilestoneIndex>, Bee<MessageId>), IndexationRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "DELETE FROM {}.indexes WHERE indexation = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
+    fn statement(&self) -> DeleteStatement {
+        parse_statement!(
+            "DELETE FROM #.indexes WHERE indexation = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -55,12 +53,11 @@ impl Delete<(Indexation, PartitionId), (Bee<MilestoneIndex>, Bee<MessageId>), In
 /// Delete Parent record from Parents table
 impl Delete<(Bee<MessageId>, PartitionId), (Bee<MilestoneIndex>, Bee<MessageId>), ParentRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "DELETE FROM {}.parents WHERE parent_id = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
+    fn statement(&self) -> DeleteStatement {
+        parse_statement!(
+            "DELETE FROM #.parents WHERE parent_id = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,

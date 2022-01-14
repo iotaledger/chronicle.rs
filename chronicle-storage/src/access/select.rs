@@ -16,8 +16,8 @@ use std::{
 
 impl Select<Bee<MessageId>, (), Bee<Message>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!("SELECT message FROM {}.messages WHERE message_id = ?", self.name()).into()
+    fn statement(&self) -> SelectStatement {
+        parse_statement!("SELECT message FROM #.messages WHERE message_id = ?", self.name())
     }
     fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
         builder.value(message_id)
@@ -26,8 +26,8 @@ impl Select<Bee<MessageId>, (), Bee<Message>> for ChronicleKeyspace {
 
 impl Select<Bee<MessageId>, (), Option<MessageMetadata>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!("SELECT metadata FROM {}.messages WHERE message_id = ?", self.name()).into()
+    fn statement(&self) -> SelectStatement {
+        parse_statement!("SELECT metadata FROM #.messages WHERE message_id = ?", self.name())
     }
     fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
         builder.value(message_id)
@@ -36,12 +36,21 @@ impl Select<Bee<MessageId>, (), Option<MessageMetadata>> for ChronicleKeyspace {
 
 impl Select<Bee<MessageId>, (), (Option<Bee<Message>>, Option<MessageMetadata>)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT message, metadata FROM {}.messages WHERE message_id = ?",
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT message, metadata FROM #.messages WHERE message_id = ?",
             self.name()
         )
-        .into()
+    }
+    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
+        builder.value(message_id)
+    }
+}
+
+impl Select<Bee<MessageId>, (), FullMessage> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> SelectStatement {
+        <Self as Select<Bee<MessageId>, (), (Option<Bee<Message>>, Option<MessageMetadata>)>>::statement(self)
     }
     fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
         builder.value(message_id)
@@ -52,14 +61,13 @@ impl Select<(Bee<MessageId>, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<P
     for ChronicleKeyspace
 {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
             "SELECT partition_id, milestone_index, message_id, inclusion_state
-            FROM {}.parents
+            FROM #.parents
             WHERE parent_id = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -93,14 +101,13 @@ impl Select<(Indexation, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Parti
     for ChronicleKeyspace
 {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
             "SELECT partition_id, milestone_index, message_id, inclusion_state
-            FROM {}.indexes
+            FROM #.indexes
             WHERE indexation = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -134,14 +141,13 @@ impl Select<(Bee<Ed25519Address>, PartitionId), Bee<MilestoneIndex>, Paged<VecDe
     for ChronicleKeyspace
 {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
             "SELECT partition_id, milestone_index, output_type,
              transaction_id, idx, amount, inclusion_state
-             FROM {}.addresses WHERE address = ? AND partition_id = ? AND milestone_index <= ?",
+             FROM #.addresses WHERE address = ? AND partition_id = ? AND milestone_index <= ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -203,16 +209,15 @@ impl RowsDecoder for Paged<VecDeque<Partitioned<AddressRecord>>> {
 
 impl Select<Bee<TransactionId>, u16, OutputRes> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
             "SELECT message_id, data, inclusion_state
-            FROM {}.transactions
+            FROM #.transactions
             WHERE transaction_id = ?
             AND idx = ?
             AND variant IN ('output', 'unlock')",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, transaction_id: &Bee<TransactionId>, idx: &u16) -> B {
         builder.value(transaction_id).value(idx)
@@ -247,14 +252,13 @@ impl RowsDecoder for OutputRes {
 
 impl Select<Bee<TransactionId>, (), TransactionRes> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
             "SELECT message_id, data, idx, inclusion_state, milestone_index
-            FROM {}.transactions
+            FROM #.transactions
             WHERE transaction_id = ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, txn_id: &Bee<TransactionId>, _: &()) -> B {
         builder.value(txn_id)
@@ -307,14 +311,13 @@ impl RowsDecoder for TransactionRes {
 
 impl Select<Bee<TransactionId>, LedgerInclusionState, Option<Bee<MessageId>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT message_id FROM {}.transactions
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT message_id FROM #.transactions
             WHERE transaction_id = ? and inclusion_state = ? and variant = 'input'
             LIMIT 1 ALLOW FILTERING",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -327,12 +330,11 @@ impl Select<Bee<TransactionId>, LedgerInclusionState, Option<Bee<MessageId>>> fo
 
 impl Select<Bee<MilestoneIndex>, (), Bee<Milestone>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT message_id, timestamp FROM {}.milestones WHERE milestone_index = ?",
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT message_id, timestamp FROM #.milestones WHERE milestone_index = ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, index: &Bee<MilestoneIndex>, _: &()) -> B {
         builder.value(index)
@@ -342,14 +344,13 @@ impl Select<Bee<MilestoneIndex>, (), Bee<Milestone>> for ChronicleKeyspace {
 impl Select<String, HintVariant, Iter<(Bee<MilestoneIndex>, PartitionId)>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
 
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
             "SELECT milestone_index, partition_id
-            FROM {}.hints
+            FROM #.hints
             WHERE hint = ? AND variant = ?",
             self.name()
         )
-        .into()
     }
 
     fn bind_values<B: Binder>(builder: B, hint: &String, variant: &HintVariant) -> B {
@@ -359,12 +360,11 @@ impl Select<String, HintVariant, Iter<(Bee<MilestoneIndex>, PartitionId)>> for C
 
 impl Select<String, SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
     type QueryOrPrepared = QueryStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT milestone_index, synced_by, logged_by FROM {}.sync WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT milestone_index, synced_by, logged_by FROM #.sync WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, keyspace: &String, sync_key: &SyncRange) -> B {
         builder.value(keyspace).value(&sync_key.start()).value(&sync_key.end())
@@ -373,12 +373,11 @@ impl Select<String, SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
 
 impl Select<String, SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
     type QueryOrPrepared = QueryStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "SELECT milestone_index, message_count, transaction_count, transferred_tokens FROM {}.analytics WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT milestone_index, message_count, transaction_count, transferred_tokens FROM #.analytics WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, keyspace: &String, sync_key: &SyncRange) -> B {
         builder.value(keyspace).value(&sync_key.start()).value(&sync_key.end())

@@ -4,12 +4,11 @@ use super::*;
 
 impl Insert<Bee<MessageId>, Message> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.messages (message_id, message) VALUES (?, ?)",
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.messages (message_id, message) VALUES (?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, message: &Message) -> B {
         let mut message_bytes = Vec::new();
@@ -22,12 +21,11 @@ impl Insert<Bee<MessageId>, Message> for ChronicleKeyspace {
 /// Insert Metadata
 impl Insert<Bee<MessageId>, MessageMetadata> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.messages (message_id, metadata) VALUES (?, ?)",
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.messages (message_id, metadata) VALUES (?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, meta: &MessageMetadata) -> B {
         // Encode metadata using bincode
@@ -37,12 +35,11 @@ impl Insert<Bee<MessageId>, MessageMetadata> for ChronicleKeyspace {
 
 impl Insert<Bee<MessageId>, (Message, MessageMetadata)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.messages (message_id, message, metadata) VALUES (?, ?, ?)",
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.messages (message_id, message, metadata) VALUES (?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -60,13 +57,12 @@ impl Insert<Bee<MessageId>, (Message, MessageMetadata)> for ChronicleKeyspace {
 /// Insert Address into addresses table
 impl Insert<Partitioned<Bee<Ed25519Address>>, AddressRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.addresses (address, partition_id, milestone_index, output_type, transaction_id, idx, amount, address_type, inclusion_state)
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.addresses (address, partition_id, milestone_index, output_type, transaction_id, idx, amount, address_type, inclusion_state)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -96,13 +92,12 @@ impl Insert<Partitioned<Bee<Ed25519Address>>, AddressRecord> for ChronicleKeyspa
 /// Insert Index into Indexes table
 impl Insert<Partitioned<Indexation>, IndexationRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.indexes (indexation, partition_id, milestone_index, message_id, inclusion_state)
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.indexes (indexation, partition_id, milestone_index, message_id, inclusion_state)
             VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -125,13 +120,12 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for ChronicleKeyspace {
 /// Insert ParentId into Parents table
 impl Insert<Partitioned<Bee<MessageId>>, ParentRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state)
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state)
             VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -157,13 +151,12 @@ impl Insert<Partitioned<Bee<MessageId>>, ParentRecord> for ChronicleKeyspace {
 /// -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
 impl Insert<Bee<TransactionId>, TransactionRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index)
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index)
             VALUES (?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -190,12 +183,11 @@ impl Insert<Bee<TransactionId>, TransactionRecord> for ChronicleKeyspace {
 /// Insert Hint into Hints table
 impl Insert<Hint, Partition> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.hints (hint, variant, partition_id, milestone_index) VALUES (?, ?, ?, ?)",
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.hints (hint, variant, partition_id, milestone_index) VALUES (?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(builder: B, hint: &Hint, partition: &Partition) -> B {
         builder
@@ -208,12 +200,11 @@ impl Insert<Hint, Partition> for ChronicleKeyspace {
 
 impl Insert<Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.milestones (milestone_index, message_id, timestamp, payload) VALUES (?, ?, ?, ?)",
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.milestones (milestone_index, message_id, timestamp, payload) VALUES (?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -234,12 +225,11 @@ impl Insert<Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)> for Ch
 
 impl Insert<String, SyncRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.sync (key, milestone_index, synced_by, logged_by) VALUES (?, ?, ?, ?)",
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.sync (key, milestone_index, synced_by, logged_by) VALUES (?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,
@@ -260,12 +250,11 @@ impl Insert<String, SyncRecord> for ChronicleKeyspace {
 
 impl Insert<String, AnalyticRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "INSERT INTO {}.analytics (key, milestone_index, message_count, transaction_count, transferred_tokens) VALUES (?, ?, ?, ?, ?)",
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.analytics (key, milestone_index, message_count, transaction_count, transferred_tokens) VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
-        .into()
     }
     fn bind_values<B: Binder>(
         builder: B,

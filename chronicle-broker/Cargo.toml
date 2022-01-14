@@ -40,6 +40,7 @@ async-recursion = "0.3.2"
 default = ["merge"]
 sync = [
     "chronicle-common",
+    "chronicle-storage/sync",
     "scylla-rs",
     "anyhow",
     "tokio/full",

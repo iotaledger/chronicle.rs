@@ -519,6 +519,18 @@ impl FullMessage {
     }
 }
 
+impl Row for FullMessage {
+    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(FullMessage(
+            rows.column_value::<Bee<Message>>()?.into_inner(),
+            rows.column_value::<MessageMetadata>()?,
+        ))
+    }
+}
+
 /// A type alias for partition ids
 pub type PartitionId = u16;
 

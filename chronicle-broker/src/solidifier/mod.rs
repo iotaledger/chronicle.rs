@@ -931,7 +931,7 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(&keyspace_name, id, &statement)
+                PrepareWorker::new(Some(keyspace_name), id, statement.into())
                     .send_to_reporter(reporter)
                     .ok();
             }
@@ -1048,7 +1048,7 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(&keyspace_name, id, &statement)
+                PrepareWorker::new(Some(keyspace_name), id, statement.into())
                     .send_to_reporter(reporter)
                     .ok();
             }
@@ -1152,7 +1152,7 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(&keyspace_name, id, &statement)
+                PrepareWorker::new(Some(keyspace_name), id, statement.into())
                     .send_to_reporter(reporter)
                     .ok();
             }

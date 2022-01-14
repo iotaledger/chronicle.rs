@@ -5,6 +5,10 @@ use super::{
         CollectorHandle,
         MessageIdPartitioner,
     },
+    exporter::{
+        Exporter,
+        ExporterStatus,
+    },
     mqtt::Mqtt,
     requester::{
         Requester,
@@ -71,7 +75,7 @@ use std::{
     },
     ops::Range,
     path::PathBuf,
-    time::Duration,
+    time::Duration, convert::TryFrom,
 };
 use thiserror::Error;
 use url::Url;
@@ -216,7 +220,6 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
 }
 
 /// Event type of the broker Application
-//#[derive(Debug)]
 pub enum BrokerEvent {
     /// Request the cluster handle
     Topology(Topology, Option<TopologyResponder>),
@@ -226,6 +229,16 @@ pub enum BrokerEvent {
     Scylla(Event<Service>),
     /// Shutdown signal
     Shutdown,
+}
+
+impl TryFrom<(JsonMessage, Responder)> for BrokerEvent {
+    type Error = anyhow::Error;
+    fn try_from((msg, responder): (JsonMessage, Responder)) -> Result<Self, Self::Error> {
+        Ok(BrokerEvent::Topology(
+            serde_json::from_str(msg.0.as_ref())?,
+            Some(TopologyResponder::WsResponder(responder)),
+        ))
+    }
 }
 
 impl<T> EolEvent<T> for BrokerEvent {
@@ -270,6 +283,9 @@ pub enum Topology {
         import_range: Option<Range<u32>>,
         /// The type of import requested
         import_type: ImportType,
+    },
+    Export {
+        range: Range<u32>,
     },
 }
 
@@ -321,6 +337,7 @@ pub enum ImporterSession {
 }
 
 /// Topology responder
+#[derive(Clone)]
 pub enum TopologyResponder {
     /// Websocket responder
     WsResponder(Responder),
@@ -329,7 +346,7 @@ pub enum TopologyResponder {
 }
 
 impl TopologyResponder {
-    async fn reply(&self, response: TopologyResponse) -> anyhow::Result<()> {
+    pub async fn reply(&self, response: TopologyResponse) -> anyhow::Result<()> {
         match self {
             Self::WsResponder(r) => r.inner_reply(response).await,
             Self::Mpsc(tx) => tx.send(response).map_err(|_| anyhow::Error::msg("caller out of scope")),
@@ -338,7 +355,16 @@ impl TopologyResponder {
 }
 
 /// The topology response, sent after the cluster processes a topology event
-pub type TopologyResponse = Result<Topology, TopologyErr>;
+pub type TopologyResponse = Result<TopologyOk, TopologyErr>;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum TopologyOk {
+    Import,
+    Export(ExporterStatus),
+    AddMqtt,
+    RemoveMqtt,
+    // TODO: fill in the rest
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Error)]
 #[error("message: {message:?}")]
@@ -361,6 +387,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
         log::info!("ChronicleBroker is initializing");
         // register self as resource
         rt.add_resource(self.clone()).await;
+        rt.add_route::<(JsonMessage, Responder)>().await.ok();
         // subscribe to scylla service
         let scylla_scope_id = rt.sibling("scylla").scope_id().await.ok_or_else(|| {
             log::error!("Scylla doesn't exist as sibling");
@@ -454,9 +481,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                                                         responder.reply(error_response).await.ok();
                                                     } else {
                                                         log::info!("Successfully inserted mqtt: {}", &mqtt);
-                                                        let ok_response: Result<_, TopologyErr> =
-                                                            Ok(Topology::AddMqtt(mqtt));
-                                                        responder.reply(ok_response).await.ok();
+                                                        responder.reply(Ok(TopologyOk::AddMqtt)).await.ok();
                                                         self.maybe_start(rt, sync_data, &selective).await?;
                                                     };
                                                 }
@@ -575,9 +600,8 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                                     } else {
                                         log::info!("Successfully added mqtt: {}", &mqtt);
                                         self.mqtt_brokers.insert(mqtt.clone());
-                                        let ok_response: Result<_, TopologyErr> = Ok(Topology::AddMqtt(mqtt));
                                         if let Some(responder) = responder_opt {
-                                            responder.reply(ok_response).await.ok();
+                                            responder.reply(Ok(TopologyOk::AddMqtt)).await.ok();
                                         }
                                     }
                                 }
@@ -625,18 +649,32 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                                     }
                                 }
                                 log::info!("Removed {} mqtt!", mqtt);
-                                let ok_response: Result<_, TopologyErr> = Ok(Topology::RemoveMqtt(mqtt.clone()));
-                                responder.reply(ok_response).await.ok();
+                                responder.reply(Ok(TopologyOk::RemoveMqtt)).await.ok();
                             } else {
                                 log::error!("unable to remove non-existing {} mqtt!", mqtt);
-                                // Cannot remove non-existing mqtt.
-                                let error_response: Result<Topology, _> =
-                                    Err(TopologyErr::new(format!("unable to remove non-existing {} mqtt", mqtt)));
-                                responder.reply(error_response).await.ok();
+                                responder
+                                    .reply(Err(TopologyErr::new(format!(
+                                        "unable to remove non-existing {} mqtt",
+                                        mqtt
+                                    ))))
+                                    .await
+                                    .ok();
                             };
                         }
                         Topology::Import { .. } => {
                             todo!("handle importer")
+                        }
+                        Topology::Export { range: ms_range } => {
+                            let responder =
+                                responder_opt.ok_or_else(|| ActorError::exit_msg("Responder required for export"))?;
+                            let exporter = Exporter::new(ms_range, self.keyspace.clone(), responder.clone());
+                            match rt.spawn("exporter".to_string(), exporter).await {
+                                Err(e) => {
+                                    log::error!("Error creating exporter: {}", e);
+                                    responder.reply(Err(TopologyErr::new(e.to_string()))).await.ok();
+                                }
+                                _ => (),
+                            }
                         }
                     }
                 }

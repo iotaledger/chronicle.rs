@@ -1,0 +1,72 @@
+digraph Architecture {
+    splines="true";
+    newrank=true;
+
+    subgraph cluster_scylla {
+        label="Scylla";
+        fontsize=26;
+        bgcolor=mediumseagreen;
+        fixedsize=true;
+        node [style=filled, color=black, fillcolor=white, width=1.5 height=1.5];
+
+        scylla [shape="box3d"]
+    }
+
+    subgraph cluster_api {
+        label="API";
+        fontsize=26;
+        bgcolor=pink
+        node [style=filled, color=black, fillcolor=white];
+
+        chronicle_api [shape="square"]
+        websocket [shape="box3d"]
+        rocket_server
+    }
+
+    subgraph cluster_broker {
+        label="Broker";
+        fontsize=26;
+        bgcolor=lightblue;
+        node [style=filled, color=black, fillcolor=white];
+
+        chronicle_broker [shape="square"]
+        mqtt [shape="doublecircle"]
+        collector [shape="doublecircle"]
+        solidifier [shape="doublecircle"]
+        requester [shape="doublecircle"]
+        col_sol [shape=point]
+        syncer
+        archiver
+        importer
+    }
+
+    chronicle_api -> rocket_server [arrowhead=oarrow]
+    chronicle_api -> websocket [arrowhead=oarrow]
+
+    websocket -> chronicle_broker [arrowhead=dot]
+    rocket_server -> scylla [arrowhead=odot]
+
+    chronicle_broker -> mqtt [label="on init\non add" arrowhead=oarrow]
+    chronicle_broker -> col_sol [label="N=collector_count" dir=none]
+    col_sol -> collector [arrowhead=diamond]
+    col_sol -> solidifier [arrowhead=diamond]
+    chronicle_broker -> syncer
+    chronicle_broker -> archiver
+    chronicle_broker -> importer [label="on import" arrowhead=oarrow]
+
+    mqtt -> collector [arrowhead=dot]
+
+    collector -> requester [label="N=requester_count" arrowhead=diamond]
+    collector -> solidifier [dir=both label="1 to 1" arrowhead=dot arrowtail=dot]
+    collector -> scylla [arrowhead=dot]
+
+    solidifier -> syncer [dir=both label="N to 1" arrowhead=dot arrowtail=dot]
+    solidifier -> archiver [arrowhead=odot]
+    solidifier -> scylla [arrowhead=dot]
+
+    importer -> scylla [arrowhead=dot]
+
+    syncer -> archiver [arrowhead=odot]
+
+    { rank=same; chronicle_broker; scylla }
+}

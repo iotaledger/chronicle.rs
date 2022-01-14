@@ -11,7 +11,10 @@ use crate::{
 };
 use anyhow::bail;
 use bee_message::{
-    address::Address,
+    address::{
+        Address,
+        Ed25519Address,
+    },
     input::Input,
     output::Output,
     parents::Parents,
@@ -24,6 +27,7 @@ use bee_message::{
     },
     prelude::{
         MilestoneIndex,
+        MilestonePayload,
         TransactionId,
     },
 };
@@ -676,7 +680,10 @@ where
         Ok(())
     }
     /// Insert the parents' message ids of a given message id to the table
-    fn insert_parents<I: Inherent>(
+    fn insert_parents<
+        I: Inherent<ChronicleKeyspace, Partitioned<Bee<MessageId>>, ParentRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>,
+    >(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -697,7 +704,13 @@ where
         Ok(())
     }
     // NOT complete, TODO finish it.
-    fn insert_payload<I: Inherent>(
+    fn insert_payload<
+        I: Inherent<ChronicleKeyspace, Partitioned<Bee<Ed25519Address>>, AddressRecord>
+            + Inherent<ChronicleKeyspace, Partitioned<Indexation>, IndexationRecord>
+            + Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>
+            + Inherent<ChronicleKeyspace, Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)>,
+    >(
         &mut self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -750,7 +763,10 @@ where
         Ok(())
     }
     /// Insert the `Indexation` of a given message id to the table
-    fn insert_index<I: Inherent>(
+    fn insert_index<
+        I: Inherent<ChronicleKeyspace, Partitioned<Indexation>, IndexationRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>,
+    >(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -833,7 +849,13 @@ where
         Ok(())
     }
     /// Insert the transaction to the table
-    fn insert_transaction<I: Inherent>(
+    fn insert_transaction<
+        I: Inherent<ChronicleKeyspace, Partitioned<Bee<Ed25519Address>>, AddressRecord>
+            + Inherent<ChronicleKeyspace, Partitioned<Indexation>, IndexationRecord>
+            + Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>
+            + Inherent<ChronicleKeyspace, Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)>,
+    >(
         &mut self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -938,7 +960,7 @@ where
         Ok(())
     }
     /// Insert the `InputData` to the table
-    fn insert_input<I: Inherent>(
+    fn insert_input<I: Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>>(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -955,7 +977,7 @@ where
         self.insert(inherent_worker, input_id, transaction_record)
     }
     /// Insert the `UnlockData` to the table
-    fn insert_unlock<I: Inherent>(
+    fn insert_unlock<I: Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>>(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -972,7 +994,7 @@ where
         self.insert(inherent_worker, utxo_id, transaction_record)
     }
     /// Insert the `Output` to the table
-    fn insert_output<I: Inherent>(
+    fn insert_output<I: Inherent<ChronicleKeyspace, Bee<TransactionId>, TransactionRecord>>(
         &self,
         inherent_worker: &I,
         message_id: &MessageId,
@@ -989,7 +1011,10 @@ where
         self.insert(inherent_worker, output_id, transaction_record)
     }
     /// Insert the `Address` to the table
-    fn insert_address<I: Inherent>(
+    fn insert_address<
+        I: Inherent<ChronicleKeyspace, Partitioned<Bee<Ed25519Address>>, AddressRecord>
+            + Inherent<ChronicleKeyspace, Hint, Partition>,
+    >(
         &self,
         inherent_worker: &I,
         output: &Output,
@@ -1051,7 +1076,7 @@ where
     /// The low-level insert function to insert a key/value pair through an inherent worker
     fn insert<I, K, V>(&self, inherent_worker: &I, key: K, value: V) -> ActorResult<()>
     where
-        I: Inherent,
+        I: Inherent<ChronicleKeyspace, K, V>,
         ChronicleKeyspace: 'static + Insert<K, V>,
         K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
         V: 'static + Send + Sync + Clone + Debug,
@@ -1208,8 +1233,9 @@ pub struct SimpleWorker {
 }
 
 /// The inherent trait to return a boxed worker for a given key/value pair in a keyspace
-trait Inherent {
-    fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker + 'static>
+trait Inherent<S, K, V> {
+    type Output: Worker;
+    fn inherent_boxed(&self, keyspace: S, key: K, value: V) -> Box<Self::Output>
     where
         S: 'static + Insert<K, V> + Debug,
         K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
@@ -1217,8 +1243,14 @@ trait Inherent {
 }
 
 /// Implement the `Inherent` trait for the simple worker
-impl Inherent for SimpleWorker {
-    fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
+impl<
+        S: 'static + Insert<K, V> + Debug,
+        K: 'static + Send + Sync + Clone + TokenEncoder + Debug,
+        V: 'static + Send + Sync + Clone + Debug,
+    > Inherent<S, K, V> for SimpleWorker
+{
+    type Output = InsertWorker<S, K, V>;
+    fn inherent_boxed(&self, keyspace: S, key: K, value: V) -> Box<Self::Output>
     where
         S: 'static + Insert<K, V> + Debug,
         K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
@@ -1229,8 +1261,14 @@ impl Inherent for SimpleWorker {
 }
 
 /// Implement the `Inherent` trait for the atomic solidifier worker
-impl Inherent for AtomicWorker {
-    fn inherent_boxed<S, K, V>(&self, keyspace: S, key: K, value: V) -> Box<dyn Worker>
+impl<
+        S: 'static + Insert<K, V> + Debug,
+        K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
+        V: 'static + Send + Sync + Clone + Debug,
+    > Inherent<S, K, V> for AtomicWorker
+{
+    type Output = AtomicSolidifierWorker<S, K, V>;
+    fn inherent_boxed(&self, keyspace: S, key: K, value: V) -> Box<Self::Output>
     where
         S: 'static + Insert<K, V> + Debug,
         K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
@@ -1289,7 +1327,7 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(&keyspace_name, id, &statement)
+                PrepareWorker::new(Some(keyspace_name), id, statement.into())
                     .send_to_reporter(reporter)
                     .ok();
             }

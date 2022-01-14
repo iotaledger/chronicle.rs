@@ -26,8 +26,8 @@ const TOKIO_THREAD_STACK_SIZE: usize = 4 * 4 * 1024 * 1024;
 pub struct Chronicle {
     /// Scylla application
     scylla: Scylla,
-    #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
     /// Permanode application
+    #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
     broker: ChronicleBroker<chronicle_filter::PermanodeConfig>,
     /// Selective Permanode application
     #[cfg(all(feature = "selective-permanode", not(feature = "permanode")))]
@@ -109,7 +109,7 @@ where
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
         // init the alert
         alert::init(self.alert.clone());
-        //
+        // 
         // - Scylla
         let scylla_scope_id = rt.start("scylla".to_string(), self.scylla.clone()).await?.scope_id();
         log::info!("Chronicle Started Scylla");
@@ -130,7 +130,7 @@ where
                 e
             })?;
         }
-        //
+        // 
         // - api
         let api_scope_id = rt.start("api".to_string(), self.api.clone()).await?.scope_id();
         if let Some(api) = rt.subscribe::<ChronicleAPI>(api_scope_id, "api".to_string()).await? {
@@ -140,7 +140,7 @@ where
             }
         }
         log::info!("Chronicle Started Api");
-        //
+        // 
         // - brokern
         #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
         let broker = self.broker.clone();
@@ -221,11 +221,11 @@ fn main() {
 }
 
 async fn chronicle() {
-    let backserver_addr: std::net::SocketAddr = std::env::var("BACKSERVER").map_or_else(
+    let backserver_addr: std::net::SocketAddr = std::env::var("BACKSERVER_ADDR").map_or_else(
         |_| ([127, 0, 0, 1], 9999).into(),
         |n| {
             n.parse()
-                .expect("Invalid BACKSERVER env, use this format '127.0.0.1:9999' ")
+                .expect("Invalid BACKSERVER_ADDR env, use this format '127.0.0.1:9999' ")
         },
     );
     Runtime::from_config::<Chronicle>()
@@ -244,117 +244,133 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
         "Initializing Chronicle data model for keyspace: {}",
         keyspace_config.name
     );
-    let datacenters = keyspace_config
-        .data_centers
-        .iter()
-        .map(|(datacenter_name, datacenter_config)| {
-            format!("'{}': {}", datacenter_name, datacenter_config.replication_factor)
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "CREATE KEYSPACE IF NOT EXISTS {0}
-            WITH replication = {{'class': 'NetworkTopologyStrategy', {1}}}
-            AND durable_writes = true;",
-        keyspace_config.name, datacenters
+    let replications = format!(
+        "{{{}}}",
+        keyspace_config
+            .data_centers
+            .iter()
+            .map(|(datacenter_name, datacenter_config)| {
+                format!("'{}': {}", datacenter_name, datacenter_config.replication_factor)
+            })
+            .chain(std::iter::once("'class': 'NetworkTopologyStrategy'".to_string()))
+            .collect::<Vec<_>>()
+            .join(", ")
     )
-    .as_execute_query(&[])
+    .parse::<Replication>()?;
+    parse_statement!(
+        "CREATE KEYSPACE IF NOT EXISTS #0
+            WITH replication = #1
+            AND durable_writes = true;",
+        keyspace_config.name.clone(),
+        replications
+    )
+    .execute()
     .consistency(Consistency::All)
     .build()?
     .get_local()
     .await
     .map_err(|e| anyhow::Error::msg(format!("Could not verify if keyspace was created! error: {}", e)))?;
     log::info!("Created Chronicle keyspace with name: {}", keyspace_config.name);
-    let table_queries = format!(
-        "CREATE TABLE IF NOT EXISTS {0}.messages (
-                message_id text PRIMARY KEY,
-                message blob,
-                metadata blob,
-            );
-            CREATE TABLE IF NOT EXISTS {0}.addresses  (
-                address text,
-                partition_id smallint,
-                milestone_index int,
-                output_type tinyint,
-                transaction_id text,
-                idx smallint,
-                amount bigint,
-                address_type tinyint,
-                inclusion_state blob,
-                PRIMARY KEY ((address, partition_id), milestone_index, output_type, transaction_id, idx)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC, output_type DESC, transaction_id DESC, idx DESC);
-            CREATE TABLE IF NOT EXISTS {0}.indexes  (
-                indexation text,
-                partition_id smallint,
-                milestone_index int,
-                message_id text,
-                inclusion_state blob,
-                PRIMARY KEY ((indexation, partition_id), milestone_index, message_id)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-            CREATE TABLE IF NOT EXISTS {0}.parents  (
-                parent_id text,
-                partition_id smallint,
-                milestone_index int,
-                message_id text,
-                inclusion_state blob,
-                PRIMARY KEY ((parent_id, partition_id), milestone_index, message_id)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-            CREATE TABLE IF NOT EXISTS {0}.transactions  (
-                transaction_id text,
-                idx smallint,
-                variant text,
-                message_id text,
-                data blob,
-                inclusion_state blob,
-                milestone_index int,
-                PRIMARY KEY (transaction_id, idx, variant, message_id, data)
-            );
-            CREATE TABLE IF NOT EXISTS {0}.milestones  (
-                milestone_index int,
-                message_id text,
-                timestamp bigint,
-                payload blob,
-                PRIMARY KEY (milestone_index, message_id)
-            );
-            CREATE TABLE IF NOT EXISTS {0}.hints  (
-                hint text,
-                variant text,
-                partition_id smallint,
-                milestone_index int,
-                PRIMARY KEY (hint, variant, partition_id)
-            ) WITH CLUSTERING ORDER BY (variant DESC, partition_id DESC);
-            CREATE TABLE IF NOT EXISTS {0}.sync  (
-                key text,
-                milestone_index int,
-                synced_by tinyint,
-                logged_by tinyint,
-                PRIMARY KEY (key, milestone_index)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+    let table_queries = parse_statements!(
+        "CREATE TABLE IF NOT EXISTS #0.messages (
+            message_id text PRIMARY KEY,
+            message blob,
+            metadata blob
+        );
 
-            CREATE TABLE IF NOT EXISTS {0}.analytics (
-                key text,
-                milestone_index int,
-                message_count int,
-                transaction_count int,
-                transferred_tokens bigint,
-                PRIMARY KEY (key, milestone_index)
-            ) WITH CLUSTERING ORDER BY (milestone_index DESC);",
-        keyspace_config.name,
+        CREATE TABLE IF NOT EXISTS #0.addresses (
+            address text,
+            partition_id smallint,
+            milestone_index int,
+            output_type tinyint,
+            transaction_id text,
+            idx smallint,
+            amount bigint,
+            address_type tinyint,
+            inclusion_state blob,
+            PRIMARY KEY ((address, partition_id), milestone_index, output_type, transaction_id, idx)
+        ) WITH CLUSTERING ORDER BY (milestone_index DESC, output_type DESC, transaction_id DESC, idx DESC);
+
+        CREATE TABLE IF NOT EXISTS #0.indexes (
+            indexation text,
+            partition_id smallint,
+            milestone_index int,
+            message_id text,
+            inclusion_state blob,
+            PRIMARY KEY ((indexation, partition_id), milestone_index, message_id)
+        ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+
+        CREATE TABLE IF NOT EXISTS #0.parents (
+            parent_id text,
+            partition_id smallint,
+            milestone_index int,
+            message_id text,
+            inclusion_state blob,
+            PRIMARY KEY ((parent_id, partition_id), milestone_index, message_id)
+        ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+
+        CREATE TABLE IF NOT EXISTS #0.transactions (
+            transaction_id text,
+            idx smallint,
+            variant text,
+            message_id text,
+            data blob,
+            inclusion_state blob,
+            milestone_index int,
+            PRIMARY KEY (transaction_id, idx, variant, message_id, data)
+        );
+
+        CREATE TABLE IF NOT EXISTS #0.milestones (
+            milestone_index int,
+            message_id text,
+            timestamp bigint,
+            payload blob,
+            PRIMARY KEY (milestone_index, message_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS #0.hints (
+            hint text,
+            variant text,
+            partition_id smallint,
+            milestone_index int,
+            PRIMARY KEY (hint, variant, partition_id)
+        ) WITH CLUSTERING ORDER BY (variant DESC, partition_id DESC);
+
+        CREATE TABLE IF NOT EXISTS #0.sync  (
+            key text,
+            milestone_index int,
+            synced_by tinyint,
+            logged_by tinyint,
+            PRIMARY KEY (key, milestone_index)
+        ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+
+        CREATE TABLE IF NOT EXISTS #0.analytics (
+            key text,
+            milestone_index int,
+            message_count int,
+            transaction_count int,
+            transferred_tokens bigint,
+            PRIMARY KEY (key, milestone_index)
+        ) WITH CLUSTERING ORDER BY (milestone_index DESC);",
+        keyspace_config.name.clone(),
     );
 
-    for query in table_queries.split(";").map(str::trim).filter(|s| !s.is_empty()) {
+    for query in table_queries {
+        log::info!(
+            "Creating table: {}",
+            match query {
+                Statement::DataDefinition(DataDefinitionStatement::CreateTable(ref s)) => &s.table,
+                _ => unreachable!(),
+            }
+        );
+        log::info!("Query: {}", query);
         query
-            .as_execute_query(&[])
+            .execute()
             .consistency(Consistency::All)
             .build()?
             .get_global()
             .await
-            .map_err(|e| {
-                anyhow::Error::msg(format!(
-                    "Could not verify if table: {}, was created! error: {}",
-                    query, e
-                ))
-            })?;
+            .map_err(|e| anyhow::Error::msg(format!("Could not verify if table was created! error: {}", e)))?;
     }
     log::info!("Created Chronicle tables for keyspace name: {}", keyspace_config.name);
     log::info!(

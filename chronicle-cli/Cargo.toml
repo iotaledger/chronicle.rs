@@ -7,9 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chronicle = { path = "../chronicle", default-features = false }
 chronicle-common = { path = "../chronicle-common" }
-chronicle-broker = { path = "../chronicle-broker", default-features = false }
+chronicle-broker = { path = "../chronicle-broker", features = ["application"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage" }
 backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features = ["prefabs"] }
 clap = { version = "2.33", features = ["yaml"] }
@@ -22,3 +21,4 @@ serde_json = "1.0"
 anyhow = "1.0"
 regex = "1.5"
 indicatif = "0.16"
+dotenv = "0.15"
