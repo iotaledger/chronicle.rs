@@ -103,7 +103,9 @@ async fn process() -> anyhow::Result<()> {
             }
         }
         ("stop", Some(_matches)) => {
+            println!("Connecting to Chronicle backserver: {}", websocket_address);
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let actor_path = ActorPath::new();
             let shutdown_request = Interface::new(actor_path, Event::shutdown());
             stream.send(shutdown_request.to_message()).await?;
@@ -124,8 +126,9 @@ async fn cluster<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
     let rem_address = matches
         .value_of("remove-nodes")
         .map(|address| address.parse().expect("Invalid address provided!"));
+    println!("Connecting to Chronicle backserver: {}", websocket_address);
     let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
-
+    println!("Chronicle backserver: {}, status: Connected", websocket_address);
     if let Some(address) = add_address {
         let actor_path = ActorPath::new().push("scylla".into()).push("cluster".into());
         let add_node_json = serde_json::to_string(&Topology::AddNode(address))?;
@@ -153,7 +156,9 @@ async fn cluster<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
         println!("{}", remove_node_response);
     }
     if matches.is_present("rebuild") {
+        println!("Connecting to Chronicle backserver: {}", websocket_address);
         let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+        println!("Chronicle backserver: {}, status: Connected", websocket_address);
         let actor_path = ActorPath::new().push("scylla".into()).push("cluster".into());
         let rebuild_event = Topology::BuildRing;
         let rebuild_json = serde_json::to_string(&rebuild_event)?;
@@ -182,7 +187,9 @@ async fn brokers<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
                 .filter_map(|r: anyhow::Result<Url>| r.ok());
             let _endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
+            println!("Connecting to Chronicle backserver: {}", websocket_address);
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let actor_path = ActorPath::new().push("broker".into());
             for mqtt_address in mqtt_addresses {
                 let add_mqtt_json = serde_json::to_string(&Topology::AddMqtt(mqtt_address.clone()))?;
@@ -205,7 +212,9 @@ async fn brokers<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
                 .filter_map(|r: anyhow::Result<Url>| r.ok());
             let _endpoint_addresses = subcommand.values_of("endpoint-address");
             // TODO add endpoints
+            println!("Connecting to Chronicle backserver: {}", websocket_address);
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let actor_path = ActorPath::new().push("broker".into());
             for mqtt_address in mqtt_addresses {
                 let remove_mqtt_json = serde_json::to_string(&Topology::RemoveMqtt(mqtt_address.clone()))?;
@@ -275,7 +284,9 @@ async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
             let mut active_progress_bars: std::collections::HashMap<(u32, u32), ()> = std::collections::HashMap::new();
             let pb = ProgressBar::new(0);
             pb.set_style(sty.clone());
+            println!("Connecting to Chronicle backserver: {}", websocket_address);
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let actor_path = ActorPath::new().push("broker".into());
             let import_json = serde_json::to_string(&Topology::Import {
                 path,
@@ -395,7 +406,9 @@ async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
             let pb = ProgressBar::new(0);
             pb.set_style(sty.clone());
             pb.set_length(range.len() as u64);
+            println!("Connecting to Chronicle backserver: {}", websocket_address);
             let (mut stream, _) = connect_async(Url::parse(&format!("ws://{}/", websocket_address))?).await?;
+            println!("Chronicle backserver: {}, status: Connected", websocket_address);
             let actor_path = ActorPath::new().push("broker".into());
             let export_json = serde_json::to_string(&Topology::Export { range })?;
             let export_request = Interface::new(actor_path, Event::Call(export_json.into()));

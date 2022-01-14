@@ -17,7 +17,7 @@ scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "bac
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 log = { version = "0.4", optional = true }
-tokio-tungstenite = { version = "0.14", optional = true }
+tokio-tungstenite = { version = "0.16", optional = true }
 reqwest = { version = "0.11", features = ["json"], optional = true }
 futures = { version = "0.3", optional = true }
 async-trait = { version = "0.1", optional = true }
@@ -29,7 +29,7 @@ bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev", 
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
 hex = { version = "0.4", optional = true }
 anyhow = { version = "1.0", optional = true }
-tokio = { version = "1.14", optional = true }
+tokio = { version = "1.15", optional = true }
 paho-mqtt = { version = "0.9", default-features = false, features = ["bundled"], optional = true }
 thiserror = { version = "1.0" }
 indicatif = { version = "0.16", optional = true }
