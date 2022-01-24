@@ -264,6 +264,9 @@ pub(crate) struct Transaction {
     pub outputs: Vec<MaybeSpentOutput>,
     /// The inputs, if they exist
     pub inputs: Vec<InputDto>,
+    /// This transaction's ledger inclusion state
+    #[serde(rename = "ledgerInclusionState")]
+    pub inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl From<TransactionRes> for Transaction {
@@ -284,6 +287,7 @@ impl From<TransactionRes> for Transaction {
                     .into()
                 })
                 .collect(),
+            inclusion_state: o.inclusion_state,
         }
     }
 }

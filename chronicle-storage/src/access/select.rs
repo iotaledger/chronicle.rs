@@ -336,13 +336,15 @@ impl RowsDecoder<TransactionId, TransactionRes> for ChronicleKeyspace {
         let mut unlock_blocks = BTreeMap::new();
         let mut inputs = BTreeMap::new();
         let mut metadata = None;
-        for (message_id, transaction_data, idx, inclusion_state, milestone_index) in
+        let mut inclusion_state = None;
+        for (message_id, transaction_data, idx, ledger_inclusion_state, milestone_index) in
             Self::Row::rows_iter(decoder)?.map(|row| row.into_inner())
         {
             match transaction_data {
                 TransactionData::Output(o) => {
                     outputs.insert(idx, o);
                     metadata = metadata.or(Some((message_id, milestone_index)));
+                    inclusion_state = ledger_inclusion_state;
                 }
                 TransactionData::Unlock(u) => {
                     unlock_blocks.insert(
@@ -350,7 +352,7 @@ impl RowsDecoder<TransactionId, TransactionRes> for ChronicleKeyspace {
                         UnlockRes {
                             message_id,
                             block: u.unlock_block,
-                            inclusion_state,
+                            inclusion_state: ledger_inclusion_state,
                         },
                     );
                 }
@@ -368,6 +370,7 @@ impl RowsDecoder<TransactionId, TransactionRes> for ChronicleKeyspace {
             milestone_index,
             outputs,
             inputs: inputs.into_iter().map(|(_, i)| (i)).collect(),
+            inclusion_state,
         }))
     }
 }

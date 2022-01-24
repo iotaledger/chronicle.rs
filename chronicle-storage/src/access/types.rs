@@ -334,6 +334,8 @@ pub struct TransactionRes {
     pub outputs: Vec<(Output, Option<UnlockRes>)>,
     /// The inputs, if any exist
     pub inputs: Vec<InputData>,
+    /// This transaction's ledger inclusion state
+    pub inclusion_state: Option<LedgerInclusionState>,
 }
 
 /// A result struct which holds an unlock row from the `transactions` table

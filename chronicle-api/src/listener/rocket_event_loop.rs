@@ -360,6 +360,32 @@ where
     V: 'static + Send + Clone,
     ChronicleKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
 {
+    page_filtered(
+        keyspace,
+        hint,
+        page_size,
+        state,
+        partition_config,
+        key,
+        None::<fn(&Partitioned<V>) -> bool>,
+    )
+    .await
+}
+
+async fn page_filtered<K, V, F: Clone + FnMut(&Partitioned<V>) -> bool>(
+    keyspace: String,
+    hint: Hint,
+    page_size: usize,
+    state: &mut Option<StateData>,
+    partition_config: &PartitionConfig,
+    key: K,
+    filter: Option<F>,
+) -> Result<Vec<Partitioned<V>>, ListenerError>
+where
+    K: 'static + Send + Clone,
+    V: 'static + Send + Clone,
+    ChronicleKeyspace: Select<Partitioned<K>, Paged<VecDeque<Partitioned<V>>>>,
+{
     let total_start_time = std::time::Instant::now();
     let mut start_time = total_start_time;
     // The milestone chunk, i.e. how many sequential milestones go on a partition at a time
@@ -488,7 +514,11 @@ where
                 (std::time::Instant::now() - start_time).as_millis()
             );
             for (partition_id, list) in fetch_ids.zip(res) {
-                list_map.insert(partition_id, list?);
+                let mut list = list?;
+                if let Some(f) = filter.as_ref() {
+                    list.retain(f.clone());
+                }
+                list_map.insert(partition_id, list);
             }
         }
         let list = list_map
@@ -586,6 +616,9 @@ where
                             list.paging_state.clone(),
                         )
                         .await?;
+                        if let Some(f) = filter.as_ref() {
+                            list.retain(f.clone());
+                        }
                         *loop_timings.entry("Requery").or_insert(0) +=
                             (std::time::Instant::now() - loop_start_time).as_nanos();
                     // Unless it didn't have one, in which case we mark it as a depleted partition and
@@ -907,7 +940,7 @@ async fn get_output(keyspace: String, output_id: String, keyspaces: State<'_, Ha
     })
 }
 
-#[get("/<keyspace>/transactions/ed25519/<address>?<page_size>&<state>")]
+#[get("/<keyspace>/transactions/ed25519/<address>?<ledger_none>&<ledger_included>&<ledger_conflicting>&<page_size>&<state>")]
 async fn get_transactions_for_address(
     keyspace: String,
     address: String,
@@ -915,9 +948,20 @@ async fn get_transactions_for_address(
     state: Option<String>,
     partition_config: State<'_, PartitionConfig>,
     keyspaces: State<'_, HashSet<String>>,
+    ledger_none: Option<bool>,
+    ledger_included: Option<bool>,
+    ledger_conflicting: Option<bool>,
 ) -> ListenerResult {
     if !keyspaces.contains(&keyspace) {
         return Err(ListenerError::InvalidKeyspace(keyspace));
+    }
+    let (ledger_none, ledger_included, ledger_conflicting) = (
+        ledger_none.unwrap_or(true),
+        ledger_included.unwrap_or(true),
+        ledger_conflicting.unwrap_or(true),
+    );
+    if !ledger_none && !ledger_included && !ledger_conflicting {
+        return Err(ListenerError::NoResults);
     }
     let mut state = state
         .map(|state| {
@@ -930,13 +974,18 @@ async fn get_transactions_for_address(
     let ed25519_address = Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?;
     let page_size = page_size.unwrap_or(100);
 
-    let outputs = page(
+    let outputs = page_filtered(
         keyspace.clone(),
         Hint::address(ed25519_address.to_string()),
         page_size,
         &mut state,
         partition_config.borrow(),
         ed25519_address,
+        Some(|a: &Partitioned<AddressRecord>| {
+            (ledger_included && a.ledger_inclusion_state == Some(LedgerInclusionState::Included))
+                || (ledger_conflicting && a.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting))
+                || (ledger_none && a.ledger_inclusion_state == None)
+        }),
     )
     .await?;
 
