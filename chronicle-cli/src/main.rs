@@ -37,30 +37,26 @@ use clap::{
     App,
     ArgMatches,
 };
-use crypto::{
-    hashes::{
-        blake2b::Blake2b256,
-        Digest,
-    },
-    signatures::ed25519::{
-        PublicKey,
-        Signature,
-    },
+use crypto::hashes::{
+    blake2b::Blake2b256,
+    Digest,
 };
 use futures::{
     SinkExt,
     StreamExt,
 };
 use indicatif::{
+    MultiProgress,
     ProgressBar,
     ProgressStyle,
 };
+use rand::seq::SliceRandom;
 use regex::Regex;
 use serde::Serialize;
 use std::{
     collections::{
         BTreeMap,
-        HashMap,
+        BinaryHeap,
         HashSet,
     },
     path::{
@@ -68,6 +64,7 @@ use std::{
         PathBuf,
     },
     process::Command,
+    sync::Arc,
 };
 use tokio::{
     fs::OpenOptions,
@@ -75,13 +72,18 @@ use tokio::{
         AsyncBufReadExt,
         BufReader,
     },
+    sync::{
+        mpsc::UnboundedSender,
+        Mutex,
+        RwLock,
+    },
 };
 use tokio_tungstenite::{
     connect_async,
     tungstenite::Message,
 };
 use url::Url;
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     process().await.unwrap();
 }
@@ -637,6 +639,7 @@ impl From<(NaiveDate, ReportData)> for ReportRow {
 
 async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     let dir = matches.value_of("directory").unwrap_or("");
+    let num_tasks = matches.value_of("tasks").map(|s| s.parse()).transpose()?.unwrap_or(4);
     let range = matches.value_of("range");
     let range = range
         .map(|r| {
@@ -660,10 +663,19 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         return Ok(());
     }
     let sty = ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} ({eta})")
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} (eta: {eta})")
         .progress_chars("##-");
-    let pb = ProgressBar::new(0);
-    pb.set_style(sty.clone());
+    let mp = MultiProgress::new();
+    let pbs = std::iter::repeat_with(|| {
+        let pb = mp.add(ProgressBar::new(0));
+        pb.set_style(sty.clone());
+        pb
+    })
+    .take(num_tasks)
+    .collect::<Vec<_>>();
+
+    let mp_join = tokio::task::spawn_blocking(move || mp.join().unwrap());
+
     let split_filename = |v: Result<PathBuf, _>| match v {
         Ok(path) => {
             let file_name = path.file_stem().unwrap();
@@ -684,90 +696,216 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         println!("No logs found in {}", dir);
         return Ok(());
     }
-    paths.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-    let mut len = 0;
-    for (start, end, _) in paths
-        .iter()
-        .filter(|(start, end, _)| start <= &range.end || end >= &range.start)
+    paths.shuffle(&mut rand::thread_rng());
+
+    let report = Arc::new(RwLock::new(BTreeMap::<_, Mutex<ReportData>>::new()));
+    let (mut senders, mut receivers) = (Vec::new(), Vec::new());
+    for (sender, receiver) in
+        std::iter::repeat_with(|| tokio::sync::mpsc::unbounded_channel::<(u32, u32, PathBuf)>()).take(num_tasks)
     {
-        len += end - start;
+        senders.push(sender);
+        receivers.push(receiver);
     }
-    pb.set_length(len as u64);
-    let mut report = BTreeMap::<_, ReportData>::new();
-    pb.enable_steady_tick(200);
-    for (start, end, path) in paths {
-        let contained_range = start.max(range.start)..end.min(range.end);
-        if contained_range.is_empty() {
-            if start > range.end {
-                break;
-            }
-            continue;
-        }
-        let mut file = OpenOptions::new().read(true).open(path).await?;
-        let reader = BufReader::new(&mut file);
-        let mut lines = reader.lines();
-        while let Some(line) = lines.next_line().await.map_err(|e| anyhow!(e))? {
-            let data = serde_json::from_str::<MilestoneData>(&line)?;
-            if contained_range.contains(&data.milestone_index()) {
-                pb.set_message(format!("Processing milestone {}", data.milestone_index()));
-                let date = chrono::NaiveDateTime::from_timestamp(
-                    data.milestone()
-                        .ok_or_else(|| anyhow!("No milestone data for {}", data.milestone_index()))?
-                        .essence()
-                        .timestamp() as i64,
-                    0,
-                )
-                .date();
-                let report = report.entry(date).or_default();
-                report.message_count += data.messages().len();
-                for (metadata, payload) in data.messages().values().filter_map(|f| match f.0.payload() {
-                    Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
-                    _ => None,
-                }) {
-                    if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included) {
-                        report.included_transaction_count += 1;
+    let tasks = pbs
+        .into_iter()
+        .zip(receivers)
+        .map(|(pb, mut receiver)| {
+            let report = report.clone();
+            tokio::spawn(async move {
+                while let Some((start, end, path)) = receiver.recv().await {
+                    pb.reset();
+                    pb.set_length((end - start) as u64);
+                    let contained_range = start.max(range.start)..end.min(range.end);
+                    if contained_range.is_empty() {
+                        return;
                     }
-                    if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
-                        report.conflicting_transaction_count += 1;
-                    }
-                    report.total_transaction_count += 1;
-                    let Essence::Regular(regular_essence) = payload.essence();
-                    {
-                        for output in regular_essence.outputs() {
-                            match output {
-                                // Accumulate the transferred token amount
-                                Output::SignatureLockedSingle(output) => {
-                                    report.transferred_tokens += output.amount() as usize;
-                                    report.total_addresses.insert(output.address().clone());
-                                    report.recv_addresses.insert(output.address().clone());
+                    let mut file = OpenOptions::new().read(true).open(path).await.unwrap();
+                    let reader = BufReader::new(&mut file);
+                    let mut lines = reader.lines();
+                    while let Some(line) = lines.next_line().await.map_err(|e| anyhow!(e)).unwrap() {
+                        let data = serde_json::from_str::<MilestoneData>(&line).unwrap();
+                        if contained_range.contains(&data.milestone_index()) {
+                            pb.set_message(format!("Processing milestone {}", data.milestone_index()));
+                            let date = chrono::NaiveDateTime::from_timestamp(
+                                data.milestone()
+                                    .ok_or_else(|| anyhow!("No milestone data for {}", data.milestone_index()))
+                                    .unwrap()
+                                    .essence()
+                                    .timestamp() as i64,
+                                0,
+                            )
+                            .date();
+                            report.write().await.entry(date).or_default();
+                            report.read().await.get(&date).unwrap().lock().await.message_count += data.messages().len();
+                            for (metadata, payload) in data.messages().values().filter_map(|f| match f.0.payload() {
+                                Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
+                                _ => None,
+                            }) {
+                                if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included) {
+                                    report
+                                        .read()
+                                        .await
+                                        .get(&date)
+                                        .unwrap()
+                                        .lock()
+                                        .await
+                                        .included_transaction_count += 1;
                                 }
-                                Output::SignatureLockedDustAllowance(output) => {
-                                    report.transferred_tokens += output.amount() as usize
+                                if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
+                                    report
+                                        .read()
+                                        .await
+                                        .get(&date)
+                                        .unwrap()
+                                        .lock()
+                                        .await
+                                        .conflicting_transaction_count += 1;
                                 }
-                                _ => (),
+                                report
+                                    .read()
+                                    .await
+                                    .get(&date)
+                                    .unwrap()
+                                    .lock()
+                                    .await
+                                    .total_transaction_count += 1;
+                                let Essence::Regular(regular_essence) = payload.essence();
+                                {
+                                    for output in regular_essence.outputs() {
+                                        match output {
+                                            // Accumulate the transferred token amount
+                                            Output::SignatureLockedSingle(output) => {
+                                                report
+                                                    .read()
+                                                    .await
+                                                    .get(&date)
+                                                    .unwrap()
+                                                    .lock()
+                                                    .await
+                                                    .transferred_tokens += output.amount() as usize;
+                                                report
+                                                    .read()
+                                                    .await
+                                                    .get(&date)
+                                                    .unwrap()
+                                                    .lock()
+                                                    .await
+                                                    .total_addresses
+                                                    .insert(output.address().clone());
+                                                report
+                                                    .read()
+                                                    .await
+                                                    .get(&date)
+                                                    .unwrap()
+                                                    .lock()
+                                                    .await
+                                                    .recv_addresses
+                                                    .insert(output.address().clone());
+                                            }
+                                            Output::SignatureLockedDustAllowance(output) => {
+                                                report
+                                                    .read()
+                                                    .await
+                                                    .get(&date)
+                                                    .unwrap()
+                                                    .lock()
+                                                    .await
+                                                    .transferred_tokens += output.amount() as usize
+                                            }
+                                            _ => (),
+                                        }
+                                    }
+                                }
+                                for unlock in payload.unlock_blocks().iter() {
+                                    if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
+                                        let address = Address::Ed25519(Ed25519Address::new(
+                                            Blake2b256::digest(sig.public_key()).into(),
+                                        ));
+                                        report
+                                            .read()
+                                            .await
+                                            .get(&date)
+                                            .unwrap()
+                                            .lock()
+                                            .await
+                                            .total_addresses
+                                            .insert(address);
+                                        report
+                                            .read()
+                                            .await
+                                            .get(&date)
+                                            .unwrap()
+                                            .lock()
+                                            .await
+                                            .send_addresses
+                                            .insert(address);
+                                    }
+                                }
                             }
-                        }
-                    }
-                    for unlock in payload.unlock_blocks().iter() {
-                        if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
-                            let address =
-                                Address::Ed25519(Ed25519Address::new(Blake2b256::digest(sig.public_key()).into()));
-                            report.total_addresses.insert(address);
-                            report.send_addresses.insert(address);
+                            pb.inc(1);
                         }
                     }
                 }
-                pb.inc(1);
-            }
-        }
+                pb.finish_with_message("done");
+            })
+        })
+        .collect::<Vec<_>>();
+    // Make a min-heap so we can balance the work across the tasks
+    let mut senders = senders.into_iter().map(|s| PrioritySender { sender: s, val: 0 }).fold(
+        BinaryHeap::new(),
+        |mut heap, sender| {
+            heap.push(sender);
+            heap
+        },
+    );
+    // Send the work to the task with the least to do
+    for path in paths {
+        let mut p = senders.pop().unwrap();
+        p.val += (path.1 - path.0) as usize;
+        p.sender.send(path)?;
+        senders.push(p);
     }
+    drop(senders);
+    mp_join.await?;
+    for task in tasks {
+        task.await?;
+    }
+    let report = Arc::try_unwrap(report).unwrap().into_inner();
     let mut writer =
         csv::Writer::from_path(PathBuf::from(dir).join(format!("report_{}to{}.csv", range.start, range.end)))?;
+    let pb = ProgressBar::new(0);
+    pb.set_style(sty.clone());
+    pb.enable_steady_tick(200);
     pb.set_length(report.len() as u64);
     for (date, data) in report {
         pb.set_message(format!("Writing data for date {}", date));
-        writer.serialize(ReportRow::from((date, data)))?;
+        writer.serialize(ReportRow::from((date, data.into_inner())))?;
         pb.inc(1);
     }
+    pb.finish_with_message("done");
     Ok(())
+}
+
+#[derive(Debug)]
+struct PrioritySender<T> {
+    pub sender: UnboundedSender<T>,
+    pub val: usize,
+}
+
+impl<T> Ord for PrioritySender<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.val.cmp(&self.val)
+    }
+}
+impl<T> PartialOrd for PrioritySender<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        other.val.partial_cmp(&self.val)
+    }
+}
+
+impl<T> Eq for PrioritySender<T> {}
+impl<T> PartialEq for PrioritySender<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.val == other.val
+    }
 }
