@@ -1,9 +1,9 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use chronicle_common::SyncRange;
-
 use super::*;
+use bee_message::Message;
+use chronicle_common::SyncRange;
 use std::{
     collections::{
         hash_map::Entry,
@@ -381,6 +381,28 @@ impl Select<String, SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
     }
     fn bind_values<B: Binder>(builder: B, keyspace: &String, sync_key: &SyncRange) -> B {
         builder.value(keyspace).value(&sync_key.start()).value(&sync_key.end())
+    }
+}
+
+impl Select<String, MetricFilter, Iter<MetricRecord>> for ChronicleKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT date, metric, value FROM #.metrics WHERE key = ? AND date >= ? AND date <= ? AND metric IN ?",
+            self.name()
+        )
+    }
+
+    fn bind_values<B: Binder>(
+        binder: B,
+        keyspace: &String,
+        MetricFilter {
+            start_date,
+            end_date,
+            metrics,
+        }: &MetricFilter,
+    ) -> B {
+        binder.value(keyspace).value(start_date).value(end_date).value(metrics)
     }
 }
 

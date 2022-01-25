@@ -3,18 +3,7 @@
 
 use super::*;
 use bee_common::packable::Packable;
-use bee_message::{
-    payload::Payload,
-    prelude::{
-        Essence,
-        Output,
-        TransactionId,
-        TreasuryInput,
-        UnlockBlock,
-        UtxoInput,
-    },
-    MessageId,
-};
+use bee_message::Message;
 use chronicle_common::Wrapper;
 use std::{
     collections::{
@@ -775,6 +764,9 @@ impl MilestoneData {
     pub fn milestone_index(&self) -> u32 {
         self.milestone_index
     }
+    pub fn milestone(&self) -> Option<&MilestonePayload> {
+        self.milestone.as_ref().map(|m| &**m)
+    }
     /// Get the analytics from the collected messages
     pub fn get_analytic_record(&self) -> anyhow::Result<AnalyticRecord> {
         if !self.check_if_completed() {
@@ -1244,4 +1236,17 @@ mod analytic {
             self.analytics.push(analytic_data);
         }
     }
+}
+
+pub struct MetricFilter {
+    pub start_date: i64,
+    pub end_date: i64,
+    pub metrics: Vec<String>,
+}
+
+#[derive(Row)]
+pub struct MetricRecord {
+    pub date: i64,
+    pub metric: String,
+    pub value: String,
 }

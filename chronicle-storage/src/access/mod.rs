@@ -2,23 +2,40 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub use crate::keyspaces::ChronicleKeyspace;
-use anyhow::{anyhow, bail, ensure};
+use anyhow::{
+    anyhow,
+    bail,
+    ensure,
+};
 use bee_common::packable::Packable;
-use bee_message::{
-    address::Ed25519Address,
+pub use bee_message::{
     milestone::Milestone,
-    prelude::{MilestoneIndex, MilestonePayload, Output, OutputId, TransactionId},
-    Message, MessageId,
+    prelude::*,
 };
 use bincode::Options;
 use scylla_rs::{
     cql::{
-        Binder, ColumnDecoder, ColumnEncoder, ColumnValue, Decoder, Frame, Iter, PreparedStatement, QueryStatement,
-        Row, Rows, RowsDecoder, TokenEncodeChain, TokenEncoder,
+        Binder,
+        ColumnDecoder,
+        ColumnEncoder,
+        ColumnValue,
+        Decoder,
+        Frame,
+        Iter,
+        PreparedStatement,
+        QueryStatement,
+        Row,
+        Rows,
+        RowsDecoder,
+        TokenEncodeChain,
+        TokenEncoder,
     },
     prelude::*,
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::ops::Deref;
 pub use types::*;
 

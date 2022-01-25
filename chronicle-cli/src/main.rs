@@ -5,7 +5,6 @@ use anyhow::{
     anyhow,
     bail,
 };
-
 use backstage::prefab::websocket::*;
 use chronicle_broker::{
     application::{
@@ -21,10 +20,32 @@ use chronicle_broker::{
     },
     *,
 };
+use chronicle_storage::access::{
+    Address,
+    Ed25519Address,
+    Essence,
+    LedgerInclusionState,
+    MilestoneData,
+    Output,
+    Payload,
+    SignatureUnlock,
+    UnlockBlock,
+};
+use chrono::NaiveDate;
 use clap::{
     load_yaml,
     App,
     ArgMatches,
+};
+use crypto::{
+    hashes::{
+        blake2b::Blake2b256,
+        Digest,
+    },
+    signatures::ed25519::{
+        PublicKey,
+        Signature,
+    },
 };
 use futures::{
     SinkExt,
@@ -35,12 +56,25 @@ use indicatif::{
     ProgressStyle,
 };
 use regex::Regex;
+use serde::Serialize;
 use std::{
+    collections::{
+        BTreeMap,
+        HashMap,
+        HashSet,
+    },
     path::{
         Path,
         PathBuf,
     },
     process::Command,
+};
+use tokio::{
+    fs::OpenOptions,
+    io::{
+        AsyncBufReadExt,
+        BufReader,
+    },
 };
 use tokio_tungstenite::{
     connect_async,
@@ -485,6 +519,7 @@ async fn archive<'a>(matches: &ArgMatches<'a>, websocket_address: &std::net::Soc
         }
         ("cleanup", Some(matches)) => cleanup_archive(matches).await?,
         ("validate", Some(matches)) => validate_archive(matches).await?,
+        ("report", Some(matches)) => report_archive(matches).await?,
         _ => (),
     }
     Ok(())
@@ -557,4 +592,182 @@ async fn validate_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         return Ok(());
     }
     LogPaths::new(&logs_dir, true)?.validate(max_log_size, true).await
+}
+
+#[derive(Clone, Debug, Default)]
+struct ReportData {
+    pub total_addresses: HashSet<Address>,
+    pub recv_addresses: HashSet<Address>,
+    pub send_addresses: HashSet<Address>,
+    pub message_count: usize,
+    pub included_transaction_count: usize,
+    pub conflicting_transaction_count: usize,
+    pub total_transaction_count: usize,
+    pub transferred_tokens: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ReportRow {
+    pub date: NaiveDate,
+    pub total_addresses: usize,
+    pub recv_addresses: usize,
+    pub send_addresses: usize,
+    pub message_count: usize,
+    pub included_transaction_count: usize,
+    pub conflicting_transaction_count: usize,
+    pub total_transaction_count: usize,
+    pub transferred_tokens: usize,
+}
+
+impl From<(NaiveDate, ReportData)> for ReportRow {
+    fn from((t, d): (NaiveDate, ReportData)) -> Self {
+        Self {
+            date: t,
+            total_addresses: d.total_addresses.len(),
+            recv_addresses: d.recv_addresses.len(),
+            send_addresses: d.send_addresses.len(),
+            message_count: d.message_count,
+            included_transaction_count: d.included_transaction_count,
+            conflicting_transaction_count: d.conflicting_transaction_count,
+            total_transaction_count: d.total_transaction_count,
+            transferred_tokens: d.transferred_tokens,
+        }
+    }
+}
+
+async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
+    let dir = matches.value_of("directory").unwrap_or("");
+    let range = matches.value_of("range");
+    let range = range
+        .map(|r| {
+            let matches = Regex::new(r"(\d+)(?:\D+(\d+))?")?
+                .captures(r)
+                .ok_or_else(|| anyhow!("Malformatted range!"));
+            matches.and_then(|c| {
+                let start = c.get(1).unwrap().as_str().parse::<u32>()?;
+                let end = c
+                    .get(2)
+                    .map(|s| s.as_str().parse::<u32>())
+                    .transpose()?
+                    .unwrap_or(start + 1);
+                Ok(start..end)
+            })
+        })
+        .transpose()?
+        .unwrap_or(0..u32::MAX);
+    if range.is_empty() {
+        println!("Empty range!");
+        return Ok(());
+    }
+    let sty = ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} ({eta})")
+        .progress_chars("##-");
+    let pb = ProgressBar::new(0);
+    pb.set_style(sty.clone());
+    let split_filename = |v: Result<PathBuf, _>| match v {
+        Ok(path) => {
+            let file_name = path.file_stem().unwrap();
+            let mut split = file_name.to_str().unwrap().split(".").next().unwrap().split("to");
+            let (start, end) = (
+                split.next().unwrap().parse::<u32>().unwrap(),
+                split.next().map(|s| s.parse::<u32>().unwrap()).unwrap_or(u32::MAX),
+            );
+            Some((start, end, path))
+        }
+        Err(_) => None,
+    };
+    let mut paths = glob::glob(&format!("{}/*to*.log*", dir))
+        .unwrap()
+        .filter_map(split_filename)
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        println!("No logs found in {}", dir);
+        return Ok(());
+    }
+    paths.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    let mut len = 0;
+    for (start, end, _) in paths
+        .iter()
+        .filter(|(start, end, _)| start <= &range.end || end >= &range.start)
+    {
+        len += end - start;
+    }
+    pb.set_length(len as u64);
+    let mut report = BTreeMap::<_, ReportData>::new();
+    pb.enable_steady_tick(200);
+    for (start, end, path) in paths {
+        let contained_range = start.max(range.start)..end.min(range.end);
+        if contained_range.is_empty() {
+            if start > range.end {
+                break;
+            }
+            continue;
+        }
+        let mut file = OpenOptions::new().read(true).open(path).await?;
+        let reader = BufReader::new(&mut file);
+        let mut lines = reader.lines();
+        while let Some(line) = lines.next_line().await.map_err(|e| anyhow!(e))? {
+            let data = serde_json::from_str::<MilestoneData>(&line)?;
+            if contained_range.contains(&data.milestone_index()) {
+                pb.set_message(format!("Processing milestone {}", data.milestone_index()));
+                let date = chrono::NaiveDateTime::from_timestamp(
+                    data.milestone()
+                        .ok_or_else(|| anyhow!("No milestone data for {}", data.milestone_index()))?
+                        .essence()
+                        .timestamp() as i64,
+                    0,
+                )
+                .date();
+                let report = report.entry(date).or_default();
+                report.message_count += data.messages().len();
+                for (metadata, payload) in data.messages().values().filter_map(|f| match f.0.payload() {
+                    Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
+                    _ => None,
+                }) {
+                    if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included) {
+                        report.included_transaction_count += 1;
+                    }
+                    if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
+                        report.conflicting_transaction_count += 1;
+                    }
+                    report.total_transaction_count += 1;
+                    let Essence::Regular(regular_essence) = payload.essence();
+                    {
+                        for output in regular_essence.outputs() {
+                            match output {
+                                // Accumulate the transferred token amount
+                                Output::SignatureLockedSingle(output) => {
+                                    report.transferred_tokens += output.amount() as usize;
+                                    report.total_addresses.insert(output.address().clone());
+                                    report.recv_addresses.insert(output.address().clone());
+                                }
+                                Output::SignatureLockedDustAllowance(output) => {
+                                    report.transferred_tokens += output.amount() as usize
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
+                    for unlock in payload.unlock_blocks().iter() {
+                        if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
+                            let address =
+                                Address::Ed25519(Ed25519Address::new(Blake2b256::digest(sig.public_key()).into()));
+                            report.total_addresses.insert(address);
+                            report.send_addresses.insert(address);
+                        }
+                    }
+                }
+                pb.inc(1);
+            }
+        }
+    }
+    let mut writer =
+        csv::Writer::from_path(PathBuf::from(dir).join(format!("report_{}to{}.csv", range.start, range.end)))?;
+    pb.set_length(report.len() as u64);
+    for (date, data) in report {
+        pb.set_message(format!("Writing data for date {}", date));
+        writer.serialize(ReportRow::from((date, data)))?;
+        pb.inc(1);
+    }
+    Ok(())
 }
