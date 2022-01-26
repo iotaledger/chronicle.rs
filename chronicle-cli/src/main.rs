@@ -665,6 +665,8 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     let sty = ProgressStyle::default_bar()
         .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} (eta: {eta})")
         .progress_chars("##-");
+
+    // Need a progress bar for each task
     let mp = MultiProgress::new();
     let pbs = std::iter::repeat_with(|| {
         let pb = mp.add(ProgressBar::new(0));
@@ -674,6 +676,7 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     .take(num_tasks)
     .collect::<Vec<_>>();
 
+    // Sending the MultiProgress to a blocking thread allows us to render
     let mp_join = tokio::task::spawn_blocking(move || mp.join().unwrap());
 
     let split_filename = |v: Result<PathBuf, _>| match v {
@@ -696,9 +699,15 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         println!("No logs found in {}", dir);
         return Ok(());
     }
+    // Randomly order the paths so that we don't have all the tasks processing the same dates at the same time
     paths.shuffle(&mut rand::thread_rng());
 
+    // The report data, with two sync primitives
+    // The outer RwLock performs better when we are mostly reading the map
+    // The inner report data is always borrowed mutably so mutex is fine
     let report = Arc::new(RwLock::new(BTreeMap::<_, Mutex<ReportData>>::new()));
+
+    // Create a channel for each task to send paths for processing
     let (mut senders, mut receivers) = (Vec::new(), Vec::new());
     for (sender, receiver) in
         std::iter::repeat_with(|| tokio::sync::mpsc::unbounded_channel::<(u32, u32, PathBuf)>()).take(num_tasks)
@@ -706,6 +715,7 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         senders.push(sender);
         receivers.push(receiver);
     }
+
     let tasks = pbs
         .into_iter()
         .zip(receivers)
@@ -735,7 +745,9 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                 0,
                             )
                             .date();
-                            report.write().await.entry(date).or_default();
+                            if report.read().await.get(&date).is_none() {
+                                report.write().await.entry(date).or_default();
+                            }
                             report.read().await.get(&date).unwrap().lock().await.message_count += data.messages().len();
                             for (metadata, payload) in data.messages().values().filter_map(|f| match f.0.payload() {
                                 Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
@@ -861,6 +873,7 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     // Send the work to the task with the least to do
     for path in paths {
         let mut p = senders.pop().unwrap();
+        // Work is based on number of milestones
         p.val += (path.1 - path.0) as usize;
         p.sender.send(path)?;
         senders.push(p);
@@ -871,8 +884,8 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         task.await?;
     }
     let report = Arc::try_unwrap(report).unwrap().into_inner();
-    let mut writer =
-        csv::Writer::from_path(PathBuf::from(dir).join(format!("report_{}to{}.csv", range.start, range.end)))?;
+    let report_path = PathBuf::from(dir).join(format!("report_{}to{}.csv", range.start, range.end));
+    let mut writer = csv::Writer::from_path(&report_path)?;
     let pb = ProgressBar::new(0);
     pb.set_style(sty.clone());
     pb.enable_steady_tick(200);
@@ -882,7 +895,7 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         writer.serialize(ReportRow::from((date, data.into_inner())))?;
         pb.inc(1);
     }
-    pb.finish_with_message("done");
+    pb.finish_with_message(format!("Saved report at {}", report_path.to_string_lossy()));
     Ok(())
 }
 
