@@ -55,6 +55,7 @@ use regex::Regex;
 use serde::Serialize;
 use std::{
     collections::{
+        btree_map,
         BTreeMap,
         BinaryHeap,
         HashSet,
@@ -75,7 +76,6 @@ use tokio::{
     sync::{
         mpsc::UnboundedSender,
         Mutex,
-        RwLock,
     },
 };
 use tokio_tungstenite::{
@@ -608,6 +608,19 @@ struct ReportData {
     pub transferred_tokens: usize,
 }
 
+impl ReportData {
+    fn merge(&mut self, other: Self) {
+        self.total_addresses.extend(other.total_addresses);
+        self.recv_addresses.extend(other.recv_addresses);
+        self.send_addresses.extend(other.send_addresses);
+        self.message_count += other.message_count;
+        self.included_transaction_count += other.included_transaction_count;
+        self.conflicting_transaction_count += other.conflicting_transaction_count;
+        self.total_transaction_count += other.total_transaction_count;
+        self.transferred_tokens += other.transferred_tokens;
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct ReportRow {
     pub date: NaiveDate,
@@ -640,6 +653,10 @@ impl From<(NaiveDate, ReportData)> for ReportRow {
 async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     let dir = matches.value_of("directory").unwrap_or("");
     let num_tasks = matches.value_of("tasks").map(|s| s.parse()).transpose()?.unwrap_or(4);
+    if num_tasks < 1 {
+        println!("Please provide a positive number of tasks");
+        return Ok(());
+    }
     let range = matches.value_of("range");
     let range = range
         .map(|r| {
@@ -702,10 +719,10 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     // Randomly order the paths so that we don't have all the tasks processing the same dates at the same time
     paths.shuffle(&mut rand::thread_rng());
 
-    // The report data, with two sync primitives
-    // The outer RwLock performs better when we are mostly reading the map
-    // The inner report data is always borrowed mutably so mutex is fine
-    let report = Arc::new(RwLock::new(BTreeMap::<_, Mutex<ReportData>>::new()));
+    // One report for each task, which will later be reduced to a single report
+    let mut reports = std::iter::repeat_with(|| Arc::new(Mutex::new(BTreeMap::<NaiveDate, ReportData>::new())))
+        .take(num_tasks)
+        .collect::<Vec<_>>();
 
     // Create a channel for each task to send paths for processing
     let (mut senders, mut receivers) = (Vec::new(), Vec::new());
@@ -719,9 +736,10 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     let tasks = pbs
         .into_iter()
         .zip(receivers)
-        .map(|(pb, mut receiver)| {
-            let report = report.clone();
+        .zip(reports.iter().cloned())
+        .map(|((pb, mut receiver), report)| {
             tokio::spawn(async move {
+                let mut report = report.lock().await;
                 let mut paths = Vec::new();
                 while let Some((start, end, path)) = receiver.recv().await {
                     pb.inc_length((end - start) as u64);
@@ -748,84 +766,32 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                 0,
                             )
                             .date();
-                            if report.read().await.get(&date).is_none() {
-                                report.write().await.entry(date).or_default();
-                            }
-                            report.read().await.get(&date).unwrap().lock().await.message_count += data.messages().len();
+
+                            let report = report.entry(date).or_default();
+                            report.message_count += data.messages().len();
                             for (metadata, payload) in data.messages().values().filter_map(|f| match f.0.payload() {
                                 Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
                                 _ => None,
                             }) {
                                 if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included) {
-                                    report
-                                        .read()
-                                        .await
-                                        .get(&date)
-                                        .unwrap()
-                                        .lock()
-                                        .await
-                                        .included_transaction_count += 1;
+                                    report.included_transaction_count += 1;
                                 }
                                 if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
-                                    report
-                                        .read()
-                                        .await
-                                        .get(&date)
-                                        .unwrap()
-                                        .lock()
-                                        .await
-                                        .conflicting_transaction_count += 1;
+                                    report.conflicting_transaction_count += 1;
                                 }
-                                report
-                                    .read()
-                                    .await
-                                    .get(&date)
-                                    .unwrap()
-                                    .lock()
-                                    .await
-                                    .total_transaction_count += 1;
+                                report.total_transaction_count += 1;
                                 let Essence::Regular(regular_essence) = payload.essence();
                                 {
                                     for output in regular_essence.outputs() {
                                         match output {
                                             // Accumulate the transferred token amount
                                             Output::SignatureLockedSingle(output) => {
-                                                report
-                                                    .read()
-                                                    .await
-                                                    .get(&date)
-                                                    .unwrap()
-                                                    .lock()
-                                                    .await
-                                                    .transferred_tokens += output.amount() as usize;
-                                                report
-                                                    .read()
-                                                    .await
-                                                    .get(&date)
-                                                    .unwrap()
-                                                    .lock()
-                                                    .await
-                                                    .total_addresses
-                                                    .insert(output.address().clone());
-                                                report
-                                                    .read()
-                                                    .await
-                                                    .get(&date)
-                                                    .unwrap()
-                                                    .lock()
-                                                    .await
-                                                    .recv_addresses
-                                                    .insert(output.address().clone());
+                                                report.transferred_tokens += output.amount() as usize;
+                                                report.total_addresses.insert(output.address().clone());
+                                                report.recv_addresses.insert(output.address().clone());
                                             }
                                             Output::SignatureLockedDustAllowance(output) => {
-                                                report
-                                                    .read()
-                                                    .await
-                                                    .get(&date)
-                                                    .unwrap()
-                                                    .lock()
-                                                    .await
-                                                    .transferred_tokens += output.amount() as usize
+                                                report.transferred_tokens += output.amount() as usize
                                             }
                                             _ => (),
                                         }
@@ -836,24 +802,8 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                         let address = Address::Ed25519(Ed25519Address::new(
                                             Blake2b256::digest(sig.public_key()).into(),
                                         ));
-                                        report
-                                            .read()
-                                            .await
-                                            .get(&date)
-                                            .unwrap()
-                                            .lock()
-                                            .await
-                                            .total_addresses
-                                            .insert(address);
-                                        report
-                                            .read()
-                                            .await
-                                            .get(&date)
-                                            .unwrap()
-                                            .lock()
-                                            .await
-                                            .send_addresses
-                                            .insert(address);
+                                        report.total_addresses.insert(address);
+                                        report.send_addresses.insert(address);
                                     }
                                 }
                             }
@@ -886,16 +836,29 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
     for task in tasks {
         task.await?;
     }
-    let report = Arc::try_unwrap(report).unwrap().into_inner();
+    let mut final_report = Arc::try_unwrap(reports.pop().unwrap()).unwrap().into_inner();
+    for report in reports {
+        let report = Arc::try_unwrap(report).unwrap().into_inner();
+        for (date, data) in report {
+            match final_report.entry(date) {
+                btree_map::Entry::Vacant(v) => {
+                    v.insert(data);
+                }
+                btree_map::Entry::Occupied(o) => {
+                    o.into_mut().merge(data);
+                }
+            }
+        }
+    }
     let report_path = PathBuf::from(dir).join(format!("report_{}to{}.csv", range.start, range.end));
     let mut writer = csv::Writer::from_path(&report_path)?;
     let pb = ProgressBar::new(0);
     pb.set_style(sty.clone());
     pb.enable_steady_tick(200);
-    pb.set_length(report.len() as u64);
-    for (date, data) in report {
+    pb.set_length(final_report.len() as u64);
+    for (date, data) in final_report {
         pb.set_message(format!("Writing data for date {}", date));
-        writer.serialize(ReportRow::from((date, data.into_inner())))?;
+        writer.serialize(ReportRow::from((date, data)))?;
         pb.inc(1);
     }
     pb.finish_with_message(format!("Saved report at {}", report_path.to_string_lossy()));
