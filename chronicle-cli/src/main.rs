@@ -722,9 +722,12 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
         .map(|(pb, mut receiver)| {
             let report = report.clone();
             tokio::spawn(async move {
+                let mut paths = Vec::new();
                 while let Some((start, end, path)) = receiver.recv().await {
-                    pb.reset();
-                    pb.set_length((end - start) as u64);
+                    pb.inc_length((end - start) as u64);
+                    paths.push((start, end, path));
+                }
+                for (start, end, path) in paths {
                     let contained_range = start.max(range.start)..end.min(range.end);
                     if contained_range.is_empty() {
                         return;
