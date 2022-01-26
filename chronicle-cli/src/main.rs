@@ -58,6 +58,7 @@ use std::{
         btree_map,
         BTreeMap,
         BinaryHeap,
+        HashMap,
         HashSet,
     },
     path::{
@@ -599,7 +600,7 @@ async fn validate_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
 #[derive(Clone, Debug, Default)]
 struct ReportData {
     pub total_addresses: HashSet<Address>,
-    pub recv_addresses: HashSet<Address>,
+    pub recv_addresses: HashMap<Address, usize>,
     pub send_addresses: HashSet<Address>,
     pub message_count: usize,
     pub included_transaction_count: usize,
@@ -627,6 +628,8 @@ struct ReportRow {
     pub total_addresses: usize,
     pub recv_addresses: usize,
     pub send_addresses: usize,
+    pub avg_outputs: f32,
+    pub max_outputs: usize,
     pub message_count: usize,
     pub included_transaction_count: usize,
     pub conflicting_transaction_count: usize,
@@ -641,6 +644,8 @@ impl From<(NaiveDate, ReportData)> for ReportRow {
             total_addresses: d.total_addresses.len(),
             recv_addresses: d.recv_addresses.len(),
             send_addresses: d.send_addresses.len(),
+            avg_outputs: d.recv_addresses.values().sum::<usize>() as f32 / d.recv_addresses.len() as f32,
+            max_outputs: *d.recv_addresses.values().max().unwrap_or(&0),
             message_count: d.message_count,
             included_transaction_count: d.included_transaction_count,
             conflicting_transaction_count: d.conflicting_transaction_count,
@@ -788,7 +793,8 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                             Output::SignatureLockedSingle(output) => {
                                                 report.transferred_tokens += output.amount() as usize;
                                                 report.total_addresses.insert(output.address().clone());
-                                                report.recv_addresses.insert(output.address().clone());
+                                                *report.recv_addresses.entry(output.address().clone()).or_default() +=
+                                                    1;
                                             }
                                             Output::SignatureLockedDustAllowance(output) => {
                                                 report.transferred_tokens += output.amount() as usize
