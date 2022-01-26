@@ -602,17 +602,19 @@ struct ReportData {
     pub total_addresses: HashSet<Address>,
     pub recv_addresses: HashMap<Address, usize>,
     pub send_addresses: HashSet<Address>,
-    pub message_count: usize,
-    pub included_transaction_count: usize,
-    pub conflicting_transaction_count: usize,
-    pub total_transaction_count: usize,
-    pub transferred_tokens: usize,
+    pub message_count: u64,
+    pub included_transaction_count: u64,
+    pub conflicting_transaction_count: u64,
+    pub total_transaction_count: u64,
+    pub transferred_tokens: u128,
 }
 
 impl ReportData {
     fn merge(&mut self, other: Self) {
         self.total_addresses.extend(other.total_addresses);
-        self.recv_addresses.extend(other.recv_addresses);
+        for (addr, count) in other.recv_addresses {
+            *self.recv_addresses.entry(addr).or_default() += count;
+        }
         self.send_addresses.extend(other.send_addresses);
         self.message_count += other.message_count;
         self.included_transaction_count += other.included_transaction_count;
@@ -630,11 +632,11 @@ struct ReportRow {
     pub send_addresses: usize,
     pub avg_outputs: f32,
     pub max_outputs: usize,
-    pub message_count: usize,
-    pub included_transaction_count: usize,
-    pub conflicting_transaction_count: usize,
-    pub total_transaction_count: usize,
-    pub transferred_tokens: usize,
+    pub message_count: u64,
+    pub included_transaction_count: u64,
+    pub conflicting_transaction_count: u64,
+    pub total_transaction_count: u64,
+    pub transferred_tokens: u128,
 }
 
 impl From<(NaiveDate, ReportData)> for ReportRow {
@@ -773,7 +775,7 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                             .date();
 
                             let report = report.entry(date).or_default();
-                            report.message_count += data.messages().len();
+                            report.message_count += data.messages().len() as u64;
                             for (metadata, payload) in data.messages().values().filter_map(|f| match f.0.payload() {
                                 Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
                                 _ => None,
@@ -791,13 +793,13 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                         match output {
                                             // Accumulate the transferred token amount
                                             Output::SignatureLockedSingle(output) => {
-                                                report.transferred_tokens += output.amount() as usize;
+                                                report.transferred_tokens += output.amount() as u128;
                                                 report.total_addresses.insert(output.address().clone());
                                                 *report.recv_addresses.entry(output.address().clone()).or_default() +=
                                                     1;
                                             }
                                             Output::SignatureLockedDustAllowance(output) => {
-                                                report.transferred_tokens += output.amount() as usize
+                                                report.transferred_tokens += output.amount() as u128
                                             }
                                             _ => (),
                                         }
