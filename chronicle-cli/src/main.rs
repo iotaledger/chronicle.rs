@@ -600,8 +600,9 @@ async fn validate_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
 #[derive(Clone, Debug, Default)]
 struct ReportData {
     pub total_addresses: HashSet<Address>,
-    pub recv_addresses: HashMap<Address, usize>,
+    pub recv_addresses: HashSet<Address>,
     pub send_addresses: HashSet<Address>,
+    pub outputs: HashMap<Address, usize>,
     pub message_count: u64,
     pub included_transaction_count: u64,
     pub conflicting_transaction_count: u64,
@@ -612,10 +613,11 @@ struct ReportData {
 impl ReportData {
     fn merge(&mut self, other: Self) {
         self.total_addresses.extend(other.total_addresses);
-        for (addr, count) in other.recv_addresses {
-            *self.recv_addresses.entry(addr).or_default() += count;
-        }
+        self.recv_addresses.extend(other.recv_addresses);
         self.send_addresses.extend(other.send_addresses);
+        for (addr, count) in other.outputs {
+            *self.outputs.entry(addr).or_default() += count;
+        }
         self.message_count += other.message_count;
         self.included_transaction_count += other.included_transaction_count;
         self.conflicting_transaction_count += other.conflicting_transaction_count;
@@ -646,8 +648,8 @@ impl From<(NaiveDate, ReportData)> for ReportRow {
             total_addresses: d.total_addresses.len(),
             recv_addresses: d.recv_addresses.len(),
             send_addresses: d.send_addresses.len(),
-            avg_outputs: d.recv_addresses.values().sum::<usize>() as f32 / d.recv_addresses.len() as f32,
-            max_outputs: *d.recv_addresses.values().max().unwrap_or(&0),
+            avg_outputs: d.outputs.values().sum::<usize>() as f32 / d.outputs.len() as f32,
+            max_outputs: *d.outputs.values().max().unwrap_or(&0),
             message_count: d.message_count,
             included_transaction_count: d.included_transaction_count,
             conflicting_transaction_count: d.conflicting_transaction_count,
@@ -782,38 +784,37 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                             }) {
                                 if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included) {
                                     report.included_transaction_count += 1;
-                                }
-                                if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
+                                    let Essence::Regular(regular_essence) = payload.essence();
+                                    {
+                                        for output in regular_essence.outputs() {
+                                            match output {
+                                                // Accumulate the transferred token amount
+                                                Output::SignatureLockedSingle(output) => {
+                                                    report.transferred_tokens += output.amount() as u128;
+                                                    report.total_addresses.insert(output.address().clone());
+                                                    report.recv_addresses.insert(output.address().clone());
+                                                    *report.outputs.entry(output.address().clone()).or_default() += 1;
+                                                }
+                                                Output::SignatureLockedDustAllowance(output) => {
+                                                    report.transferred_tokens += output.amount() as u128
+                                                }
+                                                _ => (),
+                                            }
+                                        }
+                                    }
+                                    for unlock in payload.unlock_blocks().iter() {
+                                        if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
+                                            let address = Address::Ed25519(Ed25519Address::new(
+                                                Blake2b256::digest(sig.public_key()).into(),
+                                            ));
+                                            report.total_addresses.insert(address);
+                                            report.send_addresses.insert(address);
+                                        }
+                                    }
+                                } else if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
                                     report.conflicting_transaction_count += 1;
                                 }
                                 report.total_transaction_count += 1;
-                                let Essence::Regular(regular_essence) = payload.essence();
-                                {
-                                    for output in regular_essence.outputs() {
-                                        match output {
-                                            // Accumulate the transferred token amount
-                                            Output::SignatureLockedSingle(output) => {
-                                                report.transferred_tokens += output.amount() as u128;
-                                                report.total_addresses.insert(output.address().clone());
-                                                *report.recv_addresses.entry(output.address().clone()).or_default() +=
-                                                    1;
-                                            }
-                                            Output::SignatureLockedDustAllowance(output) => {
-                                                report.transferred_tokens += output.amount() as u128
-                                            }
-                                            _ => (),
-                                        }
-                                    }
-                                }
-                                for unlock in payload.unlock_blocks().iter() {
-                                    if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
-                                        let address = Address::Ed25519(Ed25519Address::new(
-                                            Blake2b256::digest(sig.public_key()).into(),
-                                        ));
-                                        report.total_addresses.insert(address);
-                                        report.send_addresses.insert(address);
-                                    }
-                                }
                             }
                             pb.inc(1);
                         }
