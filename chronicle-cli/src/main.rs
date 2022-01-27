@@ -782,26 +782,25 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                 Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
                                 _ => None,
                             }) {
+                                let Essence::Regular(regular_essence) = payload.essence();
                                 if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included) {
                                     report.included_transaction_count += 1;
-                                    let Essence::Regular(regular_essence) = payload.essence();
-                                    {
-                                        for output in regular_essence.outputs() {
-                                            match output {
-                                                // Accumulate the transferred token amount
-                                                Output::SignatureLockedSingle(output) => {
-                                                    report.transferred_tokens += output.amount() as u128;
-                                                    report.total_addresses.insert(output.address().clone());
-                                                    report.recv_addresses.insert(output.address().clone());
-                                                    *report.outputs.entry(output.address().clone()).or_default() += 1;
-                                                }
-                                                Output::SignatureLockedDustAllowance(output) => {
-                                                    report.transferred_tokens += output.amount() as u128
-                                                }
-                                                _ => (),
+
+                                    for output in regular_essence.outputs() {
+                                        match output {
+                                            // Accumulate the transferred token amount
+                                            Output::SignatureLockedSingle(output) => {
+                                                report.transferred_tokens += output.amount() as u128;
+                                                report.total_addresses.insert(output.address().clone());
+                                                report.recv_addresses.insert(output.address().clone());
                                             }
+                                            Output::SignatureLockedDustAllowance(output) => {
+                                                report.transferred_tokens += output.amount() as u128
+                                            }
+                                            _ => (),
                                         }
                                     }
+
                                     for unlock in payload.unlock_blocks().iter() {
                                         if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
                                             let address = Address::Ed25519(Ed25519Address::new(
@@ -813,6 +812,17 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                     }
                                 } else if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
                                     report.conflicting_transaction_count += 1;
+                                }
+                                for output in regular_essence.outputs() {
+                                    match output {
+                                        Output::SignatureLockedSingle(output) => {
+                                            *report.outputs.entry(output.address().clone()).or_default() += 1;
+                                        }
+                                        Output::SignatureLockedDustAllowance(output) => {
+                                            *report.outputs.entry(output.address().clone()).or_default() += 1;
+                                        }
+                                        _ => (),
+                                    }
                                 }
                                 report.total_transaction_count += 1;
                             }
