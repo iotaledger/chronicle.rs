@@ -629,6 +629,24 @@ paths:
           required: true
           description: hex-encoded Ed25519 address that is referenced by the outputs.
         - in: query
+          name: ledger_none
+          schema:
+            type: boolean
+          example: false
+          description: Include transactions with no ledger state.
+        - in: query
+          name: ledger_conflicting
+          schema:
+            type: boolean
+          example: false
+          description: Include transactions with Conflicting ledger state.
+        - in: query
+          name: ledger_included
+          schema:
+            type: boolean
+          example: true
+          description: Include transactions with Included ledger state.
+        - in: query
           name: page_size
           schema:
             type: number
@@ -1458,7 +1476,7 @@ components:
             - noTransaction
           description: >-
             If `included`, the message contains a transaction that has been
-            included in the ledger. If `conflicitng`, the message contains a
+            included in the ledger. If `conflicting`, the message contains a
             transaction that has not been included in the ledger because it
             conflicts with another transaction. If the message does not
             contain a transaction, `ledgerInclusionState` is set to
@@ -1718,7 +1736,7 @@ components:
                 - noTransaction
               description: >-
                 If `included`, the message contains a transaction that has been
-                included in the ledger. If `conflicitng`, the message contains a
+                included in the ledger. If `conflicting`, the message contains a
                 transaction that has not been included in the ledger because it
                 conflicts with another transaction. If the message does not
                 contain a transaction, `ledgerInclusionState` is set to
@@ -1990,6 +2008,19 @@ components:
             anyOf:
               - $ref: "#/components/schemas/UTXOInput"
               - $ref: "#/components/schemas/TreasuryInput"
+        ledgerInclusionState:
+          type: string
+          enum:
+            - included
+            - conflicting
+            - noTransaction
+          description: >-
+            If `included`, the message contains a transaction that has been
+            included in the ledger. If `conflicting`, the message contains a
+            transaction that has not been included in the ledger because it
+            conflicts with another transaction. If the message does not
+            contain a transaction, `ledgerInclusionState` is set to
+            `noTransaction`.
       required:
         - messageId
         - milestoneIndex
