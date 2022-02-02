@@ -3,11 +3,15 @@
 
 use super::*;
 use bee_common::packable::Packable;
-use bee_message::Message;
+use bee_message::{
+    milestone::MilestoneIndex,
+    Message,
+};
 use chronicle_common::Wrapper;
 use std::{
     collections::{
         BTreeMap,
+        BTreeSet,
         HashSet,
     },
     io::Cursor,
@@ -15,7 +19,6 @@ use std::{
         Deref,
         DerefMut,
     },
-    path::PathBuf,
     str::FromStr,
 };
 /// Index type
@@ -71,12 +74,6 @@ impl<Type> DerefMut for Bee<Type> {
 impl<Type> From<Type> for Bee<Type> {
     fn from(t: Type) -> Self {
         Bee(t)
-    }
-}
-
-impl TokenEncoder for Bee<OutputId> {
-    fn encode_token(&self) -> TokenEncodeChain {
-        Bee(self.transaction_id()).chain(&self.index())
     }
 }
 
@@ -213,6 +210,7 @@ impl ColumnEncoder for Bee<&MilestoneIndex> {
 
 impl_simple_packable!(Message);
 impl_string_packable!(MessageId);
+impl_string_packable!(OutputId);
 impl_string_packable!(TransactionId);
 impl_string_packable!(Ed25519Address);
 
@@ -397,16 +395,17 @@ pub struct MessageMetadata {
 
 /// A message's ledger inclusion state
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum LedgerInclusionState {
     /// A conflicting message, ex. a double spend
     #[serde(rename = "conflicting")]
-    Conflicting,
+    Conflicting = 0,
     /// A successful, included message
     #[serde(rename = "included")]
-    Included,
+    Included = 1,
     /// A message without a transaction
     #[serde(rename = "noTransaction")]
-    NoTransaction,
+    NoTransaction = 2,
 }
 
 impl ColumnEncoder for LedgerInclusionState {
@@ -423,19 +422,6 @@ impl ColumnDecoder for LedgerInclusionState {
     }
 }
 
-impl ColumnEncoder for MessageMetadata {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        let bytes = bincode_config().serialize(self).unwrap();
-        buffer.extend(&i32::to_be_bytes(bytes.len() as i32));
-        buffer.extend(bytes)
-    }
-}
-
-impl ColumnDecoder for MessageMetadata {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        bincode_config().deserialize(slice).map_err(Into::into)
-    }
-}
 impl ColumnEncoder for TransactionData {
     fn encode(&self, buffer: &mut Vec<u8>) {
         let mut bytes = Vec::new();
@@ -508,20 +494,121 @@ impl FullMessage {
     }
 }
 
-impl Row for FullMessage {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MessageRecord {
+    pub message_id: MessageId,
+    pub message: Message,
+    #[serde(skip)]
+    pub version: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub milestone_index: Option<MilestoneIndex>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inclusion_state: Option<LedgerInclusionState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_reason: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proof: Option<Vec<u8>>,
+}
+
+impl MessageRecord {
+    /// Create a new full message
+    pub fn new(message_id: MessageId, message: Message, version: u8) -> Self {
+        Self {
+            message_id,
+            message,
+            version,
+            milestone_index: Default::default(),
+            inclusion_state: Default::default(),
+            conflict_reason: Default::default(),
+            proof: Default::default(),
+        }
+    }
+    pub fn with_milestone_index(mut self, milestone_index: MilestoneIndex) -> Self {
+        self.milestone_index = Some(milestone_index);
+        self
+    }
+    pub fn with_inclusion_state(mut self, inclusion_state: LedgerInclusionState) -> Self {
+        self.inclusion_state = Some(inclusion_state);
+        self
+    }
+    pub fn with_conflict_reason(mut self, conflict_reason: u8) -> Self {
+        self.conflict_reason = Some(conflict_reason);
+        self
+    }
+    pub fn with_proof(mut self, proof: Vec<u8>) -> Self {
+        self.proof = Some(proof);
+        self
+    }
+    /// Get the message ID
+    pub fn message_id(&self) -> &MessageId {
+        &self.message_id
+    }
+    /// Get the message
+    pub fn message(&self) -> &Message {
+        &self.message
+    }
+    /// Get the message's version
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+    /// Get the message's milestone index
+    pub fn milestone_index(&self) -> Option<MilestoneIndex> {
+        self.milestone_index
+    }
+    /// Get the message's inclusion state
+    pub fn inclusion_state(&self) -> Option<LedgerInclusionState> {
+        self.inclusion_state
+    }
+    /// Get the message's conflict reason
+    pub fn conflict_reason(&self) -> Option<u8> {
+        self.conflict_reason
+    }
+    /// Get the message's proof
+    pub fn proof(&self) -> Option<Vec<u8>> {
+        self.proof
+    }
+}
+
+impl Row for MessageRecord {
     fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
-        Ok(FullMessage(
-            rows.column_value::<Bee<Message>>()?.into_inner(),
-            rows.column_value::<MessageMetadata>()?,
-        ))
+        Ok(Self {
+            message_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
+            message: rows.column_value::<Bee<Message>>()?.into_inner(),
+            version: rows.column_value()?,
+            milestone_index: rows
+                .column_value::<Option<Bee<MilestoneIndex>>>()?
+                .map(|i| i.into_inner()),
+            inclusion_state: rows.column_value()?,
+            conflict_reason: rows.column_value()?,
+            proof: rows.column_value()?,
+        })
     }
 }
 
+impl PartialOrd for MessageRecord {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MessageRecord {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.message_id.cmp(&other.message_id)
+    }
+}
+
+impl PartialEq for MessageRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.message_id == other.message_id
+    }
+}
+impl Eq for MessageRecord {}
+
 /// A type alias for partition ids
-pub type PartitionId = u16;
+pub type MsRangeId = u32;
 
 /// An index in plain-text, unhashed
 #[derive(Clone, Debug)]
@@ -634,6 +721,16 @@ impl<T> DerefMut for Paged<T> {
     }
 }
 
+impl<T: Row> RowsDecoder for Paged<Iter<T>> {
+    type Row = T;
+    fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<Iter<T>>>> {
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
+        let mut iter = Self::Row::rows_iter(decoder)?;
+        let paging_state = iter.take_paging_state();
+        Ok(Some(Paged::new(iter, paging_state)))
+    }
+}
+
 /// Wrapper for json data
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct JsonData<T> {
@@ -740,6 +837,138 @@ pub enum BrokerSocketMsg<T> {
 /// Milestone data
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MilestoneData {
+    pub(crate) message_id: MessageId,
+    pub(crate) milestone_index: u32,
+    pub(crate) payload: MilestonePayload,
+    pub(crate) messages: BTreeSet<MessageRecord>,
+}
+
+impl MilestoneData {
+    pub fn message_id(&self) -> &MessageId {
+        &self.message_id
+    }
+    pub fn milestone_index(&self) -> u32 {
+        self.milestone_index
+    }
+    pub fn payload(&self) -> &MilestonePayload {
+        &self.payload
+    }
+    /// Get the milestone's messages
+    pub fn messages(&self) -> &BTreeSet<MessageRecord> {
+        &self.messages
+    }
+    /// Get the analytics from the collected messages
+    pub fn get_analytic_record(&self) -> anyhow::Result<AnalyticRecord> {
+        // The accumulators
+        let mut transaction_count: u32 = 0;
+        let mut transferred_tokens: u64 = 0;
+
+        // Iterate the messages to calculate analytics
+        for rec in self.messages() {
+            // Accumulate confirmed(included) transaction value
+            if let Some(LedgerInclusionState::Included) = rec.inclusion_state {
+                if let Some(Payload::Transaction(payload)) = rec.message.payload() {
+                    // Accumulate the transaction count
+                    transaction_count += 1;
+                    let Essence::Regular(regular_essence) = payload.essence();
+                    {
+                        for output in regular_essence.outputs() {
+                            match output {
+                                // Accumulate the transferred token amount
+                                Output::SignatureLockedSingle(output) => transferred_tokens += output.amount(),
+                                Output::SignatureLockedDustAllowance(output) => transferred_tokens += output.amount(),
+                                // Note that the transaction payload don't have Treasury
+                                _ => anyhow::bail!("Unexpected Output variant in transaction payload"),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let analytic_record = AnalyticRecord::new(
+            MilestoneIndex(self.milestone_index()),
+            MessageCount(self.messages().len() as u32),
+            TransactionCount(transaction_count),
+            TransferredTokens(transferred_tokens),
+        );
+        // Return the analytic record
+        Ok(analytic_record)
+    }
+}
+
+/// Milestone data builder
+#[derive(Debug)]
+pub struct MilestoneDataBuilder {
+    pub(crate) message_id: MessageId,
+    pub(crate) milestone_index: u32,
+    pub(crate) payload: Option<MilestonePayload>,
+    pub(crate) messages: BTreeMap<MessageId, MessageRecord>,
+    pub(crate) pending: HashSet<MessageId>,
+    pub(crate) created_by: CreatedBy,
+}
+
+impl MilestoneDataBuilder {
+    pub fn new(message_id: MessageId, milestone_index: u32, created_by: CreatedBy) -> Self {
+        Self {
+            message_id,
+            milestone_index,
+            payload: None,
+            messages: BTreeMap::new(),
+            pending: HashSet::new(),
+            created_by,
+        }
+    }
+    pub fn with_payload(mut self, payload: MilestonePayload) -> Self {
+        self.payload = Some(payload);
+        self
+    }
+    pub fn add_message(&mut self, message: MessageRecord) -> anyhow::Result<()> {
+        ensure!(
+            self.messages.insert(*message.message_id(), message).is_none(),
+            "Message already exists"
+        );
+        Ok(())
+    }
+    pub fn add_pending(&mut self, message_id: MessageId) -> anyhow::Result<()> {
+        ensure!(self.pending.insert(message_id), "Message already pending");
+        Ok(())
+    }
+    pub fn remove_pending(&mut self, message_id: MessageId) -> anyhow::Result<()> {
+        ensure!(self.pending.remove(&message_id), "Message not pending");
+        Ok(())
+    }
+    /// Get the milestone's messages
+    pub fn messages(&self) -> &BTreeMap<MessageId, MessageRecord> {
+        &self.messages
+    }
+    /// Get the pending messages
+    pub fn pending(&self) -> &HashSet<MessageId> {
+        &self.pending
+    }
+    /// Get the milestone's messages
+    pub fn messages_mut(&mut self) -> &mut BTreeMap<MessageId, MessageRecord> {
+        &mut self.messages
+    }
+    /// Get the pending messages
+    pub fn pending_mut(&mut self) -> &mut HashSet<MessageId> {
+        &mut self.pending
+    }
+    pub fn valid(&self) -> bool {
+        self.payload.is_some() && self.pending.is_empty()
+    }
+    pub fn build(self) -> anyhow::Result<MilestoneData> {
+        Ok(MilestoneData {
+            message_id: self.message_id,
+            milestone_index: self.milestone_index,
+            payload: self.payload.ok_or_else(|| anyhow::anyhow!("No milestone payload"))?,
+            messages: self.messages.into_values().collect(),
+        })
+    }
+}
+
+/// Pre-war Milestone data
+#[derive(Debug, Deserialize, Serialize)]
+pub struct OldMilestoneData {
     pub(crate) milestone_index: u32,
     pub(crate) milestone: Option<Box<MilestonePayload>>,
     pub(crate) messages: BTreeMap<MessageId, FullMessage>,
@@ -749,7 +978,7 @@ pub struct MilestoneData {
     pub(crate) created_by: CreatedBy,
 }
 
-impl MilestoneData {
+impl OldMilestoneData {
     /// Create new milestone data
     pub fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
@@ -803,7 +1032,7 @@ impl MilestoneData {
         }
         let milestone_index = self.milestone_index();
         let analytic_record = AnalyticRecord::new(
-            bee_message::milestone::MilestoneIndex(milestone_index),
+            MilestoneIndex(milestone_index),
             MessageCount(message_count),
             TransactionCount(transaction_count),
             TransferredTokens(transferred_tokens),
@@ -856,7 +1085,7 @@ impl MilestoneData {
     }
 }
 
-impl std::iter::IntoIterator for MilestoneData {
+impl std::iter::IntoIterator for OldMilestoneData {
     type Item = (MessageId, FullMessage);
     type IntoIter = std::collections::btree_map::IntoIter<MessageId, FullMessage>;
     fn into_iter(self) -> Self::IntoIter {
