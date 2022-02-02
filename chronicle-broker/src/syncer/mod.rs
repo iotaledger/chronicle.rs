@@ -14,6 +14,7 @@ use super::{
 use chronicle_storage::keyspaces::ChronicleKeyspace;
 use std::{
     ops::Deref,
+    sync::Arc,
     time::Duration,
 };
 pub(crate) type SyncerHandle = AbortableUnboundedHandle<SyncerEvent>;
@@ -69,7 +70,7 @@ impl<S: SupHandle<Self>> Actor<S> for Syncer {
 #[derive(Debug)]
 pub enum SyncerEvent {
     /// Sync milestone data
-    MilestoneData(MilestoneData),
+    MilestoneData(Arc<MilestoneData>),
     /// Notify of an unreachable cluster
     Unreachable(u32),
 }
@@ -82,7 +83,7 @@ pub struct Syncer {
     sync_range: SyncRange,
     parallelism: u8,
     active: Option<Active>,
-    milestones_data: BinaryHeap<Ascending<MilestoneData>>,
+    milestones_data: BinaryHeap<Ascending<Arc<MilestoneData>>>,
     pending: u32,
     next: u32,
     skip: bool,
@@ -161,7 +162,7 @@ impl Syncer {
     async fn handle_milestone_data<S: SupHandle<Self>>(
         &mut self,
         rt: &mut Rt<Self, S>,
-        milestone_data: MilestoneData,
+        milestone_data: Arc<MilestoneData>,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
         archiver_handle: &Option<ArchiverHandle>,
     ) -> ActorResult<()> {
@@ -205,7 +206,7 @@ impl Syncer {
         if self.pending.eq(&0) {
             self.skip = false;
             while let Some(d) = self.milestones_data.pop() {
-                let d: MilestoneData = d.into();
+                let d: Arc<MilestoneData> = d.into();
                 error!("We got milestone data for index: {}, but we're skipping it due to previous unreachable indexes within the same gap range", d.milestone_index());
             }
             if let Some(mut active) = self.active.take() {
@@ -399,30 +400,30 @@ impl<T> Deref for Ascending<T> {
     }
 }
 
-impl std::convert::Into<MilestoneData> for Ascending<MilestoneData> {
-    fn into(self) -> MilestoneData {
+impl std::convert::Into<Arc<MilestoneData>> for Ascending<Arc<MilestoneData>> {
+    fn into(self) -> Arc<MilestoneData> {
         self.inner
     }
 }
 
-impl Ascending<MilestoneData> {
+impl Ascending<Arc<MilestoneData>> {
     /// Wrap milestone data with ASC ordering
-    pub fn new(milestone_data: MilestoneData) -> Self {
+    pub fn new(milestone_data: Arc<MilestoneData>) -> Self {
         Self { inner: milestone_data }
     }
 }
 
-impl std::cmp::Ord for Ascending<MilestoneData> {
+impl std::cmp::Ord for Ascending<Arc<MilestoneData>> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         other.inner.milestone_index().cmp(&self.inner.milestone_index())
     }
 }
-impl std::cmp::PartialOrd for Ascending<MilestoneData> {
+impl std::cmp::PartialOrd for Ascending<Arc<MilestoneData>> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(other.inner.milestone_index().cmp(&self.inner.milestone_index()))
     }
 }
-impl std::cmp::PartialEq for Ascending<MilestoneData> {
+impl std::cmp::PartialEq for Ascending<Arc<MilestoneData>> {
     fn eq(&self, other: &Self) -> bool {
         if self.inner.milestone_index() == other.inner.milestone_index() {
             true
@@ -431,4 +432,4 @@ impl std::cmp::PartialEq for Ascending<MilestoneData> {
         }
     }
 }
-impl std::cmp::Eq for Ascending<MilestoneData> {}
+impl std::cmp::Eq for Ascending<Arc<MilestoneData>> {}

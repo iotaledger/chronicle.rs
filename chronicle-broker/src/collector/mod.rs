@@ -1,6 +1,9 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::{
+    filter::FilterBuilder,
+    *,
+};
 use crate::{
     application::*,
     requester::{
@@ -32,11 +35,6 @@ use bee_message::{
     },
 };
 use chronicle_common::metrics::CONFIRMATION_TIME_COLLECTOR;
-use chronicle_filter::{
-    Selected,
-    Selective,
-    SelectiveBuilder,
-};
 use std::{
     collections::{
         BinaryHeap,
@@ -49,8 +47,10 @@ use std::{
 use chronicle_common::config::PartitionConfig;
 use lru::LruCache;
 
+use backstage::core::Channel;
 use reqwest::Client;
 use url::Url;
+
 pub(crate) type CollectorId = u8;
 pub(crate) type CollectorHandle = UnboundedHandle<CollectorEvent>;
 pub(crate) type CollectorHandles = HashMap<CollectorId, CollectorHandle>;
@@ -103,16 +103,13 @@ impl MessageIdPartitioner {
         self.count
     }
 }
-
 /// Collector state, each collector is basically LRU cache
 pub struct Collector<T>
 where
-    T: SelectiveBuilder,
+    T: FilterBuilder,
 {
     /// keysapce
     keyspace: ChronicleKeyspace,
-    /// The keyspace partition config
-    data_partition_config: PartitionConfig,
     /// The partition id
     partition_id: u8,
     /// partition_count
@@ -130,19 +127,21 @@ where
     /// The hashmap to facilitate the recording the pending requests, which maps from
     /// a message id to the corresponding (milestone index, message) pair
     pending_requests: HashMap<MessageId, (u32, Message)>,
-    /// Selective state
-    selective: T::State,
+    /// selective builder
+    selective_builder: T,
+    /// uda actor handle
+    uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
 }
 
-impl<T: SelectiveBuilder> Collector<T> {
+impl<T: FilterBuilder> Collector<T> {
     pub(super) fn new(
         keyspace: ChronicleKeyspace,
-        data_partition_config: PartitionConfig,
         partition_id: u8,
         partition_count: u8,
         retries: u8,
         lru_capacity: usize,
-        selective: T::State,
+        selective_builder: T,
+        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
     ) -> Self {
         Self {
             keyspace,
@@ -154,8 +153,8 @@ impl<T: SelectiveBuilder> Collector<T> {
             lru_msg: LruCache::new(lru_capacity),
             lru_msg_ref: LruCache::new(lru_capacity),
             pending_requests: HashMap::new(),
-            selective,
-            data_partition_config,
+            selective_builder,
+            uda_handle,
         }
     }
 }
@@ -164,7 +163,7 @@ impl<T: SelectiveBuilder> Collector<T> {
 impl<S, T> Actor<S> for Collector<T>
 where
     S: SupHandle<Self>,
-    T: SelectiveBuilder,
+    T: FilterBuilder,
 {
     type Data = (HashMap<u8, SolidifierHandle>, RequesterHandles<T>);
     type Channel = UnboundedChannel<CollectorEvent>;
@@ -189,6 +188,7 @@ where
                     if let Some(FullMessage(message, metadata)) = opt_full_msg {
                         let message_id = message_id
                             .ok_or_else(|| ActorError::exit_msg("Expected message_id in requester response"))?;
+                        let mut selected_opt: Option<Selected> = None;
                         let partition_id = (try_ms_index % (self.partition_count as u32)) as u8;
                         let ref_ms = metadata
                             .referenced_by_milestone_index
@@ -196,12 +196,18 @@ where
                             .ok_or_else(|| ActorError::exit_msg("Expected referenced_by_milestone_index"))?;
                         // check if the requested message actually belongs to the expected milestone_index
                         if ref_ms.eq(&try_ms_index) {
+                            // filter the message
+                            selected_opt = self
+                                .selective_builder
+                                .filter_message(&self.uda_handle, &message_id, &message, Some(&metadata))
+                                .await?;
                             // push full message to solidifier;
                             self.push_fullmsg_to_solidifier(
                                 partition_id,
                                 message.clone(),
                                 metadata.clone(),
                                 &solidifier_handles,
+                                selected_opt,
                             );
                             // proceed to insert the message and put it in the cache.
                         } else {
@@ -231,8 +237,14 @@ where
                         if let Some(wrong_est_ms) = wrong_msg_est_ms {
                             self.clean_up_wrong_est_msg(&message_id, &message, wrong_est_ms)?
                         }
-                        self.insert_message_with_metadata(message_id, message, metadata, &solidifier_handles)
-                            .await?
+                        self.insert_message_with_metadata(
+                            message_id,
+                            message,
+                            metadata,
+                            &solidifier_handles,
+                            selected_opt,
+                        )
+                        .await?
                     } else {
                         error!(
                             "{:?} , unable to fetch message: {:?}, from network triggered by milestone_index: {}",
@@ -278,6 +290,7 @@ where
                         self.lru_msg_ref.put(message_id, metadata.clone());
                         // check if msg already exist in the cache, if so we push it to solidifier
                         let cached_msg: Option<Message>;
+                        let mut selected_opt: Option<Selected> = None;
                         let wrong_msg_est_ms;
                         if let Some((timestamp, est_ms, message)) = self.lru_msg.get_mut(&message_id) {
                             if let Some(timestamp) = timestamp {
@@ -294,10 +307,14 @@ where
                                 wrong_msg_est_ms = None;
                             }
                             cached_msg = Some(message.clone());
+                            selected_opt = self
+                                .selective_builder
+                                .filter_message(&self.uda_handle, &message_id, message, Some(&metadata))
+                                .await?;
                             // push to solidifier
                             if let Some(solidifier_handle) = solidifier_handles.get(&partition_id) {
                                 let full_message = FullMessage::new(message.clone(), metadata.clone());
-                                let full_msg_event = SolidifierEvent::Message(full_message);
+                                let full_msg_event = SolidifierEvent::Message(full_message, selected_opt);
                                 solidifier_handle.send(full_msg_event).ok();
                             };
                             // however the message_id might had been requested,
@@ -321,12 +338,17 @@ where
                             if let Some((requested_by_this_ms, message)) = self.pending_requests.remove(&message_id) {
                                 // check if we have to close or push full message
                                 if requested_by_this_ms.eq(&*ref_ms) {
+                                    selected_opt = self
+                                        .selective_builder
+                                        .filter_message(&self.uda_handle, &message_id, &message, Some(&metadata))
+                                        .await?;
                                     // push full message
                                     self.push_fullmsg_to_solidifier(
                                         partition_id,
                                         message.clone(),
                                         metadata.clone(),
                                         &solidifier_handles,
+                                        selected_opt,
                                     )
                                 } else {
                                     // close it
@@ -352,13 +374,16 @@ where
                                         error!("{}", e);
                                     });
                             }
-                            self.insert_message_with_metadata(message_id, message, metadata, &solidifier_handles)
-                                .await?;
+                            self.insert_message_with_metadata(
+                                message_id,
+                                message,
+                                metadata,
+                                &solidifier_handles,
+                                selected_opt,
+                            )
+                            .await?;
                         } else {
-                            // store it as metadata
-                            if self.selective.is_permanode() {
-                                self.insert_message_metadata(metadata)?;
-                            }
+                            // do nothing: don't have to solely store the metadata.
                         }
                     }
                 }
@@ -378,15 +403,21 @@ where
                                             &solidifier_handles,
                                         );
                                     } else {
-                                        if let Some(solidifier_handle) = solidifier_handles.get(&solidifier_id) {
-                                            let full_message = FullMessage::new(message.clone(), metadata.clone());
-                                            let full_msg_event = SolidifierEvent::Message(full_message);
-                                            let _ = solidifier_handle.send(full_msg_event);
-                                        }
-                                        // make sure to insert the message if it's requested from syncer
+                                        // make sure to insert the message if it's requested by syncer
                                         if created_by == CreatedBy::Syncer {
+                                            // re-filter the message
+                                            let selected_opt = self
+                                                .selective_builder
+                                                .filter_message(&self.uda_handle, &message_id, message, Some(metadata))
+                                                .await?;
+                                            if let Some(solidifier_handle) = solidifier_handles.get(&solidifier_id) {
+                                                let full_message = FullMessage::new(message.clone(), metadata.clone());
+                                                let full_msg_event =
+                                                    SolidifierEvent::Message(full_message, selected_opt);
+                                                let _ = solidifier_handle.send(full_msg_event);
+                                            }
                                             self.ref_ms.0 = try_ms_index;
-                                            message_tuple = Some((message.clone(), metadata.clone()));
+                                            message_tuple = Some((message.clone(), metadata.clone(), selected_opt));
                                         }
                                     }
                                 } else {
@@ -438,12 +469,13 @@ where
                             }
                             // insert the message if requested by syncer to ensure it gets cql responses for all the
                             // requested messages
-                            if let Some((message, metadata)) = message_tuple.take() {
+                            if let Some((message, metadata, selected_opt)) = message_tuple.take() {
                                 self.insert_message_with_metadata(
                                     message_id.clone(),
                                     message,
                                     metadata,
                                     &solidifier_handles,
+                                    selected_opt,
                                 )
                                 .await?
                             }
@@ -464,7 +496,7 @@ where
 
 impl<T> Collector<T>
 where
-    T: SelectiveBuilder,
+    T: FilterBuilder,
 {
     /// Send an error event to the solidifier for a given milestone index
     fn send_err_solidifiy(&self, try_ms_index: u32, solidifier_handles: &HashMap<u8, SolidifierHandle>) {
@@ -554,10 +586,11 @@ where
         message: Message,
         metadata: MessageMetadata,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        selected_opt: Option<Selected>,
     ) {
         if let Some(solidifier_handle) = solidifier_handles.get(&partition_id) {
             let full_message = FullMessage::new(message, metadata);
-            let full_msg_event = SolidifierEvent::Message(full_message);
+            let full_msg_event = SolidifierEvent::Message(full_message, selected_opt);
             solidifier_handle.send(full_msg_event).ok();
         };
     }
@@ -579,10 +612,6 @@ where
     fn get_keyspace(&self) -> ChronicleKeyspace {
         self.keyspace.clone()
     }
-    /// Get the partition id of a given milestone index
-    fn get_partition_id(&self, milestone_index: MilestoneIndex) -> u16 {
-        self.data_partition_config.partition_id(milestone_index.0)
-    }
     /// Insert the message id and message to the table
     async fn insert_message(
         &mut self,
@@ -595,13 +624,10 @@ where
         let metadata;
         if let Some(meta) = self.lru_msg_ref.get(message_id) {
             // filter the message
-            let selected_opt = self.selective.filter_message(message_id, message, Some(meta)).await?;
-            if selected_opt.is_none() {
-                // todo notify solidifier with PersistedMsg(MessageId, referenced_by_milestone_index, None)
-                return Ok(());
-            }
-            metadata = Some(meta.clone());
-            ledger_inclusion_state = meta.ledger_inclusion_state.clone();
+            let selected_opt = self
+                .selective_builder
+                .filter_message(&self.uda_handle, message_id, message, Some(meta))
+                .await?;
             let milestone_index = MilestoneIndex(
                 *meta
                     .referenced_by_milestone_index
@@ -609,17 +635,21 @@ where
                     .expect("Expected referenced_by_milestone_index"),
             );
             let solidifier_id = (*milestone_index % (self.partition_count as u32)) as u8;
+            if let Some(solidifier_handle) = solidifier_handles.get(&solidifier_id) {
+                let full_message = FullMessage::new(message.clone(), meta.clone());
+                let full_msg_event = SolidifierEvent::Message(full_message, selected_opt);
+                solidifier_handle.send(full_msg_event).ok();
+            };
+            if selected_opt.is_none() {
+                return Ok(());
+            }
+            metadata = Some(meta.clone());
+            ledger_inclusion_state = meta.ledger_inclusion_state.clone();
             let solidifier_handle = solidifier_handles
                 .get(&solidifier_id)
                 .ok_or_else(|| ActorError::exit_msg("Invalid solidifier handles"))?
                 .clone();
-            let inherent_worker = AtomicWorker::new(
-                solidifier_handle,
-                *milestone_index,
-                *message_id,
-                selected_opt,
-                self.retries,
-            );
+            let inherent_worker = AtomicWorker::new(solidifier_handle, *milestone_index, *message_id, self.retries);
             let message_tuple = (message.clone(), meta.clone());
             // store message and metadata
             self.insert(&inherent_worker, Bee(*message_id), message_tuple)?;
@@ -642,11 +672,15 @@ where
                     ledger_inclusion_state,
                     metadata,
                     solidifier_handles,
+                    selected_opt,
                 )?;
             }
         } else {
             // filter the message
-            let selected_opt = self.selective.filter_message(message_id, message, None).await?;
+            let selected_opt = self
+                .selective_builder
+                .filter_message(&self.uda_handle, message_id, message, None)
+                .await?;
             if selected_opt.is_none() {
                 return Ok(());
             }
@@ -674,6 +708,7 @@ where
                     ledger_inclusion_state,
                     metadata,
                     solidifier_handles,
+                    selected_opt,
                 )?;
             }
         };
@@ -720,6 +755,7 @@ where
         inclusion_state: Option<LedgerInclusionState>,
         metadata: Option<MessageMetadata>,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        selected_opt: Option<Selected>,
     ) -> ActorResult<()> {
         match payload {
             Payload::Indexation(indexation) => {
@@ -740,6 +776,7 @@ where
                 milestone_index,
                 metadata,
                 solidifier_handles,
+                selected_opt,
             )?,
             Payload::Milestone(milestone) => {
                 let ms_index = milestone.essence().index();
@@ -750,7 +787,7 @@ where
                     if let Some(solidifier_handle) = solidifier_handles.get(&solidifier_id) {
                         let ms_message =
                             MilestoneMessage::new(*message_id, milestone.clone(), message.clone(), metadata);
-                        let _ = solidifier_handle.send(SolidifierEvent::Milestone(ms_message));
+                        let _ = solidifier_handle.send(SolidifierEvent::Milestone(ms_message, selected_opt));
                     };
                     self.insert(inherent_worker, Bee(ms_index), (Bee(*message_id), milestone.clone()))?
                 }
@@ -783,22 +820,6 @@ where
         let partition = Partition::new(partition_id, *milestone_index);
         self.insert(inherent_worker, hint, partition)
     }
-    /// Insert the message metadata to the table
-    fn insert_message_metadata(&self, metadata: MessageMetadata) -> ActorResult<()> {
-        let message_id = metadata.message_id;
-        let inherent_worker = SimpleWorker { retries: self.retries };
-        // store message and metadata
-        self.insert(&inherent_worker, Bee(message_id), metadata.clone())?;
-        // Insert parents/children
-        let parents = metadata.parent_message_ids;
-        self.insert_parents(
-            &inherent_worker,
-            &message_id,
-            &parents.as_slice(),
-            self.ref_ms,
-            metadata.ledger_inclusion_state.clone(),
-        )
-    }
     /// Insert the message with the associated metadata of a given message id to the table
     async fn insert_message_with_metadata(
         &mut self,
@@ -806,22 +827,13 @@ where
         message: Message,
         metadata: MessageMetadata,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        selected_opt: Option<Selected>,
     ) -> ActorResult<()> {
-        let selected_opt = self
-            .selective
-            .filter_message(&message_id, &message, Some(&metadata))
-            .await
-            .map_err(|e| {
-                error!("selective-permanode: {}, exiting in progress", e);
-                ActorError::exit(e)
-            })?;
         if selected_opt.is_none() {
-            // todo notify solidifier with PersistedMsg(MessageId, referenced_by_milestone_index, None)
             return Ok(());
         }
         let solidifier_handle = self.clone_solidifier_handle(*self.ref_ms, solidifier_handles);
-        let inherent_worker =
-            AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, selected_opt, self.retries);
+        let inherent_worker = AtomicWorker::new(solidifier_handle, *self.ref_ms, message_id, self.retries);
         // Insert parents/children
         self.insert_parents(
             &inherent_worker,
@@ -841,6 +853,7 @@ where
                 metadata.ledger_inclusion_state.clone(),
                 Some(metadata.clone()),
                 solidifier_handles,
+                selected_opt,
             )?;
         }
         let message_tuple = (message, metadata);
@@ -865,6 +878,7 @@ where
         milestone_index: MilestoneIndex,
         metadata: Option<MessageMetadata>,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
+        selected_opt: Option<Selected>,
     ) -> ActorResult<()> {
         let transaction_id = transaction.id();
         let unlock_blocks = transaction.unlock_blocks();
@@ -954,6 +968,7 @@ where
                     ledger_inclusion_state,
                     metadata,
                     solidifier_handles,
+                    selected_opt,
                 )?
             }
         };
@@ -1210,16 +1225,9 @@ pub struct AtomicWorker {
 impl AtomicWorker {
     /// Create a new atomic solidifier worker with a solidifier handle, an milestone index, a message id, and a number
     /// of retries
-    fn new(
-        solidifier_handle: SolidifierHandle,
-        milestone_index: u32,
-        message_id: MessageId,
-        selected_opt: Option<Selected>,
-        retries: u8,
-    ) -> Self {
+    fn new(solidifier_handle: SolidifierHandle, milestone_index: u32, message_id: MessageId, retries: u8) -> Self {
         let any_error = std::sync::atomic::AtomicBool::new(false);
-        let atomic_handle =
-            AtomicSolidifierHandle::new(solidifier_handle, milestone_index, message_id, selected_opt, any_error);
+        let atomic_handle = AtomicSolidifierHandle::new(solidifier_handle, milestone_index, message_id, any_error);
         let arc_handle = std::sync::Arc::new(atomic_handle);
         Self { arc_handle, retries }
     }

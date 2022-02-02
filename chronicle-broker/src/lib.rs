@@ -31,6 +31,10 @@ pub mod solidifier;
 #[cfg(feature = "application")]
 pub mod syncer;
 
+/// filter module
+#[cfg(feature = "application")]
+pub mod filter;
+
 #[cfg(feature = "application")]
 mod app {
     use super::*;

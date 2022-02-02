@@ -9,6 +9,7 @@ use super::{
         Exporter,
         ExporterStatus,
     },
+    filter::FilterBuilder,
     mqtt::Mqtt,
     requester::{
         Requester,
@@ -33,6 +34,7 @@ use backstage::{
         ActorError,
         ActorRequest,
         ActorResult,
+        Channel,
         EolEvent,
         Event,
         ReportEvent,
@@ -55,7 +57,6 @@ use backstage::{
 };
 use bee_message::Message;
 use chronicle_common::config::PartitionConfig;
-use chronicle_filter::SelectiveBuilder;
 use chronicle_storage::{
     access::{
         MessageMetadata,
@@ -78,12 +79,13 @@ use std::{
     path::PathBuf,
     time::Duration,
 };
+
 pub type BrokerHandle = UnboundedHandle<BrokerEvent>;
 use thiserror::Error;
 use url::Url;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-/// Chronicle Broker config/state
-pub struct ChronicleBroker<T: SelectiveBuilder> {
+/// Chronicle Broker config
+pub struct ChronicleBroker<T: FilterBuilder> {
     pub parallelism: u8,
     pub complete_gaps_interval: Duration,
     pub partition_count: u8,
@@ -96,12 +98,11 @@ pub struct ChronicleBroker<T: SelectiveBuilder> {
     pub api_endpoints: HashSet<Url>,
     request_timeout_secs: u8,
     pub keyspace: ChronicleKeyspace,
-    pub partition_config: PartitionConfig,
     pub sync_range: SyncRange,
     pub selective_builder: T,
 }
 
-impl<T: SelectiveBuilder> Default for ChronicleBroker<T> {
+impl<T: FilterBuilder> Default for ChronicleBroker<T> {
     fn default() -> Self {
         Self {
             parallelism: 25,
@@ -114,7 +115,6 @@ impl<T: SelectiveBuilder> Default for ChronicleBroker<T> {
             retries: 5,
             keyspace: Default::default(),
             api_endpoints: Default::default(),
-            partition_config: Default::default(),
             sync_range: Default::default(),
             mqtt_brokers: Default::default(),
             selective_builder: Default::default(),
@@ -122,11 +122,10 @@ impl<T: SelectiveBuilder> Default for ChronicleBroker<T> {
     }
 }
 
-impl<T: SelectiveBuilder> ChronicleBroker<T> {
+impl<T: FilterBuilder> ChronicleBroker<T> {
     /// Create new chronicle broker instance
     pub fn new(
         keyspace: ChronicleKeyspace,
-        partition_config: chronicle_common::config::PartitionConfig,
         retries: u8,
         parallelism: u8,
         gaps_interval: Duration,
@@ -149,7 +148,6 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             partition_count,
             logs_dir,
             sync_range,
-            partition_config,
             max_log_size,
             mqtt_brokers: HashSet::new(),
             api_endpoints: HashSet::new(),
@@ -384,8 +382,8 @@ impl TopologyErr {
 }
 
 #[async_trait]
-impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
-    type Data = (Service, T::State);
+impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
+    type Data = Service;
     type Channel = UnboundedChannel<BrokerEvent>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
         log::info!("ChronicleBroker is initializing");
@@ -411,21 +409,16 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                 log::error!("ChronicleBroker cannot proceed initializing without scylla service");
                 ActorError::exit_msg("ChronicleBroker cannot proceed initializing without scylla service")
             })?;
-        // build Selective mode
-        let selective = self.selective_builder.clone().build().await.map_err(|e| {
-            log::error!("Broker unable to build selective");
-            ActorError::exit_msg(format!("Broker unable to build selective: {}", e))
-        })?;
         if let Ok(sync_data) = self.query_sync_table().await {
             log::info!("{:#?}", sync_data);
             // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
-            self.maybe_start(rt, sync_data, &selective).await?; //?
+            self.maybe_start(rt, sync_data).await?; //?
         } else {
             rt.update_status(ServiceStatus::Idle).await;
         };
-        Ok((scylla_service, selective))
+        Ok(scylla_service)
     }
-    async fn run(&mut self, rt: &mut Rt<Self, S>, (mut scylla_service, selective): Self::Data) -> ActorResult<()> {
+    async fn run(&mut self, rt: &mut Rt<Self, S>, mut scylla_service: Self::Data) -> ActorResult<()> {
         log::info!("ChronicleBroker is {}", rt.service().status());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
@@ -491,7 +484,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                                                     } else {
                                                         log::info!("Successfully inserted mqtt: {}", &mqtt);
                                                         responder.reply(Ok(TopologyOk::AddMqtt)).await.ok();
-                                                        self.maybe_start(rt, sync_data, &selective).await?;
+                                                        self.maybe_start(rt, sync_data).await?;
                                                     };
                                                 }
                                                 Err(err) => {
@@ -519,7 +512,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                                         match self.query_sync_table().await {
                                             Ok(sync_data) => {
                                                 // try to resume
-                                                self.maybe_start(rt, sync_data, &selective).await?;
+                                                self.maybe_start(rt, sync_data).await?;
                                             }
                                             Err(err) => {
                                                 log::error!("Unable to query sync table to resume the broker while re-adding mqtt: {}, error: {}", mqtt, err);
@@ -805,7 +798,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                         })) => service_result.expect("Failed to unwrap service_result in broker")?,
                         _ => {
                             if (service.is_type::<Collector<T>>()
-                                || service.is_type::<Solidifier>()
+                                || service.is_type::<Solidifier<T>>()
                                 || service.is_type::<Syncer>()
                                 || service.is_type::<Archiver>())
                                 && service_result.is_some()
@@ -826,7 +819,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                             if let Ok(sync_data) = self.query_sync_table().await {
                                 // maybe sleep for 10 seconds in-case the shutdown was due to overload in scylla
                                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                self.maybe_start(rt, sync_data, &selective).await?;
+                                self.maybe_start(rt, sync_data).await?;
                             }
                         }
                     } else {
@@ -844,7 +837,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
                             && rt.microservices_stopped()
                         {
                             if let Ok(sync_data) = self.query_sync_table().await {
-                                self.maybe_start(rt, sync_data, &selective).await?;
+                                self.maybe_start(rt, sync_data).await?;
                             } else {
                                 log::warn!(
                                     "Broker unable to query sync table, will ask the supervisor to restart us later"
@@ -878,14 +871,9 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for ChronicleBroker<T> {
     }
 }
 
-impl<T: SelectiveBuilder> ChronicleBroker<T> {
+impl<T: FilterBuilder> ChronicleBroker<T> {
     // Note: It should never be invoked if scylla were in outage, or self service is stopping
-    async fn maybe_start<S: SupHandle<Self>>(
-        &self,
-        rt: &mut Rt<Self, S>,
-        sync_data: SyncData,
-        selective: &T::State,
-    ) -> ActorResult<()> {
+    async fn maybe_start<S: SupHandle<Self>>(&self, rt: &mut Rt<Self, S>, sync_data: SyncData) -> ActorResult<()> {
         // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
         if self.mqtt_brokers.is_empty() || self.api_endpoints.is_empty() {
             log::warn!("Cannot start children of the broker without at least one broker and endpoint!");
@@ -897,6 +885,11 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
         rt.remove_resource::<HashMap<u8, CollectorHandle>>().await;
         rt.remove_resource::<RequesterHandles<T>>().await;
         rt.remove_resource::<HashMap<u8, SolidifierHandle>>().await;
+        // build Selective mode
+        let (uda_actor, uda_channel) = self.selective_builder.clone().build().await.map_err(|e| {
+            log::error!("Broker unable to build selective");
+            ActorError::exit_msg(format!("Broker unable to build selective: {}", e))
+        })?;
         // -- spawn feed sources (mqtt)
         let mqtt_brokers = self.mqtt_brokers.iter();
         let mut balanced = 0;
@@ -972,16 +965,18 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
         let keyspace = self.keyspace.clone();
         let syncer = Syncer::new(sync_data, sync_range, update_sync_data_every, parallelism, keyspace);
         rt.spawn("syncer".to_string(), syncer).await?;
+        // spawn selective_actor
+        let (uda_handle, _) = rt.spawn_with_channel("uda".to_string(), uda_actor, uda_channel).await?;
         // -- spawn collectors and solidifiers
         for partition_id in 0..self.partition_count {
             let collector = Collector::<T>::new(
                 self.keyspace.clone(),
-                self.partition_config.clone(),
                 partition_id,
                 self.partition_count,
                 self.retries,
                 self.cache_capacity,
-                selective.clone(),
+                self.selective_builder.clone(),
+                uda_handle.clone(),
             );
             let (c_handle, signal) = rt.spawn(format!("collector{}", partition_id), collector).await?;
             collector_handles.insert(partition_id, c_handle);
@@ -992,6 +987,8 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
                 MessageIdPartitioner::new(self.partition_count),
                 gap_start,
                 self.retries,
+                self.selective_builder.clone(),
+                uda_handle.clone(),
             );
             let (s_handle, signal) = rt.spawn(format!("solidifier{}", partition_id), solidifier).await?;
             solidifier_handles.insert(partition_id, s_handle);
@@ -1015,7 +1012,8 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
         Ok(())
     }
 }
-impl<T: SelectiveBuilder> ChronicleBroker<T> {
+
+impl<T: FilterBuilder> ChronicleBroker<T> {
     pub(super) async fn query_sync_table(&self) -> ActorResult<SyncData> {
         SyncData::try_fetch(&self.keyspace, &self.sync_range, 10)
             .await
@@ -1025,3 +1023,5 @@ impl<T: SelectiveBuilder> ChronicleBroker<T> {
             })
     }
 }
+
+pub mod permanode;

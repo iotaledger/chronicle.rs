@@ -40,8 +40,6 @@ use std::{
 
 /// Import all records to all tables
 pub struct All;
-/// Import analytics records only which are stored in analytics table
-pub struct Analytics;
 
 /// Defines the Importer Mode
 pub trait ImportMode: Sized + Send + 'static {
@@ -65,28 +63,6 @@ impl ImportMode for All {
         let milestone_index = milestone_data.milestone_index();
         let mut iterator = milestone_data.into_iter();
         importer.insert_some_messages(milestone_index, &mut iterator, importer_handle)?;
-        importer
-            .in_progress_milestones_data
-            .insert(milestone_index, (iterator, analytic_record));
-        Ok(())
-    }
-}
-
-impl ImportMode for Analytics {
-    fn handle_milestone_data(
-        milestone_data: MilestoneData,
-        importer_handle: &ImporterHandle,
-        importer: &mut Importer<Analytics>,
-    ) -> anyhow::Result<()> {
-        let analytic_record = milestone_data.get_analytic_record().map_err(|e| {
-            error!("Unable to get analytic record for milestone data. Error: {}", e);
-            e
-        })?;
-        let milestone_index = milestone_data.milestone_index();
-        let iterator = milestone_data.into_iter();
-        importer.insert_analytic_record(importer_handle.clone(), &analytic_record)?;
-        // note: iterator is not needed to presist analytic record in Analytics mode,
-        // however we kept them for simplicty sake.
         importer
             .in_progress_milestones_data
             .insert(milestone_index, (iterator, analytic_record));
@@ -125,8 +101,6 @@ pub struct Importer<T> {
     to_ms: u32,
     /// The default Chronicle keyspace
     default_keyspace: ChronicleKeyspace,
-    /// The partition configuration
-    partition_config: PartitionConfig,
     /// The number of retires per query
     retries: u8,
     /// The chronicle id
@@ -330,7 +304,7 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                         }
                     }
                 }
-                // note: we receive this variant in All mode.
+                // note: we receive this variant in All modes.
                 ImporterEvent::ProcessMore(milestone_index) => {
                     if rt.service().is_stopping() {
                         continue;

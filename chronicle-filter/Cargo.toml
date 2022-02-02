@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable" }
 chronicle-storage = { path = "../chronicle-storage" }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 wildmatch = "2.1.0"

@@ -1,12 +1,16 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    application::ChronicleBroker,
+    application::{
+        BrokerHandle,
+        ChronicleBroker,
+    },
     collector::{
         CollectorEvent,
         CollectorHandle,
         CollectorId,
     },
+    filter::FilterBuilder,
     *,
 };
 use backstage::core::Event;
@@ -15,7 +19,6 @@ use bee_rest_api::types::{
     responses::MilestoneResponse,
 };
 use chronicle_common::Wrapper;
-use chronicle_filter::SelectiveBuilder;
 use collector::CollectorHandles;
 use rand::{
     prelude::SliceRandom,
@@ -29,12 +32,11 @@ use std::{
     str::FromStr,
 };
 use url::Url;
-
 pub(crate) type RequesterHandle<T> = UnboundedHandle<RequesterEvent<T>>;
 
 /// Requester events
 #[derive(Debug)]
-pub enum RequesterEvent<T: SelectiveBuilder> {
+pub enum RequesterEvent<T: FilterBuilder> {
     /// Collector requesting MessageId in order to solidifiy u32 MilestoneIndex
     RequestFullMessage(CollectorId, MessageId, u32),
     /// Requesting Milestone for u32 milestone index;
@@ -45,14 +47,14 @@ pub enum RequesterEvent<T: SelectiveBuilder> {
     Shutdown,
 }
 
-impl<T: SelectiveBuilder> ShutdownEvent for RequesterEvent<T> {
+impl<T: FilterBuilder> ShutdownEvent for RequesterEvent<T> {
     fn shutdown_event() -> Self {
         Self::Shutdown
     }
 }
 /// Requester state
 #[derive(Debug)]
-pub struct Requester<T: SelectiveBuilder> {
+pub struct Requester<T: FilterBuilder> {
     api_endpoints: VecDeque<Url>,
     reqwest_client: Client,
     retries: u8,
@@ -60,11 +62,11 @@ pub struct Requester<T: SelectiveBuilder> {
 }
 
 #[derive(Clone, Debug)]
-pub struct RequesterHandles<T: SelectiveBuilder> {
+pub struct RequesterHandles<T: FilterBuilder> {
     inner: VecDeque<RequesterHandle<T>>,
 }
 
-impl<T: SelectiveBuilder> RequesterHandles<T> {
+impl<T: FilterBuilder> RequesterHandles<T> {
     pub(super) fn new() -> Self {
         Self { inner: VecDeque::new() }
     }
@@ -79,14 +81,14 @@ impl<T: SelectiveBuilder> RequesterHandles<T> {
         })
     }
 }
-impl<T: SelectiveBuilder> From<Event<ChronicleBroker<T>>> for RequesterEvent<T> {
+impl<T: FilterBuilder> From<Event<ChronicleBroker<T>>> for RequesterEvent<T> {
     fn from(event: Event<ChronicleBroker<T>>) -> Self {
         Self::ChronicleBroker(event)
     }
 }
 
 #[async_trait]
-impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
+impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Requester<T> {
     type Data = (ChronicleBroker<T>, CollectorHandles);
     type Channel = UnboundedChannel<RequesterEvent<T>>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
@@ -136,7 +138,7 @@ impl<S: SupHandle<Self>, T: SelectiveBuilder> Actor<S> for Requester<T> {
     }
 }
 
-impl<T: SelectiveBuilder> Requester<T> {
+impl<T: FilterBuilder> Requester<T> {
     /// Create new request
     pub(super) fn new(reqwest_client: Client, retries: u8) -> Self {
         Self {

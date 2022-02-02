@@ -2,58 +2,145 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
-impl Insert<Bee<MessageId>, Message> for ChronicleKeyspace {
+/////////////////// Messages tables ////////////////////////////
+impl Insert<Bee<MessageId>, MessageRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> InsertStatement {
         parse_statement!(
-            "INSERT INTO #.messages (message_id, message) VALUES (?, ?)",
+            "INSERT INTO #.messages (message_id, message, version, milestone_index, inclusion_state, conflict_reason, proof) VALUES (?, ?, ?, ?, ?, ?, ?)",
             self.name()
         )
     }
-    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, message: &Message) -> B {
-        let mut message_bytes = Vec::new();
-        message
-            .pack(&mut message_bytes)
-            .expect("Error occurred packing Message");
-        builder.value(message_id).value(&message_bytes.as_slice())
-    }
-}
-/// Insert Metadata
-impl Insert<Bee<MessageId>, MessageMetadata> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> InsertStatement {
-        parse_statement!(
-            "INSERT INTO #.messages (message_id, metadata) VALUES (?, ?)",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, meta: &MessageMetadata) -> B {
-        // Encode metadata using bincode
-        builder.value(message_id).value(meta)
+    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, message: &MessageRecord) -> B {
+        builder
+            .value(message_id)
+            .value(Bee(message.message()))
+            .value(message.version())
+            .value(message.milestone_index().and_then(|m| Some(m.0)))
+            .value(message.inclusion_state())
+            .value(message.conflict_reason())
+            .value(message.proof())
     }
 }
 
-impl Insert<Bee<MessageId>, (Message, MessageMetadata)> for ChronicleKeyspace {
+impl Insert<Bee<MessageId>, Proof> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> InsertStatement {
+        parse_statement!("INSERT INTO #.messages (message_id, proof) VALUES (?, ?)", self.name())
+    }
+    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, proof: &Proof) -> B {
+        builder.value(message_id).value(proof)
+    }
+}
+
+/////////////////// Parents tables ////////////////////////////
+impl Insert<Bee<MessageId>, ParentRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> InsertStatement {
         parse_statement!(
-            "INSERT INTO #.messages (message_id, message, metadata) VALUES (?, ?, ?)",
+            "INSERT INTO #.parents (parent_id, milestone_index, ms_timestamp, message_id, inclusion_state)
+            VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
     }
     fn bind_values<B: Binder>(
         builder: B,
-        message_id: &Bee<MessageId>,
-        (message, meta): &(Message, MessageMetadata),
+        parent_id: &Bee<MessageId>,
+        ParentRecord {
+            milestone_index,
+            ms_timestamp,
+            message_id,
+            ledger_inclusion_state,
+        }: &ParentRecord,
     ) -> B {
-        // Encode the message bytes as
-        let mut message_bytes = Vec::new();
-        message
-            .pack(&mut message_bytes)
-            .expect("Error occurred packing Message");
-        builder.value(message_id).value(&message_bytes.as_slice()).value(meta)
+        builder
+            .value(parent_id)
+            .value(milestone_index.and_then(|m| Some(m.0)))
+            .value(&ms_timestamp)
+            .value(Bee(message_id))
+            .value(ledger_inclusion_state)
     }
 }
+
+////////////////////// Partition Hint table /////////////////////////
+impl Insert<Hint, MsRangeId> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.hints (variant, key, ms_range_id) VALUES (?, ?, ?)",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, hint: &Hint, ms_range_id: &MsRangeId) -> B {
+        builder.value(&hint.variant.to_string()).value(&ms_range_id)
+    }
+}
+
+///////////////////// Sync table ///////////////////////////
+impl Insert<String, SyncRecord> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.sync (key, milestone_index, synced_by, logged_by) VALUES (?, ?, ?, ?)",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(
+        builder: B,
+        keyspace: &String,
+        SyncRecord {
+            milestone_index,
+            synced_by,
+            logged_by,
+        }: &SyncRecord,
+    ) -> B {
+        builder
+            .value(keyspace)
+            .value(&milestone_index.0)
+            .value(synced_by)
+            .value(logged_by)
+    }
+}
+////////////////////////////// Transactions table /////////////////////////////
+/// Insert Transaction into Transactions table
+/// Note: This can be used to store:
+/// -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
+/// -output variant: (OutputTransactionId, OutputIndex) -> Output data column
+/// -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
+impl Insert<Bee<TransactionId>, TransactionRecord> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> InsertStatement {
+        parse_statement!(
+            "INSERT INTO #.transactions (transaction_id, idx, variant, message_id, version, data, inclusion_state, milestone_index)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(
+        builder: B,
+        transaction_id: &Bee<TransactionId>,
+        transaction_record: &TransactionRecord,
+    ) -> B {
+        let milestone_index;
+        if let Some(ms) = transaction_record.milestone_index {
+            milestone_index = Some(ms.0);
+        } else {
+            milestone_index = None;
+        }
+        builder
+            .value(transaction_id)
+            .value(transaction_record.idx)
+            .value(&transaction_record.variant)
+            .value(&Bee(transaction_record.message_id))
+            .value(&transaction_record.data)
+            .value(&transaction_record.inclusion_state)
+            .value(&milestone_index)
+    }
+}
+
+////////////////////// Outputs tables ////////////////////////////
+/////////// Legacy output table /////////////
+
 /// Insert Address into addresses table
 impl Insert<Partitioned<Bee<Ed25519Address>>, AddressRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
@@ -117,87 +204,6 @@ impl Insert<Partitioned<Indexation>, IndexationRecord> for ChronicleKeyspace {
     }
 }
 
-/// Insert ParentId into Parents table
-impl Insert<Partitioned<Bee<MessageId>>, ParentRecord> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> InsertStatement {
-        parse_statement!(
-            "INSERT INTO #.parents (parent_id, partition_id, milestone_index, message_id, inclusion_state)
-            VALUES (?, ?, ?, ?, ?)",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(
-        builder: B,
-        Partitioned { inner, partition_id }: &Partitioned<Bee<MessageId>>,
-        ParentRecord {
-            milestone_index,
-            message_id,
-            ledger_inclusion_state,
-        }: &ParentRecord,
-    ) -> B {
-        builder
-            .value(inner)
-            .value(partition_id)
-            .value(Bee(milestone_index))
-            .value(Bee(message_id))
-            .value(ledger_inclusion_state)
-    }
-}
-/// Insert Transaction into Transactions table
-/// Note: This can be used to store:
-/// -input variant: (InputTransactionId, InputIndex) -> UTXOInput data column
-/// -output variant: (OutputTransactionId, OutputIndex) -> Output data column
-/// -unlock variant: (UtxoInputTransactionId, UtxoInputOutputIndex) -> Unlock data column
-impl Insert<Bee<TransactionId>, TransactionRecord> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> InsertStatement {
-        parse_statement!(
-            "INSERT INTO #.transactions (transaction_id, idx, variant, message_id, data, inclusion_state, milestone_index)
-            VALUES (?, ?, ?, ?, ?, ?, ?)",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(
-        builder: B,
-        transaction_id: &Bee<TransactionId>,
-        transaction_record: &TransactionRecord,
-    ) -> B {
-        let milestone_index;
-        if let Some(ms) = transaction_record.milestone_index {
-            milestone_index = Some(ms.0);
-        } else {
-            milestone_index = None;
-        }
-        builder
-            .value(transaction_id)
-            .value(transaction_record.idx)
-            .value(&transaction_record.variant)
-            .value(&Bee(transaction_record.message_id))
-            .value(&transaction_record.data)
-            .value(&transaction_record.inclusion_state)
-            .value(&milestone_index)
-    }
-}
-
-/// Insert Hint into Hints table
-impl Insert<Hint, Partition> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> InsertStatement {
-        parse_statement!(
-            "INSERT INTO #.hints (hint, variant, partition_id, milestone_index) VALUES (?, ?, ?, ?)",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(builder: B, hint: &Hint, partition: &Partition) -> B {
-        builder
-            .value(&hint.hint)
-            .value(&hint.variant.to_string())
-            .value(partition.id())
-            .value(partition.milestone_index())
-    }
-}
-
 impl Insert<Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> InsertStatement {
@@ -220,57 +226,5 @@ impl Insert<Bee<MilestoneIndex>, (Bee<MessageId>, Box<MilestonePayload>)> for Ch
             .value(message_id)
             .value(&milestone_payload.essence().timestamp())
             .value(&milestone_payload_bytes.as_slice())
-    }
-}
-
-impl Insert<String, SyncRecord> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> InsertStatement {
-        parse_statement!(
-            "INSERT INTO #.sync (key, milestone_index, synced_by, logged_by) VALUES (?, ?, ?, ?)",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(
-        builder: B,
-        keyspace: &String,
-        SyncRecord {
-            milestone_index,
-            synced_by,
-            logged_by,
-        }: &SyncRecord,
-    ) -> B {
-        builder
-            .value(keyspace)
-            .value(&milestone_index.0)
-            .value(synced_by)
-            .value(logged_by)
-    }
-}
-
-impl Insert<String, AnalyticRecord> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> InsertStatement {
-        parse_statement!(
-            "INSERT INTO #.analytics (key, milestone_index, message_count, transaction_count, transferred_tokens) VALUES (?, ?, ?, ?, ?)",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(
-        builder: B,
-        keyspace: &String,
-        AnalyticRecord {
-            milestone_index,
-            message_count,
-            transaction_count,
-            transferred_tokens,
-        }: &AnalyticRecord,
-    ) -> B {
-        builder
-            .value(keyspace)
-            .value(&milestone_index.0)
-            .value(&message_count.0)
-            .value(&transaction_count.0)
-            .value(&transferred_tokens.0)
     }
 }

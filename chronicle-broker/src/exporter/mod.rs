@@ -83,32 +83,27 @@ where
             if let Some(milestone) =
                 query::<Bee<Milestone>, _, _>(&self.keyspace, &Bee(MilestoneIndex::from(ms)), None, None).await?
             {
+                let ms_message_id = milestone.message_id();
                 debug!("Found milestone data {}", milestone.message_id());
-                let milestone = match query::<FullMessage, _, _>(
-                    &self.keyspace,
-                    &Bee(*milestone.message_id()),
-                    None,
-                    None,
-                )
-                .await?
-                {
-                    Some(m) => m,
-                    None => {
-                        self.responder
-                            .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
-                                "Missing milestone message {}!",
-                                ms
-                            )))))
-                            .await
-                            .ok();
-                        return Err(anyhow!("Missing milestone message {}!", ms).into());
-                    }
-                };
+                let milestone =
+                    match query::<FullMessage, _, _>(&self.keyspace, &Bee(*ms_message_id), None, None).await? {
+                        Some(m) => m,
+                        None => {
+                            self.responder
+                                .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
+                                    "Missing milestone message {}!",
+                                    ms
+                                )))))
+                                .await
+                                .ok();
+                            return Err(anyhow!("Missing milestone message {}!", ms).into());
+                        }
+                    };
                 debug!("Found milestone message {}", milestone.message_id());
                 let mut parent_queue = milestone.message().parents().iter().cloned().collect::<VecDeque<_>>();
                 if let Some(Payload::Milestone(ms_payload)) = milestone.message().payload() {
-                    milestone_data.set_milestone(ms_payload.clone());
-                    milestone_data.add_full_message(milestone);
+                    milestone_data.set_milestone(*ms_message_id, ms_payload.clone());
+                    milestone_data.add_full_message(milestone, None);
                 } else {
                     self.responder
                         .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
@@ -130,7 +125,7 @@ where
                             if ms == ref_ms {
                                 parent_queue
                                     .extend(message.message().parents().iter().filter(|p| !visited.contains(*p)));
-                                milestone_data.add_full_message(message);
+                                milestone_data.add_full_message(message, None);
                             } else {
                                 // warn!(
                                 //    "Message {} is referenced by other milestone {}",
@@ -161,7 +156,10 @@ where
                 debug!("Finished processing milestone {}", ms);
                 debug!("Milestone Data:\n{:?}", milestone_data);
                 archiver
-                    .send(ArchiverEvent::MilestoneData(milestone_data, Some(self.ms_range.end)))
+                    .send(ArchiverEvent::MilestoneData(
+                        std::sync::Arc::new(milestone_data),
+                        Some(self.ms_range.end),
+                    ))
                     .map_err(|e| anyhow!("Error sending to archiver: {}", e))?;
             } else {
                 self.responder

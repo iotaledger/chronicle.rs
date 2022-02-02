@@ -11,6 +11,7 @@ use std::{
     collections::BinaryHeap,
     convert::TryFrom,
     path::PathBuf,
+    sync::Arc,
 };
 use tokio::{
     fs::{
@@ -36,7 +37,7 @@ pub struct Archiver {
     max_log_size: u64,
     cleanup: Vec<u32>,
     processed: Vec<std::ops::Range<u32>>,
-    milestones_data: BinaryHeap<Ascending<MilestoneData>>,
+    milestones_data: BinaryHeap<Ascending<Arc<MilestoneData>>>,
     keyspace: ChronicleKeyspace,
     next: u32,
 }
@@ -48,7 +49,7 @@ impl Archiver {
         next: u32,
         max_log_size: Option<u64>,
     ) -> Self {
-        let milestones_data: BinaryHeap<Ascending<MilestoneData>> = BinaryHeap::new();
+        let milestones_data: BinaryHeap<Ascending<Arc<MilestoneData>>> = BinaryHeap::new();
         Self {
             dir_path: dir_path.into(),
             logs: Vec::new(),
@@ -198,11 +199,11 @@ impl Archiver {
     }
     async fn handle_milestone_data(
         &mut self,
-        milestone_data: MilestoneData,
+        milestone_data: Arc<MilestoneData>,
         mut opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
         let milestone_index = milestone_data.milestone_index();
-        let mut milestone_data_json = serde_json::to_string(&milestone_data).unwrap();
+        let mut milestone_data_json = serde_json::to_string(Arc::deref(&milestone_data)).unwrap();
         milestone_data_json.push('\n');
         let milestone_data_line: Vec<u8> = milestone_data_json.into();
 
@@ -364,7 +365,7 @@ type UpperLimit = u32;
 /// Archiver events
 pub enum ArchiverEvent {
     /// Milestone data to be archived
-    MilestoneData(MilestoneData, Option<UpperLimit>),
+    MilestoneData(Arc<MilestoneData>, Option<UpperLimit>),
     /// Close the milestone with given index
     Close(u32),
     /// Shutdown the archiver

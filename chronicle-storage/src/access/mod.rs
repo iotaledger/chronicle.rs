@@ -2,23 +2,49 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub use crate::keyspaces::ChronicleKeyspace;
-use anyhow::{anyhow, bail, ensure};
+use anyhow::{
+    anyhow,
+    bail,
+    ensure,
+};
 use bee_common::packable::Packable;
-use bee_message::{
+use bee_message_v1::{
     address::Ed25519Address,
     milestone::Milestone,
-    prelude::{MilestoneIndex, MilestonePayload, Output, OutputId, TransactionId},
-    Message, MessageId,
+    prelude::{
+        MilestoneIndex,
+        MilestonePayload,
+        Output,
+        OutputId,
+        TransactionId,
+    },
+    Message,
+    MessageId,
 };
 use bincode::Options;
 use scylla_rs::{
     cql::{
-        Binder, ColumnDecoder, ColumnEncoder, ColumnValue, Decoder, Frame, Iter, PreparedStatement, QueryStatement,
-        Row, Rows, RowsDecoder, TokenEncodeChain, TokenEncoder,
+        Binder,
+        ColumnDecoder,
+        ColumnEncoder,
+        ColumnValue,
+        Decoder,
+        Frame,
+        Iter,
+        PreparedStatement,
+        QueryStatement,
+        Row,
+        Rows,
+        RowsDecoder,
+        TokenEncodeChain,
+        TokenEncoder,
     },
     prelude::*,
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::ops::Deref;
 pub use types::*;
 
@@ -163,25 +189,7 @@ impl Partition {
         &self.milestone_index
     }
 }
-/// A 'sync' table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct SyncRecord {
-    pub milestone_index: MilestoneIndex,
-    pub synced_by: Option<SyncedBy>,
-    pub logged_by: Option<LoggedBy>,
-}
 
-impl SyncRecord {
-    /// Creates a new sync row
-    pub fn new(milestone_index: MilestoneIndex, synced_by: Option<SyncedBy>, logged_by: Option<LoggedBy>) -> Self {
-        Self {
-            milestone_index,
-            synced_by,
-            logged_by,
-        }
-    }
-}
 /// An `addresses` table row
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
@@ -290,106 +298,5 @@ impl ParentRecord {
             message_id,
             ledger_inclusion_state,
         }
-    }
-}
-
-/// A `transactions` table row
-#[allow(missing_docs)]
-#[derive(Clone, Debug)]
-pub struct TransactionRecord {
-    pub idx: Index,
-    pub variant: TransactionVariant,
-    pub message_id: MessageId,
-    pub data: TransactionData,
-    pub inclusion_state: Option<LedgerInclusionState>,
-    pub milestone_index: Option<MilestoneIndex>,
-}
-
-impl TransactionRecord {
-    /// Creates an input transactions record
-    pub fn input(
-        idx: Index,
-        message_id: MessageId,
-        input_data: InputData,
-        inclusion_state: Option<LedgerInclusionState>,
-        milestone_index: Option<MilestoneIndex>,
-    ) -> Self {
-        Self {
-            idx,
-            variant: TransactionVariant::Input,
-            message_id,
-            data: TransactionData::Input(input_data),
-            inclusion_state,
-            milestone_index,
-        }
-    }
-    /// Creates an output transactions record
-    pub fn output(
-        idx: Index,
-        message_id: MessageId,
-        data: Output,
-        inclusion_state: Option<LedgerInclusionState>,
-        milestone_index: Option<MilestoneIndex>,
-    ) -> Self {
-        Self {
-            idx,
-            variant: TransactionVariant::Output,
-            message_id,
-            data: TransactionData::Output(data),
-            inclusion_state,
-            milestone_index,
-        }
-    }
-    /// Creates an unlock block transactions record
-    pub fn unlock(
-        idx: Index,
-        message_id: MessageId,
-        data: UnlockData,
-        inclusion_state: Option<LedgerInclusionState>,
-        milestone_index: Option<MilestoneIndex>,
-    ) -> Self {
-        Self {
-            idx,
-            variant: TransactionVariant::Unlock,
-            message_id,
-            data: TransactionData::Unlock(data),
-            inclusion_state,
-            milestone_index,
-        }
-    }
-}
-/// Transaction variants. Can be Input, Output, or Unlock.
-#[repr(u8)]
-#[derive(Clone, Copy, Debug)]
-pub enum TransactionVariant {
-    /// A transaction's Input, which spends a prior Output
-    Input = 0,
-    /// A transaction's Unspent Transaction Output (UTXO), specifying an address to receive the funds
-    Output = 1,
-    /// A transaction's Unlock Block, used to unlock an Input for verification
-    Unlock = 2,
-}
-
-impl ColumnDecoder for TransactionVariant {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        Ok(match std::str::from_utf8(slice)? {
-            "input" => TransactionVariant::Input,
-            "output" => TransactionVariant::Output,
-            "unlock" => TransactionVariant::Unlock,
-            _ => bail!("Unexpected variant type"),
-        })
-    }
-}
-
-impl ColumnEncoder for TransactionVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        let variant;
-        match self {
-            TransactionVariant::Input => variant = "input",
-            TransactionVariant::Output => variant = "output",
-            TransactionVariant::Unlock => variant = "unlock",
-        }
-        buffer.extend(&i32::to_be_bytes(variant.len() as i32));
-        buffer.extend(variant.as_bytes());
     }
 }

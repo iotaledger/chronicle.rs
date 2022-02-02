@@ -1,6 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
+    application::BrokerHandle,
     archiver::{
         ArchiverEvent,
         ArchiverHandle,
@@ -11,6 +12,7 @@ use super::{
         CollectorHandle,
         MessageIdPartitioner,
     },
+    filter::FilterBuilder,
     syncer::{
         SyncerEvent,
         SyncerHandle,
@@ -22,13 +24,16 @@ use bee_message::prelude::{
     MilestonePayload,
 };
 use chronicle_common::alert;
-use chronicle_filter::Selected;
 use chronicle_storage::access::MilestoneData;
 use lru::LruCache;
 use std::{
     fmt::Debug,
-    sync::atomic::Ordering,
+    sync::{
+        atomic::Ordering,
+        Arc,
+    },
 };
+
 /// The solidifier handle type
 pub type SolidifierHandle = UnboundedHandle<SolidifierEvent>;
 /// A milestone message payload
@@ -49,31 +54,36 @@ impl MilestoneMessage {
 struct InDatabase {
     #[allow(unused)]
     milestone_index: u32,
-    analyzed: bool,
+    processed: bool,
     messages_len: usize,
-    in_database: HashMap<MessageId, ()>,
+    selected_messages: std::collections::HashSet<MessageId>,
+    in_database: std::collections::HashSet<MessageId>,
 }
 
 impl InDatabase {
     fn new(milestone_index: u32) -> Self {
         Self {
             milestone_index,
-            analyzed: false,
+            processed: false,
             messages_len: usize::MAX,
-            in_database: HashMap::new(),
+            selected_messages: std::collections::HashSet::new(),
+            in_database: std::collections::HashSet::new(),
         }
     }
     fn set_messages_len(&mut self, message_len: usize) {
         self.messages_len = message_len
     }
-    fn add_message_id(&mut self, message_id: MessageId) {
-        self.in_database.insert(message_id, ());
+    fn add_selected_message(&mut self, message_id: MessageId) {
+        self.selected_messages.insert(message_id);
     }
-    fn set_analyzed(&mut self, analyzed: bool) {
-        self.analyzed = analyzed;
+    fn add_message_id(&mut self, message_id: MessageId) {
+        self.in_database.insert(message_id);
+    }
+    fn set_processed(&mut self, processed: bool) {
+        self.processed = processed;
     }
     fn check_if_all_in_database(&self) -> bool {
-        self.messages_len == self.in_database.len() && self.analyzed
+        self.messages_len == self.in_database.len() && self.processed
     }
 }
 
@@ -89,9 +99,9 @@ impl From<&MilestoneData> for InDatabase {
 #[derive(Debug)]
 pub enum SolidifierEvent {
     /// Milestone fullmessage;
-    Milestone(MilestoneMessage),
-    /// Pushed or requested messages, that definitely belong to self solidifier
-    Message(FullMessage),
+    Milestone(MilestoneMessage, Option<Selected>),
+    /// Pushed or requested messages, that definitely belong to self solidifier, and flag whether it's selected or not.
+    Message(FullMessage, Option<Selected>),
     /// Close MessageId that doesn't belong at all to Solidifier of milestone u32
     Close(MessageId, u32),
     /// Solidifiy request from Syncer.
@@ -112,16 +122,16 @@ impl ShutdownEvent for SolidifierEvent {
 /// Cql Results
 #[derive(Debug)]
 pub enum CqlResult {
-    /// Message was persisted or not
-    PersistedMsg(MessageId, u32, Option<Selected>),
-    /// Milestone was synced or not
+    /// Message was persisted
+    PersistedMsg(MessageId, u32),
+    /// Indicate that the milestone data got processed
+    Processed(u32),
+    /// Milestone was synced
     SyncedMilestone(u32),
-    /// Analyzed MilestoneData or not
-    AnalyzedMilestone(u32),
 }
 
 /// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
-pub struct Solidifier {
+pub struct Solidifier<T: FilterBuilder> {
     keyspace: ChronicleKeyspace,
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneData>,
@@ -132,15 +142,19 @@ pub struct Solidifier {
     gap_start: u32,
     expected: u32,
     retries: u8,
+    selective_builder: T,
+    uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
 }
 
-impl Solidifier {
+impl<T: FilterBuilder> Solidifier<T> {
     pub(super) fn new(
         keyspace: ChronicleKeyspace,
         partition_id: u8,
         partitioner: MessageIdPartitioner,
         gap_start: u32,
         retries: u8,
+        selective_builder: T,
+        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
     ) -> Self {
         Self {
             keyspace,
@@ -153,6 +167,8 @@ impl Solidifier {
             gap_start,
             expected: 0,
             retries,
+            selective_builder,
+            uda_handle,
         }
     }
 }
@@ -160,7 +176,7 @@ impl Solidifier {
 //////////////////////// Actor impl ////////////////////////////
 
 #[async_trait]
-impl<S: SupHandle<Self>> Actor<S> for Solidifier {
+impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Solidifier<T> {
     type Data = (Option<ArchiverHandle>, SyncerHandle, HashMap<u8, CollectorHandle>);
     type Channel = UnboundedChannel<SolidifierEvent>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
@@ -191,8 +207,8 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
         log::info!("{:?} is running", &rt.service().directory());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
-                SolidifierEvent::Message(full_message) => {
-                    self.handle_new_msg(rt, full_message, &collector_handles, &archiver, &syncer)
+                SolidifierEvent::Message(full_message, selected_opt) => {
+                    self.handle_new_msg(rt, full_message, selected_opt, &collector_handles, &archiver, &syncer)
                         .await
                         .map_err(|e| {
                             error!("{}", e);
@@ -203,11 +219,11 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
                     match result {
                         Ok(cql_result) => {
                             match cql_result {
-                                CqlResult::PersistedMsg(message_id, milestone_index, selected_opt) => {
+                                CqlResult::PersistedMsg(message_id, milestone_index) => {
                                     // ensure we have entry for the following milestone_index
                                     if let Some(in_database) = self.in_database.get_mut(&milestone_index) {
                                         in_database.add_message_id(message_id);
-                                        // check_if_in_database
+                                        // check_if_in_database // todo add it's processed check
                                         if in_database.check_if_all_in_database() {
                                             // Insert record into sync table
                                             self.handle_in_database(rt, milestone_index).await.map_err(|e| {
@@ -233,9 +249,9 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
                                     // Inform syncer (maybe it wants to update the dashboard or something)
                                     info!("Synced this milestone {}", milestone_index);
                                 }
-                                CqlResult::AnalyzedMilestone(milestone_index) => {
+                                CqlResult::Processed(milestone_index) => {
                                     if let Some(in_database) = self.in_database.get_mut(&milestone_index) {
-                                        in_database.set_analyzed(true);
+                                        in_database.set_processed(true);
                                         info!("Analyzed this milestone {}", milestone_index);
                                         if in_database.check_if_all_in_database() {
                                             // Insert record into sync table
@@ -245,14 +261,20 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
                                             })?;
                                         }
                                     } else {
-                                        error!("Analyzed Milestone should have in_database entry");
+                                        error!("Processed Milestone should have in_database entry");
                                     }
                                 }
                             }
                         }
                         Err(cql_result) => {
                             match cql_result {
-                                CqlResult::PersistedMsg(message_id, milestone_index, selected_opt) => {
+                                CqlResult::Processed(milestone_index) => {
+                                    error!(
+                                        "Unable to process milestone data for milestone index: {}",
+                                        milestone_index
+                                    );
+                                }
+                                CqlResult::PersistedMsg(message_id, milestone_index) => {
                                     error!(
                                         "Unable to persist message with id: {}, referenced by milestone index: {}",
                                         message_id, milestone_index
@@ -260,12 +282,6 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
                                 }
                                 CqlResult::SyncedMilestone(milestone_index) => {
                                     error!("Unable to update sync table for milestone index: {}", milestone_index,);
-                                }
-                                CqlResult::AnalyzedMilestone(milestone_index) => {
-                                    error!(
-                                        "Unable to update analytics table for milestone index: {}",
-                                        milestone_index,
-                                    );
                                 }
                             }
                             alert!("Scylla cluster appears to be having an outage! The Chronicle Broker is pausing.")
@@ -289,13 +305,20 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
                             e
                         })?;
                 }
-                SolidifierEvent::Milestone(milestone_message) => {
-                    self.handle_milestone_msg(rt, milestone_message, &collector_handles, &archiver, &syncer)
-                        .await
-                        .map_err(|e| {
-                            error!("{}", e);
-                            e
-                        })?;
+                SolidifierEvent::Milestone(milestone_message, selected_opt) => {
+                    self.handle_milestone_msg(
+                        rt,
+                        milestone_message,
+                        selected_opt,
+                        &collector_handles,
+                        &archiver,
+                        &syncer,
+                    )
+                    .await
+                    .map_err(|e| {
+                        error!("{}", e);
+                        e
+                    })?;
                 }
                 SolidifierEvent::Solidify(milestone_index) => {
                     match milestone_index {
@@ -320,7 +343,7 @@ impl<S: SupHandle<Self>> Actor<S> for Solidifier {
 
 ////////////////////////////// Solidifier Impl //////////////////////////////
 
-impl Solidifier {
+impl<T: FilterBuilder> Solidifier<T> {
     fn partition_count(&self) -> u8 {
         self.message_id_partitioner.partition_count()
     }
@@ -402,6 +425,7 @@ impl Solidifier {
                 syncer_handle.send(SyncerEvent::Unreachable(milestone_index)).ok();
             }
         } else {
+            // todo don't handle_solidify if there is already in_database
             // Asking any collector (as we don't know the message id of the milestone)
             // however, we use milestone_index % partition_count to have unfirom distribution.
             // note: solidifier_id/partition_id is actually = milestone_index % partition_count;
@@ -458,26 +482,36 @@ impl Solidifier {
             .milestones_data
             .remove(&milestone_index)
             .expect("Expected milestone data for milestone_index");
-        let analytic_record = milestone_data.get_analytic_record()?;
-        self.insert_analytic(rt, milestone_index, analytic_record).await?;
         // Update in_database
         let in_database = self
             .in_database
             .entry(milestone_index)
             .or_insert_with(|| InDatabase::from(&milestone_data));
         in_database.set_messages_len(milestone_data.messages().len());
-        if in_database.check_if_all_in_database() {
-            // Insert record into sync table
-            self.handle_in_database(rt, milestone_index).await?;
-        }
+        let milestone_data = Arc::new(milestone_data);
         if let Some(archiver_handle) = archive_handle.as_ref() {
             info!(
                 "solidifier_id: {}, is pushing the milestone data for index: {}, to Logger",
                 self.partition_id, milestone_index
             );
-            let archiver_event = ArchiverEvent::MilestoneData(milestone_data, None);
+            let archiver_event = ArchiverEvent::MilestoneData(milestone_data.clone(), None);
             let _ = archiver_handle.send(archiver_event);
         };
+        // uda process
+        let milestone_index = milestone_data.milestone_index();
+        let atomic_process_handle = super::filter::AtomicProcessHandle::new(rt.handle().clone(), milestone_index);
+        if let Err(e) = self
+            .selective_builder
+            .process_milestone_data(&self.uda_handle, atomic_process_handle.clone(), milestone_data)
+            .await
+        {
+            atomic_process_handle.set_error();
+            Err(e)?
+        };
+        if in_database.check_if_all_in_database() {
+            // Insert record into sync table
+            self.handle_in_database(rt, milestone_index).await?;
+        }
         Ok(())
     }
     async fn push_to_syncer<S: SupHandle<Self>>(
@@ -495,20 +529,30 @@ impl Solidifier {
             .milestones_data
             .remove(&milestone_index)
             .expect("Expected milestone data for milestone_index");
-        let analytic_record = milestone_data.get_analytic_record()?;
-        self.insert_analytic(rt, milestone_index, analytic_record).await?;
         // Update in_database
         let in_database = self
             .in_database
             .entry(milestone_index)
             .or_insert_with(|| InDatabase::from(&milestone_data));
         in_database.set_messages_len(milestone_data.messages().len());
+        let milestone_data = Arc::new(milestone_data);
+        let syncer_event = SyncerEvent::MilestoneData(milestone_data.clone());
+        syncer_handle.send(syncer_event).ok();
+        // uda process
+        let milestone_index = milestone_data.milestone_index();
+        let atomic_process_handle = super::filter::AtomicProcessHandle::new(rt.handle().clone(), milestone_index);
+        if let Err(e) = self
+            .selective_builder
+            .process_milestone_data(&self.uda_handle, atomic_process_handle.clone(), milestone_data)
+            .await
+        {
+            atomic_process_handle.set_error();
+            Err(e)?
+        };
         if in_database.check_if_all_in_database() {
             // Insert record into sync table
             self.handle_in_database(rt, milestone_index).await?;
         }
-        let syncer_event = SyncerEvent::MilestoneData(milestone_data);
-        syncer_handle.send(syncer_event).ok();
         Ok(())
     }
     async fn handle_in_database<S: SupHandle<Self>>(
@@ -543,33 +587,34 @@ impl Solidifier {
         };
         Ok(())
     }
-    async fn insert_analytic<S: SupHandle<Self>>(
-        &self,
-        rt: &mut Rt<Self, S>,
-        milestone_index: u32,
-        analytic_record: AnalyticRecord,
-    ) -> anyhow::Result<()> {
-        let sync_key = "permanode".to_string();
-        let request = self
-            .keyspace
-            .insert(&sync_key, &analytic_record)
-            .consistency(Consistency::One)
-            .build()?;
-        let worker = AnalyzedMilestoneWorker::boxed(
-            rt.handle().clone(),
-            milestone_index,
-            self.keyspace.clone(),
-            sync_key,
-            analytic_record,
-            self.retries,
-        );
-        request.send_local_with_worker(worker);
-        Ok(())
-    }
+    // async fn insert_analytic<S: SupHandle<Self>>(
+    // &self,
+    // rt: &mut Rt<Self, S>,
+    // milestone_index: u32,
+    // analytic_record: AnalyticRecord,
+    // ) -> anyhow::Result<()> {
+    // let sync_key = "permanode".to_string();
+    // let request = self
+    // .keyspace
+    // .insert(&sync_key, &analytic_record)
+    // .consistency(Consistency::One)
+    // .build()?;
+    // let worker = AnalyzedMilestoneWorker::boxed(
+    // rt.handle().clone(),
+    // milestone_index,
+    // self.keyspace.clone(),
+    // sync_key,
+    // analytic_record,
+    // self.retries,
+    // );
+    // request.send_local_with_worker(worker);
+    // Ok(())
+    // }
     async fn handle_milestone_msg<S: SupHandle<Self>>(
         &mut self,
         rt: &mut Rt<Self, S>,
         MilestoneMessage(_message_id, milestone_payload, message, metadata): MilestoneMessage,
+        selected_opt: Option<Selected>,
         collector_handles: &HashMap<u8, CollectorHandle>,
         archiver_handle: &Option<ArchiverHandle>,
         syncer_handle: &SyncerHandle,
@@ -593,9 +638,9 @@ impl Solidifier {
                     "solidifier_id: {}, got full milestone {}, in progress: {}",
                     self.partition_id, milestone_index, ms_count
                 );
-                milestone_data.set_milestone(milestone_payload);
+                milestone_data.set_milestone(metadata.message_id, milestone_payload);
                 milestone_data.remove_from_pending(&metadata.message_id);
-                milestone_data.add_full_message(FullMessage::new(message, metadata));
+                milestone_data.add_full_message(FullMessage::new(message, metadata), selected_opt);
                 let check_if_completed = milestone_data.check_if_completed();
                 let created_by = milestone_data.created_by();
                 if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
@@ -611,6 +656,7 @@ impl Solidifier {
                     rt,
                     milestone_index,
                     FullMessage::new(message, metadata),
+                    selected_opt,
                     collector_handles,
                     archiver_handle,
                 )
@@ -685,6 +731,7 @@ impl Solidifier {
         &mut self,
         rt: &mut Rt<Self, S>,
         full_message: FullMessage,
+        selected_opt: Option<Selected>,
         collector_handles: &HashMap<u8, CollectorHandle>,
         archiver_handle: &Option<ArchiverHandle>,
         syncer_handle: &SyncerHandle,
@@ -701,6 +748,7 @@ impl Solidifier {
                 partitioner,
                 milestone_index,
                 full_message,
+                selected_opt,
             );
             let check_if_completed = milestone_data.check_if_completed();
             let created_by = milestone_data.created_by();
@@ -711,8 +759,15 @@ impl Solidifier {
             };
         } else {
             // We have to decide whether to insert entry for milestone_index or not.
-            self.insert_new_entry_or_not(rt, milestone_index, full_message, collector_handles, archiver_handle)
-                .await?
+            self.insert_new_entry_or_not(
+                rt,
+                milestone_index,
+                full_message,
+                selected_opt,
+                collector_handles,
+                archiver_handle,
+            )
+            .await?
         }
         Ok(())
     }
@@ -721,6 +776,7 @@ impl Solidifier {
         rt: &mut Rt<Self, S>,
         milestone_index: u32,
         full_message: FullMessage,
+        selected_opt: Option<Selected>,
         collector_handles: &HashMap<u8, CollectorHandle>,
         archiver_handle: &Option<ArchiverHandle>,
     ) -> ActorResult<()> {
@@ -758,6 +814,7 @@ impl Solidifier {
                     partitioner,
                     milestone_index,
                     full_message,
+                    selected_opt,
                 );
                 if milestone_data.check_if_completed() {
                     self.push_to_logger(rt, milestone_index, archiver_handle).await?;
@@ -771,7 +828,8 @@ impl Solidifier {
                 .or_insert_with(|| MilestoneData::new(milestone_index, CreatedBy::Incoming));
             // check if the full_message has MilestonePayload
             if let Some(bee_message::payload::Payload::Milestone(milestone_payload)) = full_message.0.payload() {
-                milestone_data.set_milestone(milestone_payload.clone());
+                let ms_message_id = full_message.message_id();
+                milestone_data.set_milestone(*ms_message_id, milestone_payload.clone());
             }
             Self::process_milestone_data(
                 solidifier_id,
@@ -780,6 +838,7 @@ impl Solidifier {
                 partitioner,
                 milestone_index,
                 full_message,
+                selected_opt,
             );
             // No need to check if it's completed.
             // still for safety reasons, we should ask collector for its milestone,
@@ -822,6 +881,7 @@ impl Solidifier {
         partitioner: &MessageIdPartitioner,
         ms_index: u32,
         full_message: FullMessage,
+        selected_opt: Option<Selected>,
     ) {
         Self::process_parents(
             &full_message.metadata().parent_message_ids,
@@ -834,7 +894,7 @@ impl Solidifier {
         // remove it from the pending(if it does already exist)
         milestone_data.remove_from_pending(full_message.message_id());
         // Add full message
-        milestone_data.add_full_message(full_message);
+        milestone_data.add_full_message(full_message, selected_opt);
     }
 }
 
@@ -860,7 +920,6 @@ pub struct AtomicSolidifierHandle {
     pub(crate) handle: SolidifierHandle,
     pub(crate) milestone_index: u32,
     pub(crate) message_id: MessageId,
-    pub(crate) selected_opt: Option<Selected>,
     pub(crate) any_error: std::sync::atomic::AtomicBool,
 }
 impl AtomicSolidifierHandle {
@@ -869,14 +928,12 @@ impl AtomicSolidifierHandle {
         handle: SolidifierHandle,
         milestone_index: u32,
         message_id: MessageId,
-        selected_opt: Option<Selected>,
         any_error: std::sync::atomic::AtomicBool,
     ) -> Self {
         Self {
             handle,
             milestone_index,
             message_id,
-            selected_opt,
             any_error,
         }
     }
@@ -968,7 +1025,7 @@ where
 
 impl Drop for AtomicSolidifierHandle {
     fn drop(&mut self) {
-        let cql_result = CqlResult::PersistedMsg(self.message_id, self.milestone_index, self.selected_opt);
+        let cql_result = CqlResult::PersistedMsg(self.message_id, self.milestone_index);
         // releaxed is fine, because Droping an Arc forces memory barrier
         let any_error = self.any_error.load(Ordering::Relaxed);
         if any_error {
@@ -1079,108 +1136,6 @@ where
         } else {
             let synced_ms = CqlResult::SyncedMilestone(self.milestone_index);
             self.handle.send(SolidifierEvent::CqlResult(Err(synced_ms))).ok();
-        }
-        Ok(())
-    }
-}
-
-/// Solidifier worker
-#[derive(Clone, Debug)]
-pub struct AnalyzedMilestoneWorker<S, K, V>
-where
-    S: 'static + Insert<K, V>,
-    K: 'static + Send,
-    V: 'static + Send,
-{
-    handle: SolidifierHandle,
-    milestone_index: u32,
-    keyspace: S,
-    key: K,
-    value: V,
-    retries: u8,
-}
-
-impl<S: Insert<K, V>, K, V> AnalyzedMilestoneWorker<S, K, V>
-where
-    S: 'static + Insert<K, V>,
-    K: 'static + Send,
-    V: 'static + Send,
-{
-    /// Create a new solidifier worker with a handle and retries
-    pub fn new(handle: SolidifierHandle, milestone_index: u32, keyspace: S, key: K, value: V, retries: u8) -> Self {
-        Self {
-            handle,
-            milestone_index,
-            keyspace,
-            key,
-            value,
-            retries,
-        }
-    }
-    /// Create a new boxed solidifier worker with a handle and retries
-    pub fn boxed(
-        handle: SolidifierHandle,
-        milestone_index: u32,
-        keyspace: S,
-        key: K,
-        value: V,
-        retries: u8,
-    ) -> Box<Self> {
-        Box::new(Self::new(handle, milestone_index, keyspace, key, value, retries))
-    }
-}
-
-impl<S, K, V> Worker for AnalyzedMilestoneWorker<S, K, V>
-where
-    S: 'static + Insert<K, V> + Debug,
-    K: 'static + Send + Clone + Debug + Sync + TokenEncoder,
-    V: 'static + Send + Clone + Debug + Sync,
-{
-    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
-        Decoder::try_from(giveload).and_then(|decoder| decoder.get_void())?;
-        let analyzed_ms = CqlResult::AnalyzedMilestone(self.milestone_index);
-        let _ = self.handle.send(SolidifierEvent::CqlResult(Ok(analyzed_ms)));
-        Ok(())
-    }
-    fn handle_error(
-        mut self: Box<Self>,
-        mut error: WorkerError,
-        reporter: Option<&ReporterHandle>,
-    ) -> anyhow::Result<()> {
-        error!("{:?}, left retries: {}", error, self.retries);
-        if let WorkerError::Cql(ref mut cql_error) = error {
-            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let keyspace_name = self.keyspace.name();
-                let statement = self.keyspace.statement();
-                PrepareWorker::new(Some(keyspace_name), id, statement.into())
-                    .send_to_reporter(reporter)
-                    .ok();
-            }
-        }
-        if self.retries > 0 {
-            self.retries -= 1;
-            // currently we assume all cql/worker errors are retryable, but we might change this in future
-            match self
-                .keyspace
-                .insert_query(&self.key, &self.value)
-                .consistency(Consistency::One)
-                .build()
-            {
-                Ok(req) => {
-                    req.send_global_with_worker(self);
-                    // todo retry in loop if error
-                }
-                Err(e) => {
-                    error!("{}", e);
-                    let analyzed_ms = CqlResult::AnalyzedMilestone(self.milestone_index);
-                    let _ = self.handle.send(SolidifierEvent::CqlResult(Err(analyzed_ms)));
-                }
-            }
-        } else {
-            // no more retries
-            // respond with error
-            let analyzed_ms = CqlResult::AnalyzedMilestone(self.milestone_index);
-            let _ = self.handle.send(SolidifierEvent::CqlResult(Err(analyzed_ms)));
         }
         Ok(())
     }

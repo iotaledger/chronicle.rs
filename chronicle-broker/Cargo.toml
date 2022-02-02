@@ -11,7 +11,6 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common", optional = true }
 chronicle-storage = { path = "../chronicle-storage" }
-chronicle-filter = { path = "../chronicle-filter", optional = true }
 backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", optional = true, features = ["paho-mqtt"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage", optional = true }
 serde = { version = "1.0", features = ["derive"] }
@@ -35,6 +34,8 @@ thiserror = { version = "1.0" }
 indicatif = { version = "0.16", optional = true }
 glob = {version = "0.3", optional = true }
 async-recursion = "0.3.2"
+iota-crypto = "0.9.1"
+chrono = "0.4.19"
 
 [features]
 default = ["merge"]
@@ -64,7 +65,6 @@ analytic = [
 ]
 application = [
     "chronicle-common",
-    "chronicle-filter",
     "backstage",
     "scylla-rs",
     "serde_json",
@@ -81,6 +81,5 @@ application = [
     "anyhow",
     "tokio/full",
     "paho-mqtt",
-    "sync"
+    "sync",
 ]
-filter = ["chronicle-filter"]
