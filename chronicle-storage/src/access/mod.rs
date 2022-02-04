@@ -7,21 +7,23 @@ use anyhow::{
     bail,
     ensure,
 };
-use bee_common::packable::Packable;
-use bee_message_v1::{
+use bee_message::{
     address::Ed25519Address,
-    milestone::Milestone,
-    prelude::{
+    milestone::{
+        Milestone,
         MilestoneIndex,
-        MilestonePayload,
+    },
+    output::{
         Output,
         OutputId,
-        TransactionId,
+    },
+    payload::{
+        transaction::TransactionId,
+        MilestonePayload,
     },
     Message,
     MessageId,
 };
-use bincode::Options;
 use scylla_rs::{
     cql::{
         Binder,
@@ -52,18 +54,6 @@ mod delete;
 mod insert;
 mod select;
 mod types;
-
-use bincode::config::*;
-#[allow(unused)]
-pub(crate) type BincodeOptions =
-    WithOtherTrailing<WithOtherIntEncoding<WithOtherEndian<DefaultOptions, BigEndian>, FixintEncoding>, AllowTrailing>;
-#[allow(unused)]
-pub(crate) fn bincode_config() -> BincodeOptions {
-    bincode::DefaultOptions::new()
-        .with_big_endian()
-        .with_fixint_encoding()
-        .allow_trailing_bytes()
-}
 
 /// A record, created from a database row
 pub struct Record<T> {
@@ -103,7 +93,7 @@ impl<T> Record<T> {
 #[derive(Clone, Debug)]
 pub struct Partitioned<T> {
     inner: T,
-    partition_id: PartitionId,
+    ms_range_id: u32,
 }
 
 impl<T> Deref for Partitioned<T> {
@@ -121,18 +111,18 @@ impl<T: TokenEncoder> TokenEncoder for Partitioned<T> {
 }
 
 impl<T> Partitioned<T> {
-    /// Creates a new partition wrapper with a partition id.
+    /// Creates a new partition wrapper with a partition id (ms_range_id).
     /// Does not contain a milestone index. Use `with_milestone_index` to add one.
-    pub fn new(inner: T, partition_id: u16) -> Self {
-        Self { inner, partition_id }
+    pub fn new(inner: T, ms_range_id: u32) -> Self {
+        Self { inner, ms_range_id }
     }
     /// Unwrap the inner type
     pub fn into_inner(self) -> T {
         self.inner
     }
-    /// Get the partition id
-    pub fn partition_id(&self) -> PartitionId {
-        self.partition_id
+    /// Get the partition milestone range id
+    pub fn ms_range_id(&self) -> u32 {
+        self.ms_range_id
     }
     /// Return the milestone index
     pub fn milestone_index(&self) -> u32
@@ -250,53 +240,5 @@ impl
             amount,
             ledger_inclusion_state,
         )
-    }
-}
-
-/// An `indexes` table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct IndexationRecord {
-    pub milestone_index: MilestoneIndex,
-    pub message_id: MessageId,
-    pub ledger_inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl IndexationRecord {
-    /// Creates a new index row
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        message_id: MessageId,
-        ledger_inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            message_id,
-            ledger_inclusion_state,
-        }
-    }
-}
-
-/// A `parents` table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct ParentRecord {
-    pub milestone_index: MilestoneIndex,
-    pub message_id: MessageId,
-    pub ledger_inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl ParentRecord {
-    /// Creates a new parent row
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        message_id: MessageId,
-        ledger_inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            message_id,
-            ledger_inclusion_state,
-        }
     }
 }

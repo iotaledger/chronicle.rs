@@ -121,71 +121,6 @@ impl TokenEncoder for Indexation {
     }
 }
 
-/// A hint, used to lookup in the `hints` table
-#[derive(Clone, Debug)]
-pub struct Hint {
-    /// The hint string
-    pub hint: String,
-    /// The hint variant. Can be 'parent', 'address', or 'index'.
-    pub variant: HintVariant,
-}
-
-impl Hint {
-    /// Creates a new index hint
-    pub fn index(index: String) -> Self {
-        Self {
-            hint: index,
-            variant: HintVariant::Index,
-        }
-    }
-
-    /// Creates a new address hint
-    pub fn address(address: String) -> Self {
-        Self {
-            hint: address,
-            variant: HintVariant::Address,
-        }
-    }
-
-    /// Creates a new parent hint
-    pub fn parent(parent: String) -> Self {
-        Self {
-            hint: parent,
-            variant: HintVariant::Parent,
-        }
-    }
-}
-
-/// Hint variants
-#[derive(Clone, Debug)]
-pub enum HintVariant {
-    /// An address
-    Address,
-    /// An unhashed index
-    Index,
-    /// A parent message id
-    Parent,
-}
-
-impl std::fmt::Display for HintVariant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                HintVariant::Address => "address",
-                HintVariant::Index => "index",
-                HintVariant::Parent => "parent",
-            }
-        )
-    }
-}
-
-impl ColumnEncoder for HintVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.to_string().encode(buffer)
-    }
-}
 
 /// A marker for a paged result
 #[derive(Clone, Debug)]
@@ -272,26 +207,6 @@ impl Deref for TransferredTokens {
 pub enum BrokerSocketMsg<T> {
     /// A message to/from the Broker
     ChronicleBroker(T),
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Selected {
-    /// Store proof in the database
-    require_proof: bool,
-}
-
-impl Selected {
-    pub fn select() -> Self {
-        Self { require_proof: false }
-    }
-    pub fn with_proof(mut self) -> Self {
-        self.require_proof = true;
-        self
-    }
-    /// Check if we have to store the proof of inclusion
-    pub fn require_proof(&self) -> bool {
-        self.require_proof
-    }
 }
 
 /// Milestone data

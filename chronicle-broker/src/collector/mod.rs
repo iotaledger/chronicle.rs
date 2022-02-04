@@ -792,6 +792,7 @@ where
                     self.insert(inherent_worker, Bee(ms_index), (Bee(*message_id), milestone.clone()))?
                 }
             }
+
             // remaining payload types
             e => {
                 warn!("Skipping unsupported payload variant: {:?}", e);
