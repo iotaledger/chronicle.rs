@@ -13,7 +13,7 @@ keywords:
 
 ## storage_config
 
-### keyspaces: Vec<KeyspaceConfig>
+### keyspaces: Vec&lt;KeyspaceConfig>
 
 You can configure multiple keyspaces to filter incoming messages. If you are not using the `filter` feature, *only the
 first configured keyspace will be considered* or the default (`chronicle`) if none is provided.
@@ -44,7 +44,7 @@ The Scylla local datacenter.
 
 Specifies the number of partitions to use in the database, as well as the number of milestones to use as chunks.
 
-:::notice
+:::note notice
 
 You won't be able to change the `partition_config` without a migration.
 
@@ -61,18 +61,18 @@ moment.
 
 The Broker dashboard listening address, where it accepts requests to manage the broker topology.
 
-### mqtt_brokers: Vec<Url>
+### mqtt_brokers: Vec&lt;Url>
 
 - Messages: mqtt topic used to receive incoming IOTA messages.
 - MessagesReferenced: mqtt topic used to receive incoming metadata.
 
-:::notice
+:::note notice
 
 You should have one of each at least.
 
 :::
 
-### api_endpoints: Vec<Url>
+### api_endpoints: Vec&lt;Url>
 
 IOTA node-endpoints that will be used by chronicle to fill gaps.
 
@@ -93,7 +93,7 @@ The number of concurrent collectors which collect data from feed sources. It is 
 
 The number of concurrent requesters per collector.
 
-:::note
+:::note notice
 
 Requesters are used by the collector to fetch missing data from `api_endpoint`.
 
@@ -107,7 +107,7 @@ The `api_endpoint` request timeout.
 
 The max number of concurrent solidify requests.
 
-### sync_range: Option<SyncRange>
+### sync_range: Option&lt;SyncRange>
 
 Identify the milestone data sync range from/to.
 
@@ -115,11 +115,11 @@ Identify the milestone data sync range from/to.
 
 Interval used by the syncer to check if there are some gaps to fill/complete.
 
-### logs_dir: Option<String>
+### logs_dir: Option&lt;String>
 
 If provided, it will archive the milestone data in an ordered fashion.
 
-### max_log_size: Option<u64>
+### max_log_size: Option&lt;u64>
 
 The upper limit of the log_file_size.
 
@@ -127,5 +127,5 @@ The upper limit of the log_file_size.
 
 Ensure to use a limit within your filesystem range.
 
-::
+:::
 

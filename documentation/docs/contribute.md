@@ -32,4 +32,4 @@ Helping others is an important part of any open source ecosystem.
 
 By sharing your knowledge with others, you can provide a lot of value to the community and maybe inspire someone else to learn and contribute.
 
-Take a look at what discussions are going on in the #clients-discussion channel on Discord.
+Take a look at what discussions are going on in the [#chronicle-permanode channel on Discord](https://discord.com/channels/397872799483428865/930472536372805652).

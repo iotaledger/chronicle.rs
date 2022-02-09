@@ -36,7 +36,7 @@ Before you start the installation process, please make sure you meet the followi
   want to install Chronicle. 
  
     You can find instructions on how to set up the Scylla node in
-    the [official Scylla documentation](https://docs.scylladb.com/getting-started/) as well as information
+    the [official Scylla documentation](https://docs.scylladb.com/getting-started/), as well as information
     about [securing your Scylla nodes](https://docs.scylladb.com/operating-scylla/security/).
 
 - The `build-essentials` packages.
@@ -98,7 +98,7 @@ You can find more information about this file and configuration options in the [
 
 Once you have [built chronicle](#build-chronicle), you can run the following commands to run Chronicle:
 
-1. Change directory into the release folder:
+1. From the projects root, change directory into the release folder:
 
 ```bash
 cd target/release
@@ -110,7 +110,7 @@ cd target/release
 cp /path/to/your/config.ron ./
 ```
 
-3. You can now run your Chronicle permanode with the following command:  
+3. You can now run your Chronicle node with the following command:  
 
 ```bash
 cargo run --release
