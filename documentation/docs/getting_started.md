@@ -1,39 +1,61 @@
+---
+image: /img/chronicle_icon.png 
+description:  Get started with Chronicle. Prerequisites, installation and build instructions to run your own Chronicle permanode. 
+keywords:
+- quick start
+- how to
+- scylla
+- cargo
+- rust
+- install
+- build
+- run chronicle
+---
+
 # Getting Started
 
 ## Prerequisites
 
-To run Chronicle, you need the following:
+Before you start the installation process, please make sure you meet the following requirements:
 
-- A Linux LTS operating system such as [Ubuntu](https://ubuntu.com/download#download)
+- A Linux LTS operating system such as [Ubuntu](https://ubuntu.com/download#download).
 
-- 4 GB RAM
+- 4 GB RAM.
 
-- At least 32 GB of disk space
+- At least 32 GB of disk space.
 
-- 64-bit processor
+- 64-bit processor.
 
-- Preferred a 10 Gbps network connection
+- Preferred a 10 Gbps network connection.
 
-- At least 2 CPU cores (recommended)
+- At least 2 CPU cores (recommended).
 
-- [Rust](https://www.rust-lang.org/tools/install)
+- [Rust](https://www.rust-lang.org/tools/install).
 
-- At least one Scylla node (version 4 or greater) running on a different device in the same private network as Chronicle. See the [Scylla documentation](https://docs.scylladb.com/getting-started/) for a tutorial on setting one up. For information about securing your Scylla nodes, see the [Scylla security documentation](https://docs.scylladb.com/operating-scylla/security/).
+- At least one Scylla node (version 4 or greater) running on a different device in the same private network that you
+  want to install Chronicle. 
+ 
+    You can find instructions on how to set up the Scylla node in
+    the [official Scylla documentation](https://docs.scylladb.com/getting-started/) as well as information
+    about [securing your Scylla nodes](https://docs.scylladb.com/operating-scylla/security/).
 
-- The `build-essentials` packages
+- The `build-essentials` packages.
 
-    You can install these packages for Debian based distros, using the following command:
+  In Debian based distros, you can install these packages, using the following command:
 
     ```bash
     sudo apt-get install build-essential gcc make cmake cmake-gui cmake-curses-gui pkg-config openssl libssl-dev
     ```
-    For other Linux distros, please refer to your package manager to install the build-essential pkgs
+  
+  For other Linux distros, please refer to your package manager to install the `build-essential` packages.
 
-- (Optional) An IDE that supports Rust autocompletion. We recommend [Visual Studio Code](https://code.visualstudio.com/Download) with the [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=matklad.rust-analyzer) extension
+- (Optional) An IDE that supports Rust autocompletion. For example, [Visual Studio Code](https://code.visualstudio.com/Download) with
+  the [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=matklad.rust-analyzer) extension.
 
-- If you want to load historical transactions into your permanode, you can download the files from the [IOTA Foundation's archive](https://dbfiles.iota.org/?prefix=mainnet/history/).
+- If you want to load historical transactions into your permanode, you can download the files from
+  the [IOTA Foundation's archive](https://dbfiles.iota.org/?prefix=mainnet/history/).
 
-We also recommend updating Rust to the latest stable version:
+We recommend that you update Rust to the latest stable version by running the following command:
 
 ```bash
 rustup update stable
@@ -41,38 +63,54 @@ rustup update stable
 
 ## Installation
 
-Either download the provided executable (you should only do this if you do not wish to use the filtering functionality), or build it yourself.
+If you do not wish to use the filtering functionality, you can download the Chronicle executable.
+Alternatively, you can [build Chronicle](#build-chronicle) yourself. 
 
-### Building Chronicle
+### Build Chronicle
 
-Clone this repository:
+You can follow these steps to build Chronicle from source:
+
+1. Clone this repository:
 
 ```bash
 git clone https://github.com/iotaledger/chronicle.rs
 ```
-
+2. Run the `cargo build` command:
+ 
 ```bash
 cargo build --release
 ```
 
-If you wish to use the filter functionality, enable the `filter` feature in [chronicle](chronicle/Cargo.toml)
+3. (optional) If you wish to use the filter functionality, you should enable the `filter` feature in [chronicle](https://github.com/iotaledger/chronicle.rs/blob/main/chronicle/Cargo.toml) by running the following command:
 
 ```bash
 cargo build --release --features filter
 ```
 
-### Configuring Chronicle
+### Configure Chronicle
 
-Chronicle uses a [RON](https://github.com/ron-rs/ron) file to store configuration parameters, called `config.ron`. An example is provided as [config.example.ron](config.example.ron) with default values. See <a href="#config-reference">Config Reference</a> for more details about the config file.
+Chronicle uses a [RON](https://github.com/ron-rs/ron) file to store configuration parameters, called `config.ron`. An
+example is provided as [config.example.ron](https://github.com/iotaledger/chronicle.rs/blob/main/config.example.ron) with default values. 
 
-### Running Chronicle
+You can find more information about this file and configuration options in the [Configuration Reference section](config_reference.md).
 
-See [Building Chronicle](#Building-Chronicle).
+### Run Chronicle
 
+Once you have [built chronicle](#build-chronicle), you can run the following commands to run Chronicle:
+
+1. Change directory into the release folder:
 
 ```bash
-cd target/release && cp /path/to/your/config.ron ./
+cd target/release
 ```
+
+2. Copy your RON configuration file into the release folder:
+
+```bash
+cp /path/to/your/config.ron ./
+```
+
+3. You can now run your Chronicle permanode with the following command:  
 
 ```bash
 cargo run --release
