@@ -1,6 +1,6 @@
 ---
 image: /img/chronicle_icon.png
-description: Chronicle provides tools for managing and accessing permanode solutions using the IOTA actor framework backstage to allow you to store, explore and filer IOTA messages.
+description: Chronicle provides tools for managing and accessing permanode solutions using the IOTA actor framework backstage to allow you to store, explore, and filer IOTA messages.
 keywords:
 - permanode
 - store messages
@@ -38,7 +38,7 @@ API that allows you to access stored messages.
 
 ### [Broker](https://github.com/iotaledger/chronicle.rs/tree/main/chronicle-broker)
 
-Allow you to subscribe to incoming messages from IOTA nodes.
+Allows you to subscribe to incoming messages from IOTA nodes.
 
 ### [Storage](https://github.com/iotaledger/chronicle.rs/tree/main/chronicle-storage)
 
