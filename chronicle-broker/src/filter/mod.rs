@@ -1,27 +1,24 @@
-use backstage::core::{
-    Actor,
-    Channel,
-    SupHandle,
-};
-
 use super::{
     application::BrokerHandle,
     solidifier::SolidifierHandle,
+};
+use backstage::core::{
+    Actor,
+    Channel,
 };
 use bee_message::{
     Message,
     MessageId,
 };
+use bee_rest_api::types::responses::MessageMetadataResponse;
 use chronicle_storage::access::{
-    MessageMetadata,
+    MessageRecord,
     MilestoneData,
+    MilestoneDataBuilder,
     Selected,
 };
 use scylla_rs::prelude::*;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::Serialize;
 use std::fmt::Debug;
 #[async_trait::async_trait]
 
@@ -33,15 +30,13 @@ pub trait FilterBuilder:
     async fn filter_message(
         &self,
         handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-        message_id: &MessageId,
-        message: &Message,
-        metadata: Option<&MessageMetadata>,
+        message: &MessageRecord,
     ) -> anyhow::Result<Option<Selected>>;
     async fn process_milestone_data(
         &self,
         handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
         atomic_handle: std::sync::Arc<AtomicProcessHandle>,
-        milestone_data: std::sync::Arc<MilestoneData>,
+        milestone_data: std::sync::Arc<MilestoneDataBuilder>,
     ) -> anyhow::Result<()>;
 }
 

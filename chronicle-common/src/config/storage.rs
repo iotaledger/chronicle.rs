@@ -1,10 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use maplit::{hashmap, hashset};
-
 use super::*;
-use std::{collections::HashSet, net::SocketAddr};
 
 /// The partition config. Defaults to using 1000 partitions and a chunk size of 60480.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]

@@ -13,9 +13,11 @@ use crate::{
 };
 use anyhow::anyhow;
 use bee_message::{
-    milestone::Milestone,
+    milestone::{
+        Milestone,
+        MilestoneIndex,
+    },
     payload::Payload,
-    prelude::MilestoneIndex,
 };
 use std::{
     collections::{
@@ -79,14 +81,15 @@ where
                 })))
                 .await
                 .ok();
-            let mut milestone_data = MilestoneData::new(ms, CreatedBy::Exporter);
+
             if let Some(milestone) =
                 query::<Bee<Milestone>, _, _>(&self.keyspace, &Bee(MilestoneIndex::from(ms)), None, None).await?
             {
-                let ms_message_id = milestone.message_id();
+                let ms_message_id = *milestone.message_id();
+                let mut milestone_data = MilestoneDataBuilder::new(ms_message_id, ms, CreatedBy::Exporter);
                 debug!("Found milestone data {}", milestone.message_id());
                 let milestone =
-                    match query::<FullMessage, _, _>(&self.keyspace, &Bee(*ms_message_id), None, None).await? {
+                    match query::<MessageRecord, _, _>(&self.keyspace, &Bee(ms_message_id), None, None).await? {
                         Some(m) => m,
                         None => {
                             self.responder
@@ -102,8 +105,8 @@ where
                 debug!("Found milestone message {}", milestone.message_id());
                 let mut parent_queue = milestone.message().parents().iter().cloned().collect::<VecDeque<_>>();
                 if let Some(Payload::Milestone(ms_payload)) = milestone.message().payload() {
-                    milestone_data.set_milestone(*ms_message_id, ms_payload.clone());
-                    milestone_data.add_full_message(milestone, None);
+                    milestone_data.set_payload((&**ms_payload).clone());
+                    milestone_data.add_message(milestone, None);
                 } else {
                     self.responder
                         .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
@@ -118,14 +121,13 @@ where
                 while let Some(parent) = parent_queue.pop_front() {
                     debug!("Processing message {}", parent);
                     visited.insert(parent);
-                    let message = query::<FullMessage, _, _>(&self.keyspace, &Bee(parent), None, None).await?;
+                    let message = query::<MessageRecord, _, _>(&self.keyspace, &Bee(parent), None, None).await?;
                     if let Some(message) = message {
-                        debug!("Found message {}", message.metadata().message_id);
-                        if let Some(ref_ms) = message.metadata().referenced_by_milestone_index {
-                            if ms == ref_ms {
-                                parent_queue
-                                    .extend(message.message().parents().iter().filter(|p| !visited.contains(*p)));
-                                milestone_data.add_full_message(message, None);
+                        debug!("Found message {}", message.message_id);
+                        if let Some(ref_ms) = message.milestone_index {
+                            if ms == ref_ms.0 {
+                                parent_queue.extend(message.parents().iter().filter(|p| !visited.contains(*p)));
+                                milestone_data.add_message(message, None);
                             } else {
                                 // warn!(
                                 //    "Message {} is referenced by other milestone {}",
@@ -135,7 +137,7 @@ where
                                 continue;
                             }
                         } else {
-                            error!("Unreferenced message {}", message.metadata().message_id);
+                            error!("Unreferenced message {}", message.message_id);
                             // TODO: handle messages without milestone reference
                             continue;
                         }

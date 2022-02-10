@@ -1,44 +1,26 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use chronicle_common::SyncRange;
-
 use super::*;
+use bee_message::Message;
+use chronicle_common::SyncRange;
+use chrono::{
+    NaiveDate,
+    NaiveDateTime,
+};
 use std::{
-    collections::{
-        hash_map::Entry,
-        BTreeMap,
-        HashMap,
-        VecDeque,
-    },
+    collections::BTreeMap,
+    ops::Range,
     str::FromStr,
 };
 
 impl Select<Bee<MessageId>, (), Bee<Message>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
-        parse_statement!("SELECT message FROM #.messages WHERE message_id = ?", self.name())
-    }
-    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
-        builder.value(message_id)
-    }
-}
-
-impl Select<Bee<MessageId>, (), Option<MessageMetadata>> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> SelectStatement {
-        parse_statement!("SELECT metadata FROM #.messages WHERE message_id = ?", self.name())
-    }
-    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
-        builder.value(message_id)
-    }
-}
-
-impl Select<Bee<MessageId>, (), (Option<Bee<Message>>, Option<MessageMetadata>)> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT message, metadata FROM #.messages WHERE message_id = ?",
+            "SELECT message 
+            FROM #.messages 
+            WHERE message_id = ?",
             self.name()
         )
     }
@@ -47,163 +29,104 @@ impl Select<Bee<MessageId>, (), (Option<Bee<Message>>, Option<MessageMetadata>)>
     }
 }
 
-impl Select<Bee<MessageId>, (), FullMessage> for ChronicleKeyspace {
+impl Select<Bee<MessageId>, (), MessageRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
-        <Self as Select<Bee<MessageId>, (), (Option<Bee<Message>>, Option<MessageMetadata>)>>::statement(self)
+        parse_statement!(
+            "SELECT *
+            FROM #.messages 
+            WHERE message_id = ?",
+            self.name()
+        )
     }
     fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
         builder.value(message_id)
     }
 }
 
-impl Select<(Bee<MessageId>, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Partitioned<ParentRecord>>>>
+impl Select<Bee<MessageId>, (), Paged<Iter<ParentRecord>>> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT *
+            FROM #.parents_by_ms
+            WHERE parent_id = ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, parent_id: &Bee<MessageId>, _: &()) -> B {
+        builder.value(parent_id)
+    }
+}
+
+impl Select<Bee<MessageId>, Range<NaiveDateTime>, Paged<Iter<ParentRecord>>> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT *
+            FROM #.parents_by_ms
+            WHERE parent_id = ?
+            AND ms_timestamp >= ?
+            AND ms_timestamp < ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, parent_id: &Bee<MessageId>, time_range: &Range<NaiveDateTime>) -> B {
+        builder.value(parent_id).value(time_range.start).value(time_range.end)
+    }
+}
+
+impl Select<(Bee<Ed25519Address>, MsRangeId), (), Paged<Vec<LegacyOutputRecord>>> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT *
+            FROM #.legacy_outputs_by_address
+            WHERE address = ?
+            AND ms_range_id = ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, (address, ms_range_id): &(Bee<Ed25519Address>, u32), _: &()) -> B {
+        builder.value(address).value(ms_range_id)
+    }
+}
+
+impl Select<(Bee<Ed25519Address>, MsRangeId), Range<NaiveDateTime>, Paged<Vec<LegacyOutputRecord>>>
     for ChronicleKeyspace
 {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT partition_id, milestone_index, message_id, inclusion_state
-            FROM #.parents
-            WHERE parent_id = ? AND partition_id = ? AND milestone_index <= ?",
+            "SELECT *
+            FROM #.legacy_outputs_by_address
+            WHERE address = ?
+            AND ms_range_id = ?
+            AND ms_timestamp >= ?
+            AND ms_timestamp < ?",
             self.name()
         )
     }
     fn bind_values<B: Binder>(
         builder: B,
-        (message_id, partition_id): &(Bee<MessageId>, PartitionId),
-        milestone_index: &Bee<MilestoneIndex>,
+        (address, ms_range_id): &(Bee<Ed25519Address>, u32),
+        time_range: &Range<NaiveDateTime>,
     ) -> B {
-        builder.value(message_id).value(partition_id).value(milestone_index)
+        builder
+            .value(address)
+            .value(ms_range_id)
+            .value(time_range.start)
+            .value(time_range.end)
     }
 }
 
-impl RowsDecoder for Paged<VecDeque<Partitioned<ParentRecord>>> {
-    type Row = (PartitionId, u32, String, Option<LedgerInclusionState>);
-    fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<VecDeque<Partitioned<ParentRecord>>>>> {
+impl RowsDecoder for Paged<Vec<LegacyOutputRecord>> {
+    type Row = LegacyOutputRecord;
+    fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<Vec<LegacyOutputRecord>>>> {
         ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let mut iter = Self::Row::rows_iter(decoder)?;
         let paging_state = iter.take_paging_state();
-        let values = iter
-            .map(|(partition_id, milestone_index, message_id, inclusion_state)| {
-                let message_id = MessageId::from_str(&message_id).map_err(|e| anyhow::Error::new(e))?;
-                Ok(Partitioned::new(
-                    ParentRecord::new(MilestoneIndex(milestone_index), message_id, inclusion_state),
-                    partition_id,
-                ))
-            })
-            .collect::<anyhow::Result<_>>()?;
-        Ok(Some(Paged::new(values, paging_state)))
-    }
-}
-
-impl Select<(Indexation, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Partitioned<IndexationRecord>>>>
-    for ChronicleKeyspace
-{
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> SelectStatement {
-        parse_statement!(
-            "SELECT partition_id, milestone_index, message_id, inclusion_state
-            FROM #.indexes
-            WHERE indexation = ? AND partition_id = ? AND milestone_index <= ?",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(
-        builder: B,
-        (index, partition_id): &(Indexation, PartitionId),
-        milestone_index: &Bee<MilestoneIndex>,
-    ) -> B {
-        builder.value(&index.0).value(partition_id).value(milestone_index)
-    }
-}
-
-impl RowsDecoder for Paged<VecDeque<Partitioned<IndexationRecord>>> {
-    type Row = (PartitionId, u32, String, Option<LedgerInclusionState>);
-    fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<VecDeque<Partitioned<IndexationRecord>>>>> {
-        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
-        let mut iter = Self::Row::rows_iter(decoder)?;
-        let paging_state = iter.take_paging_state();
-        let values = iter
-            .map(|(partition_id, milestone_index, message_id, inclusion_state)| {
-                let message_id = MessageId::from_str(&message_id).map_err(|e| anyhow::Error::new(e))?;
-                Ok(Partitioned::new(
-                    IndexationRecord::new(milestone_index.into(), message_id, inclusion_state),
-                    partition_id,
-                ))
-            })
-            .collect::<anyhow::Result<_>>()?;
-        Ok(Some(Paged::new(values, paging_state)))
-    }
-}
-
-impl Select<(Bee<Ed25519Address>, PartitionId), Bee<MilestoneIndex>, Paged<VecDeque<Partitioned<AddressRecord>>>>
-    for ChronicleKeyspace
-{
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> SelectStatement {
-        parse_statement!(
-            "SELECT partition_id, milestone_index, output_type,
-             transaction_id, idx, amount, inclusion_state
-             FROM #.addresses WHERE address = ? AND partition_id = ? AND milestone_index <= ?",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(
-        builder: B,
-        (address, partition_id): &(Bee<Ed25519Address>, PartitionId),
-        milestone_index: &Bee<MilestoneIndex>,
-    ) -> B {
-        builder.value(address).value(partition_id).value(milestone_index)
-    }
-}
-
-impl RowsDecoder for Paged<VecDeque<Partitioned<AddressRecord>>> {
-    type Row = (
-        PartitionId,
-        u32,
-        OutputType,
-        String,
-        Index,
-        Amount,
-        Option<LedgerInclusionState>,
-    );
-    fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<VecDeque<Partitioned<AddressRecord>>>>> {
-        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
-        let mut iter = Self::Row::rows_iter(decoder)?;
-        let paging_state = iter.take_paging_state();
-        let mut map = HashMap::<OutputId, usize>::new();
-        let mut values = VecDeque::<Partitioned<AddressRecord>>::new();
-        for (partition_id, milestone_index, output_type, transaction_id, index, amount, inclusion_state) in iter {
-            let transaction_id = TransactionId::from_str(&transaction_id).map_err(|e| anyhow::Error::new(e))?;
-            let record = Partitioned::new(
-                AddressRecord::new(
-                    milestone_index.into(),
-                    output_type,
-                    transaction_id,
-                    index,
-                    amount,
-                    inclusion_state,
-                ),
-                partition_id,
-            );
-            if let Ok(output_id) = OutputId::new(transaction_id, index) {
-                match map.entry(output_id) {
-                    Entry::Occupied(v) => {
-                        if let Some(prev) = values.get_mut(*v.get()) {
-                            if prev.ledger_inclusion_state.is_none() {
-                                *prev = record;
-                            }
-                        }
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(values.len());
-                        values.push_back(record);
-                    }
-                }
-            }
-        }
-        Ok(Some(Paged::new(values, paging_state)))
+        Ok(Some(Paged::new(iter.into_iter().collect(), paging_state)))
     }
 }
 
@@ -341,99 +264,121 @@ impl Select<Bee<MilestoneIndex>, (), Bee<Milestone>> for ChronicleKeyspace {
     }
 }
 
-impl Select<String, HintVariant, Iter<(Bee<MilestoneIndex>, PartitionId)>> for ChronicleKeyspace {
+impl Select<Ed25519Address, (String, String), Iter<u32>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
 
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT milestone_index, partition_id
-            FROM #.hints
-            WHERE hint = ? AND variant = ?",
+            "SELECT ms_range_id
+            FROM #.address_hints
+            WHERE address = ? 
+            AND output_kind = ?
+            AND variant = ?",
             self.name()
         )
     }
 
-    fn bind_values<B: Binder>(builder: B, hint: &String, variant: &HintVariant) -> B {
-        builder.value(hint).value(variant)
+    fn bind_values<B: Binder>(builder: B, address: &Ed25519Address, (output_kind, variant): &(String, String)) -> B {
+        builder.value(Bee(address)).value(output_kind).value(variant)
     }
 }
 
-impl Select<String, SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
+impl Select<String, String, Iter<u32>> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT ms_range_id
+            FROM #.tag_hints
+            WHERE tag = ? 
+            AND table_kind = ?",
+            self.name()
+        )
+    }
+
+    fn bind_values<B: Binder>(builder: B, tag: &String, table_kind: &String) -> B {
+        builder.value(tag).value(table_kind)
+    }
+}
+
+impl Select<(), (), Iter<SyncRecord>> for ChronicleKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!("SELECT * FROM #.sync", self.name())
+    }
+    fn bind_values<B: Binder>(builder: B, _: &(), _: &()) -> B {
+        builder
+    }
+}
+
+impl Select<MsRangeId, SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
     type QueryOrPrepared = QueryStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT milestone_index, synced_by, logged_by FROM #.sync WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
+            "SELECT *
+            FROM #.sync 
+            WHERE ms_range_id = ? 
+            AND milestone_index >= ? 
+            AND milestone_index < ?",
             self.name()
         )
     }
-    fn bind_values<B: Binder>(builder: B, keyspace: &String, sync_key: &SyncRange) -> B {
-        builder.value(keyspace).value(&sync_key.start()).value(&sync_key.end())
+    fn bind_values<B: Binder>(builder: B, ms_range_id: &MsRangeId, sync_range: &SyncRange) -> B {
+        builder
+            .value(ms_range_id)
+            .value(&sync_range.start())
+            .value(&sync_range.end())
     }
 }
 
-impl Select<String, SyncRange, Iter<AnalyticRecord>> for ChronicleKeyspace {
+impl Select<MsRangeId, (), Iter<MsAnalyticsRecord>> for ChronicleKeyspace {
     type QueryOrPrepared = QueryStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT milestone_index, message_count, transaction_count, transferred_tokens FROM #.analytics WHERE key = ? AND milestone_index >= ? AND milestone_index < ?",
+            "SELECT *
+            FROM #.ms_analytics 
+            WHERE ms_range_id = ?",
             self.name()
         )
     }
-    fn bind_values<B: Binder>(builder: B, keyspace: &String, sync_key: &SyncRange) -> B {
-        builder.value(keyspace).value(&sync_key.start()).value(&sync_key.end())
+    fn bind_values<B: Binder>(builder: B, ms_range_id: &MsRangeId, _: &()) -> B {
+        builder.value(ms_range_id)
     }
 }
 
-// ###############
-// ROW DEFINITIONS
-// ###############
-
-impl Row for SyncRecord {
-    fn try_decode_row<T: ColumnValue>(rows: &mut T) -> anyhow::Result<Self> {
-        let milestone_index = MilestoneIndex(rows.column_value::<u32>()?);
-        let synced_by = rows.column_value::<Option<u8>>()?;
-        let logged_by = rows.column_value::<Option<u8>>()?;
-        Ok(SyncRecord::new(milestone_index, synced_by, logged_by))
-    }
-}
-
-impl Row for AnalyticRecord {
-    fn try_decode_row<T: ColumnValue>(rows: &mut T) -> anyhow::Result<Self> {
-        let milestone_index = MilestoneIndex(rows.column_value::<u32>()?);
-        let message_count = MessageCount(rows.column_value::<u32>()?);
-        let transaction_count = TransactionCount(rows.column_value::<u32>()?);
-        let transferred_tokens = TransferredTokens(rows.column_value::<u64>()?);
-        Ok(AnalyticRecord::new(
-            milestone_index,
-            message_count,
-            transaction_count,
-            transferred_tokens,
-        ))
-    }
-}
-
-impl Row for Bee<OutputId> {
-    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(OutputId::new(
-            rows.column_value::<Bee<TransactionId>>()?.into_inner(),
-            rows.column_value()?,
+impl Select<MsRangeId, Range<MilestoneIndex>, Iter<MsAnalyticsRecord>> for ChronicleKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT *
+            FROM #.ms_analytics 
+            WHERE ms_range_id = ? 
+            AND milestone_index >= ? 
+            AND milestone_index < ?",
+            self.name()
         )
-        .map_err(|e| anyhow!("{:?}", e))?
-        .into())
+    }
+    fn bind_values<B: Binder>(builder: B, ms_range_id: &MsRangeId, ms_range: &Range<MilestoneIndex>) -> B {
+        builder
+            .value(ms_range_id)
+            .value(Bee(&ms_range.start))
+            .value(Bee(&ms_range.end))
     }
 }
-impl Row for Bee<Milestone> {
-    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(Milestone::new(
-            rows.column_value::<Bee<MessageId>>()?.into_inner(),
-            rows.column_value()?,
+
+impl Select<u32, Range<NaiveDate>, Iter<DailyAnalyticsRecord>> for ChronicleKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT *
+            FROM #.daily_analytics 
+            WHERE year = ? 
+            AND date >= ? 
+            AND date <= ?",
+            self.name()
         )
-        .into())
+    }
+    fn bind_values<B: Binder>(builder: B, year: &u32, date_range: &Range<NaiveDate>) -> B {
+        builder.value(year).value(&date_range.start).value(&date_range.end)
     }
 }

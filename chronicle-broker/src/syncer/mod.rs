@@ -70,7 +70,7 @@ impl<S: SupHandle<Self>> Actor<S> for Syncer {
 #[derive(Debug)]
 pub enum SyncerEvent {
     /// Sync milestone data
-    MilestoneData(Arc<MilestoneData>),
+    MilestoneData(Arc<MilestoneDataBuilder>),
     /// Notify of an unreachable cluster
     Unreachable(u32),
 }
@@ -83,7 +83,7 @@ pub struct Syncer {
     sync_range: SyncRange,
     parallelism: u8,
     active: Option<Active>,
-    milestones_data: BinaryHeap<Ascending<Arc<MilestoneData>>>,
+    milestones_data: BinaryHeap<Ascending<Arc<MilestoneDataBuilder>>>,
     pending: u32,
     next: u32,
     skip: bool,
@@ -138,7 +138,7 @@ impl Syncer {
                 warn!("Syncer got aborted while sleeping");
                 ActorError::aborted_msg("Syncer got aborted while sleeping")
             })?;
-        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, &self.sync_range, 10).await {
+        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, self.sync_range, 10).await {
             info!("Updated the sync data");
             self.sync_data = sync_data;
             if archiver.is_some() {
@@ -162,7 +162,7 @@ impl Syncer {
     async fn handle_milestone_data<S: SupHandle<Self>>(
         &mut self,
         rt: &mut Rt<Self, S>,
-        milestone_data: Arc<MilestoneData>,
+        milestone_data: Arc<MilestoneDataBuilder>,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
         archiver_handle: &Option<ArchiverHandle>,
     ) -> ActorResult<()> {
@@ -206,7 +206,7 @@ impl Syncer {
         if self.pending.eq(&0) {
             self.skip = false;
             while let Some(d) = self.milestones_data.pop() {
-                let d: Arc<MilestoneData> = d.into();
+                let d: Arc<MilestoneDataBuilder> = d.into();
                 error!("We got milestone data for index: {}, but we're skipping it due to previous unreachable indexes within the same gap range", d.milestone_index());
             }
             if let Some(mut active) = self.active.take() {
@@ -365,7 +365,7 @@ impl Syncer {
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
     ) -> ActorResult<()> {
         // start from the lowest gap
-        if let Some(mut gap) = self.sync_data.take_lowest_gap() {
+        if let Some(gap) = self.sync_data.take_lowest_gap() {
             // ensure gap.end != i32::MAX
             if !gap.end.eq(&(i32::MAX as u32)) {
                 info!("Filling the gap {:?}", gap);
@@ -400,30 +400,30 @@ impl<T> Deref for Ascending<T> {
     }
 }
 
-impl std::convert::Into<Arc<MilestoneData>> for Ascending<Arc<MilestoneData>> {
-    fn into(self) -> Arc<MilestoneData> {
+impl std::convert::Into<Arc<MilestoneDataBuilder>> for Ascending<Arc<MilestoneDataBuilder>> {
+    fn into(self) -> Arc<MilestoneDataBuilder> {
         self.inner
     }
 }
 
-impl Ascending<Arc<MilestoneData>> {
+impl Ascending<Arc<MilestoneDataBuilder>> {
     /// Wrap milestone data with ASC ordering
-    pub fn new(milestone_data: Arc<MilestoneData>) -> Self {
+    pub fn new(milestone_data: Arc<MilestoneDataBuilder>) -> Self {
         Self { inner: milestone_data }
     }
 }
 
-impl std::cmp::Ord for Ascending<Arc<MilestoneData>> {
+impl std::cmp::Ord for Ascending<Arc<MilestoneDataBuilder>> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         other.inner.milestone_index().cmp(&self.inner.milestone_index())
     }
 }
-impl std::cmp::PartialOrd for Ascending<Arc<MilestoneData>> {
+impl std::cmp::PartialOrd for Ascending<Arc<MilestoneDataBuilder>> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(other.inner.milestone_index().cmp(&self.inner.milestone_index()))
     }
 }
-impl std::cmp::PartialEq for Ascending<Arc<MilestoneData>> {
+impl std::cmp::PartialEq for Ascending<Arc<MilestoneDataBuilder>> {
     fn eq(&self, other: &Self) -> bool {
         if self.inner.milestone_index() == other.inner.milestone_index() {
             true
@@ -432,4 +432,4 @@ impl std::cmp::PartialEq for Ascending<Arc<MilestoneData>> {
         }
     }
 }
-impl std::cmp::Eq for Ascending<Arc<MilestoneData>> {}
+impl std::cmp::Eq for Ascending<Arc<MilestoneDataBuilder>> {}

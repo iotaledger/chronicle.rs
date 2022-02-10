@@ -2,72 +2,59 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
-/// Delete Address record from addresses table
-impl Delete<(Bee<Ed25519Address>, PartitionId), (Bee<MilestoneIndex>, u8, Bee<TransactionId>, Index), AddressRecord>
-    for ChronicleKeyspace
-{
+/// Delete record from legacy_outputs table
+impl Delete<Bee<OutputId>, (), LegacyOutputRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> DeleteStatement {
         parse_statement!(
-            "DELETE FROM #.addresses WHERE address = ? AND partition_id = ? AND milestone_index = ? AND output_type = ? AND transaction_id = ? AND idx = ?",
+            "DELETE FROM #.legacy_outputs 
+            WHERE output_id = ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, output_id: &Bee<OutputId>, _: &()) -> B {
+        builder.value(output_id)
+    }
+}
+
+/// Delete record from tags table
+impl Delete<(String, MsRangeId), (Bee<MilestoneIndex>, Bee<MessageId>), TagRecord> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> DeleteStatement {
+        parse_statement!(
+            "DELETE FROM #.tags 
+            WHERE tag = ?
+            AND ms_range_id = ?
+            AND milestone_index = ?
+            AND message_id = ?",
             self.name()
         )
     }
     fn bind_values<B: Binder>(
         builder: B,
-        (address, partition_id): &(Bee<Ed25519Address>, PartitionId),
-        (milestone_index, output_type, transaction_id, index): &(Bee<MilestoneIndex>, u8, Bee<TransactionId>, Index),
+        (index, ms_range_id): &(String, MsRangeId),
+        (milestone_index, message_id): &(Bee<MilestoneIndex>, Bee<MessageId>),
     ) -> B {
         builder
-            .value(address)
-            .value(partition_id)
-            .value(milestone_index)
-            .value(output_type)
-            .value(transaction_id)
             .value(index)
-    }
-}
-
-/// Delete Index record from Indexes table
-impl Delete<(Indexation, PartitionId), (Bee<MilestoneIndex>, Bee<MessageId>), IndexationRecord> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
-    fn statement(&self) -> DeleteStatement {
-        parse_statement!(
-            "DELETE FROM #.indexes WHERE indexation = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
-            self.name()
-        )
-    }
-    fn bind_values<B: Binder>(
-        builder: B,
-        (indexation, partition_id): &(Indexation, PartitionId),
-        (milestone_index, message_id): &(Bee<MilestoneIndex>, Bee<MessageId>),
-    ) -> B {
-        builder
-            .value(&indexation.0)
-            .value(partition_id)
+            .value(ms_range_id)
             .value(milestone_index)
             .value(message_id)
     }
 }
 
-/// Delete Parent record from Parents table
-impl Delete<(Bee<MessageId>, PartitionId), (Bee<MilestoneIndex>, Bee<MessageId>), ParentRecord> for ChronicleKeyspace {
+/// Delete record from parents table
+impl Delete<Bee<MessageId>, Bee<MessageId>, ParentRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> DeleteStatement {
         parse_statement!(
-            "DELETE FROM #.parents WHERE parent_id = ? AND partition_id = ? AND milestone_index = ? AND message_id = ?",
+            "DELETE FROM #.parents 
+            WHERE parent_id = ? 
+            AND message_id = ?",
             self.name()
         )
     }
-    fn bind_values<B: Binder>(
-        builder: B,
-        (parent_id, partition_id): &(Bee<MessageId>, PartitionId),
-        (milestone_index, message_id): &(Bee<MilestoneIndex>, Bee<MessageId>),
-    ) -> B {
-        builder
-            .value(parent_id)
-            .value(partition_id)
-            .value(milestone_index)
-            .value(message_id)
+    fn bind_values<B: Binder>(builder: B, parent_id: &Bee<MessageId>, message_id: &Bee<MessageId>) -> B {
+        builder.value(parent_id).value(message_id)
     }
 }

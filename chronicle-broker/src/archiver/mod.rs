@@ -4,7 +4,7 @@
 use super::*;
 use crate::syncer::Ascending;
 use anyhow::bail;
-use bee_message::prelude::MilestoneIndex;
+use bee_message::milestone::MilestoneIndex;
 use chronicle_common::alert;
 use chronicle_storage::access::ChronicleKeyspace;
 use std::{
@@ -37,7 +37,7 @@ pub struct Archiver {
     max_log_size: u64,
     cleanup: Vec<u32>,
     processed: Vec<std::ops::Range<u32>>,
-    milestones_data: BinaryHeap<Ascending<Arc<MilestoneData>>>,
+    milestones_data: BinaryHeap<Ascending<Arc<MilestoneDataBuilder>>>,
     keyspace: ChronicleKeyspace,
     next: u32,
 }
@@ -49,7 +49,7 @@ impl Archiver {
         next: u32,
         max_log_size: Option<u64>,
     ) -> Self {
-        let milestones_data: BinaryHeap<Ascending<Arc<MilestoneData>>> = BinaryHeap::new();
+        let milestones_data: BinaryHeap<Ascending<Arc<MilestoneDataBuilder>>> = BinaryHeap::new();
         Self {
             dir_path: dir_path.into(),
             logs: Vec::new(),
@@ -199,11 +199,11 @@ impl Archiver {
     }
     async fn handle_milestone_data(
         &mut self,
-        milestone_data: Arc<MilestoneData>,
+        milestone_data: Arc<MilestoneDataBuilder>,
         mut opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
         let milestone_index = milestone_data.milestone_index();
-        let mut milestone_data_json = serde_json::to_string(Arc::deref(&milestone_data)).unwrap();
+        let mut milestone_data_json = serde_json::to_string(&milestone_data.deref().clone().build()?).unwrap();
         milestone_data_json.push('\n');
         let milestone_data_line: Vec<u8> = milestone_data_json.into();
 
@@ -330,7 +330,7 @@ impl Archiver {
         // insert into the DB, without caring about the response
         let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
         keyspace
-            .insert(&"permanode".to_string(), &synced_record)
+            .insert(&synced_record, &())
             .consistency(Consistency::Quorum)
             .build()?
             .worker()
@@ -365,7 +365,7 @@ type UpperLimit = u32;
 /// Archiver events
 pub enum ArchiverEvent {
     /// Milestone data to be archived
-    MilestoneData(Arc<MilestoneData>, Option<UpperLimit>),
+    MilestoneData(Arc<MilestoneDataBuilder>, Option<UpperLimit>),
     /// Close the milestone with given index
     Close(u32),
     /// Shutdown the archiver

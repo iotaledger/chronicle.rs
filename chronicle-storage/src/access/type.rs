@@ -3,7 +3,6 @@
 use super::*;
 use pin_project_lite::pin_project;
 use std::collections::VecDeque;
-
 use chronicle_common::Wrapper;
 use futures::{
     stream::Stream,
@@ -27,41 +26,6 @@ use std::{
     str::FromStr,
 };
 
-/// A result struct which holds a retrieved output as well as all associated unlock blocks
-#[derive(Debug, Clone)]
-pub struct OutputRes {
-    /// The created output's message id
-    pub message_id: MessageId,
-    /// The output
-    pub output: Output,
-    /// Zero or more unlock blocks for this output.
-    /// Only one can be valid, which indicates the output `is_spent`.
-    pub unlock_blocks: Vec<UnlockRes>,
-}
-
-/// A result struct which holds a retrieved transaction
-#[derive(Debug, Clone)]
-pub struct TransactionRes {
-    /// The transaction's message id
-    pub message_id: MessageId,
-    /// The transaction's milestone index
-    pub milestone_index: Option<MilestoneIndex>,
-    /// The output
-    pub outputs: Vec<(Output, Option<UnlockRes>)>,
-    /// The inputs, if any exist
-    pub inputs: Vec<InputData>,
-}
-
-/// A result struct which holds an unlock row from the `transactions` table
-#[derive(Debug, Clone)]
-pub struct UnlockRes {
-    /// The message ID for the transaction which this unlocks
-    pub message_id: MessageId,
-    /// The unlock block
-    pub block: UnlockBlock,
-    /// This transaction's ledger inclusion state
-    pub inclusion_state: Option<LedgerInclusionState>,
-}
 
 /// A "full" message payload, including both message and metadata
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -121,86 +85,6 @@ impl TokenEncoder for Indexation {
     }
 }
 
-
-/// A marker for a paged result
-#[derive(Clone, Debug)]
-pub struct Paged<T> {
-    inner: T,
-    /// The paging state for the query
-    pub paging_state: Option<Vec<u8>>,
-}
-
-impl<T> Paged<T> {
-    /// Creates a new paged marker with an inner type and a paging state
-    pub fn new(inner: T, paging_state: Option<Vec<u8>>) -> Self {
-        Self { inner, paging_state }
-    }
-}
-
-impl<T> Deref for Paged<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T> DerefMut for Paged<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-/// Wrapper for json data
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct JsonData<T> {
-    data: T,
-}
-
-impl<T> Deref for JsonData<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl<T> Wrapper for JsonData<T> {
-    fn into_inner(self) -> Self::Target {
-        self.data
-    }
-}
-
-#[derive(Clone, Debug)]
-/// Wrapper around MessageCount u32
-pub struct MessageCount(pub u32);
-impl Deref for MessageCount {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-#[derive(Clone, Debug)]
-/// Wrapper around TransactionCount u32
-pub struct TransactionCount(pub u32);
-impl Deref for TransactionCount {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-#[derive(Clone, Debug)]
-/// Wrapper around MessageCount u64
-pub struct TransferredTokens(pub u64);
-impl Deref for TransferredTokens {
-    type Target = u64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
 
 #[derive(Deserialize, Serialize)]
 /// Defines a message to/from the Broker or its children
@@ -343,26 +227,6 @@ pin_project! {
         visited: HashSet<MessageId>,
         budget: usize,
         counter: usize,
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Proof {
-    milestone_index: u32,
-    path: Vec<MessageId>,
-}
-
-impl ColumnEncoder for Proof {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        let bytes = bincode_config().serialize(self).unwrap();
-        buffer.extend(&i32::to_be_bytes(bytes.len() as i32));
-        buffer.extend(bytes)
-    }
-}
-
-impl ColumnDecoder for Proof {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        bincode_config().deserialize(slice).map_err(Into::into)
     }
 }
 

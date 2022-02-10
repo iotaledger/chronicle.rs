@@ -46,7 +46,6 @@ Chronicle includes the following crates:
 - **[API](chronicle-api/README.md):** API that allows you to access stored messages
 - **[Broker](chronicle-broker/README.md):** Allows subscribing to incoming messages from IOTA nodes
 - **[Storage](chronicle-storage/README.md):** Implements storage related functionality from [scylla.rs](https://github.com/iotaledger/scylla.rs)
-- **[Filter](chronicle-filter/README.md):** A simple container for user modified code
 
 **Note:** This is alpha software, so there may be performance and stability issues. Please report any issues in our [issue tracker](https://github.com/iotaledger/chronicle.rs/issues/new).
 

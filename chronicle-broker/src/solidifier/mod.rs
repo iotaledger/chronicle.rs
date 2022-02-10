@@ -19,12 +19,15 @@ use super::{
     },
     *,
 };
-use bee_message::prelude::{
-    MilestoneIndex,
-    MilestonePayload,
+use bee_message::{
+    milestone::MilestoneIndex,
+    parent::Parents,
+    payload::{
+        MilestonePayload,
+        Payload,
+    },
 };
 use chronicle_common::alert;
-use chronicle_storage::access::MilestoneData;
 use lru::LruCache;
 use std::{
     fmt::Debug,
@@ -38,16 +41,11 @@ use std::{
 pub type SolidifierHandle = UnboundedHandle<SolidifierEvent>;
 /// A milestone message payload
 #[derive(Debug)]
-pub struct MilestoneMessage(MessageId, Box<MilestonePayload>, Message, Option<MessageMetadata>);
+pub struct MilestoneMessage(MessageId, MilestonePayload, MessageRecord);
 impl MilestoneMessage {
     /// Create a new milestone message payload
-    pub fn new(
-        message_id: MessageId,
-        milestone_payload: Box<MilestonePayload>,
-        message: Message,
-        metadata: Option<MessageMetadata>,
-    ) -> Self {
-        Self(message_id, milestone_payload, message, metadata)
+    pub fn new(message_id: MessageId, milestone_payload: MilestonePayload, message: MessageRecord) -> Self {
+        Self(message_id, milestone_payload, message)
     }
 }
 
@@ -87,8 +85,8 @@ impl InDatabase {
     }
 }
 
-impl From<&MilestoneData> for InDatabase {
-    fn from(milestone_data: &MilestoneData) -> Self {
+impl From<&MilestoneDataBuilder> for InDatabase {
+    fn from(milestone_data: &MilestoneDataBuilder) -> Self {
         let mut in_database = Self::new(milestone_data.milestone_index());
         in_database.set_messages_len(milestone_data.messages().len());
         in_database
@@ -101,7 +99,7 @@ pub enum SolidifierEvent {
     /// Milestone fullmessage;
     Milestone(MilestoneMessage, Option<Selected>),
     /// Pushed or requested messages, that definitely belong to self solidifier, and flag whether it's selected or not.
-    Message(FullMessage, Option<Selected>),
+    Message(MessageRecord, Option<Selected>),
     /// Close MessageId that doesn't belong at all to Solidifier of milestone u32
     Close(MessageId, u32),
     /// Solidifiy request from Syncer.
@@ -134,7 +132,7 @@ pub enum CqlResult {
 pub struct Solidifier<T: FilterBuilder> {
     keyspace: ChronicleKeyspace,
     partition_id: u8,
-    milestones_data: HashMap<u32, MilestoneData>,
+    milestones_data: HashMap<u32, MilestoneDataBuilder>,
     in_database: HashMap<u32, InDatabase>,
     lru_in_database: LruCache<u32, ()>,
     unreachable: LruCache<u32, ()>,
@@ -207,8 +205,8 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Solidifier<T> {
         log::info!("{:?} is running", &rt.service().directory());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
-                SolidifierEvent::Message(full_message, selected_opt) => {
-                    self.handle_new_msg(rt, full_message, selected_opt, &collector_handles, &archiver, &syncer)
+                SolidifierEvent::Message(full_message, selected) => {
+                    self.handle_new_msg(rt, full_message, selected, &collector_handles, &archiver, &syncer)
                         .await
                         .map_err(|e| {
                             error!("{}", e);
@@ -298,30 +296,23 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Solidifier<T> {
                     }
                 }
                 SolidifierEvent::Close(message_id, milestone_index) => {
-                    self.close_message_id(rt, milestone_index, &message_id, &archiver, &syncer)
+                    self.close_message_id(rt, milestone_index, message_id, &archiver, &syncer)
                         .await
                         .map_err(|e| {
                             error!("{}", e);
                             e
                         })?;
                 }
-                SolidifierEvent::Milestone(milestone_message, selected_opt) => {
-                    self.handle_milestone_msg(
-                        rt,
-                        milestone_message,
-                        selected_opt,
-                        &collector_handles,
-                        &archiver,
-                        &syncer,
-                    )
-                    .await
-                    .map_err(|e| {
-                        error!("{}", e);
-                        e
-                    })?;
+                SolidifierEvent::Milestone(milestone_message, selected) => {
+                    self.handle_milestone_msg(rt, milestone_message, selected, &collector_handles, &archiver, &syncer)
+                        .await
+                        .map_err(|e| {
+                            error!("{}", e);
+                            e
+                        })?;
                 }
-                SolidifierEvent::Solidify(milestone_index) => {
-                    match milestone_index {
+                SolidifierEvent::Solidify(milestone_res) => {
+                    match milestone_res {
                         Ok(milestone_index) => {
                             // this is request to solidify this milestone
                             self.handle_solidify(milestone_index, &collector_handles, &syncer)
@@ -409,9 +400,9 @@ impl<T: FilterBuilder> Solidifier<T> {
             let created_by = ms_data.created_by();
             warn!(
                 "Received solidify request on an existing milestone data: index: {} created_by: {:?}, pending: {}, messages: {}, milestone_exist: {}, unless this is an expected race condition",
-                milestone_index, created_by, ms_data.pending().len(), ms_data.messages().len(), ms_data.milestone_exist(),
+                milestone_index, created_by, ms_data.pending().len(), ms_data.messages().len(), ms_data.payload().is_some(),
             );
-            if created_by == &CreatedBy::Expected && !ms_data.milestone_exist() {
+            if created_by == &CreatedBy::Expected && ms_data.payload().is_none() {
                 // convert the ownership to syncer
                 ms_data.set_created_by(CreatedBy::Syncer);
                 // request milestone in order to respark solidification process
@@ -432,9 +423,6 @@ impl<T: FilterBuilder> Solidifier<T> {
             // as both solidifiers and collectors have the same partition_count.
             // this event should be enough to spark the solidification process
             Self::request_milestone_message(collector_handles, self.partition_id, milestone_index);
-            // insert empty entry
-            self.milestones_data
-                .insert(milestone_index, MilestoneData::new(milestone_index, CreatedBy::Syncer));
             // insert empty entry for in_database
             self.in_database
                 .entry(milestone_index)
@@ -445,18 +433,18 @@ impl<T: FilterBuilder> Solidifier<T> {
         &mut self,
         rt: &mut Rt<Self, S>,
         milestone_index: u32,
-        message_id: &MessageId,
+        message_id: MessageId,
         archiver_handle: &Option<ArchiverHandle>,
         syncer_handle: &SyncerHandle,
     ) -> ActorResult<()> {
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
             // remove it from pending
-            milestone_data.remove_from_pending(message_id);
-            let check_if_completed = milestone_data.check_if_completed();
+            milestone_data.remove_pending(message_id);
+            let ms_data_valid = milestone_data.valid();
             let created_by = milestone_data.created_by();
-            if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
+            if ms_data_valid && !created_by.eq(&CreatedBy::Syncer) {
                 self.push_to_logger(rt, milestone_index, archiver_handle).await?;
-            } else if check_if_completed {
+            } else if ms_data_valid {
                 self.push_to_syncer(rt, milestone_index, syncer_handle).await?;
             };
         } else {
@@ -562,20 +550,18 @@ impl<T: FilterBuilder> Solidifier<T> {
     ) -> ActorResult<()> {
         self.in_database.remove(&milestone_index);
         self.lru_in_database.put(milestone_index, ());
-        let sync_key = "permanode".to_string();
-        let synced_by = Some(0);
-        let synced_record = SyncRecord::new(MilestoneIndex(milestone_index), synced_by, None);
+        let sync_record = SyncRecord::new(MilestoneIndex(milestone_index), Some(0), None);
         let request = self
             .keyspace
-            .insert(&sync_key, &synced_record)
+            .insert(&sync_record, &())
             .consistency(Consistency::One)
             .build()?;
         let worker = SyncedMilestoneWorker::boxed(
             rt.handle().clone(),
             milestone_index,
             self.keyspace.clone(),
-            sync_key,
-            synced_record,
+            sync_record,
+            (),
             self.retries,
         );
         // Request might fail due to a node just got disconnected
@@ -613,8 +599,8 @@ impl<T: FilterBuilder> Solidifier<T> {
     async fn handle_milestone_msg<S: SupHandle<Self>>(
         &mut self,
         rt: &mut Rt<Self, S>,
-        MilestoneMessage(_message_id, milestone_payload, message, metadata): MilestoneMessage,
-        selected_opt: Option<Selected>,
+        MilestoneMessage(_message_id, milestone_payload, message): MilestoneMessage,
+        selected: Option<Selected>,
         collector_handles: &HashMap<u8, CollectorHandle>,
         archiver_handle: &Option<ArchiverHandle>,
         syncer_handle: &SyncerHandle,
@@ -633,30 +619,30 @@ impl<T: FilterBuilder> Solidifier<T> {
                 milestone_index,
             );
             // insert milestone into milestone_data
-            if let Some(metadata) = metadata {
+            if let Some(&milestone_index) = message.milestone_index() {
                 info!(
                     "solidifier_id: {}, got full milestone {}, in progress: {}",
                     self.partition_id, milestone_index, ms_count
                 );
-                milestone_data.set_milestone(metadata.message_id, milestone_payload);
-                milestone_data.remove_from_pending(&metadata.message_id);
-                milestone_data.add_full_message(FullMessage::new(message, metadata), selected_opt);
-                let check_if_completed = milestone_data.check_if_completed();
+                milestone_data.set_payload(milestone_payload);
+                milestone_data.remove_pending(message.message_id);
+                milestone_data.add_message(message, selected);
+                let ms_data_valid = milestone_data.valid();
                 let created_by = milestone_data.created_by();
-                if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
-                    self.push_to_logger(rt, milestone_index, archiver_handle).await?;
-                } else if check_if_completed {
-                    self.push_to_syncer(rt, milestone_index, syncer_handle).await?;
+                if ms_data_valid && !created_by.eq(&CreatedBy::Syncer) {
+                    self.push_to_logger(rt, milestone_index.0, archiver_handle).await?;
+                } else if ms_data_valid {
+                    self.push_to_syncer(rt, milestone_index.0, syncer_handle).await?;
                 };
             }
         } else {
-            if let Some(metadata) = metadata {
+            if let Some(milestone_index) = message.milestone_index() {
                 // We have to decide whether to insert entry for milestone_index or not.
                 self.insert_new_entry_or_not(
                     rt,
-                    milestone_index,
-                    FullMessage::new(message, metadata),
-                    selected_opt,
+                    milestone_index.0,
+                    message,
+                    selected,
                     collector_handles,
                     archiver_handle,
                 )
@@ -666,8 +652,8 @@ impl<T: FilterBuilder> Solidifier<T> {
         Ok(())
     }
     fn process_parents(
-        parents: &[MessageId],
-        milestone_data: &mut MilestoneData,
+        parents: &Parents,
+        milestone_data: &mut MilestoneDataBuilder,
         collectors_handles: &HashMap<u8, CollectorHandle>,
         partitioner: &MessageIdPartitioner,
         solidifier_id: u8,
@@ -730,14 +716,14 @@ impl<T: FilterBuilder> Solidifier<T> {
     async fn handle_new_msg<S: SupHandle<Self>>(
         &mut self,
         rt: &mut Rt<Self, S>,
-        full_message: FullMessage,
-        selected_opt: Option<Selected>,
+        message: MessageRecord,
+        selected: Option<Selected>,
         collector_handles: &HashMap<u8, CollectorHandle>,
         archiver_handle: &Option<ArchiverHandle>,
         syncer_handle: &SyncerHandle,
     ) -> ActorResult<()> {
         // check what milestone_index referenced this message
-        let milestone_index = full_message.ref_ms().unwrap();
+        let milestone_index = message.milestone_index().unwrap().0;
         let partitioner = &self.message_id_partitioner;
         let solidifier_id = self.partition_id;
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
@@ -747,14 +733,14 @@ impl<T: FilterBuilder> Solidifier<T> {
                 milestone_data,
                 partitioner,
                 milestone_index,
-                full_message,
-                selected_opt,
+                message,
+                selected,
             );
-            let check_if_completed = milestone_data.check_if_completed();
+            let ms_data_valid = milestone_data.valid();
             let created_by = milestone_data.created_by();
-            if check_if_completed && !created_by.eq(&CreatedBy::Syncer) {
+            if ms_data_valid && !created_by.eq(&CreatedBy::Syncer) {
                 self.push_to_logger(rt, milestone_index, archiver_handle).await?;
-            } else if check_if_completed {
+            } else if ms_data_valid {
                 self.push_to_syncer(rt, milestone_index, syncer_handle).await?;
             };
         } else {
@@ -762,8 +748,8 @@ impl<T: FilterBuilder> Solidifier<T> {
             self.insert_new_entry_or_not(
                 rt,
                 milestone_index,
-                full_message,
-                selected_opt,
+                message,
+                selected,
                 collector_handles,
                 archiver_handle,
             )
@@ -775,8 +761,8 @@ impl<T: FilterBuilder> Solidifier<T> {
         &mut self,
         rt: &mut Rt<Self, S>,
         milestone_index: u32,
-        full_message: FullMessage,
-        selected_opt: Option<Selected>,
+        message: MessageRecord,
+        selected: Option<Selected>,
         collector_handles: &HashMap<u8, CollectorHandle>,
         archiver_handle: &Option<ArchiverHandle>,
     ) -> ActorResult<()> {
@@ -801,22 +787,21 @@ impl<T: FilterBuilder> Solidifier<T> {
 
                 Self::request_milestone_message(collector_handles, solidifier_id, milestone_index);
                 self.expected = milestone_index + (self.partition_count() as u32);
-                let d = MilestoneData::new(milestone_index, CreatedBy::Incoming);
+                let d = MilestoneDataBuilder::new(message.message_id, milestone_index, CreatedBy::Incoming);
                 // Create the first entry using syncer
-                let milestone_data = self
-                    .milestones_data
-                    .entry(milestone_index)
-                    .or_insert_with(|| MilestoneData::new(milestone_index, CreatedBy::Incoming));
+                let milestone_data = self.milestones_data.entry(milestone_index).or_insert_with(|| {
+                    MilestoneDataBuilder::new(message.message_id, milestone_index, CreatedBy::Incoming)
+                });
                 Self::process_milestone_data(
                     solidifier_id,
                     collector_handles,
                     milestone_data,
                     partitioner,
                     milestone_index,
-                    full_message,
-                    selected_opt,
+                    message,
+                    selected,
                 );
-                if milestone_data.check_if_completed() {
+                if milestone_data.valid() {
                     self.push_to_logger(rt, milestone_index, archiver_handle).await?;
                 }
             }
@@ -825,20 +810,20 @@ impl<T: FilterBuilder> Solidifier<T> {
             let milestone_data = self
                 .milestones_data
                 .entry(milestone_index)
-                .or_insert_with(|| MilestoneData::new(milestone_index, CreatedBy::Incoming));
+                .or_insert_with(|| MilestoneDataBuilder::new(message.message_id, milestone_index, CreatedBy::Incoming));
             // check if the full_message has MilestonePayload
-            if let Some(bee_message::payload::Payload::Milestone(milestone_payload)) = full_message.0.payload() {
-                let ms_message_id = full_message.message_id();
-                milestone_data.set_milestone(*ms_message_id, milestone_payload.clone());
+            if let Some(Payload::Milestone(milestone_payload)) = message.payload() {
+                milestone_data.set_payload((&**milestone_payload).clone());
             }
+            let ms_message_id = message.message_id;
             Self::process_milestone_data(
                 solidifier_id,
                 collector_handles,
                 milestone_data,
                 partitioner,
                 milestone_index,
-                full_message,
-                selected_opt,
+                message,
+                selected,
             );
             // No need to check if it's completed.
             // still for safety reasons, we should ask collector for its milestone,
@@ -856,8 +841,8 @@ impl<T: FilterBuilder> Solidifier<T> {
                     let milestone_data = self
                         .milestones_data
                         .entry(expected)
-                        .or_insert_with(|| MilestoneData::new(expected, CreatedBy::Expected));
-                    if !milestone_data.milestone_exist() {
+                        .or_insert_with(|| MilestoneDataBuilder::new(ms_message_id, expected, CreatedBy::Expected));
+                    if milestone_data.payload().is_none() {
                         error!(
                             "solidifier_id: {}, however syncer will fill the expected index: {} milestone",
                             id, expected
@@ -877,14 +862,14 @@ impl<T: FilterBuilder> Solidifier<T> {
     fn process_milestone_data(
         solidifier_id: u8,
         collector_handles: &HashMap<u8, CollectorHandle>,
-        milestone_data: &mut MilestoneData,
+        milestone_data: &mut MilestoneDataBuilder,
         partitioner: &MessageIdPartitioner,
         ms_index: u32,
-        full_message: FullMessage,
-        selected_opt: Option<Selected>,
+        message: MessageRecord,
+        selected: Option<Selected>,
     ) {
         Self::process_parents(
-            &full_message.metadata().parent_message_ids,
+            message.parents(),
             milestone_data,
             collector_handles,
             partitioner,
@@ -892,9 +877,9 @@ impl<T: FilterBuilder> Solidifier<T> {
             ms_index,
         );
         // remove it from the pending(if it does already exist)
-        milestone_data.remove_from_pending(full_message.message_id());
+        milestone_data.remove_pending(message.message_id);
         // Add full message
-        milestone_data.add_full_message(full_message, selected_opt);
+        milestone_data.add_message(message, selected);
     }
 }
 

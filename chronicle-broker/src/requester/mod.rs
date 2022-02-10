@@ -1,10 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    application::{
-        BrokerHandle,
-        ChronicleBroker,
-    },
+    application::ChronicleBroker,
     collector::{
         CollectorEvent,
         CollectorHandle,
@@ -16,7 +13,10 @@ use super::{
 use backstage::core::Event;
 use bee_rest_api::types::{
     dtos::MessageDto,
-    responses::MilestoneResponse,
+    responses::{
+        MessageMetadataResponse,
+        MilestoneResponse,
+    },
 };
 use chronicle_common::Wrapper;
 use collector::CollectorHandles;
@@ -38,7 +38,7 @@ pub(crate) type RequesterHandle<T> = UnboundedHandle<RequesterEvent<T>>;
 #[derive(Debug)]
 pub enum RequesterEvent<T: FilterBuilder> {
     /// Collector requesting MessageId in order to solidifiy u32 MilestoneIndex
-    RequestFullMessage(CollectorId, MessageId, u32),
+    RequestFullMessage(CollectorId, MessageId),
     /// Requesting Milestone for u32 milestone index;
     RequestMilestone(CollectorId, u32),
     /// Subscribed backstage event
@@ -108,9 +108,9 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Requester<T> {
         log::info!("{:?} is {}", &rt.service().directory(), rt.service().status());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
-                RequesterEvent::RequestFullMessage(collector_id, message_id, try_ms_index) => {
+                RequesterEvent::RequestFullMessage(collector_id, message_id) => {
                     if let Some(collector_handle) = collector_handles.get(&collector_id) {
-                        self.request_full_message_with_retries(collector_handle, message_id, try_ms_index)
+                        self.request_full_message_with_retries(collector_handle, message_id)
                             .await?;
                     } else {
                         error!("Invalid collector_id, unable to request full message {}", message_id);
@@ -162,18 +162,15 @@ impl<T: FilterBuilder> Requester<T> {
         &mut self,
         collector_handle: &CollectorHandle,
         message_id: MessageId,
-        try_ms_index: u32,
     ) -> ActorResult<()> {
         let mut retries = self.retries;
         loop {
             if retries > 0 {
                 if let Some(remote_url) = self.api_endpoints.pop_front() {
-                    if let Ok(full_message) = self.request_message_and_metadata(&remote_url, message_id).await {
+                    if let Ok(message) = self.request_message_and_metadata(&remote_url, message_id).await {
                         self.respond_to_collector(
                             collector_handle,
-                            try_ms_index,
-                            Some(message_id),
-                            Some(full_message),
+                            CollectorEvent::MessageAndMeta(message.message_id, Some(message)),
                         )?;
                         self.api_endpoints.push_front(remote_url);
                         break;
@@ -185,11 +182,11 @@ impl<T: FilterBuilder> Requester<T> {
                         continue;
                     }
                 } else {
-                    self.respond_to_collector(collector_handle, try_ms_index, None, None)?;
+                    self.respond_to_collector(collector_handle, CollectorEvent::MessageAndMeta(message_id, None))?;
                     break;
                 };
             } else {
-                self.respond_to_collector(collector_handle, try_ms_index, None, None)?;
+                self.respond_to_collector(collector_handle, CollectorEvent::MessageAndMeta(message_id, None))?;
                 break;
             }
         }
@@ -204,12 +201,10 @@ impl<T: FilterBuilder> Requester<T> {
         loop {
             if retries > 0 {
                 if let Some(remote_url) = self.api_endpoints.pop_front() {
-                    if let Ok(full_message) = self.request_milestone_message(&remote_url, milestone_index).await {
+                    if let Ok(message) = self.request_milestone_message(&remote_url, milestone_index).await {
                         if let Err(e) = self.respond_to_collector(
                             collector_handle,
-                            milestone_index,
-                            Some(full_message.metadata().message_id),
-                            Some(full_message),
+                            CollectorEvent::Milestone(milestone_index, Some(message)),
                         ) {
                             self.api_endpoints.push_front(remote_url);
                             return Err(e);
@@ -225,29 +220,24 @@ impl<T: FilterBuilder> Requester<T> {
                         continue;
                     }
                 } else {
-                    self.respond_to_collector(collector_handle, milestone_index, None, None)?;
+                    self.respond_to_collector(collector_handle, CollectorEvent::Milestone(milestone_index, None))?;
                     break;
                 };
             } else {
-                self.respond_to_collector(collector_handle, milestone_index, None, None)?;
+                self.respond_to_collector(collector_handle, CollectorEvent::Milestone(milestone_index, None))?;
                 break;
             }
         }
         Ok(())
     }
-    fn respond_to_collector(
-        &self,
-        collector_handle: &CollectorHandle,
-        ms_index: u32,
-        opt_message_id: Option<MessageId>,
-        opt_full_message: Option<FullMessage>,
-    ) -> ActorResult<()> {
-        let collector_event = CollectorEvent::MessageAndMeta(ms_index, opt_message_id, opt_full_message);
-        collector_handle
-            .send(collector_event)
-            .map_err(|e| ActorError::aborted(e))
+    fn respond_to_collector(&self, collector_handle: &CollectorHandle, event: CollectorEvent) -> ActorResult<()> {
+        collector_handle.send(event).map_err(|e| ActorError::aborted(e))
     }
-    async fn request_milestone_message(&mut self, remote_url: &Url, milestone_index: u32) -> Result<FullMessage, ()> {
+    async fn request_milestone_message(
+        &mut self,
+        remote_url: &Url,
+        milestone_index: u32,
+    ) -> anyhow::Result<MessageRecord> {
         let get_milestone_url = remote_url.join(&format!("milestones/{}", milestone_index)).unwrap();
         let milestone_response = self
             .reqwest_client
@@ -274,13 +264,13 @@ impl<T: FilterBuilder> Requester<T> {
                 }
             }
         }
-        Err(())
+        anyhow::bail!("No response!")
     }
     async fn request_message_and_metadata(
         &mut self,
         remote_url: &Url,
         message_id: MessageId,
-    ) -> Result<FullMessage, ()> {
+    ) -> anyhow::Result<MessageRecord> {
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
         let message_response = self
@@ -302,7 +292,7 @@ impl<T: FilterBuilder> Requester<T> {
                     .await
                     .map_err(|e| error!("Error deserializing message: {}\n {:#}", message_id, e));
                 let metadata = metadata_response
-                    .json::<JsonData<MessageMetadata>>()
+                    .json::<JsonData<MessageMetadataResponse>>()
                     .await
                     .map_err(|e| error!("Error deserializing metadata: {}\n {:#}", message_id, e));
                 if let (Ok(message), Ok(metadata)) = (message, metadata) {
@@ -310,8 +300,7 @@ impl<T: FilterBuilder> Requester<T> {
                     let message = Message::try_from(&message_dto).unwrap();
                     let metadata = metadata.into_inner();
                     if metadata.referenced_by_milestone_index.is_some() {
-                        let full_message = FullMessage::new(message, metadata);
-                        return Ok(full_message);
+                        return Ok((message, metadata).into());
                     }
                 }
             } else {
@@ -327,6 +316,6 @@ impl<T: FilterBuilder> Requester<T> {
                 }
             }
         }
-        Err(())
+        anyhow::bail!("No response!")
     }
 }

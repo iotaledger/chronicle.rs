@@ -34,7 +34,6 @@ use backstage::{
         ActorError,
         ActorRequest,
         ActorResult,
-        Channel,
         EolEvent,
         Event,
         ReportEvent,
@@ -56,12 +55,9 @@ use backstage::{
     },
 };
 use bee_message::Message;
-use chronicle_common::config::PartitionConfig;
+use bee_rest_api::types::responses::MessageMetadataResponse;
 use chronicle_storage::{
-    access::{
-        MessageMetadata,
-        SyncData,
-    },
+    access::SyncData,
     keyspaces::ChronicleKeyspace,
 };
 use serde::{
@@ -572,7 +568,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                             let partitioner = MessageIdPartitioner::new(self.partition_count);
                             let mqtt_messages = Mqtt::<Message>::new(mqtt.clone(), self.cache_capacity, partitioner);
                             let mqtt_msg_ref =
-                                Mqtt::<MessageMetadata>::new(mqtt.clone(), self.cache_capacity, partitioner);
+                                Mqtt::<MessageMetadataResponse>::new(mqtt.clone(), self.cache_capacity, partitioner);
                             let dir = format!("messages@{}", mqtt);
                             match rt.spawn(dir, mqtt_messages).await {
                                 Ok((h, _)) => {
@@ -686,7 +682,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                 BrokerEvent::Microservice(scope_id, service, service_result) => {
                     let mut service_status = rt.service().status().clone();
                     let mqtt_message_type_id = TypeId::of::<Mqtt<Message>>();
-                    let mqtt_msg_ref_type_id = TypeId::of::<Mqtt<MessageMetadata>>();
+                    let mqtt_msg_ref_type_id = TypeId::of::<Mqtt<MessageMetadataResponse>>();
                     if service.is_stopped() {
                         // check if it's mqtt
                         if service.actor_type_id == mqtt_message_type_id
@@ -896,7 +892,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         for url in mqtt_brokers {
             let partitioner = MessageIdPartitioner::new(self.partition_count);
             let mqtt_messages = Mqtt::<Message>::new(url.clone(), self.cache_capacity, partitioner);
-            let mqtt_msg_ref = Mqtt::<MessageMetadata>::new(url.clone(), self.cache_capacity, partitioner);
+            let mqtt_msg_ref = Mqtt::<MessageMetadataResponse>::new(url.clone(), self.cache_capacity, partitioner);
             // try to start mqtt_message feed_source
             let dir = format!("messages@{}", url);
             match rt.spawn(dir, mqtt_messages).await {
@@ -1015,7 +1011,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
 
 impl<T: FilterBuilder> ChronicleBroker<T> {
     pub(super) async fn query_sync_table(&self) -> ActorResult<SyncData> {
-        SyncData::try_fetch(&self.keyspace, &self.sync_range, 10)
+        SyncData::try_fetch(&self.keyspace, self.sync_range, 10)
             .await
             .map_err(|e| {
                 log::error!("{}", e);

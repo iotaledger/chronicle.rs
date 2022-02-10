@@ -2,7 +2,7 @@
 name = "chronicle-api"
 version = "0.3.0"
 authors = ["IOTA Stiftung"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 name = "chronicle_api"
@@ -10,16 +10,17 @@ path = "src/lib.rs"
 
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
-chronicle-storage = { path = "../chronicle-storage", features = ["sync"] }
+chronicle-storage = { path = "../chronicle-storage", features = ["sync", "analytic"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "backstage" }
 backstage = { git = "https://github.com/iotaledger/backstage", branch = "stable" }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"] }
+bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 async-trait = "0.1"
 log = "0.4"
 rocket = { version = "0.5.0-rc.1", optional = true }
+rocket_dyn_templates = { version = "0.1.0-rc.1", features = ["tera"], optional = true }
 hex = "0.4"
 futures = "0.3"
 anyhow = "1.0"
@@ -29,6 +30,10 @@ tokio = "1.15"
 tokio-tungstenite = "0.16"
 url = "2.2"
 
+# TEMPORARY
+chrono = "0.4"
+rand = "0.8"
+
 [features]
 default = ["rocket_listener"]
-rocket_listener = ["rocket/json", "backstage/rocket" ]
+rocket_listener = ["rocket/json", "rocket_dyn_templates", "backstage/rocket" ]

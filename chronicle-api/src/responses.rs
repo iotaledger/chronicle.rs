@@ -3,28 +3,28 @@
 
 use bee_message::{
     input::Input,
-    prelude::{
-        MilestoneIndex,
+    output::{
         Output,
         OutputId,
     },
     Message,
 };
-use bee_rest_api::types::dtos::{
-    InputDto,
-    OutputDto,
-    PayloadDto,
-    UnlockBlockDto,
+use bee_rest_api::types::{
+    dtos::{
+        InputDto,
+        OutputDto,
+        PayloadDto,
+        UnlockBlockDto,
+    },
+    responses::MessageMetadataResponse,
 };
 use chronicle_storage::access::{
-    AddressRecord,
-    AnalyticData,
-    IndexationRecord,
     InputData,
     LedgerInclusionState,
-    MessageMetadata,
+    LegacyOutputRecord,
+    MsAnalyticsRecord,
     ParentRecord,
-    Partitioned,
+    TagRecord,
     TransactionRes,
     UnlockRes,
 };
@@ -37,12 +37,13 @@ use std::{
         Borrow,
         Cow,
     },
+    collections::VecDeque,
     convert::TryFrom,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum ListenerResponse {
+pub(crate) enum ListenerResponseV1 {
     /// Response of GET /info
     Info {
         name: String,
@@ -61,26 +62,7 @@ pub(crate) enum ListenerResponse {
         nonce: String,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>/metadata
-    MessageMetadata {
-        #[serde(rename = "messageId")]
-        message_id: String,
-        #[serde(rename = "parentMessageIds")]
-        parent_message_ids: Vec<String>,
-        #[serde(rename = "isSolid")]
-        is_solid: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "referencedByMilestoneIndex")]
-        referenced_by_milestone_index: Option<u32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "ledgerInclusionState")]
-        ledger_inclusion_state: Option<LedgerInclusionState>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "shouldPromote")]
-        should_promote: Option<bool>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "shouldReattach")]
-        should_reattach: Option<bool>,
-    },
+    MessageMetadata(MessageMetadataResponse),
     /// Response of GET /api/<keyspace>/messages/<message_id>/children
     MessageChildren {
         #[serde(rename = "messageId")]
@@ -90,7 +72,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<String>,
-        state: Option<String>,
+        paging_state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>/children[?expanded=true]
     MessageChildrenExpanded {
@@ -101,7 +83,7 @@ pub(crate) enum ListenerResponse {
         count: usize,
         #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<Record>,
-        state: Option<String>,
+        paging_state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?<index>
     MessagesForIndex {
@@ -180,34 +162,16 @@ pub(crate) enum ListenerResponse {
     Analytics { ranges: Vec<AnalyticData> },
 }
 
-impl TryFrom<Message> for ListenerResponse {
+impl TryFrom<Message> for ListenerResponseV1 {
     type Error = Cow<'static, str>;
 
     fn try_from(message: Message) -> Result<Self, Self::Error> {
-        Ok(ListenerResponse::Message {
+        Ok(ListenerResponseV1::Message {
             network_id: message.network_id().to_string(),
             parents: message.parents().iter().map(|p| p.to_string()).collect(),
-            payload: message.payload().as_ref().map(Into::into),
+            payload: message.payload().map(Into::into),
             nonce: message.nonce().to_string(),
         })
-    }
-}
-
-impl From<MessageMetadata> for ListenerResponse {
-    fn from(metadata: MessageMetadata) -> Self {
-        ListenerResponse::MessageMetadata {
-            message_id: metadata.message_id.to_string(),
-            parent_message_ids: metadata
-                .parent_message_ids
-                .into_iter()
-                .map(|id| id.to_string())
-                .collect(),
-            is_solid: metadata.is_solid,
-            referenced_by_milestone_index: metadata.referenced_by_milestone_index,
-            ledger_inclusion_state: metadata.ledger_inclusion_state,
-            should_promote: metadata.should_promote,
-            should_reattach: metadata.should_reattach,
-        }
     }
 }
 
@@ -220,34 +184,34 @@ pub(crate) struct Record {
     pub milestone_index: u32,
 }
 
-impl TryFrom<Partitioned<AddressRecord>> for Record {
+impl TryFrom<LegacyOutputRecord> for Record {
     type Error = anyhow::Error;
 
-    fn try_from(record: Partitioned<AddressRecord>) -> Result<Self, Self::Error> {
+    fn try_from(record: LegacyOutputRecord) -> Result<Self, Self::Error> {
         Ok(Record {
-            id: OutputId::new(record.transaction_id, record.index)?.to_string(),
-            inclusion_state: record.ledger_inclusion_state,
-            milestone_index: record.milestone_index(),
+            id: record.output_id.to_string(),
+            inclusion_state: record.inclusion_state,
+            milestone_index: record.milestone_index,
         })
     }
 }
 
-impl From<Partitioned<IndexationRecord>> for Record {
-    fn from(record: Partitioned<IndexationRecord>) -> Self {
+impl From<TagRecord> for Record {
+    fn from(record: TagRecord) -> Self {
         Record {
             id: record.message_id.to_string(),
-            inclusion_state: record.ledger_inclusion_state,
-            milestone_index: record.milestone_index(),
+            inclusion_state: record.inclusion_state,
+            milestone_index: record.milestone_index,
         }
     }
 }
 
-impl From<Partitioned<ParentRecord>> for Record {
-    fn from(record: Partitioned<ParentRecord>) -> Self {
+impl From<ParentRecord> for Record {
+    fn from(record: ParentRecord) -> Self {
         Record {
             id: record.message_id.to_string(),
-            inclusion_state: record.ledger_inclusion_state,
-            milestone_index: record.milestone_index(),
+            inclusion_state: record.inclusion_state,
+            milestone_index: record.milestone_index,
         }
     }
 }
@@ -324,27 +288,14 @@ impl From<UnlockRes> for Unlock {
 pub(crate) struct StateData {
     #[serde(rename = "pagingState")]
     pub paging_state: Option<Vec<u8>>,
-    #[serde(rename = "lastPartitionId")]
-    pub last_partition_id: Option<u16>,
-    #[serde(rename = "lastMilestoneIndex")]
-    pub last_milestone_index: Option<u32>,
     #[serde(rename = "partitionIds")]
-    pub partition_ids: Vec<(MilestoneIndex, u16)>,
+    pub partition_ids: VecDeque<u32>,
 }
 
-impl From<(Option<Vec<u8>>, Option<u16>, Option<u32>, Vec<(MilestoneIndex, u16)>)> for StateData {
-    fn from(
-        (paging_state, last_partition_id, last_milestone_index, partition_ids): (
-            Option<Vec<u8>>,
-            Option<u16>,
-            Option<u32>,
-            Vec<(MilestoneIndex, u16)>,
-        ),
-    ) -> Self {
+impl From<(Option<Vec<u8>>, Vec<u32>)> for StateData {
+    fn from((paging_state, partition_ids): (Option<Vec<u8>>, Vec<u32>)) -> Self {
         Self {
             paging_state,
-            last_partition_id,
-            last_milestone_index,
             partition_ids,
         }
     }

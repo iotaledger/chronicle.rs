@@ -1,42 +1,40 @@
-use super::{
-    BrokerHandle,
-    ChronicleKeyspace,
-    SolidifierHandle,
+use super::ChronicleKeyspace;
+use crate::{
+    filter::{
+        FilterBuilder,
+        *,
+    },
+    MilestoneDataSearch,
 };
-use futures::stream::StreamExt;
-
-use crate::filter::{
-    FilterBuilder,
-    *,
-};
-
 use async_trait::async_trait;
 use backstage::core::{
     Actor,
     ActorResult,
-    NullChannel,
-    NullHandle,
     Rt,
     SupHandle,
 };
-use bee_message::prelude::{
-    Address,
-    Ed25519Address,
-    Essence,
-    Message,
-    MessageId,
-    Output,
-    Payload,
-    SignatureUnlock,
-    UnlockBlock,
+use bee_message::{
+    address::{
+        Address,
+        Ed25519Address,
+    },
+    output::Output,
+    payload::{
+        transaction::TransactionEssence,
+        Payload,
+    },
+    signature::Signature,
+    unlock_block::{
+        SignatureUnlockBlock,
+        UnlockBlock,
+    },
 };
 use chronicle_storage::access::{
     Bee,
-    FullMessage,
     LedgerInclusionState,
-    MessageMetadata,
+    MessageRecord,
     MilestoneData,
-    MilestoneDataSearch,
+    MilestoneDataBuilder,
     Selected,
 };
 use chrono::{
@@ -49,6 +47,7 @@ use crypto::hashes::{
     blake2b::Blake2b256,
     Digest,
 };
+use futures::stream::StreamExt;
 use scylla_rs::prelude::*;
 use serde::{
     Deserialize,
@@ -56,16 +55,8 @@ use serde::{
 };
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     fmt::Debug,
-    sync::{
-        atomic::Ordering,
-        Arc,
-    },
-};
-use tokio::sync::oneshot::{
-    Receiver,
-    Sender,
+    sync::Arc,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -103,9 +94,7 @@ impl FilterBuilder for PermanodeConfig {
     async fn filter_message(
         &self,
         _handle: &AbortableUnboundedHandle<()>,
-        _message_id: &MessageId,
-        _message: &Message,
-        _metadata: Option<&MessageMetadata>,
+        _message: &MessageRecord,
     ) -> anyhow::Result<Option<Selected>> {
         Ok(Some(Selected::select()))
     }
@@ -113,12 +102,12 @@ impl FilterBuilder for PermanodeConfig {
         &self,
         _handle: &AbortableUnboundedHandle<()>,
         atomic_handle: Arc<AtomicProcessHandle>,
-        milestone_data: Arc<MilestoneData>,
+        milestone_data: Arc<MilestoneDataBuilder>,
     ) -> anyhow::Result<()> {
         let milestone_index = milestone_data.milestone_index();
-        let milestone_timestamp_secs: u64 = milestone_data
-            .get_milestone_timestamp()
-            .ok_or_else(|| anyhow::Error::msg("No milestone timestamp"))?;
+        let milestone_timestamp_secs = milestone_data
+            .timestamp()
+            .ok_or_else(|| anyhow::anyhow!("No milestone timestamp"))?;
         let dt = NaiveDateTime::from_timestamp(milestone_timestamp_secs as i64, 0);
         let date = DateTime::<Utc>::from_utc(dt, Utc);
         let epoch = Utc.ymd(1970, 1, 1).and_hms(0, 0, 0);
@@ -132,19 +121,18 @@ impl FilterBuilder for PermanodeConfig {
         let mut message_count: u32 = 0;
         let mut transferred_tokens: u64 = 0;
         let mut addresses: HashMap<Address, (Sent, Recv, SentOrRecv)> = HashMap::new();
-        while let Some((mut proof_opt, message_id, FullMessage(message, metadata))) = milestone_data_search.next().await
-        {
+        while let Some((mut proof_opt, message)) = milestone_data_search.next().await {
             // Insert the proof(if any)
             if let Some(proof) = proof_opt.take() {
                 let req = self
                     .keyspace
-                    .insert(&Bee(message_id), &proof)
+                    .insert(&Bee(message.message_id), &proof)
                     .consistency(Consistency::Quorum)
                     .build()?;
                 let worker = AtomicProcessWorker::boxed(
                     atomic_handle.clone(),
                     self.keyspace.clone(),
-                    Bee(message_id),
+                    Bee(message.message_id),
                     proof.clone(),
                     5,
                 );
@@ -158,11 +146,11 @@ impl FilterBuilder for PermanodeConfig {
             // Accumulate the message count
             message_count += 1;
             // Accumulate confirmed(included) transaction value
-            if let Some(LedgerInclusionState::Included) = metadata.ledger_inclusion_state {
+            if let Some(LedgerInclusionState::Included) = message.inclusion_state {
                 if let Some(Payload::Transaction(payload)) = message.payload() {
                     // Accumulate the transaction count
                     transaction_count += 1;
-                    let Essence::Regular(regular_essence) = payload.essence();
+                    let TransactionEssence::Regular(regular_essence) = payload.essence();
                     {
                         for output in regular_essence.outputs() {
                             match output {
@@ -181,9 +169,10 @@ impl FilterBuilder for PermanodeConfig {
                     }
                     let unlock_blocks = payload.unlock_blocks().iter();
                     for unlock in unlock_blocks {
-                        if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
+                        if let UnlockBlock::Signature(sig) = unlock {
+                            let Signature::Ed25519(s) = sig.signature();
                             let address =
-                                Address::Ed25519(Ed25519Address::new(Blake2b256::digest(sig.public_key()).into()));
+                                Address::Ed25519(Ed25519Address::new(Blake2b256::digest(s.public_key()).into()));
                             let (sent, _recv, any) = addresses.entry(address).or_default();
                             sent.0 = true;
                             any.0 = true;

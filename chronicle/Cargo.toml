@@ -2,7 +2,7 @@
 name = "chronicle"
 version = "0.3.0"
 authors = ["IOTA Stiftung"]
-edition = "2018"
+edition = "2021"
 license = "APACHE 2.0"
 homepage = "https://docs.iota.org/docs/chronicle/1.1/overview"
 repository = "https://github.com/iotaledger/scylla.rs"
@@ -16,7 +16,6 @@ required-features = ["application"]
 backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features= ["paho-mqtt", "ron_config"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage" }
 chronicle-common = { path = "../chronicle-common" }
-chronicle-filter = { path = "../chronicle-filter" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-storage = { path = "../chronicle-storage" }
 chronicle-broker = { path = "../chronicle-broker", default-features = false }

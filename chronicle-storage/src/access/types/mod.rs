@@ -1,54 +1,95 @@
-use super::*;
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
+mod address_hints;
+mod alias_outputs;
+mod basic_outputs;
+mod daily_analytics;
+mod foundry_outputs;
+mod legacy_outputs;
+mod messages;
+mod milestones;
+mod ms_analytics;
+mod nft_outputs;
+mod parents;
+mod sync;
+mod tag_hints;
+mod tags;
+mod transactions;
+
+pub use address_hints::*;
+pub use alias_outputs::*;
+pub use basic_outputs::*;
+use bee_rest_api::types::dtos::LedgerInclusionStateDto;
+pub use daily_analytics::*;
+pub use foundry_outputs::*;
+pub use legacy_outputs::*;
+pub use messages::*;
+pub use milestones::*;
+pub use ms_analytics::*;
+pub use nft_outputs::*;
+pub use parents::*;
+pub use sync::*;
+pub use tag_hints::*;
+pub use tags::*;
+pub use transactions::*;
+
+use anyhow::{
+    anyhow,
+    bail,
+    ensure,
+};
 use bee_message::{
-    address::Address,
+    address::*,
+    milestone::{
+        Milestone,
+        MilestoneIndex,
+    },
     output::{
-        feature_block::{
-            IssuerFeatureBlock,
-            MetadataFeatureBlock,
-            SenderFeatureBlock,
-            TagFeatureBlock,
+        feature_block::*,
+        unlock_condition::*,
+        *,
+    },
+    payload::{
+        transaction::{
+            TransactionEssence,
+            TransactionId,
         },
-        AliasId,
-        FoundryId,
-        NativeTokens,
-        NftId,
-        OutputId,
-        TokenScheme,
-        UnlockConditions,
+        MilestonePayload,
+        Payload,
     },
+    Message,
+    MessageId,
 };
-
-use primitive_types::U256;
-
-use bee_tangle::ConflictReason;
 use chronicle_common::Wrapper;
-use chrono::{
-    offset::Utc,
-    DateTime,
+use chrono::NaiveDateTime;
+use packable::{
+    Packable,
+    PackableExt,
 };
-use futures::{
-    stream::Stream,
-    task::{
-        Context,
-        Poll,
-    },
+use scylla_rs::{
+    cql::TokenEncodeChain,
+    prelude::*,
 };
-use pin_project_lite::pin_project;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::{
         BTreeMap,
+        BTreeSet,
         HashMap,
         HashSet,
-        VecDeque,
     },
-    io::Cursor,
+    convert::TryFrom,
     ops::{
         Deref,
         DerefMut,
     },
-    path::PathBuf,
     str::FromStr,
 };
+
 /// Index type
 pub type Index = u16;
 /// Amount type
@@ -62,8 +103,6 @@ pub type SyncedBy = u8;
 /// Identify theoretical nodeid which updated/set the logged_by column in sync table.
 /// This enables the admin to locate the generated logs across cluster of chronicles
 pub type LoggedBy = u8;
-/// Reflect any type version
-pub type Version = u8;
 /// Milestone Range Id
 pub type MsRangeId = u32;
 
@@ -116,6 +155,15 @@ impl<T> Wrapper for JsonData<T> {
     }
 }
 
+pub trait Partitioned {
+    const MS_CHUNK_SIZE: u32;
+
+    #[inline]
+    fn range_id(ms: u32) -> MsRangeId {
+        ms / Self::MS_CHUNK_SIZE
+    }
+}
+
 #[derive(Clone, Debug)]
 /// Wrapper around MessageCount u32
 pub struct MessageCount(pub u32);
@@ -147,48 +195,6 @@ impl Deref for TransferredTokens {
     }
 }
 
-/// A 'sync' table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct SyncRecord {
-    pub milestone_index: MilestoneIndex,
-    pub synced_by: Option<SyncedBy>,
-    pub logged_by: Option<LoggedBy>,
-}
-
-impl SyncRecord {
-    /// Creates a new sync row
-    pub fn new(milestone_index: MilestoneIndex, synced_by: Option<SyncedBy>, logged_by: Option<LoggedBy>) -> Self {
-        Self {
-            milestone_index,
-            synced_by,
-            logged_by,
-        }
-    }
-}
-
-/// MessageMetadata storage object
-#[allow(missing_docs)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessageMetadata {
-    #[serde(rename = "messageId")]
-    pub message_id: MessageId,
-    #[serde(rename = "parentMessageIds")]
-    pub parent_message_ids: Vec<MessageId>,
-    #[serde(rename = "isSolid")]
-    pub is_solid: bool,
-    #[serde(rename = "referencedByMilestoneIndex")]
-    pub referenced_by_milestone_index: Option<u32>,
-    #[serde(rename = "ledgerInclusionState")]
-    pub ledger_inclusion_state: Option<LedgerInclusionState>,
-    #[serde(rename = "ConflictReason")]
-    pub conflict_reason: Option<ConflictReason>,
-    #[serde(rename = "shouldPromote")]
-    pub should_promote: Option<bool>,
-    #[serde(rename = "shouldReattach")]
-    pub should_reattach: Option<bool>,
-}
-
 /// A message's ledger inclusion state
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -216,9 +222,29 @@ impl TryFrom<u8> for LedgerInclusionState {
     }
 }
 
+impl From<LedgerInclusionStateDto> for LedgerInclusionState {
+    fn from(value: LedgerInclusionStateDto) -> Self {
+        match value {
+            LedgerInclusionStateDto::Conflicting => Self::Conflicting,
+            LedgerInclusionStateDto::Included => Self::Included,
+            LedgerInclusionStateDto::NoTransaction => Self::NoTransaction,
+        }
+    }
+}
+
+impl Into<LedgerInclusionStateDto> for LedgerInclusionState {
+    fn into(self) -> LedgerInclusionStateDto {
+        match self {
+            Self::Conflicting => LedgerInclusionStateDto::Conflicting,
+            Self::Included => LedgerInclusionStateDto::Included,
+            Self::NoTransaction => LedgerInclusionStateDto::NoTransaction,
+        }
+    }
+}
+
 impl ColumnEncoder for LedgerInclusionState {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        let num = unsafe { std::mem::transmute::<&LedgerInclusionState, &u8>(self) };
+        let num = *self as u8;
         num.encode(buffer)
     }
 }
@@ -271,27 +297,16 @@ impl<Type> From<Type> for Bee<Type> {
     }
 }
 
-impl TokenEncoder for Bee<OutputId> {
-    fn encode_token(&self) -> TokenEncodeChain {
-        Bee(self.transaction_id()).chain(&self.index())
-    }
-}
-
 impl TokenEncoder for Bee<Milestone> {
     fn encode_token(&self) -> TokenEncodeChain {
         Bee(self.message_id()).chain(&self.timestamp())
-    }
-}
-impl TokenEncoder for Hint {
-    fn encode_token(&self) -> TokenEncodeChain {
-        self.hint.encode_token()
     }
 }
 macro_rules! impl_simple_packable {
     ($t:ty) => {
         impl ColumnDecoder for Bee<$t> {
             fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-                <$t>::unpack(&mut Cursor::new(slice))
+                <$t>::unpack_verified(slice)
                     .map_err(|e| anyhow!("{:?}", e))
                     .map(Into::into)
             }
@@ -299,6 +314,7 @@ macro_rules! impl_simple_packable {
 
         impl ColumnEncoder for Bee<$t> {
             fn encode(&self, buffer: &mut Vec<u8>) {
+                // TODO: Do these need to encode the length first???
                 self.pack(buffer).ok();
             }
         }
@@ -311,6 +327,7 @@ macro_rules! impl_simple_packable {
 
         impl ColumnEncoder for Bee<&$t> {
             fn encode(&self, buffer: &mut Vec<u8>) {
+                // TODO: Do these need to encode the length first???
                 self.pack(buffer).ok();
             }
         }
@@ -323,6 +340,7 @@ macro_rules! impl_simple_packable {
 
         impl ColumnEncoder for Bee<&mut $t> {
             fn encode(&self, buffer: &mut Vec<u8>) {
+                // TODO: Do these need to encode the length first???
                 self.pack(buffer).ok();
             }
         }
@@ -408,787 +426,393 @@ impl ColumnEncoder for Bee<&MilestoneIndex> {
     }
 }
 
+impl ColumnDecoder for Bee<Address> {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Address::try_from_bech32(&String::try_decode_column(slice)?)
+            .map_err(|e| anyhow!("{:?}", e))
+            .map(Into::into)
+    }
+}
+
+impl ColumnEncoder for Bee<Address> {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.to_bech32("iota").encode(buffer)
+    }
+}
+
+impl TokenEncoder for Bee<Address> {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.into()
+    }
+}
+
+impl ColumnEncoder for Bee<&Address> {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.to_bech32("iota").encode(buffer)
+    }
+}
+
+impl TokenEncoder for Bee<&Address> {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.into()
+    }
+}
+
+impl ColumnEncoder for Bee<&mut Address> {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.to_bech32("iota").encode(buffer)
+    }
+}
+
+impl TokenEncoder for Bee<&mut Address> {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.into()
+    }
+}
+
 impl_simple_packable!(Message);
+impl_simple_packable!(Output);
+impl_simple_packable!(BasicOutput);
+impl_simple_packable!(AliasOutput);
+impl_simple_packable!(FoundryOutput);
+impl_simple_packable!(NftOutput);
+impl_simple_packable!(MilestonePayload);
+
 impl_string_packable!(MessageId);
+impl_string_packable!(AliasId);
+impl_string_packable!(FoundryId);
+impl_string_packable!(NftId);
 impl_string_packable!(OutputId);
 impl_string_packable!(TransactionId);
 impl_string_packable!(Ed25519Address);
 
-/// Transaction variants. Can be Input, Output, or Unlock.
-#[repr(u8)]
-#[derive(Clone, Copy, Debug)]
-pub enum TransactionVariant {
-    /// A transaction's Input, which spends a prior Output
-    Input = 0,
-    /// A transaction's Unspent Transaction Output (UTXO), specifying an address to receive the funds
-    Output = 1,
-    /// A transaction's Unlock Block, used to unlock an Input for verification
-    Unlock = 2,
-    /// A Treasury transaction, used to point ot treasury payload
-    Treasury = 3,
-}
-
-impl ColumnDecoder for TransactionVariant {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        Ok(match std::str::from_utf8(slice)? {
-            "input" => TransactionVariant::Input,
-            "output" => TransactionVariant::Output,
-            "unlock" => TransactionVariant::Unlock,
-            "treasury" => TransactionVariant::Treasury,
-            _ => bail!("Unexpected variant type"),
-        })
+impl Row for Bee<Milestone> {
+    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Milestone::new(
+            rows.column_value::<Bee<MessageId>>()?.into_inner(),
+            rows.column_value()?,
+        )
+        .into())
     }
 }
 
-impl ColumnEncoder for TransactionVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        let variant;
-        match self {
-            TransactionVariant::Input => variant = "input",
-            TransactionVariant::Output => variant = "output",
-            TransactionVariant::Unlock => variant = "unlock",
-            TransactionVariant::Treasury => variant = "treasury",
+#[derive(Copy, Clone, Debug)]
+pub struct PartitionData {
+    pub ms_range_id: u32,
+    pub milestone_index: MilestoneIndex,
+    pub ms_timestamp: NaiveDateTime,
+}
+
+impl PartitionData {
+    pub fn new(ms_range_id: u32, milestone_index: MilestoneIndex, ms_timestamp: NaiveDateTime) -> Self {
+        Self {
+            ms_range_id,
+            milestone_index,
+            ms_timestamp,
         }
-        buffer.extend(&i32::to_be_bytes(variant.len() as i32));
-        buffer.extend(variant.as_bytes());
     }
 }
 
-/// Chronicle Message record
-pub struct MessageRecord {
+impl<B: Binder> Bindable<B> for PartitionData {
+    fn bind(&self, binder: B) -> B {
+        binder
+            .value(self.ms_range_id)
+            .value(Bee(&self.milestone_index))
+            .value(self.ms_timestamp)
+    }
+}
+/// A result struct which holds a retrieved output as well as all associated unlock blocks
+#[derive(Debug, Clone)]
+pub struct OutputRes {
+    /// The created output's message id
     pub message_id: MessageId,
-    pub message: Message,
-    pub version: u8,
-    pub milestone_index: Option<MilestoneIndex>,
-    pub inclusion_state: Option<LedgerInclusionState>,
-    pub conflict_reason: Option<ConflictReason>,
-    pub proof: Option<Vec<u8>>,
+    /// The output
+    pub output: Output,
+    /// Zero or more unlock blocks for this output.
+    /// Only one can be valid, which indicates the output `is_spent`.
+    pub unlock_blocks: Vec<UnlockRes>,
 }
 
-impl MessageRecord {
-    /// Return Message id of the message
+/// Milestone data
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MilestoneData {
+    pub message_id: MessageId,
+    pub milestone_index: u32,
+    pub payload: MilestonePayload,
+    pub messages: BTreeSet<MessageRecord>,
+}
+
+impl MilestoneData {
     pub fn message_id(&self) -> &MessageId {
         &self.message_id
     }
-    /// Return the message
-    pub fn message(&self) -> &Message {
-        &self.message
+    pub fn milestone_index(&self) -> u32 {
+        self.milestone_index
     }
-    /// Return conflict_reason
-    pub fn version(&self) -> u8 {
-        self.version
+    pub fn payload(&self) -> &MilestonePayload {
+        &self.payload
     }
-    /// Return referenced milestone index
-    pub fn milestone_index(&self) -> Option<&MilestoneIndex> {
-        self.milestone_index.as_ref()
+    /// Get the milestone's messages
+    pub fn messages(&self) -> &BTreeSet<MessageRecord> {
+        &self.messages
     }
-    /// Return inclusion_state
-    pub fn inclusion_state(&self) -> Option<&LedgerInclusionState> {
-        self.inclusion_state.as_ref()
-    }
-    /// Return conflict_reason
-    pub fn conflict_reason(&self) -> Option<&ConflictReason> {
-        self.conflict_reason.as_ref()
-    }
-    /// Return proof
-    pub fn proof(&self) -> Option<&Proof> {
-        self.proof.as_ref()
-    }
-}
+    /// Get the analytics from the collected messages
+    pub fn get_analytic_record(&self) -> anyhow::Result<MsAnalyticsRecord> {
+        // The accumulators
+        let mut transaction_count: u32 = 0;
+        let mut transferred_tokens: u64 = 0;
 
-/// A `parents` table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct ParentRecord {
-    pub milestone_index: Option<MilestoneIndex>,
-    pub ms_timestamp: Option<DateTime<Utc>>,
-    pub message_id: MessageId,
-    pub inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl ParentRecord {
-    /// Creates a new parent row
-    pub fn new(
-        milestone_index: Option<MilestoneIndex>,
-        ms_timestamp: Option<DateTime<Utc>>,
-        message_id: MessageId,
-        ledger_inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            ms_timestamp,
-            message_id,
-            inclusion_state,
-        }
-    }
-}
-
-/// A tag hint, used to lookup in the `tags hints` table
-#[derive(Clone, Debug)]
-pub struct TagHint {
-    /// The tag string
-    pub tag: String,
-    /// The tag hint variant. Can be 'Regular', 'ExtOutput', or 'NftOutput'.
-    pub variant: TagHintVariant,
-}
-
-impl TagHint {
-    /// Creates a new tagged or indexation hint
-    pub fn regular(tag: String) -> Self {
-        Self {
-            tag,
-            variant: TagHintVariant::Regular,
-        }
-    }
-    /// Creates a new tag hint derived from feature block inside extended output
-    pub fn extended_output(tag: String) -> Self {
-        Self {
-            tag,
-            variant: TagHintVariant::ExtOutput,
-        }
-    }
-    /// Creates a new tag hint derived from feature block inside nft output
-    pub fn extended_output(tag: String) -> Self {
-        Self {
-            tag,
-            variant: TagHintVariant::NftOutput,
-        }
-    }
-    /// Get the tag string
-    pub fn tag(&self) -> &String {
-        &self.tag
-    }
-    /// Get the tag hint variant
-    fn variant(&self) -> &TagHintVariant {
-        &self.variant
-    }
-}
-
-/// Hint variants
-#[derive(Clone, Debug)]
-pub enum TagHintVariant {
-    /// An unhashed indexation key or tagged data
-    Regular,
-    /// A feature block for extended output
-    ExtOutput,
-    /// A feature block for nft output
-    NftOutput,
-}
-
-impl std::fmt::Display for HintVariant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                HintVariant::Regular => "Regular",
-                HintVariant::ExtOutput => "ExtOutput",
-                HintVariant::NftOutput => "NftOutput",
+        // Iterate the messages to calculate analytics
+        for rec in self.messages() {
+            // Accumulate confirmed(included) transaction value
+            if let Some(LedgerInclusionState::Included) = rec.inclusion_state {
+                if let Some(Payload::Transaction(payload)) = rec.message.payload() {
+                    // Accumulate the transaction count
+                    transaction_count += 1;
+                    let TransactionEssence::Regular(regular_essence) = payload.essence();
+                    {
+                        for output in regular_essence.outputs() {
+                            match output {
+                                // Accumulate the transferred token amount
+                                Output::SignatureLockedSingle(output) => transferred_tokens += output.amount(),
+                                Output::SignatureLockedDustAllowance(output) => transferred_tokens += output.amount(),
+                                // Note that the transaction payload don't have Treasury
+                                _ => anyhow::bail!("Unexpected Output variant in transaction payload"),
+                            }
+                        }
+                    }
+                }
             }
-        )
-    }
-}
-
-impl ColumnEncoder for TagHintVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.to_string().encode(buffer)
-    }
-}
-
-///////////
-/// Address hint, used to lookup in the `addresses hints` table
-#[derive(Clone, Debug)]
-pub struct AddressHint {
-    /// The address
-    pub address: Address,
-    pub output_kind: OutputVariant,
-    /// The tag hint variant. Can be 'Regular', 'ExtOutput', or 'NftOutput'.
-    pub variant: AddressHintVariant,
-}
-
-impl AddressHint {
-    /// Creates address hint
-    pub fn new(address: Address, output_kind: OutputVariant, variant: AddressHintVariant) -> Self {
-        Self {
-            address,
-            output_kind,
-            variant,
         }
-    }
-    /// Get the address
-    pub fn address(&self) -> &Address {
-        &self.address
-    }
-    /// Get the output kind
-    fn kind(&self) -> &OutputVariant {
-        &self.output_kind
-    }
-    /// Get the address variant
-    fn variant(&self) -> &AddressHintVariant {
-        &self.variant
+        let analytic_record = MsAnalyticsRecord {
+            ms_range_id: MsAnalyticsRecord::range_id(self.milestone_index()),
+            milestone_index: MilestoneIndex(self.milestone_index()),
+            message_count: self.messages().len() as u32,
+            transaction_count,
+            transferred_tokens,
+        };
+
+        // Return the analytic record
+        Ok(analytic_record)
     }
 }
 
-/// Hint variants
-#[derive(Clone, Debug)]
-pub enum AddressHintVariant {
-    Address,
-    Sender,
-    Issuer,
-    StateController,
-    Governor,
-}
-
-impl std::fmt::Display for AddressHintVariant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Address => "Address",
-                Self::Sender => "Sender",
-                Self::Issuer => "Issuer",
-                Self::StateController => "StateController",
-                Self::Governor => "Governor",
-            }
-        )
-    }
-}
-
-impl ColumnEncoder for AddressHintVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.to_string().encode(buffer)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum OutputVariant {
-    Legacy,
-    Extended,
-    Alias,
-    Foundry,
-    Nft,
-}
-
-impl std::fmt::Display for OutputVariant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Legacy => "Legacy",
-                Self::Extended => "Extended",
-                Self::Alias => "Alias",
-                Self::Nft => "Nft",
-                Self::Foundry => "Foundry",
-            }
-        )
-    }
-}
-
-impl ColumnEncoder for OutputVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.to_string().encode(buffer)
-    }
-}
-
-/// A transaction's unlock data, to be stored in a `transactions` row.
-/// Holds a reference to the input which it signs.
+/// Milestone data builder
 #[derive(Debug, Clone)]
-pub struct UnlockData {
-    /// it holds the transaction_id of the input which created the unlock_block
-    pub input_tx_id: TransactionId,
-    /// it holds the input_index of the input which created the unlock_block
-    pub input_index: u16,
-    /// it's the unlock_block
-    pub unlock_block: UnlockBlock,
+pub struct MilestoneDataBuilder {
+    pub(crate) message_id: MessageId,
+    pub(crate) milestone_index: u32,
+    pub(crate) payload: Option<MilestonePayload>,
+    pub(crate) messages: BTreeMap<MessageId, MessageRecord>,
+    pub(crate) selected_messages: HashMap<MessageId, Selected>,
+    pub(crate) pending: HashSet<MessageId>,
+    pub(crate) created_by: CreatedBy,
 }
-impl UnlockData {
-    /// Creates a new unlock data
-    pub fn new(input_tx_id: TransactionId, input_index: u16, unlock_block: UnlockBlock) -> Self {
+
+impl MilestoneDataBuilder {
+    pub fn new(message_id: MessageId, milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
-            input_tx_id,
-            input_index,
-            unlock_block,
-        }
-    }
-}
-
-impl Packable for UnlockData {
-    type UnpackError = anyhow::Error;
-    fn pack<P: Packer>(&self, packer: &mut P) -> Result<(), P::Error> {
-        self.input_tx_id.pack(packer)?;
-        self.input_index.pack(packer)?;
-        self.unlock_block.pack(packer)?;
-        Ok(())
-    }
-    fn unpack<U: Unpacker, const VERIFY: bool>(
-        unpacker: &mut U,
-    ) -> Result<Self, packable::error::UnpackError<Self::UnpackError, U::Error>> {
-        Ok(Self {
-            input_tx_id: TransactionId::unpack(unpacker)?,
-            input_index: u16::unpack(unpacker)?,
-            unlock_block: UnlockBlock::unpack(unpacker)?,
-        })
-    }
-}
-
-/// A transaction's input data, to be stored in a `transactions` row.
-#[derive(Debug, Clone)]
-pub enum InputData {
-    /// An regular Input which spends a prior Output and its unlock block
-    Utxo(UtxoInput, UnlockBlock),
-    /// A special input for migrating funds from another network
-    Treasury(TreasuryInput),
-}
-
-impl InputData {
-    /// Creates a regular Input Data
-    pub fn utxo(utxo_input: UtxoInput, unlock_block: UnlockBlock) -> Self {
-        Self::Utxo(utxo_input, unlock_block)
-    }
-    /// Creates a special migration Input Data
-    pub fn treasury(treasury_input: TreasuryInput) -> Self {
-        Self::Treasury(treasury_input)
-    }
-}
-
-impl Packable for InputData {
-    type UnpackError = anyhow::Error;
-    fn pack<P: Packer>(&self, packer: &mut P) -> Result<(), P::Error> {
-        match self {
-            InputData::Utxo(utxo_input, unlock_block) => {
-                0u8.pack(packer)?;
-                utxo_input.pack(packer)?;
-                unlock_block.pack(packer)?;
-            }
-            InputData::Treasury(treasury_input) => {
-                1u8.pack(packer)?;
-                treasury_input.pack(packer)?;
-            }
-        }
-        Ok(())
-    }
-    fn unpack<U: Unpacker, const VERIFY: bool>(
-        unpacker: &mut U,
-    ) -> Result<Self, packable::error::UnpackError<Self::UnpackError, U::Error>> {
-        Ok(match u8::unpack(unpacker)? {
-            0 => InputData::Utxo(UtxoInput::unpack(unpacker)?, UnlockBlock::unpack(unpacker)?),
-            1 => InputData::Treasury(TreasuryInput::unpack(unpacker)?),
-            _ => anyhow::bail!("Tried to unpack an invalid inputdata variant!"),
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-/// Chrysalis transaction data
-pub enum TransactionData {
-    /// An unspent transaction input
-    Input(InputData),
-    /// A transaction output
-    Output(Output),
-    /// A signed block which can be used to unlock an input
-    Unlock(UnlockData),
-}
-
-impl Packable for TransactionData {
-    type UnpackError = anyhow::Error;
-    fn pack<P: Packer>(&self, packer: &mut P) -> Result<(), P::Error> {
-        match self {
-            TransactionData::Input(input_data) => {
-                0u8.pack(packer)?;
-                input_data.pack(packer)?;
-            }
-            TransactionData::Output(output) => {
-                1u8.pack(packer)?;
-                output.pack(packer)?;
-            }
-            TransactionData::Unlock(block_data) => {
-                2u8.pack(packer)?;
-                block_data.pack(packer)?;
-            }
-        }
-        Ok(())
-    }
-    fn unpack<U: Unpacker, const VERIFY: bool>(
-        unpacker: &mut U,
-    ) -> Result<Self, packable::error::UnpackError<Self::UnpackError, U::Error>> {
-        Ok(match u8::unpack(unpacker)? {
-            0 => TransactionData::Input(InputData::unpack(unpacker)?),
-            1 => TransactionData::Output(Output::unpack(unpacker)?),
-            2 => TransactionData::Unlock(UnlockData::unpack(unpacker)?),
-            n => anyhow::bail!("Tried to unpack an invalid transaction variant!, tag: {}", n),
-        })
-    }
-}
-
-impl ColumnDecoder for TransactionData {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        Self::unpack(&mut Cursor::new(slice)).map(Into::into)
-    }
-}
-
-/// A `transactions` table row
-#[allow(missing_docs)]
-#[derive(Clone, Debug)]
-pub struct TransactionRecord {
-    pub idx: Index,
-    pub variant: TransactionVariant,
-    pub message_id: MessageId,
-    pub version: Version,
-    pub data: TransactionData,
-    pub inclusion_state: Option<LedgerInclusionState>,
-    pub milestone_index: Option<MilestoneIndex>,
-}
-
-impl TransactionRecord {
-    /// Creates an input transactions record
-    pub fn input(
-        idx: Index,
-        message_id: MessageId,
-        input_data: InputData,
-        inclusion_state: Option<LedgerInclusionState>,
-        milestone_index: Option<MilestoneIndex>,
-    ) -> Self {
-        Self {
-            idx,
-            variant: TransactionVariant::Input,
             message_id,
-            version: 1,
-            data: TransactionData::Input(input_data),
-            inclusion_state,
             milestone_index,
+            payload: None,
+            messages: BTreeMap::new(),
+            selected_messages: HashMap::new(),
+            pending: HashSet::new(),
+            created_by,
         }
     }
-    /// Creates an output transactions record
-    pub fn output(
-        idx: Index,
-        message_id: MessageId,
-        data: Output,
-        inclusion_state: Option<LedgerInclusionState>,
-        milestone_index: Option<MilestoneIndex>,
-    ) -> Self {
-        Self {
-            idx,
-            variant: TransactionVariant::Output,
-            message_id,
-            version: 1,
-            data: TransactionData::Output(data),
-            inclusion_state,
-            milestone_index,
-        }
+    pub fn message_id(&self) -> &MessageId {
+        &self.message_id
     }
-    /// Creates an unlock block transactions record
-    pub fn unlock(
-        idx: Index,
-        message_id: MessageId,
-        data: UnlockData,
-        inclusion_state: Option<LedgerInclusionState>,
-        milestone_index: Option<MilestoneIndex>,
-    ) -> Self {
-        Self {
-            idx,
-            variant: TransactionVariant::Unlock,
-            message_id,
-            version: 1,
-            data: TransactionData::Unlock(data),
-            inclusion_state,
-            milestone_index,
-        }
-    }
-}
-
-/// A `Legacy Output` table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct LegacyOutputRecord {
-    pub milestone_index: MilestoneIndex,
-    pub ms_range_id: u32,
-    pub output_type: OutputType,
-    pub address: Address,
-    pub amount: Amount,
-    pub inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl LegacyOutputRecord {
-    /// Creates a new legacy output row row
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        ms_timestamp: DateTime<Utc>,
-        ms_range_id: u32,
-        output_type: u8,
-        address: Address,
-        amount: Amount,
-        inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            ms_range_id,
-            output_type,
-            address,
-            amount,
-            inclusion_state,
-        }
-    }
-}
-
-/// A `Basic Output` table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct BasicOutputRecord {
-    pub milestone_index: MilestoneIndex,
-    pub ms_range_id: u32,
-    pub address: Address,
-    pub amount: Amount,
-    pub native_tokens: NativeTokens,
-    pub unlock_conditions: UnlockConditions,
-    pub sender: Option<SenderFeatureBlock>,
-    pub tag: Option<TagFeatureBlock>,
-    pub metadata: Option<MetadataFeatureBlock>,
-    pub inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl BasicOutputRecord {
-    /// Creates a new basic output row
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        ms_timestamp: DateTime<Utc>,
-        ms_range_id: u32,
-        address: Address,
-        amount: Amount,
-        native_tokens: NativeTokens,
-        unlock_conditions: UnlockConditions,
-        tag: Option<TagFeatureBlock>,
-        sender: Option<SenderFeatureBlock>,
-        metadata: Option<MetadataFeatureBlock>,
-        inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            ms_range_id,
-            address,
-            amount,
-            tag,
-            native_tokens,
-            metadata,
-            unlock_conditions,
-            inclusion_state,
-            sender,
-        }
-    }
-}
-
-/// An `Alias Output` table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct AliasOutputRecord {
-    pub milestone_index: MilestoneIndex,
-    pub ms_range_id: u32,
-    pub ms_timestamp: DateTime<Utc>,
-    pub amount: Amount,
-    pub issuer: Option<Address>,
-    pub state_controller: Option<Address>,
-    pub native_tokens: NativeTokens,
-    pub governor: Option<Address>,
-    pub metadata: Option<MetadataFeatureBlock>,
-    pub state_index: u32,
-    pub state_metadata: Vec<u8>,
-    pub foundry_counter: u32,
-    pub inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl AliasOutputRecord {
-    /// Creates a new alias output row
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        ms_timestamp: DateTime<Utc>,
-        ms_range_id: u32,
-        amount: Amount,
-        sender: Address,
-        issuer: Address,
-        state_controller: Address,
-        governor: Address,
-        metadata: Option<MetadataFeatureBlock>,
-        state_index: u32,
-        state_metadata: Cursor<u8>,
-        foundry_counter: u32,
-        inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            ms_range_id,
-            ms_timestamp,
-            amount,
-            native_tokens,
-            state_index,
-            state_metadata,
-            state_controller,
-            issuer,
-            foundry_counter,
-            governor,
-            metadata,
-            inclusion_state,
-        }
-    }
-}
-
-/// A `Foundry Output` table record
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct FoundryOutputRecord {
-    pub milestone_index: MilestoneIndex,
-    pub ms_timestamp: DateTime<Utc>,
-    pub ms_range_id: u32,
-    pub amount: Amount,
-    pub native_tokens: NativeTokens,
-    pub serial_number: u32,
-    pub token_tag: [u8; 12],
-    pub circulating_supply: U256,
-    pub max_supply: U256,
-    pub token_schema: TokenScheme,
-    pub alias_address: AliasId,
-    pub metadata: Option<MetadataFeatureBlock>,
-    pub immutable_metadata: Option<MetadataFeatureBlock>,
-    pub inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl FoundryOutputRecord {
-    /// Creates a new foundry output record
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        ms_timestamp: DateTime<Utc>,
-        ms_range_id: u32,
-        alias_address: AliasAddress,
-        amount: Amount,
-        serial_number: u32,
-        token_tag: [u8; 12],
-        token_schema: TokenScheme,
-        circulating_supply: U256,
-        max_supply: U256,
-        immutable_metadata: Option<MetadataFeatureBlock>,
-        metadata: Option<MetadataFeatureBlock>,
-        inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            ms_range_id,
-            ms_timestamp,
-            alias_address,
-            amount,
-            serial_number,
-            token_tag,
-            token_schema,
-            immutable_metadata,
-            metadata,
-            circulating_supply,
-            max_supply,
-            native_tokens,
-            inclusion_state,
-        }
-    }
-}
-
-/// An `NFT Output` table record
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct NftOutputRecord {
-    pub milestone_index: MilestoneIndex,
-    pub ms_timestamp: DateTime<Utc>,
-    pub ms_range_id: u32,
-    pub amount: Amount,
-    pub native_tokens: NativeTokens,
-    pub address: NftId,
-    pub unlock_conditions: UnlockConditions,
-    pub sender: Option<SenderFeatureBlock>,
-    pub metadata: Option<MetadataFeatureBlock>,
-    pub tag: Option<TagFeatureBlock>,
-    pub issuer: Option<IssuerFeatureBlock>,
-    pub immutable_metadata: Option<MetadataFeatureBlock>,
-    pub inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl NftOutputRecord {
-    /// Creates a new foundry output record
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        ms_timestamp: DateTime<Utc>,
-        ms_range_id: u32,
-        amount: Amount,
-        native_tokens: NativeTokens,
-        address: NftId,
-        sender: Option<SenderFeatureBlock>,
-        unlock_conditions: UnlockConditions,
-        metadata: Option<MetadataFeatureBlock>,
-        tag: Option<TagFeatureBlock>,
-        issuer: Option<IssuerFeatureBlock>,
-        immutable_metadata: Option<MetadataFeatureBlock>,
-        metadata: Option<MetadataFeatureBlock>,
-        inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            ms_range_id,
-            ms_timestamp,
-            amount,
-            address,
-            unlock_conditions,
-            immutable_metadata,
-            metadata,
-            inclusion_state,
-            native_tokens,
-            tag,
-            issuer,
-            sender,
-        }
-    }
-}
-
-/// A `tag` table row
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
-pub struct TagRecord {
-    pub milestone_index: MilestoneIndex,
-    pub ms_range_id: u32,
-    pub ms_timestamp: DateTime<Utc>,
-    pub message_id: MessageId,
-    pub ledger_inclusion_state: Option<LedgerInclusionState>,
-}
-
-impl TagRecord {
-    /// Creates a new tag record
-    pub fn new(
-        milestone_index: MilestoneIndex,
-        ms_range_id: u32,
-        ms_timestamp: DateTime<Utc>,
-        message_id: MessageId,
-        ledger_inclusion_state: Option<LedgerInclusionState>,
-    ) -> Self {
-        Self {
-            milestone_index,
-            ms_range_id,
-            message_id,
-            ms_timestamp,
-            ledger_inclusion_state,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Selected {
-    /// Store proof in the database
-    require_proof: bool,
-}
-
-impl Selected {
-    pub fn select() -> Self {
-        Self { require_proof: false }
-    }
-    pub fn with_proof(mut self) -> Self {
-        self.require_proof = true;
+    pub fn with_payload(mut self, payload: MilestonePayload) -> Self {
+        self.payload = Some(payload);
         self
     }
-    /// Check if we have to store the proof of inclusion
-    pub fn require_proof(&self) -> bool {
-        self.require_proof
+    pub fn set_payload(&mut self, payload: MilestonePayload) {
+        self.payload = Some(payload);
+    }
+    pub fn add_message(&mut self, message: MessageRecord, selected: Option<Selected>) -> anyhow::Result<()> {
+        let message_id = message.message_id;
+        ensure!(
+            self.messages.insert(message_id, message).is_none(),
+            "Message already exists"
+        );
+        if let Some(selected) = selected {
+            self.selected_messages.insert(message_id, selected);
+        }
+        Ok(())
+    }
+    pub fn add_pending(&mut self, message_id: MessageId) -> anyhow::Result<()> {
+        ensure!(self.pending.insert(message_id), "Message already pending");
+        Ok(())
+    }
+    pub fn remove_pending(&mut self, message_id: MessageId) -> anyhow::Result<()> {
+        ensure!(self.pending.remove(&message_id), "Message not pending");
+        Ok(())
+    }
+    /// Get the milestone's messages
+    pub fn messages(&self) -> &BTreeMap<MessageId, MessageRecord> {
+        &self.messages
+    }
+    /// Get the pending messages
+    pub fn pending(&self) -> &HashSet<MessageId> {
+        &self.pending
+    }
+    pub fn selected_messages(&self) -> &HashMap<MessageId, Selected> {
+        &self.selected_messages
+    }
+    /// Get the milestone's messages
+    pub fn messages_mut(&mut self) -> &mut BTreeMap<MessageId, MessageRecord> {
+        &mut self.messages
+    }
+    /// Get the pending messages
+    pub fn pending_mut(&mut self) -> &mut HashSet<MessageId> {
+        &mut self.pending
+    }
+    pub fn selected_messages_mut(&mut self) -> &mut HashMap<MessageId, Selected> {
+        &mut self.selected_messages
+    }
+    pub fn milestone_index(&self) -> u32 {
+        self.milestone_index
+    }
+    pub fn created_by(&self) -> &CreatedBy {
+        &self.created_by
+    }
+    pub fn set_created_by(&mut self, created_by: CreatedBy) {
+        self.created_by = created_by;
+    }
+    pub fn payload(&self) -> &Option<MilestonePayload> {
+        &self.payload
+    }
+    pub fn timestamp(&self) -> Option<u64> {
+        self.payload.as_ref().map(|p| p.essence().timestamp())
+    }
+    pub fn valid(&self) -> bool {
+        self.payload.is_some() && self.pending.is_empty()
+    }
+    pub fn build(self) -> anyhow::Result<MilestoneData> {
+        Ok(MilestoneData {
+            message_id: self.message_id,
+            milestone_index: self.milestone_index,
+            payload: self.payload.ok_or_else(|| anyhow::anyhow!("No milestone payload"))?,
+            messages: self.messages.into_values().collect(),
+        })
+    }
+}
+
+/// Pre-war Milestone data
+/// Used for deserializing old archive files
+#[derive(Debug, Deserialize, Serialize)]
+pub struct OldMilestoneData {
+    pub(crate) milestone_index: u32,
+    pub(crate) milestone: MilestonePayload,
+    pub(crate) messages: BTreeMap<MessageId, OldFullMessage>,
+}
+
+impl TryInto<MilestoneData> for OldMilestoneData {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<MilestoneData, Self::Error> {
+        Ok(MilestoneData {
+            message_id: self
+                .messages
+                .values()
+                .find_map(|m| match m.0.payload() {
+                    Some(payload) => match payload {
+                        bee_message::payload::Payload::Milestone(_) => Some(m.1.message_id),
+                        _ => None,
+                    },
+                    None => None,
+                })
+                .ok_or_else(|| anyhow::anyhow!("No milestone payload in messages!"))?,
+            milestone_index: self.milestone_index,
+            payload: self.milestone,
+            messages: self.messages.into_values().map(Into::into).collect(),
+        })
+    }
+}
+
+/// A "full" message payload, including both message and metadata
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldFullMessage(pub Message, pub OldMessageMetadata);
+
+impl Into<MessageRecord> for OldFullMessage {
+    fn into(self) -> MessageRecord {
+        MessageRecord {
+            message_id: self.1.message_id,
+            message: self.0,
+            milestone_index: self.1.referenced_by_milestone_index.map(|i| MilestoneIndex(i)),
+            inclusion_state: self.1.ledger_inclusion_state,
+            conflict_reason: None,
+            proof: None,
+        }
+    }
+}
+
+/// MessageMetadata storage object
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OldMessageMetadata {
+    #[serde(rename = "messageId")]
+    pub message_id: MessageId,
+    #[serde(rename = "parentMessageIds")]
+    pub parent_message_ids: Vec<MessageId>,
+    #[serde(rename = "isSolid")]
+    pub is_solid: bool,
+    #[serde(rename = "referencedByMilestoneIndex")]
+    pub referenced_by_milestone_index: Option<u32>,
+    #[serde(rename = "ledgerInclusionState")]
+    pub ledger_inclusion_state: Option<LedgerInclusionState>,
+    #[serde(rename = "shouldPromote")]
+    pub should_promote: Option<bool>,
+    #[serde(rename = "shouldReattach")]
+    pub should_reattach: Option<bool>,
+}
+
+/// Created by sources
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[repr(u8)]
+pub enum CreatedBy {
+    /// Created by the new incoming messages from the network
+    Incoming = 0,
+    /// Created by the new expected messages from the network
+    Expected = 1,
+    /// Created by solidifiy/sync request from syncer
+    Syncer = 2,
+    /// Created by the exporter
+    Exporter = 3,
+}
+
+impl Default for CreatedBy {
+    fn default() -> Self {
+        Self::Incoming
+    }
+}
+
+impl From<CreatedBy> for u8 {
+    fn from(value: CreatedBy) -> u8 {
+        value as u8
+    }
+}
+
+/// An index in plain-text, unhashed
+#[derive(Clone, Debug)]
+pub struct Indexation(pub String);
+
+impl ColumnEncoder for Indexation {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.0.encode(buffer)
+    }
+}
+
+impl TokenEncoder for Indexation {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.into()
     }
 }
