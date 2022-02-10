@@ -8,6 +8,7 @@ keywords:
 - number of milestones
 - mqtt topic
 - data sync range
+- reference
 ---
 # Config Reference
 

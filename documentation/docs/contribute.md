@@ -7,6 +7,7 @@ keywords:
 - pull request
 - bug report
 - discord
+- reference
 --- 
 
 # Contribute
