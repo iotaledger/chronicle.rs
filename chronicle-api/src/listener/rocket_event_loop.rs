@@ -376,7 +376,7 @@ async fn page_filtered<K, V, F: Clone + FnMut(&Partitioned<V>) -> bool>(
     keyspace: String,
     hint: Hint,
     page_size: usize,
-    state: &mut Option<StateData>,
+    prev_state: &mut Option<StateData>,
     partition_config: &PartitionConfig,
     key: K,
     filter: Option<F>,
@@ -395,7 +395,7 @@ where
     // Get the list of partitions which contain records for this request.
     // These may have been passed in by the client, in which case we do not need
     // to query for them.
-    let (latest_milestone, partition_ids) = match state {
+    let (latest_milestone, partition_ids) = match prev_state {
         Some(state) => {
             if state.partition_ids.is_empty() {
                 return Err(ListenerError::InvalidState);
@@ -427,13 +427,13 @@ where
                     .cloned()
                     .collect();
             }
-            *state = Some((None, None, None, partition_ids.clone()).into());
+            *prev_state = Some((None, None, None, partition_ids.clone()).into());
             (latest_milestone, partition_ids)
         }
     };
 
     // This is safe because we set the value above
-    let mut state = state.as_mut().unwrap();
+    let mut state = prev_state.as_mut().unwrap();
 
     // The last partition id that we got results from. This is sent back and forth between
     // the requestor to keep track of pages.
@@ -475,6 +475,7 @@ where
         debug!("Gathering results from partition {}", partition_id);
         // Make sure we stop iterating if all of our partitions are depleted.
         if depleted_partitions.len() == partition_ids.len() {
+            *prev_state = None;
             break;
         }
         // Skip depleted partitions

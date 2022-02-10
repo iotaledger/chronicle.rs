@@ -14,7 +14,7 @@ chronicle-storage = { path = "../chronicle-storage" }
 chronicle-broker = { path = "../chronicle-broker", features = ["sync", "analytic"] }
 scylla-rs = "0.1"
 backstage = "0.1"
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev", default-features = false }
 bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -7,4 +7,4 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
+bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
