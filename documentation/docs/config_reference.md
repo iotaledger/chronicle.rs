@@ -19,7 +19,7 @@ You can configure multiple keyspaces to filter incoming messages. If you are not
 first configured keyspace will be considered* or the default (`chronicle`) if none is provided.
 
 In addition to the keyspace name, each keyspace requires a map of datacenters (name -> replication factor). You can find
-more configuration about datacenters in ScyllaDB in
+more configurations about datacenters in ScyllaDB in
 this [Scylla University course](https://university.scylladb.com/courses/scylla-essentials-overview/lessons/architecture/topic/datacenter/)
 .
 
@@ -125,7 +125,7 @@ The upper limit of the log_file_size.
 
 :::note
 
-Ensure to use a limit within your filesystem range.
+Ensure you use a limit within your filesystem range.
 
 :::
 

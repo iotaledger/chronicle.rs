@@ -1,6 +1,6 @@
 ---
 image: /img/chronicle_icon.png 
-description:  Get started with Chronicle. Prerequisites, installation and build instructions to run your own Chronicle permanode. 
+description: Get started with Chronicle. Prerequisites, installation, and build instructions to run your own Chronicle permanode. 
 keywords:
 - quick start
 - how to
@@ -68,7 +68,7 @@ Alternatively, you can [build Chronicle](#build-chronicle) yourself.
 
 ### Build Chronicle
 
-You can follow these steps to build Chronicle from source:
+You can follow these steps to build Chronicle from the source:
 
 1. Clone this repository:
 

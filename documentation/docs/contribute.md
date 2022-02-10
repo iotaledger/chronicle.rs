@@ -22,7 +22,7 @@ You can contribute by:
 
 :::info
 
-Please read make sure you have read our [contributing guidelines](https://github.com/iotaledger/documentation/blob/develop/.github/CONTRIBUTING.md) before contributing.
+Please make sure you have read our [contributing guidelines](https://github.com/iotaledger/documentation/blob/develop/.github/CONTRIBUTING.md) before contributing.
 
 :::
 
