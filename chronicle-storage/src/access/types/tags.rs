@@ -34,6 +34,24 @@ impl Partitioned for TagRecord {
     const MS_CHUNK_SIZE: u32 = 100_000;
 }
 
+impl Row for TagRecord {
+    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            tag: rows.column_value()?,
+            partition_data: PartitionData::new(
+                rows.column_value()?,
+                rows.column_value::<Bee<MilestoneIndex>>()?.into_inner(),
+                rows.column_value()?,
+            ),
+            message_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
+            inclusion_state: rows.column_value()?,
+        })
+    }
+}
+
 impl TokenEncoder for TagRecord {
     fn encode_token(&self) -> TokenEncodeChain {
         (&self.tag).into()

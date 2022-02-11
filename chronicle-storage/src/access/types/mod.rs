@@ -121,6 +121,12 @@ impl<T> Paged<T> {
     }
 }
 
+impl<T: IntoIterator> Paged<T> {
+    pub fn into_iter(self) -> impl Iterator<Item = T::Item> {
+        self.inner.into_iter()
+    }
+}
+
 impl<T> Deref for Paged<T> {
     type Target = T;
 
@@ -132,6 +138,16 @@ impl<T> Deref for Paged<T> {
 impl<T> DerefMut for Paged<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+impl<T: Row> RowsDecoder for Paged<Iter<T>> {
+    type Row = T;
+    fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<Iter<T>>>> {
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
+        let mut iter = Self::Row::rows_iter(decoder)?;
+        let paging_state = iter.take_paging_state();
+        Ok(Some(Paged::new(iter, paging_state)))
     }
 }
 
@@ -155,43 +171,72 @@ impl<T> Wrapper for JsonData<T> {
     }
 }
 
+pub enum Hint {
+    Address(AddressHint),
+    Tag(TagHint),
+}
+
+#[allow(missing_docs)]
+impl Hint {
+    pub fn address(address_hint: AddressHint) -> Self {
+        Self::Address(address_hint)
+    }
+    pub fn tag(tag_hint: TagHint) -> Self {
+        Self::Tag(tag_hint)
+    }
+    pub fn legacy_outputs_by_address(address: Address) -> Self {
+        Self::address(AddressHint::legacy_outputs_by_address(address))
+    }
+    pub fn basic_outputs_by_address(address: Address) -> Self {
+        Self::address(AddressHint::basic_outputs_by_address(address))
+    }
+    pub fn basic_outputs_by_sender(address: Address) -> Self {
+        Self::address(AddressHint::basic_outputs_by_sender(address))
+    }
+    pub fn alias_outputs_by_sender(address: Address) -> Self {
+        Self::address(AddressHint::alias_outputs_by_sender(address))
+    }
+    pub fn alias_outputs_by_issuer(address: Address) -> Self {
+        Self::address(AddressHint::alias_outputs_by_issuer(address))
+    }
+    pub fn alias_outputs_by_state_controller(address: Address) -> Self {
+        Self::address(AddressHint::alias_outputs_by_state_controller(address))
+    }
+    pub fn alias_outputs_by_governor(address: Address) -> Self {
+        Self::address(AddressHint::alias_outputs_by_governor(address))
+    }
+    pub fn foundry_outputs_by_address(address: Address) -> Self {
+        Self::address(AddressHint::foundry_outputs_by_address(address))
+    }
+    pub fn nft_outputs_by_address(address: Address) -> Self {
+        Self::address(AddressHint::nft_outputs_by_address(address))
+    }
+    pub fn nft_outputs_by_dust_return_address(address: Address) -> Self {
+        Self::address(AddressHint::nft_outputs_by_dust_return_address(address))
+    }
+    pub fn nft_outputs_by_sender(address: Address) -> Self {
+        Self::address(AddressHint::nft_outputs_by_sender(address))
+    }
+    pub fn nft_outputs_by_issuer(address: Address) -> Self {
+        Self::address(AddressHint::nft_outputs_by_issuer(address))
+    }
+    pub fn tags(tag: String) -> Self {
+        Self::tag(TagHint::regular(tag))
+    }
+    pub fn basic_outputs_by_tag(tag: String) -> Self {
+        Self::tag(TagHint::basic_output(tag))
+    }
+    pub fn nft_outputs_by_tag(tag: String) -> Self {
+        Self::tag(TagHint::nft_output(tag))
+    }
+}
+
 pub trait Partitioned {
     const MS_CHUNK_SIZE: u32;
 
     #[inline]
     fn range_id(ms: u32) -> MsRangeId {
         ms / Self::MS_CHUNK_SIZE
-    }
-}
-
-#[derive(Clone, Debug)]
-/// Wrapper around MessageCount u32
-pub struct MessageCount(pub u32);
-impl Deref for MessageCount {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-#[derive(Clone, Debug)]
-/// Wrapper around TransactionCount u32
-pub struct TransactionCount(pub u32);
-impl Deref for TransactionCount {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-#[derive(Clone, Debug)]
-/// Wrapper around MessageCount u64
-pub struct TransferredTokens(pub u64);
-impl Deref for TransferredTokens {
-    type Target = u64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 

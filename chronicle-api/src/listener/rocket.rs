@@ -20,7 +20,6 @@ use ::rocket::{
     Data,
     Request,
     Response,
-    State,
 };
 use anyhow::anyhow;
 use bee_message::{
@@ -34,6 +33,7 @@ use bee_message::{
         transaction::TransactionId,
         Payload,
     },
+    Message,
     MessageId,
 };
 use bee_rest_api::types::responses::MessageMetadataResponse;
@@ -55,11 +55,7 @@ use chronicle_storage::{
     access::OutputRes,
     keyspaces::ChronicleKeyspace,
 };
-use chrono::{
-    Duration,
-    NaiveDateTime,
-    Utc,
-};
+use chrono::NaiveDateTime;
 use futures::{
     StreamExt,
     TryStreamExt,
@@ -70,15 +66,10 @@ use rocket_dyn_templates::Template;
 use std::{
     borrow::Borrow,
     collections::{
-        BTreeMap,
-        HashMap,
         HashSet,
         VecDeque,
     },
-    convert::{
-        TryFrom,
-        TryInto,
-    },
+    convert::TryInto,
     fmt::Debug,
     io::Cursor,
     ops::Range,
@@ -222,11 +213,13 @@ impl<'r> Responder<'r, 'static> for ListenerResponseV1 {
 
 type ListenerResult = Result<ListenerResponseV1, ListenerError>;
 
+pub const MAX_PAGE_SIZE: usize = 200_000;
+
 #[options("/<_path..>")]
 async fn options(_path: PathBuf) {}
 
-#[get("/<keyspace>/info")]
-async fn info(keyspace: String) -> ListenerResult {
+#[get("/info")]
+async fn info() -> ListenerResult {
     let version = std::env!("CARGO_PKG_VERSION").to_string();
     let service = Scope::lookup::<Service>(0)
         .await
@@ -235,7 +228,7 @@ async fn info(keyspace: String) -> ListenerResult {
         .chain(service.microservices.values())
         .any(|service| !service.is_running());
     Ok(ListenerResponseV1::Info {
-        name: "Chronicle (keyspace)".into(),
+        name: "Chronicle".into(),
         version,
         is_healthy,
     })
@@ -309,7 +302,7 @@ async fn page<K, O>(
     hint: Hint,
     page_size: usize,
     state: &mut Option<StateData>,
-    range: Range<NaiveDateTime>,
+    range: Option<Range<NaiveDateTime>>,
     key: K,
 ) -> Result<Vec<O>, ListenerError>
 where
@@ -322,27 +315,35 @@ where
     let mut start_timestamp = total_start_timestamp;
 
     let keyspace = ChronicleKeyspace::new(keyspace);
+    let range = range.unwrap_or_else(|| chrono::naive::MIN_DATETIME..chrono::naive::MAX_DATETIME);
     // Get the list of partitions which contain records for this request.
     // These may have been passed in by the client, in which case we do not need
     // to query for them.
     match state {
         Some(state) => {
-            if state.partition_ids.is_empty() {
+            if state.ms_range_ids.is_empty() {
                 return Err(ListenerError::InvalidState);
             }
         }
         None => {
-            let partition_ids =
-                query::<Iter<u32>, _, _, _>(keyspace.clone(), hint.hint, hint.variant, None, None).await?;
-            if partition_ids.is_empty() {
+            let ms_range_ids = match hint {
+                Hint::Address(address_hint) => {
+                    query::<Iter<MsRangeId>, _, _, _>(keyspace.clone(), address_hint, (), None, None).await?
+                }
+
+                Hint::Tag(tag_hint) => {
+                    query::<Iter<MsRangeId>, _, _, _>(keyspace.clone(), tag_hint, (), None, None).await?
+                }
+            };
+            if ms_range_ids.is_empty() {
                 return Err(ListenerError::NoResults);
             }
-            *state = (None, partition_ids.into_iter().collect()).into();
+            state.replace((None, ms_range_ids.into_iter().collect::<VecDeque<_>>()).into());
         }
     };
 
     let StateData {
-        partition_ids,
+        ms_range_ids,
         paging_state,
     } = &mut state.as_mut().unwrap();
 
@@ -353,36 +354,35 @@ where
 
     // The resulting list
     let mut results = Vec::new();
-    let mut loop_timings = HashMap::new();
-    while let Some(partition_id) = partition_ids.front() {
-        debug!("Gathering results from partition {}", partition_id);
+    while let Some(&ms_range_id) = ms_range_ids.front() {
+        debug!("Gathering results from partition {}", ms_range_id);
 
         if results.len() < page_size {
             // Fetch a chunk of results if we need them to fill the page size
             start_timestamp = std::time::Instant::now();
             debug!(
-                "Fetching results for partition id: {}, num_requested: {}",
-                partition_id,
+                "Fetching results for milestone range id: {}, num_requested: {}",
+                ms_range_id,
                 page_size - results.len()
             );
             let mut res = query::<Paged<Vec<O>>, _, _, _>(
-                keyspace,
-                (key, partition_id),
-                range,
+                keyspace.clone(),
+                (key.clone(), ms_range_id),
+                range.clone(),
                 Some((page_size - results.len()) as i32),
-                std::mem::take(&mut paging_state),
+                std::mem::take(paging_state),
             )
             .await?;
             debug!(
                 "Fetch time: {} ms",
                 (std::time::Instant::now() - start_timestamp).as_millis()
             );
-            results.extend(res);
             if let Some(ps) = std::mem::take(&mut res.paging_state) {
-                *paging_state = ps;
+                paging_state.replace(ps);
             } else {
-                partition_ids.pop_front();
+                ms_range_ids.pop_front();
             }
+            results.extend(res.into_iter());
         }
     }
 
@@ -444,17 +444,41 @@ async fn get_message_children(
     let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
     let page_size = page_size.unwrap_or(100);
 
-    let paging_state = paging_state
+    let mut paging_state = paging_state
         .map(|state| hex::decode(state).map_err(|_| ListenerError::InvalidState))
         .transpose()?;
 
-    let messages =
-        query::<Paged<Iter<Bee<Message>>>, _, _, _>(keyspace.clone(), message_id, (), Some(page_size), paging_state)
-            .await?;
+    let keyspace = ChronicleKeyspace::new(keyspace);
 
-    let paging_state = messages.paging_state.map(|ref state| hex::encode(v));
+    let mut mut_page_size = page_size;
+    let mut messages = Vec::new();
+    while mut_page_size > MAX_PAGE_SIZE {
+        let mut res = query::<Paged<Iter<ParentRecord>>, _, _, _>(
+            keyspace.clone(),
+            message_id,
+            (),
+            Some(MAX_PAGE_SIZE as i32),
+            paging_state.take(),
+        )
+        .await?;
+        paging_state = res.paging_state.take();
+        messages.extend(res.into_iter());
+        mut_page_size -= MAX_PAGE_SIZE;
+    }
+    if mut_page_size > 0 {
+        let mut res = query::<Paged<Iter<ParentRecord>>, _, _, _>(
+            keyspace.clone(),
+            message_id,
+            (),
+            Some(MAX_PAGE_SIZE as i32),
+            paging_state.take(),
+        )
+        .await?;
+        paging_state = res.paging_state.take();
+        messages.extend(res.into_iter());
+    }
 
-    let mut messages = messages.into_iter().collect::<Vec<_>>();
+    let paging_state = paging_state.map(|ref state| hex::encode(state));
 
     if let Some(true) = expanded {
         Ok(ListenerResponseV1::MessageChildrenExpanded {
@@ -475,13 +499,15 @@ async fn get_message_children(
     }
 }
 
-#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<expanded>&<state>")]
+#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<expanded>&<state>&<start_timestamp>&<end_timestamp>")]
 async fn get_message_by_index(
     keyspace: String,
     mut index: String,
     page_size: Option<usize>,
     utf8: Option<bool>,
     expanded: Option<bool>,
+    start_timestamp: Option<u64>,
+    end_timestamp: Option<u64>,
     state: Option<String>,
 ) -> ListenerResult {
     if let Some(true) = utf8 {
@@ -495,6 +521,18 @@ async fn get_message_by_index(
         return Err(ListenerError::IndexTooLarge);
     }
 
+    let (start_timestamp, end_timestamp) = (
+        start_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(chrono::naive::MIN_DATETIME),
+        end_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(chrono::naive::MAX_DATETIME),
+    );
+    if end_timestamp < start_timestamp {
+        return Err(ListenerError::Other(anyhow!("Invalid time range")));
+    }
+
     let mut state = state
         .map(|state| {
             hex::decode(state)
@@ -503,15 +541,15 @@ async fn get_message_by_index(
         })
         .transpose()?;
 
-    let indexation = Indexation(index.clone());
     let page_size = page_size.unwrap_or(1000);
 
     let mut messages = page(
         keyspace.clone(),
-        Hint::index(index.clone()),
+        Hint::tags(index.clone()),
         page_size,
         &mut state,
-        indexation,
+        Some(start_timestamp..end_timestamp),
+        index.clone(),
     )
     .await?;
 
@@ -577,10 +615,10 @@ async fn get_ed25519_outputs(
 
     let mut outputs = page(
         keyspace.clone(),
-        Hint::address(ed25519_address.to_string()),
+        Hint::legacy_outputs_by_address(ed25519_address.0.into()),
         page_size,
         &mut state,
-        start_timestamp..end_timestamp,
+        Some(start_timestamp..end_timestamp),
         ed25519_address,
     )
     .await?;
@@ -613,11 +651,7 @@ async fn get_ed25519_outputs(
             address,
             max_results: 2 * page_size,
             count: outputs.len(),
-            output_ids: outputs
-                .drain(..)
-                .map(|record| Ok(OutputId::new(record.transaction_id, record.index)?))
-                .filter_map(|r: anyhow::Result<OutputId>| r.ok())
-                .collect(),
+            output_ids: outputs.drain(..).map(|record| record.output_id).collect(),
             state,
         })
     }
@@ -669,7 +703,7 @@ async fn get_output(keyspace: String, output_id: String) -> ListenerResult {
         }
         if !query_message_ids.is_empty() {
             let queries = query_message_ids.drain().map(|&message_id| {
-                query::<Option<MessageRecord>, _, _, _>(
+                query::<MessageRecord, _, _, _>(
                     ChronicleKeyspace::new(keyspace.clone()),
                     Bee(message_id.clone()),
                     (),
@@ -681,8 +715,7 @@ async fn get_output(keyspace: String, output_id: String) -> ListenerResult {
                 .await
                 .drain(..)
                 .filter_map(|res| res.ok())
-                .flatten()
-                .any(|metadata| metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included));
+                .any(|rec| rec.inclusion_state == Some(LedgerInclusionState::Included));
         }
         is_spent
     };
@@ -729,10 +762,10 @@ async fn get_transactions_for_address(
 
     let outputs = page(
         keyspace.clone(),
-        Hint::address(ed25519_address.to_string()),
+        Hint::legacy_outputs_by_address(ed25519_address.0.into()),
         page_size,
         &mut state,
-        start_timestamp..end_timestamp,
+        Some(start_timestamp..end_timestamp),
         ed25519_address,
     )
     .await?;
@@ -740,9 +773,15 @@ async fn get_transactions_for_address(
     let transactions = futures::stream::iter(outputs)
         .map(|o| (o, keyspace.clone()))
         .then(|(o, keyspace)| async move {
-            query::<TransactionRes, _, _, _>(ChronicleKeyspace::new(keyspace), Bee(o.transaction_id), (), None, None)
-                .await
-                .map(Into::into)
+            query::<TransactionRes, _, _, _>(
+                ChronicleKeyspace::new(keyspace),
+                Bee(*o.output_id.transaction_id()),
+                (),
+                None,
+                None,
+            )
+            .await
+            .map(Into::into)
         })
         .try_collect()
         .await?;
@@ -813,11 +852,12 @@ async fn get_milestone(keyspace: String, index: u32) -> ListenerResult {
 #[get("/<keyspace>/analytics?<start>&<end>")]
 async fn get_analytics(keyspace: String, start: Option<u32>, end: Option<u32>) -> ListenerResult {
     let keyspace = ChronicleKeyspace::new(keyspace);
+    todo!()
 
-    let range = start.unwrap_or(1)..end.unwrap_or(i32::MAX as u32);
-    let range = SyncRange::try_from(range).map_err(|e| ListenerError::BadParse(e))?;
-    let ranges = AnalyticsData::try_fetch(&keyspace, &range, 1, 5000).await?.analytics;
-    Ok(ListenerResponseV1::Analytics { ranges })
+    // let range = start.unwrap_or(1)..end.unwrap_or(i32::MAX as u32);
+    // let range = SyncRange::try_from(range).map_err(|e| ListenerError::BadParse(e))?;
+    // let ranges = AnalyticsData::try_fetch(&keyspace, &range, 1, 5000).await?.analytics;
+    // Ok(ListenerResponseV1::Analytics { ranges })
 }
 
 #[derive(Serialize)]

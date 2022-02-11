@@ -2,25 +2,62 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::fmt::Display;
 
 /// Address hint, used to lookup in the `addresses hints` table
 #[derive(Clone, Debug)]
 pub struct AddressHint {
     /// The address
     pub address: Address,
-    pub output_kind: OutputVariant,
+    pub output_table: OutputTable,
     /// The tag hint variant. Can be 'Regular', 'ExtOutput', or 'NftOutput'.
     pub variant: AddressHintVariant,
 }
 
 impl AddressHint {
     /// Creates address hint
-    pub fn new(address: Address, output_kind: OutputVariant, variant: AddressHintVariant) -> Self {
+    pub fn new(address: Address, output_kind: OutputTable, variant: AddressHintVariant) -> Self {
         Self {
             address,
-            output_kind,
+            output_table: output_kind,
             variant,
         }
+    }
+    pub fn legacy_outputs_by_address(address: Address) -> Self {
+        Self::new(address, OutputTable::Legacy, AddressHintVariant::Address)
+    }
+    pub fn basic_outputs_by_address(address: Address) -> Self {
+        Self::new(address, OutputTable::Basic, AddressHintVariant::Address)
+    }
+    pub fn basic_outputs_by_sender(address: Address) -> Self {
+        Self::new(address, OutputTable::Basic, AddressHintVariant::Sender)
+    }
+    pub fn alias_outputs_by_sender(address: Address) -> Self {
+        Self::new(address, OutputTable::Alias, AddressHintVariant::Sender)
+    }
+    pub fn alias_outputs_by_issuer(address: Address) -> Self {
+        Self::new(address, OutputTable::Alias, AddressHintVariant::Issuer)
+    }
+    pub fn alias_outputs_by_state_controller(address: Address) -> Self {
+        Self::new(address, OutputTable::Alias, AddressHintVariant::StateController)
+    }
+    pub fn alias_outputs_by_governor(address: Address) -> Self {
+        Self::new(address, OutputTable::Alias, AddressHintVariant::Governor)
+    }
+    pub fn foundry_outputs_by_address(address: Address) -> Self {
+        Self::new(address, OutputTable::Foundry, AddressHintVariant::Address)
+    }
+    pub fn nft_outputs_by_address(address: Address) -> Self {
+        Self::new(address, OutputTable::Nft, AddressHintVariant::Address)
+    }
+    pub fn nft_outputs_by_dust_return_address(address: Address) -> Self {
+        Self::new(address, OutputTable::Nft, AddressHintVariant::DustReturnAddress)
+    }
+    pub fn nft_outputs_by_sender(address: Address) -> Self {
+        Self::new(address, OutputTable::Nft, AddressHintVariant::Sender)
+    }
+    pub fn nft_outputs_by_issuer(address: Address) -> Self {
+        Self::new(address, OutputTable::Nft, AddressHintVariant::Issuer)
     }
     /// Get the address
     pub fn address(&self) -> &Address {
@@ -30,8 +67,8 @@ impl AddressHint {
     pub fn variant(&self) -> &AddressHintVariant {
         &self.variant
     }
-    pub fn output_kind(&self) -> &OutputVariant {
-        &self.output_kind
+    pub fn output_kind(&self) -> &OutputTable {
+        &self.output_table
     }
 }
 
@@ -45,7 +82,7 @@ impl<B: Binder> Bindable<B> for AddressHint {
     fn bind(&self, binder: B) -> B {
         binder
             .value(Bee(self.address))
-            .value(&self.output_kind)
+            .value(&self.output_table)
             .value(&self.variant)
     }
 }
@@ -58,9 +95,10 @@ pub enum AddressHintVariant {
     Issuer,
     StateController,
     Governor,
+    DustReturnAddress,
 }
 
-impl std::fmt::Display for AddressHintVariant {
+impl Display for AddressHintVariant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -71,6 +109,7 @@ impl std::fmt::Display for AddressHintVariant {
                 Self::Issuer => "Issuer",
                 Self::StateController => "StateController",
                 Self::Governor => "Governor",
+                Self::DustReturnAddress => "DustReturnAddress",
             }
         )
     }
@@ -83,22 +122,22 @@ impl ColumnEncoder for AddressHintVariant {
 }
 
 #[derive(Clone, Debug)]
-pub enum OutputVariant {
+pub enum OutputTable {
     Legacy,
-    Extended,
+    Basic,
     Alias,
     Foundry,
     Nft,
 }
 
-impl std::fmt::Display for OutputVariant {
+impl Display for OutputTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
                 Self::Legacy => "Legacy",
-                Self::Extended => "Extended",
+                Self::Basic => "Basic",
                 Self::Alias => "Alias",
                 Self::Nft => "Nft",
                 Self::Foundry => "Foundry",
@@ -107,7 +146,7 @@ impl std::fmt::Display for OutputVariant {
     }
 }
 
-impl ColumnEncoder for OutputVariant {
+impl ColumnEncoder for OutputTable {
     fn encode(&self, buffer: &mut Vec<u8>) {
         self.to_string().encode(buffer)
     }

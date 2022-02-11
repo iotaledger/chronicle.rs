@@ -23,6 +23,7 @@ use chronicle_storage::access::{
     LedgerInclusionState,
     LegacyOutputRecord,
     MsAnalyticsRecord,
+    MsRangeId,
     ParentRecord,
     TagRecord,
     TransactionRes,
@@ -55,7 +56,9 @@ pub(crate) enum ListenerResponseV1 {
     /// and GET /api/<keyspace>/transactions/<transaction_id>/included-message
     Message {
         #[serde(rename = "networkId")]
-        network_id: String,
+        network_id: Option<String>,
+        #[serde(rename = "protocolVersion")]
+        protocol_version: u8,
         #[serde(rename = "parentMessageIds")]
         parents: Vec<String>,
         payload: Option<PayloadDto>,
@@ -159,7 +162,7 @@ pub(crate) enum ListenerResponseV1 {
         timestamp: u64,
     },
     /// Response of GET /api/<keyspace>/analytics[?start=<u32>&end=<u32>]
-    Analytics { ranges: Vec<AnalyticData> },
+    Analytics { ranges: Vec<MsAnalyticsRecord> },
 }
 
 impl TryFrom<Message> for ListenerResponseV1 {
@@ -167,7 +170,8 @@ impl TryFrom<Message> for ListenerResponseV1 {
 
     fn try_from(message: Message) -> Result<Self, Self::Error> {
         Ok(ListenerResponseV1::Message {
-            network_id: message.network_id().to_string(),
+            network_id: None,
+            protocol_version: message.protocol_version(),
             parents: message.parents().iter().map(|p| p.to_string()).collect(),
             payload: message.payload().map(Into::into),
             nonce: message.nonce().to_string(),
@@ -191,7 +195,7 @@ impl TryFrom<LegacyOutputRecord> for Record {
         Ok(Record {
             id: record.output_id.to_string(),
             inclusion_state: record.inclusion_state,
-            milestone_index: record.milestone_index,
+            milestone_index: record.partition_data.milestone_index.0,
         })
     }
 }
@@ -201,7 +205,7 @@ impl From<TagRecord> for Record {
         Record {
             id: record.message_id.to_string(),
             inclusion_state: record.inclusion_state,
-            milestone_index: record.milestone_index,
+            milestone_index: record.partition_data.milestone_index.0,
         }
     }
 }
@@ -211,7 +215,7 @@ impl From<ParentRecord> for Record {
         Record {
             id: record.message_id.to_string(),
             inclusion_state: record.inclusion_state,
-            milestone_index: record.milestone_index,
+            milestone_index: record.milestone_index.unwrap_or_default().0,
         }
     }
 }
@@ -289,14 +293,14 @@ pub(crate) struct StateData {
     #[serde(rename = "pagingState")]
     pub paging_state: Option<Vec<u8>>,
     #[serde(rename = "partitionIds")]
-    pub partition_ids: VecDeque<u32>,
+    pub ms_range_ids: VecDeque<MsRangeId>,
 }
 
-impl From<(Option<Vec<u8>>, Vec<u32>)> for StateData {
-    fn from((paging_state, partition_ids): (Option<Vec<u8>>, Vec<u32>)) -> Self {
+impl From<(Option<Vec<u8>>, VecDeque<MsRangeId>)> for StateData {
+    fn from((paging_state, ms_range_ids): (Option<Vec<u8>>, VecDeque<MsRangeId>)) -> Self {
         Self {
             paging_state,
-            partition_ids,
+            ms_range_ids,
         }
     }
 }

@@ -87,7 +87,7 @@ impl Select<(Bee<Ed25519Address>, MsRangeId), (), Paged<Vec<LegacyOutputRecord>>
             self.name()
         )
     }
-    fn bind_values<B: Binder>(builder: B, (address, ms_range_id): &(Bee<Ed25519Address>, u32), _: &()) -> B {
+    fn bind_values<B: Binder>(builder: B, (address, ms_range_id): &(Bee<Ed25519Address>, MsRangeId), _: &()) -> B {
         builder.value(address).value(ms_range_id)
     }
 }
@@ -109,7 +109,7 @@ impl Select<(Bee<Ed25519Address>, MsRangeId), Range<NaiveDateTime>, Paged<Vec<Le
     }
     fn bind_values<B: Binder>(
         builder: B,
-        (address, ms_range_id): &(Bee<Ed25519Address>, u32),
+        (address, ms_range_id): &(Bee<Ed25519Address>, MsRangeId),
         time_range: &Range<NaiveDateTime>,
     ) -> B {
         builder
@@ -123,6 +123,42 @@ impl Select<(Bee<Ed25519Address>, MsRangeId), Range<NaiveDateTime>, Paged<Vec<Le
 impl RowsDecoder for Paged<Vec<LegacyOutputRecord>> {
     type Row = LegacyOutputRecord;
     fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<Vec<LegacyOutputRecord>>>> {
+        ensure!(decoder.is_rows()?, "Decoded response is not rows!");
+        let mut iter = Self::Row::rows_iter(decoder)?;
+        let paging_state = iter.take_paging_state();
+        Ok(Some(Paged::new(iter.into_iter().collect(), paging_state)))
+    }
+}
+
+impl Select<(String, MsRangeId), Range<NaiveDateTime>, Paged<Vec<TagRecord>>> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT *
+            FROM #.tags
+            WHERE tag = ?
+            AND ms_range_id = ?
+            AND ms_timestamp >= ?
+            AND ms_timestamp < ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(
+        builder: B,
+        (tag, ms_range_id): &(String, MsRangeId),
+        time_range: &Range<NaiveDateTime>,
+    ) -> B {
+        builder
+            .value(tag)
+            .value(ms_range_id)
+            .value(time_range.start)
+            .value(time_range.end)
+    }
+}
+
+impl RowsDecoder for Paged<Vec<TagRecord>> {
+    type Row = TagRecord;
+    fn try_decode_rows(decoder: Decoder) -> anyhow::Result<Option<Paged<Vec<TagRecord>>>> {
         ensure!(decoder.is_rows()?, "Decoded response is not rows!");
         let mut iter = Self::Row::rows_iter(decoder)?;
         let paging_state = iter.take_paging_state();
@@ -255,7 +291,9 @@ impl Select<Bee<MilestoneIndex>, (), Bee<Milestone>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT message_id, timestamp FROM #.milestones WHERE milestone_index = ?",
+            "SELECT message_id, timestamp 
+            FROM #.milestones 
+            WHERE milestone_index = ?",
             self.name()
         )
     }
@@ -264,7 +302,7 @@ impl Select<Bee<MilestoneIndex>, (), Bee<Milestone>> for ChronicleKeyspace {
     }
 }
 
-impl Select<Ed25519Address, (String, String), Iter<u32>> for ChronicleKeyspace {
+impl Select<AddressHint, (), Iter<MsRangeId>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
 
     fn statement(&self) -> SelectStatement {
@@ -278,12 +316,12 @@ impl Select<Ed25519Address, (String, String), Iter<u32>> for ChronicleKeyspace {
         )
     }
 
-    fn bind_values<B: Binder>(builder: B, address: &Ed25519Address, (output_kind, variant): &(String, String)) -> B {
-        builder.value(Bee(address)).value(output_kind).value(variant)
+    fn bind_values<B: Binder>(builder: B, address_hint: &AddressHint, _: &()) -> B {
+        builder.bind(address_hint)
     }
 }
 
-impl Select<String, String, Iter<u32>> for ChronicleKeyspace {
+impl Select<TagHint, (), Iter<MsRangeId>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
 
     fn statement(&self) -> SelectStatement {
@@ -296,8 +334,8 @@ impl Select<String, String, Iter<u32>> for ChronicleKeyspace {
         )
     }
 
-    fn bind_values<B: Binder>(builder: B, tag: &String, table_kind: &String) -> B {
-        builder.value(tag).value(table_kind)
+    fn bind_values<B: Binder>(builder: B, tag_hint: &TagHint, _: &()) -> B {
+        builder.bind(tag_hint)
     }
 }
 

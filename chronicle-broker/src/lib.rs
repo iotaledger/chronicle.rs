@@ -36,6 +36,14 @@ pub mod syncer;
 pub mod filter;
 
 mod inserts;
+use application::{
+    permanode::Uda,
+    BrokerHandle,
+};
+use filter::{
+    AtomicProcessHandle,
+    FilterBuilder,
+};
 use inserts::*;
 
 #[cfg(feature = "application")]
@@ -105,6 +113,7 @@ use async_trait::async_trait;
 use backstage::core::*;
 use pin_project_lite::pin_project;
 use scylla_rs::prelude::*;
+use wildmatch::WildMatch;
 
 /// The inherent trait to return a boxed worker for a given key/value pair in a keyspace
 pub(crate) trait Inherent<S, K, V> {
@@ -187,5 +196,74 @@ impl futures::stream::Stream for MilestoneDataSearch {
             }
         }
         Poll::Ready(None)
+    }
+}
+
+#[async_trait::async_trait]
+
+pub trait SelectiveBuilder<S: SupHandle<Self::Actor>>:
+    'static + Debug + PartialEq + Eq + Sized + Send + Clone + Serialize + Sync + std::default::Default
+{
+    type Actor: Actor<S>;
+    async fn build(&self) -> anyhow::Result<(Self::Actor, <Self::Actor as Actor<S>>::Channel)>;
+    async fn filter_message(
+        &self,
+        handle: &<<Self::Actor as Actor<S>>::Channel as Channel>::Handle,
+        message: &MessageRecord,
+    ) -> anyhow::Result<Option<Selected>>;
+    async fn process_milestone_data(
+        &self,
+        handle: &<<Self::Actor as Actor<S>>::Channel as Channel>::Handle,
+        milestone_data: std::sync::Arc<MilestoneDataBuilder>,
+    ) -> anyhow::Result<()>;
+}
+
+// NOTE the selective impl not complete
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct SelectivePermanodeConfig {
+    // indexation_keys: Vec<u8>,
+}
+
+#[async_trait]
+impl FilterBuilder for SelectivePermanodeConfig {
+    type Actor = Uda;
+
+    async fn build(&self) -> anyhow::Result<(Self::Actor, <Self::Actor as Actor<BrokerHandle>>::Channel)> {
+        todo!()
+    }
+    async fn filter_message(
+        &self,
+        handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+        message: &MessageRecord,
+    ) -> anyhow::Result<Option<Selected>> {
+        todo!()
+    }
+    async fn process_milestone_data(
+        &self,
+        handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+        atomic_handle: std::sync::Arc<AtomicProcessHandle>,
+        milestone_data: std::sync::Arc<MilestoneDataBuilder>,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+}
+
+#[derive(Clone, Debug, Default, Copy)]
+pub struct SelectivePermanode;
+
+// todo impl deserialize and serialize
+pub enum IndexationKey {
+    Text(WildMatch),
+    Hex(WildMatch),
+}
+
+struct HexedIndex {
+    /// The hexed index with wildcard
+    hexed_index: WildMatch,
+}
+
+impl HexedIndex {
+    fn new(hexed_index: WildMatch) -> Self {
+        Self { hexed_index }
     }
 }

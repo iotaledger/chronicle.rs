@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::fmt::Display;
 
 /// A tag hint, used to lookup in the `tags hints` table
 #[derive(Clone, Debug)]
@@ -13,26 +14,20 @@ pub struct TagHint {
 }
 
 impl TagHint {
+    pub fn new(tag: String, table_kind: TagHintVariant) -> Self {
+        Self { tag, table_kind }
+    }
     /// Creates a new tagged or indexation hint
     pub fn regular(tag: String) -> Self {
-        Self {
-            tag,
-            table_kind: TagHintVariant::Regular,
-        }
+        Self::new(tag, TagHintVariant::Regular)
     }
-    /// Creates a new tag hint derived from feature block inside extended output
-    pub fn extended_output(tag: String) -> Self {
-        Self {
-            tag,
-            table_kind: TagHintVariant::ExtOutput,
-        }
+    /// Creates a new tag hint derived from feature block inside basic output
+    pub fn basic_output(tag: String) -> Self {
+        Self::new(tag, TagHintVariant::BasicOutput)
     }
     /// Creates a new tag hint derived from feature block inside nft output
     pub fn nft_output(tag: String) -> Self {
-        Self {
-            tag,
-            table_kind: TagHintVariant::NftOutput,
-        }
+        Self::new(tag, TagHintVariant::NftOutput)
     }
     /// Get the tag string
     pub fn tag(&self) -> &String {
@@ -61,20 +56,20 @@ impl<B: Binder> Bindable<B> for TagHint {
 pub enum TagHintVariant {
     /// An unhashed indexation key or tagged data
     Regular,
-    /// A feature block for extended output
-    ExtOutput,
+    /// A feature block for basic output
+    BasicOutput,
     /// A feature block for nft output
     NftOutput,
 }
 
-impl std::fmt::Display for TagHintVariant {
+impl Display for TagHintVariant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
                 TagHintVariant::Regular => "Regular",
-                TagHintVariant::ExtOutput => "ExtOutput",
+                TagHintVariant::BasicOutput => "BasicOutput",
                 TagHintVariant::NftOutput => "NftOutput",
             }
         )

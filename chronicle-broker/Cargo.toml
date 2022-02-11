@@ -37,6 +37,7 @@ iota-crypto = "0.9.1"
 chrono = "0.4.19"
 pin-project-lite = "0.2.8"
 packable = { version = "0.2", features = [ "io", "std", "usize" ] }
+wildmatch = "2.1"
 
 [features]
 default = ["merge"]

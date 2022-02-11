@@ -6,13 +6,14 @@
 use async_trait::async_trait;
 use backstage::core::*;
 use chronicle_api::application::*;
-use chronicle_broker::application::*;
+use chronicle_broker::{
+    application::ChronicleBroker,
+    SelectivePermanodeConfig,
+};
 use chronicle_common::{
     alert,
     config::AlertConfig,
-    metrics::*,
 };
-use chronicle_storage::keyspaces::ChronicleKeyspace;
 use scylla_rs::prelude::*;
 use serde::{
     Deserialize,
@@ -28,10 +29,10 @@ pub struct Chronicle {
     scylla: Scylla,
     /// Permanode application
     #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
-    broker: ChronicleBroker<chronicle_filter::PermanodeConfig>,
+    broker: ChronicleBroker<PermanodeConfig>,
     /// Selective Permanode application
-    #[cfg(all(feature = "selective-permanode", not(feature = "permanode")))]
-    broker: ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>,
+    #[cfg(feature = "selective-permanode")]
+    broker: ChronicleBroker<SelectivePermanodeConfig>,
     /// The Api application
     api: ChronicleAPI,
     /// Alert config
@@ -46,9 +47,9 @@ pub enum ChronicleEvent {
     Api(Event<ChronicleAPI>),
     /// Get up to date -broker copy
     #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
-    Broker(Event<ChronicleBroker<chronicle_filter::PermanodeConfig>>),
-    #[cfg(all(feature = "selective-permanode", not(feature = "permanode")))]
-    Broker(Event<ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>>),
+    Broker(Event<ChronicleBroker<PermanodeConfig>>),
+    #[cfg(feature = "selective-permanode")]
+    Broker(Event<ChronicleBroker<SelectivePermanodeConfig>>),
     /// Report and Eol variant used by children
     MicroService(ScopeId, Service, Option<ActorResult<()>>),
     /// Shutdown chronicle variant
@@ -85,15 +86,15 @@ impl From<Event<ChronicleAPI>> for ChronicleEvent {
 }
 
 #[cfg(all(feature = "permanode", not(feature = "selective-permanode")))]
-impl From<Event<ChronicleBroker<chronicle_filter::PermanodeConfig>>> for ChronicleEvent {
-    fn from(e: Event<ChronicleBroker<chronicle_filter::PermanodeConfig>>) -> Self {
+impl From<Event<ChronicleBroker<PermanodeConfig>>> for ChronicleEvent {
+    fn from(e: Event<ChronicleBroker<PermanodeConfig>>) -> Self {
         Self::Broker(e)
     }
 }
 
-#[cfg(all(feature = "selective-permanode", not(feature = "permanode")))]
-impl From<Event<ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>>> for ChronicleEvent {
-    fn from(e: Event<ChronicleBroker<chronicle_filter::SelectivePermanodeConfig>>) -> Self {
+#[cfg(feature = "selective-permanode")]
+impl From<Event<ChronicleBroker<SelectivePermanodeConfig>>> for ChronicleEvent {
+    fn from(e: Event<ChronicleBroker<SelectivePermanodeConfig>>) -> Self {
         Self::Broker(e)
     }
 }
@@ -109,7 +110,6 @@ where
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
         // init the alert
         alert::init(self.alert.clone());
-        // 
         // - Scylla
         let scylla_scope_id = rt.start("scylla".to_string(), self.scylla.clone()).await?.scope_id();
         log::info!("Chronicle Started Scylla");
@@ -130,7 +130,6 @@ where
                 e
             })?;
         }
-        // 
         // - api
         let api_scope_id = rt.start("api".to_string(), self.api.clone()).await?.scope_id();
         if let Some(api) = rt.subscribe::<ChronicleAPI>(api_scope_id, "api".to_string()).await? {
@@ -140,14 +139,10 @@ where
             }
         }
         log::info!("Chronicle Started Api");
-        // 
-        // - brokern
-        #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
-        let broker = self.broker.clone();
-        #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
-        let broker_scope_id = rt.start("broker".to_string(), broker).await?.scope_id();
         #[cfg(any(feature = "permanode", feature = "selective-permanode"))]
         {
+            let broker = self.broker.clone();
+            let broker_scope_id = rt.start("broker".to_string(), broker).await?.scope_id();
             if let Some(broker) = rt.subscribe(broker_scope_id, "broker".to_string()).await? {
                 if self.broker != broker {
                     self.broker = broker;
@@ -275,39 +270,11 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
         "CREATE TABLE IF NOT EXISTS #0.messages (
             message_id text PRIMARY KEY,
             message blob,
-            metadata blob
+            milestone_index int,
+            inclusion_state tinyint,
+            conflict_reason tinyint,
+            proof blob
         );
-
-        CREATE TABLE IF NOT EXISTS #0.addresses (
-            address text,
-            partition_id smallint,
-            milestone_index int,
-            output_type tinyint,
-            transaction_id text,
-            idx smallint,
-            amount bigint,
-            address_type tinyint,
-            inclusion_state blob,
-            PRIMARY KEY ((address, partition_id), milestone_index, output_type, transaction_id, idx)
-        ) WITH CLUSTERING ORDER BY (milestone_index DESC, output_type DESC, transaction_id DESC, idx DESC);
-
-        CREATE TABLE IF NOT EXISTS #0.indexes (
-            indexation text,
-            partition_id smallint,
-            milestone_index int,
-            message_id text,
-            inclusion_state blob,
-            PRIMARY KEY ((indexation, partition_id), milestone_index, message_id)
-        ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-
-        CREATE TABLE IF NOT EXISTS #0.parents (
-            parent_id text,
-            partition_id smallint,
-            milestone_index int,
-            message_id text,
-            inclusion_state blob,
-            PRIMARY KEY ((parent_id, partition_id), milestone_index, message_id)
-        ) WITH CLUSTERING ORDER BY (milestone_index DESC);
 
         CREATE TABLE IF NOT EXISTS #0.transactions (
             transaction_id text,
@@ -315,11 +282,21 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             variant text,
             message_id text,
             data blob,
-            inclusion_state blob,
+            inclusion_state tinyint,
             milestone_index int,
-            PRIMARY KEY (transaction_id, idx, variant, message_id, data)
+            PRIMARY KEY (transaction_id, idx, variant, message_id)
         );
-
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.transactions_by_state AS 
+            SELECT transaction_id, idx, variant, message_id, inclusion_state
+            FROM #0.transactions
+            WHERE transaction_id IS NOT NULL
+            AND idx IS NOT NULL
+            AND variant IS NOT NULL
+            AND message_id IS NOT NULL
+            AND inclusion_state IS NOT NULL
+        PRIMARY KEY (transaction_id, inclusion_state, idx, variant, message_id);
+        
         CREATE TABLE IF NOT EXISTS #0.milestones (
             milestone_index int,
             message_id text,
@@ -327,31 +304,305 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             payload blob,
             PRIMARY KEY (milestone_index, message_id)
         );
-
-        CREATE TABLE IF NOT EXISTS #0.hints (
-            hint text,
-            variant text,
-            partition_id smallint,
+        
+        CREATE TABLE IF NOT EXISTS #0.tag_hints (
+            tag text,
+            table_kind text,
+            ms_range_id int,
+            PRIMARY KEY (tag, ms_range_id)
+        ) WITH CLUSTERING ORDER BY (ms_range_id DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.addresses_hints (
+            address text,
+            output_kind text, 
+            variant text, 
+            ms_range_id int,
+            PRIMARY KEY (address, output_kind, variant, ms_range_id)
+        ) WITH CLUSTERING ORDER BY (ms_range_id DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.basic_outputs (
+            output_id text,
+            ms_range_id int,
             milestone_index int,
-            PRIMARY KEY (hint, variant, partition_id)
-        ) WITH CLUSTERING ORDER BY (variant DESC, partition_id DESC);
-
-        CREATE TABLE IF NOT EXISTS #0.sync  (
-            key text,
+            ms_timestamp timestamp,
+            inclusion_state tinyint,
+            address text,
+            sender text,
+            tag text,
+            data blob,
+            PRIMARY KEY (output_id, ms_range_id, milestone_index, ms_timestamp)
+        ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.basic_outputs_by_address AS
+            SELECT * from #0.basic_outputs
+            WHERE output_id IS NOT NULL
+            AND address IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((address, ms_range_id), ms_timestamp, milestone_index, output_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.basic_outputs_by_tag AS
+            SELECT * from #0.basic_outputs
+            WHERE output_id IS NOT NULL
+            AND tag IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((tag, ms_range_id), ms_timestamp, milestone_index, output_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.basic_outputs_by_sender AS
+            SELECT * from #0.basic_outputs
+            WHERE output_id IS NOT NULL
+            AND sender IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((sender, ms_range_id), ms_timestamp, milestone_index, output_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.alias_outputs (
+            alias_id text,
+            ms_range_id int,
+            milestone_index int,
+            ms_timestamp timestamp,
+            inclusion_state tinyint,
+            sender text,
+            issuer text,
+            state_controller text,
+            governor text,
+            data blob,
+            PRIMARY KEY (alias_id, ms_range_id, milestone_index, ms_timestamp)
+        ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_sender AS
+            SELECT * from #0.alias_outputs
+            WHERE alias_id IS NOT NULL
+            AND sender IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((sender, ms_range_id), ms_timestamp, milestone_index, alias_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_issuer AS
+            SELECT * from #0.alias_outputs
+            WHERE alias_id IS NOT NULL
+            AND issuer IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((issuer, ms_range_id), ms_timestamp, milestone_index, alias_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_state_controller AS
+            SELECT * from #0.alias_outputs
+            WHERE alias_id IS NOT NULL
+            AND state_controller IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((state_controller, ms_range_id), ms_timestamp, milestone_index, alias_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_governor AS
+            SELECT * from #0.alias_outputs
+            WHERE alias_id IS NOT NULL
+            AND governor IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((governor, ms_range_id), ms_timestamp, milestone_index, alias_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.foundry_outputs (
+            foundry_id text,
+            ms_range_id int,
+            milestone_index int,
+            ms_timestamp timestamp,
+            inclusion_state tinyint,
+            address text,
+            data blob,
+            PRIMARY KEY (foundry_id, ms_range_id, milestone_index, ms_timestamp)
+        ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.foundry_outputs_by_address AS
+            SELECT * from #0.foundry_outputs
+            WHERE foundry_id IS NOT NULL
+            AND address IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((address, ms_range_id), ms_timestamp, milestone_index, foundry_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.nft_outputs (
+            nft_id text,
+            ms_range_id int,
+            milestone_index int,
+            ms_timestamp timestamp,
+            inclusion_state tinyint,
+            address text,
+            dust_return_address text,
+            sender text,
+            issuer text,
+            tag text,
+            data blob,
+            PRIMARY KEY (nft_id, ms_range_id, milestone_index, ms_timestamp)
+        ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_address AS
+            SELECT * from #0.nft_outputs
+            WHERE nft_id IS NOT NULL
+            AND address IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((address, ms_range_id), ms_timestamp, milestone_index, nft_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_dust_return_address AS
+            SELECT * from #0.nft_outputs
+            WHERE nft_id IS NOT NULL
+            AND dust_return_address IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((dust_return_address, ms_range_id), ms_timestamp, milestone_index, nft_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_sender AS
+            SELECT * from #0.nft_outputs
+            WHERE nft_id IS NOT NULL
+            AND sender IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((sender, ms_range_id), ms_timestamp, milestone_index, nft_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_issuer AS
+            SELECT * from #0.nft_outputs
+            WHERE nft_id IS NOT NULL
+            AND issuer IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((issuer, ms_range_id), ms_timestamp, milestone_index, nft_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_tag AS
+            SELECT * from #0.nft_outputs
+            WHERE nft_id IS NOT NULL
+            AND tag IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((tag, ms_range_id), ms_timestamp, milestone_index, nft_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.legacy_outputs (
+            output_id text,
+            output_type tinyint,
+            ms_range_id int,
+            milestone_index int,
+            ms_timestamp timestamp,
+            inclusion_state tinyint,
+            address text,
+            data blob,
+            PRIMARY KEY (output_id, output_type, ms_range_id, milestone_index, ms_timestamp)
+        ) WITH CLUSTERING ORDER BY (output_type ASC, ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.legacy_outputs_by_address AS
+            SELECT * from #0.legacy_outputs
+            WHERE output_id IS NOT NULL
+            AND output_type IS NOT NULL
+            AND address IS NOT NULL
+            AND ms_range_id IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+            AND milestone_index IS NOT NULL
+        PRIMARY KEY ((address, ms_range_id), output_type, ms_timestamp, milestone_index, output_id)
+        WITH CLUSTERING ORDER BY (output_type ASC, ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.tags (
+            tag text,
+            ms_range_id int,
+            milestone_index int,
+            ms_timestamp timestamp,
+            message_id text,
+            inclusion_state blob,
+            PRIMARY KEY ((tag, ms_range_id), ms_timestamp, milestone_index)
+        ) WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.parents (
+            parent_id text,
+            milestone_index int,
+            ms_timestamp timestamp,
+            message_id text,
+            inclusion_state tinyint,
+            PRIMARY KEY (parent_id, message_id)
+        );
+        
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.parents_by_ms AS
+            SELECT * from #0.parents
+            WHERE parent_id IS NOT NULL
+            AND message_id IS NOT NULL
+            AND milestone_index IS NOT NULL
+            AND ms_timestamp IS NOT NULL
+        PRIMARY KEY (parent_id, ms_timestamp, message_id)
+        WITH CLUSTERING ORDER BY (ms_timestamp DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.sync (
+            ms_range_id int,
             milestone_index int,
             synced_by tinyint,
             logged_by tinyint,
-            PRIMARY KEY (key, milestone_index)
+            PRIMARY KEY (ms_range_id, milestone_index)
         ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-
-        CREATE TABLE IF NOT EXISTS #0.analytics (
-            key text,
+        
+        CREATE TABLE IF NOT EXISTS #0.ms_analytics (
+            ms_range_id int,
             milestone_index int,
             message_count int,
             transaction_count int,
             transferred_tokens bigint,
-            PRIMARY KEY (key, milestone_index)
-        ) WITH CLUSTERING ORDER BY (milestone_index DESC);",
+            PRIMARY KEY (ms_range_id, milestone_index)
+        ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.daily_analytics (
+            year int,
+            date date,
+            total_addresses int,
+            send_addresses int,
+            recv_addresses int,
+            PRIMARY KEY (year, date)
+        ) WITH CLUSTERING ORDER BY (date DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.address_analytics (
+            address text,
+            milestone_index int,
+            sent_tokens bigint,
+            recv_tokens bigint,
+            PRIMARY KEY (address, milestone_index)
+        ) WITH CLUSTERING ORDER BY (milestone_index DESC);
+        
+        CREATE TABLE IF NOT EXISTS #0.date_cache (
+            date date,
+            start_ms int,
+            end_ms int,
+            PRIMARY KEY (date)
+        );
+        
+        CREATE TABLE IF NOT EXISTS #0.metrics_cache (
+            date date,
+            variant text,
+            value text,
+            metric text,
+            metric_value blob,
+            PRIMARY KEY (date, variant, metric, value)
+        );",
         keyspace_config.name.clone(),
     );
 

@@ -277,7 +277,7 @@ pub(crate) fn insert_legacy_output<
             Output::SignatureLockedDustAllowance(o) => *o.address(),
             _ => Err(anyhow::anyhow!("Invalid legacy output type!"))?,
         },
-        output_kind: OutputVariant::Legacy,
+        output_table: OutputTable::Legacy,
         variant: AddressHintVariant::Address,
     };
     let record = LegacyOutputRecord::new(
