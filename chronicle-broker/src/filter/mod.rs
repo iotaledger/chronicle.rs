@@ -141,11 +141,8 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(Some(keyspace_name), id, statement.into())
-                    .send_to_reporter(reporter)
-                    .ok();
+                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
             }
         }
         if self.retries > 0 {

@@ -16,11 +16,10 @@ scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "bac
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 log = { version = "0.4", optional = true }
-tokio-tungstenite = { version = "0.16", optional = true }
 reqwest = { version = "0.11", features = ["json"], optional = true }
 futures = { version = "0.3", optional = true }
 async-trait = { version = "0.1", optional = true }
-lru = { version = "0.6", optional = true }
+lru = { version = "0.7", optional = true }
 rand = { version = "0.8", optional = true }
 url = { version = "2.2", features = ["serde"] }
 bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"], optional = true }
@@ -28,11 +27,10 @@ bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer
 hex = { version = "0.4", optional = true }
 anyhow = { version = "1.0", optional = true }
 tokio = { version = "1.15", optional = true }
-paho-mqtt = { version = "0.9", default-features = false, features = ["bundled"], optional = true }
 thiserror = { version = "1.0" }
 indicatif = { version = "0.16", optional = true }
 glob = {version = "0.3", optional = true }
-async-recursion = "0.3.2"
+async-recursion = "1.0"
 iota-crypto = "0.9.1"
 chrono = "0.4.19"
 pin-project-lite = "0.2.8"
@@ -67,11 +65,10 @@ analytic = [
 ]
 application = [
     "chronicle-common",
-    "backstage",
+    "backstage/tungstenite",
     "scylla-rs",
     "serde_json",
     "log",
-    "tokio-tungstenite",
     "reqwest",
     "futures",
     "async-trait",
@@ -81,6 +78,5 @@ application = [
     "hex",
     "anyhow",
     "tokio/full",
-    "paho-mqtt",
     "sync",
 ]

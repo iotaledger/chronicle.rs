@@ -10,10 +10,9 @@ edition = "2021"
 chronicle-common = { path = "../chronicle-common" }
 chronicle-broker = { path = "../chronicle-broker", features = ["application"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage" }
-backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features = ["prefabs"] }
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features = ["prefabs", "tungstenite"] }
 clap = { version = "2.33", features = ["yaml"] }
 tokio = "1.15"
-tokio-tungstenite = "0.16"
 futures = "0.3"
 url = "2.2"
 serde = "1.0"

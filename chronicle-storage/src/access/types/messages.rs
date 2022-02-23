@@ -120,7 +120,7 @@ impl<B: Binder> Bindable<B> for MessageRecord {
         binder
             .value(Bee(self.message_id))
             .value(Bee(&self.message))
-            .value(self.milestone_index.as_ref().map(|ms| Bee(ms)))
+            .value(self.milestone_index.as_ref().map(Bee))
             .value(self.inclusion_state.as_ref().map(|l| *l as u8))
             .value(self.conflict_reason.as_ref().map(|c| *c as u8))
             .value(&self.proof)

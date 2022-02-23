@@ -599,11 +599,8 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.insert_statement::<K, V>();
-                PrepareWorker::new(Some(keyspace_name), id, statement.into())
-                    .send_to_reporter(reporter)
-                    .ok();
+                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
             }
         }
         if self.retries > 0 {
@@ -735,16 +732,13 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let keyspace_name = self.keyspace.name();
                 let statement;
                 if self.analyzed {
                     statement = self.keyspace.insert_statement::<SyncRecord, ()>();
                 } else {
                     statement = self.keyspace.insert_statement::<MsAnalyticsRecord, ()>();
                 }
-                PrepareWorker::new(Some(keyspace_name), id, statement.into())
-                    .send_to_reporter(reporter)
-                    .ok();
+                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
             }
         }
         if self.retries > 0 {
@@ -886,11 +880,8 @@ where
     ) -> anyhow::Result<()> {
         if let WorkerError::Cql(ref mut cql_error) = error {
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(Some(keyspace_name), id, statement.into())
-                    .send_to_reporter(reporter)
-                    .ok();
+                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
             }
         }
         if self.retries > 0 {
@@ -928,8 +919,10 @@ impl<T: ImportMode> Importer<T> {
             + Inherent<ChronicleKeyspace, MilestoneRecord, ()>
             + Inherent<ChronicleKeyspace, TagHint, MsRangeId>
             + Inherent<ChronicleKeyspace, AddressHint, MsRangeId>
-            + Inherent<ChronicleKeyspace, TagRecord, Option<u32>>
-            + Inherent<ChronicleKeyspace, LegacyOutputRecord, Option<u32>>
+            + Inherent<ChronicleKeyspace, LegacyOutputRecord, ()>
+            + Inherent<ChronicleKeyspace, LegacyOutputRecord, TTL>
+            + Inherent<ChronicleKeyspace, TagRecord, ()>
+            + Inherent<ChronicleKeyspace, TagRecord, TTL>
             + Inherent<ChronicleKeyspace, TransactionRecord, ()>,
     >(
         &mut self,

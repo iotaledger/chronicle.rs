@@ -40,10 +40,12 @@ pub(crate) fn insert_parents<I: Inherent<ChronicleKeyspace, ParentRecord, ()>>(
 }
 // NOT complete, TODO finish it.
 pub(crate) fn insert_payload<
-    I: Inherent<ChronicleKeyspace, LegacyOutputRecord, Option<u32>>
+    I: Inherent<ChronicleKeyspace, LegacyOutputRecord, ()>
+        + Inherent<ChronicleKeyspace, LegacyOutputRecord, TTL>
         + Inherent<ChronicleKeyspace, TransactionRecord, ()>
         + Inherent<ChronicleKeyspace, MilestoneRecord, ()>
-        + Inherent<ChronicleKeyspace, TagRecord, Option<u32>>
+        + Inherent<ChronicleKeyspace, TagRecord, ()>
+        + Inherent<ChronicleKeyspace, TagRecord, TTL>
         + Inherent<ChronicleKeyspace, TagHint, MsRangeId>
         + Inherent<ChronicleKeyspace, AddressHint, MsRangeId>,
 >(
@@ -98,7 +100,9 @@ pub(crate) fn insert_payload<
 }
 /// Insert the `Indexation` of a given message id to the table
 pub(crate) fn insert_index<
-    I: Inherent<ChronicleKeyspace, TagRecord, Option<u32>> + Inherent<ChronicleKeyspace, TagHint, MsRangeId>,
+    I: Inherent<ChronicleKeyspace, TagRecord, ()>
+        + Inherent<ChronicleKeyspace, TagRecord, TTL>
+        + Inherent<ChronicleKeyspace, TagHint, MsRangeId>,
 >(
     keyspace: &ChronicleKeyspace,
     inherent_worker: &I,
@@ -133,8 +137,10 @@ pub(crate) fn insert_index<
 
 /// Insert the transaction to the table
 pub(crate) fn insert_transaction<
-    I: Inherent<ChronicleKeyspace, LegacyOutputRecord, Option<u32>>
-        + Inherent<ChronicleKeyspace, TagRecord, Option<u32>>
+    I: Inherent<ChronicleKeyspace, LegacyOutputRecord, ()>
+        + Inherent<ChronicleKeyspace, LegacyOutputRecord, TTL>
+        + Inherent<ChronicleKeyspace, TagRecord, ()>
+        + Inherent<ChronicleKeyspace, TagRecord, TTL>
         + Inherent<ChronicleKeyspace, TransactionRecord, ()>
         + Inherent<ChronicleKeyspace, TagHint, MsRangeId>
         + Inherent<ChronicleKeyspace, AddressHint, MsRangeId>
@@ -257,7 +263,9 @@ pub(crate) fn insert_transaction_record<I: Inherent<ChronicleKeyspace, Transacti
 }
 /// Insert the `Address` to the table
 pub(crate) fn insert_legacy_output<
-    I: Inherent<ChronicleKeyspace, LegacyOutputRecord, Option<u32>> + Inherent<ChronicleKeyspace, AddressHint, MsRangeId>,
+    I: Inherent<ChronicleKeyspace, LegacyOutputRecord, ()>
+        + Inherent<ChronicleKeyspace, LegacyOutputRecord, TTL>
+        + Inherent<ChronicleKeyspace, AddressHint, MsRangeId>,
 >(
     keyspace: &ChronicleKeyspace,
     inherent_worker: &I,

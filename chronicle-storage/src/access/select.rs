@@ -33,7 +33,13 @@ impl Select<Bee<MessageId>, (), MessageRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT *
+            "SELECT 
+                message_id,
+                message,
+                milestone_index,
+                inclusion_state,
+                conflict_reason,
+                proof
             FROM #.messages 
             WHERE message_id = ?",
             self.name()
@@ -48,7 +54,12 @@ impl Select<Bee<MessageId>, (), Paged<Iter<ParentRecord>>> for ChronicleKeyspace
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT *
+            "SELECT
+                parent_id,
+                message_id,
+                milestone_index,
+                ms_timestamp,
+                inclusion_state
             FROM #.parents_by_ms
             WHERE parent_id = ?",
             self.name()
@@ -63,7 +74,12 @@ impl Select<Bee<MessageId>, Range<NaiveDateTime>, Paged<Iter<ParentRecord>>> for
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT *
+            "SELECT
+                parent_id,
+                message_id,
+                milestone_index,
+                ms_timestamp,
+                inclusion_state
             FROM #.parents_by_ms
             WHERE parent_id = ?
             AND ms_timestamp >= ?
@@ -418,5 +434,37 @@ impl Select<u32, Range<NaiveDate>, Iter<DailyAnalyticsRecord>> for ChronicleKeys
     }
     fn bind_values<B: Binder>(builder: B, year: &u32, date_range: &Range<NaiveDate>) -> B {
         builder.value(year).value(&date_range.start).value(&date_range.end)
+    }
+}
+
+impl Select<NaiveDate, (), DateCacheRecord> for ChronicleKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT start_ms, end_ms
+            FROM #.date_cache
+            WHERE date = ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, date: &NaiveDate, _: &()) -> B {
+        builder.value(date)
+    }
+}
+
+impl Select<NaiveDate, MetricsVariant, MetricsCacheCount> for ChronicleKeyspace {
+    type QueryOrPrepared = QueryStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT count(*)
+            FROM #.metrics_cache
+            WHERE date = ?
+            AND variant = ?
+            AND metric = ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, date: &NaiveDate, variant: &MetricsVariant) -> B {
+        builder.value(date).bind(variant)
     }
 }

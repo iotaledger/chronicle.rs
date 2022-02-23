@@ -61,7 +61,7 @@ impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
             ActorError::restart(e, None)
         })?;
         info!("Subscribed AsyncClient: {}, topic: {}", &self.url.as_str(), T::name());
-        let mqtt_channel = MqttChannel::new(client, self.stream_capacity, stream);
+        let mqtt_channel = MqttChannel::new(client, stream);
         Ok(mqtt_channel)
     }
 }

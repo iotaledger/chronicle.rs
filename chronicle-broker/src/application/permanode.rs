@@ -121,21 +121,17 @@ impl FilterBuilder for PermanodeConfig {
         let mut message_count: u32 = 0;
         let mut transferred_tokens: u64 = 0;
         let mut addresses: HashMap<Address, (Sent, Recv, SentOrRecv)> = HashMap::new();
-        while let Some((mut proof_opt, message)) = milestone_data_search.next().await {
+        while let Some((proof_opt, mut message)) = milestone_data_search.next().await {
+            message.proof = proof_opt;
             // Insert the proof(if any)
-            if let Some(proof) = proof_opt.take() {
+            if message.proof().is_some() {
                 let req = self
                     .keyspace
-                    .insert(&Bee(message.message_id), &proof)
+                    .insert(&message, &())
                     .consistency(Consistency::Quorum)
                     .build()?;
-                let worker = AtomicProcessWorker::boxed(
-                    atomic_handle.clone(),
-                    self.keyspace.clone(),
-                    Bee(message.message_id),
-                    proof.clone(),
-                    5,
-                );
+                let worker =
+                    AtomicProcessWorker::boxed(atomic_handle.clone(), self.keyspace.clone(), message.clone(), (), 5);
                 let keyspace_name = self.keyspace.name();
                 if let Err(RequestError::Ring(r)) = req.send_local_with_worker(worker) {
                     if let Err(worker) = retry_send(&keyspace_name, r, 2) {

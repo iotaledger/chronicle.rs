@@ -32,10 +32,10 @@ impl NftOutputRecord {
             address: *data.address(),
             dust_return_address: data
                 .unlock_conditions()
-                .binary_search_by_key(&DustDepositReturnUnlockCondition::KIND, UnlockCondition::kind)
+                .binary_search_by_key(&StorageDepositReturnUnlockCondition::KIND, UnlockCondition::kind)
                 .ok()
                 .and_then(|idx| {
-                    if let UnlockCondition::DustDepositReturn(c) = &data.unlock_conditions()[idx] {
+                    if let UnlockCondition::StorageDepositReturn(c) = &data.unlock_conditions()[idx] {
                         Some(*c.return_address())
                     } else {
                         None
@@ -119,9 +119,9 @@ impl<B: Binder> Bindable<B> for NftOutputRecord {
             .bind(self.partition_data)
             .value(self.inclusion_state.as_ref().map(|l| *l as u8))
             .value(Bee(self.address))
-            .value(self.dust_return_address.as_ref().map(|a| Bee(a)))
-            .value(self.sender.as_ref().map(|a| Bee(a)))
-            .value(self.issuer.as_ref().map(|a| Bee(a)))
+            .value(self.dust_return_address.as_ref().map(Bee))
+            .value(self.sender.as_ref().map(Bee))
+            .value(self.issuer.as_ref().map(Bee))
             .value(&self.tag)
             .value(Bee(&self.data))
     }

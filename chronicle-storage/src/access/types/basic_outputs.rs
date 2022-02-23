@@ -93,7 +93,7 @@ impl<B: Binder> Bindable<B> for BasicOutputRecord {
             .bind(self.partition_data)
             .value(self.inclusion_state.as_ref().map(|l| *l as u8))
             .value(Bee(self.address))
-            .value(self.sender.as_ref().map(|a| Bee(a)))
+            .value(self.sender.as_ref().map(Bee))
             .value(&self.tag)
             .value(Bee(&self.data))
     }

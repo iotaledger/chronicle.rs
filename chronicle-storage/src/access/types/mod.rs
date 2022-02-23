@@ -1,13 +1,16 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+mod address_analytics;
 mod address_hints;
 mod alias_outputs;
 mod basic_outputs;
 mod daily_analytics;
+mod date_cache;
 mod foundry_outputs;
 mod legacy_outputs;
 mod messages;
+mod metrics_cache;
 mod milestones;
 mod ms_analytics;
 mod nft_outputs;
@@ -17,14 +20,17 @@ mod tag_hints;
 mod tags;
 mod transactions;
 
+pub use address_analytics::*;
 pub use address_hints::*;
 pub use alias_outputs::*;
 pub use basic_outputs::*;
 use bee_rest_api::types::dtos::LedgerInclusionStateDto;
 pub use daily_analytics::*;
+pub use date_cache::*;
 pub use foundry_outputs::*;
 pub use legacy_outputs::*;
 pub use messages::*;
+pub use metrics_cache::*;
 pub use milestones::*;
 pub use ms_analytics::*;
 pub use nft_outputs::*;
@@ -105,6 +111,49 @@ pub type SyncedBy = u8;
 pub type LoggedBy = u8;
 /// Milestone Range Id
 pub type MsRangeId = u32;
+
+#[derive(Copy, Clone, Debug)]
+pub struct TTL(u32);
+impl TTL {
+    pub fn new(ttl: u32) -> Self {
+        Self(ttl)
+    }
+}
+impl From<u32> for TTL {
+    fn from(ttl: u32) -> Self {
+        Self(ttl)
+    }
+}
+impl Deref for TTL {
+    type Target = u32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for TTL {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl ColumnEncoder for TTL {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.0.encode(buffer)
+    }
+}
+impl TokenEncoder for TTL {
+    fn encode_token(&self) -> TokenEncodeChain {
+        self.0.encode_token()
+    }
+}
+impl ColumnDecoder for TTL {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(TTL(u32::try_decode_column(slice)?))
+    }
+}
 
 /// A marker for a paged result
 #[derive(Clone, Debug)]

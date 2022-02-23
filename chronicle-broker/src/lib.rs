@@ -44,11 +44,9 @@ use filter::{
     AtomicProcessHandle,
     FilterBuilder,
 };
-use inserts::*;
 
 #[cfg(feature = "application")]
 mod app {
-    use super::*;
     pub use anyhow::{
         anyhow,
         bail,
@@ -110,9 +108,7 @@ pub(crate) use app::*;
 /// Provide the archive file merger functionality;
 pub mod merge;
 use async_trait::async_trait;
-use backstage::core::*;
 use pin_project_lite::pin_project;
-use scylla_rs::prelude::*;
 use wildmatch::WildMatch;
 
 /// The inherent trait to return a boxed worker for a given key/value pair in a keyspace

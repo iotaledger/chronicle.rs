@@ -19,8 +19,8 @@ pub struct TransactionRecord {
     pub variant: TransactionVariant,
     pub message_id: MessageId,
     pub data: TransactionData,
-    pub inclusion_state: Option<LedgerInclusionState>,
     pub milestone_index: Option<MilestoneIndex>,
+    pub inclusion_state: Option<LedgerInclusionState>,
 }
 
 impl TransactionRecord {
@@ -81,6 +81,34 @@ impl TransactionRecord {
             milestone_index,
         }
     }
+
+    pub fn transaction_id(&self) -> &TransactionId {
+        &self.transaction_id
+    }
+
+    pub fn idx(&self) -> &Index {
+        &self.idx
+    }
+
+    pub fn variant(&self) -> &TransactionVariant {
+        &self.variant
+    }
+
+    pub fn message_id(&self) -> &MessageId {
+        &self.message_id
+    }
+
+    pub fn data(&self) -> &TransactionData {
+        &self.data
+    }
+
+    pub fn milestone_index(&self) -> &Option<MilestoneIndex> {
+        &self.milestone_index
+    }
+
+    pub fn inclusion_state(&self) -> &Option<LedgerInclusionState> {
+        &self.inclusion_state
+    }
 }
 
 impl Row for TransactionRecord {
@@ -94,10 +122,10 @@ impl Row for TransactionRecord {
             variant: rows.column_value()?,
             message_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
             data: rows.column_value()?,
-            inclusion_state: rows.column_value()?,
             milestone_index: rows
                 .column_value::<Option<Bee<MilestoneIndex>>>()?
                 .map(|i| i.into_inner()),
+            inclusion_state: rows.column_value()?,
         })
     }
 }
@@ -116,8 +144,8 @@ impl<B: Binder> Bindable<B> for TransactionRecord {
             .value(self.variant as u8)
             .value(Bee(&self.message_id))
             .value(&self.data)
+            .value(self.milestone_index.as_ref().map(Bee))
             .value(self.inclusion_state)
-            .value(self.milestone_index.as_ref().map(|i| Bee(i)))
     }
 }
 
