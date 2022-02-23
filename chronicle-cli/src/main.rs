@@ -827,6 +827,8 @@ async fn report_archive<'a>(matches: &ArgMatches<'a>) -> anyhow::Result<()> {
                                 report.total_transaction_count += 1;
                             }
                             pb.inc(1);
+                        } else if data.milestone_index() > contained_range.end {
+                            break;
                         }
                     }
                 }
