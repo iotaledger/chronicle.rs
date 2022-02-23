@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bee_message::{
+    address::Address,
     input::Input,
+    milestone::MilestoneIndex,
     output::{
         Output,
         OutputId,
     },
+    payload::transaction::TransactionId,
     Message,
+    MessageId,
 };
 use bee_rest_api::types::{
     dtos::{
@@ -24,6 +28,7 @@ use chronicle_storage::access::{
     LegacyOutputRecord,
     MsAnalyticsRecord,
     MsRangeId,
+    OutputType,
     ParentRecord,
     TagRecord,
     TransactionRes,
@@ -60,7 +65,7 @@ pub(crate) enum ListenerResponseV1 {
         #[serde(rename = "protocolVersion")]
         protocol_version: u8,
         #[serde(rename = "parentMessageIds")]
-        parents: Vec<String>,
+        parents: Vec<MessageId>,
         payload: Option<PayloadDto>,
         nonce: String,
     },
@@ -69,18 +74,18 @@ pub(crate) enum ListenerResponseV1 {
     /// Response of GET /api/<keyspace>/messages/<message_id>/children
     MessageChildren {
         #[serde(rename = "messageId")]
-        message_id: String,
+        message_id: MessageId,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
         #[serde(rename = "childrenMessageIds")]
-        children_message_ids: Vec<String>,
+        children_message_ids: Vec<MessageId>,
         paging_state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>/children[?expanded=true]
     MessageChildrenExpanded {
         #[serde(rename = "messageId")]
-        message_id: String,
+        message_id: MessageId,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
@@ -95,7 +100,7 @@ pub(crate) enum ListenerResponseV1 {
         max_results: usize,
         count: usize,
         #[serde(rename = "messageIds")]
-        message_ids: Vec<String>,
+        message_ids: Vec<MessageId>,
         state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?<index>[&expanded=true]
@@ -113,7 +118,7 @@ pub(crate) enum ListenerResponseV1 {
         // The type of the address (1=Ed25519).
         #[serde(rename = "addressType")]
         address_type: u8,
-        address: String,
+        address: Address,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
@@ -126,7 +131,7 @@ pub(crate) enum ListenerResponseV1 {
         // The type of the address (1=Ed25519).
         #[serde(rename = "addressType")]
         address_type: u8,
-        address: String,
+        address: Address,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
@@ -137,9 +142,9 @@ pub(crate) enum ListenerResponseV1 {
     /// Response of GET /api/<keyspace>/outputs/<output_id>
     Output {
         #[serde(rename = "messageId")]
-        message_id: String,
+        message_id: MessageId,
         #[serde(rename = "transactionId")]
-        transaction_id: String,
+        transaction_id: TransactionId,
         #[serde(rename = "outputIndex")]
         output_index: u16,
         #[serde(rename = "isSpent")]
@@ -153,10 +158,14 @@ pub(crate) enum ListenerResponseV1 {
         transactions: Vec<Transaction>,
         state: Option<String>,
     },
+    TransactionHistory {
+        transactions: Vec<Transfer>,
+        state: Option<String>,
+    },
     /// Response of GET /api/<keyspace>/milestone/<index>
     Milestone {
         #[serde(rename = "index")]
-        milestone_index: u32,
+        milestone_index: MilestoneIndex,
         #[serde(rename = "messageId")]
         message_id: String,
         timestamp: u64,
@@ -172,10 +181,40 @@ impl TryFrom<Message> for ListenerResponseV1 {
         Ok(ListenerResponseV1::Message {
             network_id: None,
             protocol_version: message.protocol_version(),
-            parents: message.parents().iter().map(|p| p.to_string()).collect(),
+            parents: message.parents().iter().map(|p| *p).collect(),
             payload: message.payload().map(Into::into),
             nonce: message.nonce().to_string(),
         })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Transfer {
+    #[serde(rename = "outputId")]
+    pub output_id: OutputId,
+    #[serde(rename = "outputType")]
+    pub output_type: OutputType,
+    #[serde(rename = "isUsed")]
+    pub is_used: bool,
+    #[serde(rename = "inclusionState")]
+    pub inclusion_state: Option<LedgerInclusionState>,
+    #[serde(rename = "messageId")]
+    pub message_id: MessageId,
+    pub amount: Option<u64>,
+    pub address: Address,
+}
+
+impl From<LegacyOutputRecord> for Transfer {
+    fn from(rec: LegacyOutputRecord) -> Self {
+        Self {
+            output_id: rec.output_id,
+            output_type: rec.output_type,
+            is_used: rec.is_used as u8 != 0,
+            inclusion_state: rec.inclusion_state,
+            message_id: rec.message_id,
+            amount: rec.amount,
+            address: rec.address,
+        }
     }
 }
 
@@ -224,10 +263,10 @@ impl From<ParentRecord> for Record {
 pub(crate) struct Transaction {
     /// The created output's message id
     #[serde(rename = "messageId")]
-    pub message_id: String,
+    pub message_id: MessageId,
     /// The confirmation timestamp
     #[serde(rename = "milestoneIndex")]
-    pub milestone_index: Option<u32>,
+    pub milestone_index: Option<MilestoneIndex>,
     /// The output
     pub outputs: Vec<MaybeSpentOutput>,
     /// The inputs, if they exist
@@ -237,8 +276,8 @@ pub(crate) struct Transaction {
 impl From<TransactionRes> for Transaction {
     fn from(o: TransactionRes) -> Self {
         Self {
-            message_id: o.message_id.to_string(),
-            milestone_index: o.milestone_index.map(|ms| ms.0),
+            message_id: o.message_id,
+            milestone_index: o.milestone_index,
             outputs: o.outputs.into_iter().map(Into::into).collect(),
             inputs: o
                 .inputs
@@ -260,14 +299,14 @@ impl From<TransactionRes> for Transaction {
 pub(crate) struct MaybeSpentOutput {
     pub output: OutputDto,
     #[serde(rename = "spendingMessageId")]
-    pub spending_message_id: Option<String>,
+    pub spending_message_id: Option<MessageId>,
 }
 
 impl From<(Output, Option<UnlockRes>)> for MaybeSpentOutput {
     fn from((o, u): (Output, Option<UnlockRes>)) -> Self {
         Self {
             output: o.borrow().into(),
-            spending_message_id: u.map(|u| u.message_id.to_string()),
+            spending_message_id: u.map(|u| u.message_id),
         }
     }
 }
@@ -275,14 +314,14 @@ impl From<(Output, Option<UnlockRes>)> for MaybeSpentOutput {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Unlock {
     #[serde(rename = "messageId")]
-    pub message_id: String,
+    pub message_id: MessageId,
     pub block: UnlockBlockDto,
 }
 
 impl From<UnlockRes> for Unlock {
     fn from(u: UnlockRes) -> Self {
         Unlock {
-            message_id: u.message_id.to_string(),
+            message_id: u.message_id,
             block: u.block.borrow().into(),
         }
     }

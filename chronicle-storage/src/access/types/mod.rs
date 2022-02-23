@@ -280,6 +280,31 @@ impl Hint {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+#[repr(u8)]
+pub enum OutputSpendKind {
+    Created = 0,
+    Used = 1,
+}
+
+impl ColumnDecoder for OutputSpendKind {
+    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        u8::try_decode_column(slice).map(|v| match v {
+            0 => Self::Created,
+            _ => Self::Used,
+        })
+    }
+}
+
+impl ColumnEncoder for OutputSpendKind {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        (*self as u8).encode(buffer);
+    }
+}
+
 pub trait Partitioned {
     const MS_CHUNK_SIZE: u32;
 

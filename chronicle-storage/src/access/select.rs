@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use bee_message::Message;
+use bee_message::{
+    address::Address,
+    Message,
+};
 use chronicle_common::SyncRange;
 use chrono::{
     NaiveDate,
@@ -92,7 +95,7 @@ impl Select<Bee<MessageId>, Range<NaiveDateTime>, Paged<Iter<ParentRecord>>> for
     }
 }
 
-impl Select<(Bee<Ed25519Address>, MsRangeId), (), Paged<Vec<LegacyOutputRecord>>> for ChronicleKeyspace {
+impl Select<(Bee<Address>, MsRangeId), (), Paged<Vec<LegacyOutputRecord>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
@@ -103,14 +106,12 @@ impl Select<(Bee<Ed25519Address>, MsRangeId), (), Paged<Vec<LegacyOutputRecord>>
             self.name()
         )
     }
-    fn bind_values<B: Binder>(builder: B, (address, ms_range_id): &(Bee<Ed25519Address>, MsRangeId), _: &()) -> B {
+    fn bind_values<B: Binder>(builder: B, (address, ms_range_id): &(Bee<Address>, MsRangeId), _: &()) -> B {
         builder.value(address).value(ms_range_id)
     }
 }
 
-impl Select<(Bee<Ed25519Address>, MsRangeId), Range<NaiveDateTime>, Paged<Vec<LegacyOutputRecord>>>
-    for ChronicleKeyspace
-{
+impl Select<(Bee<Address>, MsRangeId), Range<NaiveDateTime>, Paged<Vec<LegacyOutputRecord>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
@@ -125,7 +126,7 @@ impl Select<(Bee<Ed25519Address>, MsRangeId), Range<NaiveDateTime>, Paged<Vec<Le
     }
     fn bind_values<B: Binder>(
         builder: B,
-        (address, ms_range_id): &(Bee<Ed25519Address>, MsRangeId),
+        (address, ms_range_id): &(Bee<Address>, MsRangeId),
         time_range: &Range<NaiveDateTime>,
     ) -> B {
         builder

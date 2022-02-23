@@ -288,11 +288,12 @@ pub(crate) fn insert_legacy_output<
         output_table: OutputTable::Legacy,
         variant: AddressHintVariant::Address,
     };
-    let record = LegacyOutputRecord::new(
+    let record = LegacyOutputRecord::created(
         output_id,
         PartitionData::new(ms_range_id, milestone_index, todo!()),
         message.inclusion_state,
         output,
+        message.message_id,
     )?;
     insert(keyspace, inherent_worker, record, todo!("Handle TTL"))?;
     insert(keyspace, inherent_worker, hint, ms_range_id);
