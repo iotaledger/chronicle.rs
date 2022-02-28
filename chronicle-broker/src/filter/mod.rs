@@ -32,25 +32,24 @@ pub trait FilterBuilder:
         handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
         message: &MessageRecord,
     ) -> anyhow::Result<Option<Selected>>;
-    async fn process_milestone_data(
+    async fn process_milestone_data_builder(
         &self,
         handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-        atomic_handle: std::sync::Arc<AtomicProcessHandle>,
-        milestone_data: std::sync::Arc<MilestoneDataBuilder>,
-    ) -> anyhow::Result<()>;
+        milestone_data: MilestoneDataBuilder,
+    ) -> anyhow::Result<MilestoneData>;
 }
 
 /// Atomic process handle
 #[derive(Debug)]
 pub struct AtomicProcessHandle {
-    pub(crate) handle: SolidifierHandle,
+    pub(crate) handle: tokio::sync::oneshot::Sender<Result<u32, u32>>,
     pub(crate) milestone_index: u32,
     pub(crate) any_error: std::sync::atomic::AtomicBool,
 }
 
 impl AtomicProcessHandle {
     /// Create a new Atomic solidifier handle
-    pub fn new(handle: SolidifierHandle, milestone_index: u32) -> std::sync::Arc<Self> {
+    pub fn new(handle: tokio::sync::oneshot::Sender<Result<u32, u32>>, milestone_index: u32) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self {
             handle,
             milestone_index,
@@ -65,25 +64,13 @@ impl AtomicProcessHandle {
 
 impl Drop for AtomicProcessHandle {
     fn drop(&mut self) {
-        use super::solidifier::{
-            CqlResult,
-            SolidifierEvent,
-        };
         let any_error = self.any_error.load(std::sync::atomic::Ordering::Acquire);
         if any_error {
             // respond with err
-            self.handle
-                .send(SolidifierEvent::CqlResult(Err(CqlResult::Processed(
-                    self.milestone_index,
-                ))))
-                .ok();
+            self.handle.send(Ok(self.milestone_index)).ok();
         } else {
             // respond with void
-            self.handle
-                .send(SolidifierEvent::CqlResult(Ok(CqlResult::Processed(
-                    self.milestone_index,
-                ))))
-                .ok();
+            self.handle.send(Err(self.milestone_index)).ok();
         }
     }
 }
@@ -143,9 +130,7 @@ where
             if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
                 let keyspace_name = self.keyspace.name();
                 let statement = self.keyspace.statement();
-                PrepareWorker::new(Some(keyspace_name), id, statement.into())
-                    .send_to_reporter(reporter)
-                    .ok();
+                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
             }
         }
         if self.retries > 0 {

@@ -32,10 +32,10 @@ impl NftOutputRecord {
             address: *data.address(),
             dust_return_address: data
                 .unlock_conditions()
-                .binary_search_by_key(&DustDepositReturnUnlockCondition::KIND, UnlockCondition::kind)
+                .binary_search_by_key(&StorageDepositReturnUnlockCondition::KIND, UnlockCondition::kind)
                 .ok()
                 .and_then(|idx| {
-                    if let UnlockCondition::DustDepositReturn(c) = &data.unlock_conditions()[idx] {
+                    if let UnlockCondition::StorageDepositReturn(c) = &data.unlock_conditions()[idx] {
                         Some(*c.return_address())
                     } else {
                         None

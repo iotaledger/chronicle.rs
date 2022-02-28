@@ -98,12 +98,11 @@ impl FilterBuilder for PermanodeConfig {
     ) -> anyhow::Result<Option<Selected>> {
         Ok(Some(Selected::select()))
     }
-    async fn process_milestone_data(
+    async fn process_milestone_data_builder(
         &self,
         _handle: &AbortableUnboundedHandle<()>,
-        atomic_handle: Arc<AtomicProcessHandle>,
-        milestone_data: Arc<MilestoneDataBuilder>,
-    ) -> anyhow::Result<()> {
+        milestone_data: MilestoneDataBuilder,
+    ) -> anyhow::Result<MilestoneData> {
         let milestone_index = milestone_data.milestone_index();
         let milestone_timestamp_secs = milestone_data
             .timestamp()

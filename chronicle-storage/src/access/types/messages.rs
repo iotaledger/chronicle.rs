@@ -25,6 +25,17 @@ pub struct MessageRecord {
 }
 
 impl MessageRecord {
+    /// Create new message record
+    pub fn new(message_id: MessageId, message: Message) -> Self {
+        Self {
+            message_id,
+            message,
+            milestone_index: None,
+            inclusion_state: None,
+            conflict_reason: None,
+            proof: None,
+        }
+    }
     /// Return Message id of the message
     pub fn message_id(&self) -> &MessageId {
         &self.message_id
@@ -201,5 +212,55 @@ impl ColumnDecoder for Proof {
             UnpackError::Packable(e) => e,
             UnpackError::Unpacker(e) => anyhow!(e),
         })
+    }
+}
+
+/// A milestone message
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MilestoneMessage {
+    message: MessageRecord,
+}
+
+impl std::convert::TryFrom<MessageRecord> for MilestoneMessage {
+    type Error = anyhow::Error;
+    fn try_from(message: MessageRecord) -> Result<Self, Self::Error> {
+        if let Some(Payload::Milestone(ms_payload)) = message.payload() {
+            Ok(Self { message })
+        } else {
+            bail!("Failed to create MilestoneMessage from regular message record without milestone payload")
+        }
+    }
+}
+
+impl MilestoneMessage {
+    /// Returns the message record
+    pub fn message(&self) -> &MessageRecord {
+        &self.message
+    }
+    /// Returns the milestone index
+    pub fn milestone_index(&self) -> MilestoneIndex {
+        // unwrap is safe, as the milestone message cannot be created unless it contains milestone payload
+        if let Payload::Milestone(ms_payload) = self
+            .message
+            .payload()
+            .expect("Failed to unwrap milestone payload from milestone message")
+        {
+            ms_payload.essence().index()
+        } else {
+            unreachable!("No milestone payload in milestone message")
+        }
+    }
+    /// Returns the timestamp of a [MilestoneEssence].
+    pub fn timestamp(&self) -> u64 {
+        // unwrap is safe, as the milestone message cannot be created unless it contains milestone payload
+        if let Payload::Milestone(ms_payload) = self
+            .message
+            .payload()
+            .expect("Failed to unwrap milestone payload from milestone message")
+        {
+            ms_payload.essence().timestamp()
+        } else {
+            unreachable!("No milestone payload in milestone message")
+        }
     }
 }

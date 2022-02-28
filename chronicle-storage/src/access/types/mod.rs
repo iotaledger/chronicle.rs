@@ -585,75 +585,30 @@ pub struct OutputRes {
 }
 
 /// Milestone data
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MilestoneData {
-    pub message_id: MessageId,
-    pub milestone_index: u32,
-    pub payload: MilestonePayload,
+    pub milestone: MilestoneMessage,
     pub messages: BTreeSet<MessageRecord>,
 }
 
 impl MilestoneData {
     pub fn message_id(&self) -> &MessageId {
-        &self.message_id
+        self.milestone.message().message_id()
     }
-    pub fn milestone_index(&self) -> u32 {
-        self.milestone_index
-    }
-    pub fn payload(&self) -> &MilestonePayload {
-        &self.payload
+    pub fn milestone_index(&self) -> MilestoneIndex {
+        self.milestone.milestone_index()
     }
     /// Get the milestone's messages
     pub fn messages(&self) -> &BTreeSet<MessageRecord> {
         &self.messages
-    }
-    /// Get the analytics from the collected messages
-    pub fn get_analytic_record(&self) -> anyhow::Result<MsAnalyticsRecord> {
-        // The accumulators
-        let mut transaction_count: u32 = 0;
-        let mut transferred_tokens: u64 = 0;
-
-        // Iterate the messages to calculate analytics
-        for rec in self.messages() {
-            // Accumulate confirmed(included) transaction value
-            if let Some(LedgerInclusionState::Included) = rec.inclusion_state {
-                if let Some(Payload::Transaction(payload)) = rec.message.payload() {
-                    // Accumulate the transaction count
-                    transaction_count += 1;
-                    let TransactionEssence::Regular(regular_essence) = payload.essence();
-                    {
-                        for output in regular_essence.outputs() {
-                            match output {
-                                // Accumulate the transferred token amount
-                                Output::SignatureLockedSingle(output) => transferred_tokens += output.amount(),
-                                Output::SignatureLockedDustAllowance(output) => transferred_tokens += output.amount(),
-                                // Note that the transaction payload don't have Treasury
-                                _ => anyhow::bail!("Unexpected Output variant in transaction payload"),
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let analytic_record = MsAnalyticsRecord {
-            ms_range_id: MsAnalyticsRecord::range_id(self.milestone_index()),
-            milestone_index: MilestoneIndex(self.milestone_index()),
-            message_count: self.messages().len() as u32,
-            transaction_count,
-            transferred_tokens,
-        };
-
-        // Return the analytic record
-        Ok(analytic_record)
     }
 }
 
 /// Milestone data builder
 #[derive(Debug, Clone)]
 pub struct MilestoneDataBuilder {
-    pub(crate) message_id: MessageId,
     pub(crate) milestone_index: u32,
-    pub(crate) payload: Option<MilestonePayload>,
+    pub(crate) milestone: Option<MilestoneMessage>,
     pub(crate) messages: BTreeMap<MessageId, MessageRecord>,
     pub(crate) selected_messages: HashMap<MessageId, Selected>,
     pub(crate) pending: HashSet<MessageId>,
@@ -661,26 +616,22 @@ pub struct MilestoneDataBuilder {
 }
 
 impl MilestoneDataBuilder {
-    pub fn new(message_id: MessageId, milestone_index: u32, created_by: CreatedBy) -> Self {
+    pub fn new(milestone_index: u32, created_by: CreatedBy) -> Self {
         Self {
-            message_id,
             milestone_index,
-            payload: None,
+            milestone: None,
             messages: BTreeMap::new(),
             selected_messages: HashMap::new(),
             pending: HashSet::new(),
             created_by,
         }
     }
-    pub fn message_id(&self) -> &MessageId {
-        &self.message_id
-    }
-    pub fn with_payload(mut self, payload: MilestonePayload) -> Self {
-        self.payload = Some(payload);
+    pub fn with_milestone(mut self, milestone_message: MilestoneMessage) -> Self {
+        self.milestone.replace(milestone_message);
         self
     }
-    pub fn set_payload(&mut self, payload: MilestonePayload) {
-        self.payload = Some(payload);
+    pub fn set_milestone(&mut self, milestone_message: MilestoneMessage) {
+        self.milestone.replace(milestone_message);
     }
     pub fn add_message(&mut self, message: MessageRecord, selected: Option<Selected>) -> anyhow::Result<()> {
         let message_id = message.message_id;
@@ -732,20 +683,18 @@ impl MilestoneDataBuilder {
     pub fn set_created_by(&mut self, created_by: CreatedBy) {
         self.created_by = created_by;
     }
-    pub fn payload(&self) -> &Option<MilestonePayload> {
-        &self.payload
+    pub fn milestone(&self) -> &Option<MilestoneMessage> {
+        &self.milestone
     }
     pub fn timestamp(&self) -> Option<u64> {
-        self.payload.as_ref().map(|p| p.essence().timestamp())
+        self.milestone.as_ref().map(|m| m.timestamp())
     }
     pub fn valid(&self) -> bool {
-        self.payload.is_some() && self.pending.is_empty()
+        self.milestone.is_some() && self.pending.is_empty()
     }
     pub fn build(self) -> anyhow::Result<MilestoneData> {
         Ok(MilestoneData {
-            message_id: self.message_id,
-            milestone_index: self.milestone_index,
-            payload: self.payload.ok_or_else(|| anyhow::anyhow!("No milestone payload"))?,
+            milestone: self.milestone.ok_or_else(|| anyhow::anyhow!("No milestone payload"))?,
             messages: self.messages.into_values().collect(),
         })
     }
@@ -765,19 +714,20 @@ impl TryInto<MilestoneData> for OldMilestoneData {
 
     fn try_into(self) -> Result<MilestoneData, Self::Error> {
         Ok(MilestoneData {
-            message_id: self
+            milestone: self
                 .messages
                 .values()
                 .find_map(|m| match m.0.payload() {
                     Some(payload) => match payload {
-                        bee_message::payload::Payload::Milestone(_) => Some(m.1.message_id),
+                        bee_message::payload::Payload::Milestone(_) => {
+                            let m: MessageRecord = m.clone().into();
+                            Some(m.try_into().unwrap()) // safe to unwrap as the milestone payload check already done.
+                        }
                         _ => None,
                     },
                     None => None,
                 })
                 .ok_or_else(|| anyhow::anyhow!("No milestone payload in messages!"))?,
-            milestone_index: self.milestone_index,
-            payload: self.milestone,
             messages: self.messages.into_values().map(Into::into).collect(),
         })
     }

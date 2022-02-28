@@ -37,7 +37,7 @@ pub struct Archiver {
     max_log_size: u64,
     cleanup: Vec<u32>,
     processed: Vec<std::ops::Range<u32>>,
-    milestones_data: BinaryHeap<Ascending<Arc<MilestoneDataBuilder>>>,
+    milestones_data: BinaryHeap<Ascending<MilestoneData>>,
     keyspace: ChronicleKeyspace,
     next: u32,
 }
@@ -49,7 +49,7 @@ impl Archiver {
         next: u32,
         max_log_size: Option<u64>,
     ) -> Self {
-        let milestones_data: BinaryHeap<Ascending<Arc<MilestoneDataBuilder>>> = BinaryHeap::new();
+        let milestones_data: BinaryHeap<Ascending<MilestoneData>> = BinaryHeap::new();
         Self {
             dir_path: dir_path.into(),
             logs: Vec::new(),
@@ -97,26 +97,29 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                         };
                     }
                 }
-                ArchiverEvent::MilestoneData(milestone_data, opt_upper_limit) => {
+                ArchiverEvent::MilestoneData(milestone_data, created_by, opt_upper_limit) => {
                     info!(
                         "Archiver received milestone data for index: {}, upper_ms_limit: {:?}",
                         milestone_data.milestone_index(),
                         opt_upper_limit
                     );
                     // check if it belongs to new incoming data
-                    match milestone_data.created_by() {
+                    match created_by {
                         CreatedBy::Incoming | CreatedBy::Expected => {
                             self.milestones_data.push(Ascending::new(milestone_data));
                             while let Some(ms_data) = self.milestones_data.pop() {
                                 let ms_index = ms_data.milestone_index();
-                                if self.next.eq(&ms_index) {
-                                    if let Err(e) = self.handle_milestone_data(ms_data.into(), opt_upper_limit).await {
+                                if self.next == ms_index.0 {
+                                    if let Err(e) = self
+                                        .handle_milestone_data(ms_data.into(), created_by, opt_upper_limit)
+                                        .await
+                                    {
                                         error!("{}", e);
                                         self.finish_in_progress().await;
                                         return Err(ActorError::exit(e));
                                     };
                                     self.next += 1;
-                                } else if ms_index > self.next {
+                                } else if ms_index.0 > self.next {
                                     // Safety check to prevent potential rare race condition
                                     // check if we buffered too much.
                                     if self.milestones_data.len() > MAX_MILESTONE_DATA_LEN {
@@ -128,15 +131,16 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                                             return Err(ActorError::exit(e));
                                         };
                                         // this supposed to create new file
-                                        if let Err(e) =
-                                            self.handle_milestone_data(ms_data.into(), opt_upper_limit).await
+                                        if let Err(e) = self
+                                            .handle_milestone_data(ms_data.into(), created_by, opt_upper_limit)
+                                            .await
                                         {
                                             error!("{}", e);
                                             self.finish_in_progress().await;
                                             return Err(ActorError::exit(e));
                                         }
                                         // reset next
-                                        self.next = ms_index + 1;
+                                        self.next = ms_index.0 + 1;
                                     } else {
                                         self.milestones_data.push(ms_data);
                                         break;
@@ -149,17 +153,20 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                         CreatedBy::Syncer | CreatedBy::Exporter => {
                             // to prevent overlap, we ensure to only handle syncer milestone_data when it's less than
                             // next
-                            if milestone_data.milestone_index() < self.next {
+                            if milestone_data.milestone_index().0 < self.next {
                                 // handle syncer milestone data;
-                                if let Err(e) = self.handle_milestone_data(milestone_data, opt_upper_limit).await {
+                                if let Err(e) = self
+                                    .handle_milestone_data(milestone_data, created_by, opt_upper_limit)
+                                    .await
+                                {
                                     error!("{}", e);
                                     self.finish_in_progress().await;
                                     return Err(ActorError::exit(e));
                                 }
                                 // it overlaps with the incoming flow.
-                            } else if milestone_data.milestone_index() == self.next {
+                            } else if milestone_data.milestone_index().0 == self.next {
                                 // we handle the milestone_data from syncer as Incoming without upper_ms_limit
-                                if let Err(e) = self.handle_milestone_data(milestone_data, None).await {
+                                if let Err(e) = self.handle_milestone_data(milestone_data, created_by, None).await {
                                     error!("{}", e);
                                     self.finish_in_progress().await;
                                     return Err(ActorError::exit(e));
@@ -199,11 +206,13 @@ impl Archiver {
     }
     async fn handle_milestone_data(
         &mut self,
-        milestone_data: Arc<MilestoneDataBuilder>,
+        milestone_data: MilestoneData,
+        created_by: CreatedBy,
         mut opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
-        let milestone_index = milestone_data.milestone_index();
-        let mut milestone_data_json = serde_json::to_string(&milestone_data.deref().clone().build()?).unwrap();
+        let milestone_index = milestone_data.milestone_index().0;
+        let mut milestone_data_json = serde_json::to_string(&milestone_data)
+            .map_err(|e| anyhow::anyhow!("Unable to convert milestone data to json string, error: {}", e))?;
         milestone_data_json.push('\n');
         let milestone_data_line: Vec<u8> = milestone_data_json.into();
 
@@ -234,7 +243,7 @@ impl Archiver {
                 );
                 // check if the milestone_index already belongs to an existing processed logs
                 let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
-                if not_processed || milestone_data.created_by() == &CreatedBy::Exporter {
+                if not_processed || created_by == CreatedBy::Exporter {
                     // create new file
                     info!(
                         "Creating new log file starting from milestone index: {}",
@@ -248,7 +257,7 @@ impl Archiver {
         } else {
             // check if the milestone_index already belongs to an existing processed files/ranges;
             let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
-            if not_processed || milestone_data.created_by() == &CreatedBy::Exporter {
+            if not_processed || created_by == CreatedBy::Exporter {
                 info!(
                     "Creating new log file starting from milestone index: {}",
                     milestone_index
@@ -365,7 +374,7 @@ type UpperLimit = u32;
 /// Archiver events
 pub enum ArchiverEvent {
     /// Milestone data to be archived
-    MilestoneData(Arc<MilestoneDataBuilder>, Option<UpperLimit>),
+    MilestoneData(MilestoneData, CreatedBy, Option<UpperLimit>),
     /// Close the milestone with given index
     Close(u32),
     /// Shutdown the archiver

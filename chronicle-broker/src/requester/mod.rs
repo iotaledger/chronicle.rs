@@ -167,10 +167,10 @@ impl<T: FilterBuilder> Requester<T> {
         loop {
             if retries > 0 {
                 if let Some(remote_url) = self.api_endpoints.pop_front() {
-                    if let Ok(message) = self.request_message_and_metadata(&remote_url, message_id).await {
+                    if let Ok(message_and_metadata) = self.request_message_and_metadata(&remote_url, message_id).await {
                         self.respond_to_collector(
                             collector_handle,
-                            CollectorEvent::MessageAndMeta(message.message_id, Some(message)),
+                            CollectorEvent::MsgFromRequester(message_id, Some(message_and_metadata)),
                         )?;
                         self.api_endpoints.push_front(remote_url);
                         break;
@@ -182,11 +182,11 @@ impl<T: FilterBuilder> Requester<T> {
                         continue;
                     }
                 } else {
-                    self.respond_to_collector(collector_handle, CollectorEvent::MessageAndMeta(message_id, None))?;
+                    self.respond_to_collector(collector_handle, CollectorEvent::MsgFromRequester(message_id, None))?;
                     break;
                 };
             } else {
-                self.respond_to_collector(collector_handle, CollectorEvent::MessageAndMeta(message_id, None))?;
+                self.respond_to_collector(collector_handle, CollectorEvent::MsgFromRequester(message_id, None))?;
                 break;
             }
         }
@@ -201,10 +201,11 @@ impl<T: FilterBuilder> Requester<T> {
         loop {
             if retries > 0 {
                 if let Some(remote_url) = self.api_endpoints.pop_front() {
-                    if let Ok(message) = self.request_milestone_message(&remote_url, milestone_index).await {
+                    if let Ok(message_and_metadata) = self.request_milestone_message(&remote_url, milestone_index).await
+                    {
                         if let Err(e) = self.respond_to_collector(
                             collector_handle,
-                            CollectorEvent::Milestone(milestone_index, Some(message)),
+                            CollectorEvent::MilestoneFromRequester(milestone_index, Some(message_and_metadata)),
                         ) {
                             self.api_endpoints.push_front(remote_url);
                             return Err(e);
@@ -220,11 +221,17 @@ impl<T: FilterBuilder> Requester<T> {
                         continue;
                     }
                 } else {
-                    self.respond_to_collector(collector_handle, CollectorEvent::Milestone(milestone_index, None))?;
+                    self.respond_to_collector(
+                        collector_handle,
+                        CollectorEvent::MilestoneFromRequester(milestone_index, None),
+                    )?;
                     break;
                 };
             } else {
-                self.respond_to_collector(collector_handle, CollectorEvent::Milestone(milestone_index, None))?;
+                self.respond_to_collector(
+                    collector_handle,
+                    CollectorEvent::MilestoneFromRequester(milestone_index, None),
+                )?;
                 break;
             }
         }
@@ -237,7 +244,7 @@ impl<T: FilterBuilder> Requester<T> {
         &mut self,
         remote_url: &Url,
         milestone_index: u32,
-    ) -> anyhow::Result<MessageRecord> {
+    ) -> anyhow::Result<(Message, MessageMetadataResponse)> {
         let get_milestone_url = remote_url.join(&format!("milestones/{}", milestone_index)).unwrap();
         let milestone_response = self
             .reqwest_client
@@ -270,7 +277,7 @@ impl<T: FilterBuilder> Requester<T> {
         &mut self,
         remote_url: &Url,
         message_id: MessageId,
-    ) -> anyhow::Result<MessageRecord> {
+    ) -> anyhow::Result<(Message, MessageMetadataResponse)> {
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
         let message_response = self
@@ -300,7 +307,7 @@ impl<T: FilterBuilder> Requester<T> {
                     let message = Message::try_from(&message_dto).unwrap();
                     let metadata = metadata.into_inner();
                     if metadata.referenced_by_milestone_index.is_some() {
-                        return Ok((message, metadata).into());
+                        return Ok((message, metadata));
                     }
                 }
             } else {

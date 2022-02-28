@@ -105,7 +105,8 @@ where
                 debug!("Found milestone message {}", milestone.message_id());
                 let mut parent_queue = milestone.message().parents().iter().cloned().collect::<VecDeque<_>>();
                 if let Some(Payload::Milestone(ms_payload)) = milestone.message().payload() {
-                    milestone_data.set_payload((&**ms_payload).clone());
+                    let milestone_msg = milestone.clone().try_into()?;
+                    milestone_data.set_milestone(milestone_msg);
                     milestone_data.add_message(milestone, None);
                 } else {
                     self.responder
@@ -159,7 +160,8 @@ where
                 debug!("Milestone Data:\n{:?}", milestone_data);
                 archiver
                     .send(ArchiverEvent::MilestoneData(
-                        std::sync::Arc::new(milestone_data),
+                        milestone_data,
+                        CreatedBy::Exporter,
                         Some(self.ms_range.end),
                     ))
                     .map_err(|e| anyhow!("Error sending to archiver: {}", e))?;

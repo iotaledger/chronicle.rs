@@ -129,7 +129,7 @@ pin_project! {
     #[must_use = "futures/streams do nothing unless you poll them"]
     pub struct MilestoneDataSearch {
         #[pin]
-        data: std::sync::Arc<MilestoneDataBuilder>,
+        data: MilestoneDataBuilder,
         #[pin]
         should_be_visited: VecDeque<Proof>,
         #[pin]
@@ -139,17 +139,21 @@ pin_project! {
     }
 }
 
-impl std::convert::TryFrom<std::sync::Arc<MilestoneDataBuilder>> for MilestoneDataSearch {
+impl std::convert::TryFrom<MilestoneDataBuilder> for MilestoneDataSearch {
     type Error = anyhow::Error;
 
-    fn try_from(data: std::sync::Arc<MilestoneDataBuilder>) -> Result<Self, Self::Error> {
+    fn try_from(data: MilestoneDataBuilder) -> Result<Self, Self::Error> {
         if !data.valid() {
             anyhow::bail!("cannot make milestone data search struct for uncompleted milestone data")
         }
-
+        let milestone_message_id = data
+            .milestone()
+            .expect("Failed to get milestone from milestone data builder") // unwrap is safe, as this right after valid check.
+            .message()
+            .message_id();
         let mut should_be_visited = VecDeque::new();
         // we start from the root
-        should_be_visited.push_back(Proof::new(data.milestone_index(), vec![*data.message_id()]));
+        should_be_visited.push_back(Proof::new(data.milestone_index(), vec![*milestone_message_id]));
         Ok(Self {
             data,
             should_be_visited,
@@ -238,12 +242,11 @@ impl FilterBuilder for SelectivePermanodeConfig {
     ) -> anyhow::Result<Option<Selected>> {
         todo!()
     }
-    async fn process_milestone_data(
+    async fn process_milestone_data_builder(
         &self,
         handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-        atomic_handle: std::sync::Arc<AtomicProcessHandle>,
-        milestone_data: std::sync::Arc<MilestoneDataBuilder>,
-    ) -> anyhow::Result<()> {
+        milestone_data: MilestoneDataBuilder,
+    ) -> anyhow::Result<MilestoneData> {
         todo!()
     }
 }

@@ -91,8 +91,9 @@ pub struct ChronicleBroker<T: FilterBuilder> {
     pub mqtt_brokers: HashSet<Url>,
     /// Mqtt stream capacity and lru capacity per collector
     pub cache_capacity: usize,
+    pub requester_budget: usize,
     pub api_endpoints: HashSet<Url>,
-    request_timeout_secs: u8,
+    pub request_timeout_secs: u8,
     pub keyspace: ChronicleKeyspace,
     pub sync_range: SyncRange,
     pub selective_builder: T,
@@ -107,6 +108,7 @@ impl<T: FilterBuilder> Default for ChronicleBroker<T> {
             logs_dir: Some("chronicle/logs/".into()),
             max_log_size: Some(super::archiver::MAX_LOG_SIZE),
             cache_capacity: 10000,
+            requester_budget: 10,
             request_timeout_secs: 5,
             retries: 5,
             keyspace: Default::default(),
@@ -130,6 +132,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         mut max_log_size: Option<u64>,
         sync_range: SyncRange,
         cache_capacity: usize,
+        requester_budget: usize,
         request_timeout_secs: u8,
         selective_builder: T,
     ) -> Self {
@@ -149,6 +152,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
             api_endpoints: HashSet::new(),
             request_timeout_secs,
             cache_capacity,
+            requester_budget,
             selective_builder,
         }
     }
@@ -883,8 +887,8 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         rt.remove_resource::<HashMap<u8, SolidifierHandle>>().await;
         // build Selective mode
         let (uda_actor, uda_channel) = self.selective_builder.clone().build().await.map_err(|e| {
-            log::error!("Broker unable to build selective");
-            ActorError::exit_msg(format!("Broker unable to build selective: {}", e))
+            log::error!("Broker unable to build selective, error: {}", e);
+            ActorError::exit_msg(format!("Broker unable to build selective, error: {}", e))
         })?;
         // -- spawn feed sources (mqtt)
         let mqtt_brokers = self.mqtt_brokers.iter();
@@ -966,11 +970,11 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         // -- spawn collectors and solidifiers
         for partition_id in 0..self.partition_count {
             let collector = Collector::<T>::new(
-                self.keyspace.clone(),
                 partition_id,
                 self.partition_count,
                 self.retries,
                 self.cache_capacity,
+                self.requester_budget,
                 self.selective_builder.clone(),
                 uda_handle.clone(),
             );
