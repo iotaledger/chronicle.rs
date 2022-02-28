@@ -777,9 +777,8 @@ impl MilestoneDataBuilder {
 impl From<MilestoneData> for MilestoneDataBuilder {
     fn from(d: MilestoneData) -> Self {
         Self {
-            message_id: d.message_id,
-            milestone_index: d.milestone_index,
-            payload: Some(d.payload),
+            milestone_index: d.milestone.milestone_index().0,
+            milestone: Some(d.milestone),
             selected_messages: d
                 .messages
                 .iter()

@@ -12,20 +12,11 @@ use crate::{
     },
 };
 use anyhow::anyhow;
-use bee_message::{
-    milestone::{
-        Milestone,
-        MilestoneIndex,
-    },
-    payload::Payload,
+use bee_message::milestone::{
+    Milestone,
+    MilestoneIndex,
 };
-use std::{
-    collections::{
-        HashSet,
-        VecDeque,
-    },
-    ops::Range,
-};
+use std::ops::Range;
 
 pub struct Exporter {
     ms_range: Range<u32>,
@@ -86,8 +77,9 @@ where
                 query::<Bee<Milestone>, _, _>(&self.keyspace, &Bee(MilestoneIndex::from(ms)), None, None).await?
             {
                 let ms_message_id = *milestone.message_id();
-                let mut milestone_data = MilestoneDataBuilder::new(ms_message_id, ms, CreatedBy::Exporter);
+                let mut milestone_data = MilestoneDataBuilder::new(ms, CreatedBy::Exporter);
                 debug!("Found milestone data {}", milestone.message_id());
+                let mut paging_state = None;
                 let milestone =
                     match query::<MessageRecord, _, _>(&self.keyspace, &Bee(ms_message_id), None, None).await? {
                         Some(m) => m,
@@ -103,59 +95,40 @@ where
                         }
                     };
                 debug!("Found milestone message {}", milestone.message_id());
-                let mut parent_queue = milestone.message().parents().iter().cloned().collect::<VecDeque<_>>();
-                if let Some(Payload::Milestone(ms_payload)) = milestone.message().payload() {
-                    let milestone_msg = milestone.clone().try_into()?;
-                    milestone_data.set_milestone(milestone_msg);
-                    milestone_data.add_message(milestone, None);
-                } else {
-                    self.responder
-                        .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
-                            "Missing milestone payload for {}!",
-                            ms
-                        )))))
-                        .await
-                        .ok();
-                    return Err(anyhow!("Missing milestone payload for {}!", ms).into());
-                }
-                let mut visited = HashSet::new();
-                while let Some(parent) = parent_queue.pop_front() {
-                    debug!("Processing message {}", parent);
-                    visited.insert(parent);
-                    let message = query::<MessageRecord, _, _>(&self.keyspace, &Bee(parent), None, None).await?;
-                    if let Some(message) = message {
-                        debug!("Found message {}", message.message_id);
-                        if let Some(ref_ms) = message.milestone_index {
-                            if ms == ref_ms.0 {
-                                parent_queue.extend(message.parents().iter().filter(|p| !visited.contains(*p)));
-                                milestone_data.add_message(message, None);
-                            } else {
-                                // warn!(
-                                //    "Message {} is referenced by other milestone {}",
-                                //    message.metadata().message_id,
-                                //    ref_ms
-                                //);
-                                continue;
-                            }
-                        } else {
-                            error!("Unreferenced message {}", message.message_id);
-                            // TODO: handle messages without milestone reference
-                            continue;
+                milestone_data.set_milestone(MilestoneMessage { message: milestone });
+                loop {
+                    let messages = match query::<Paged<Iter<MessageRecord>>, _, _>(
+                        &self.keyspace,
+                        &Bee(ms_message_id),
+                        None,
+                        paging_state,
+                    )
+                    .await?
+                    {
+                        Some(m) => m,
+                        None => {
+                            self.responder
+                                .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
+                                    "Missing messages for milestone {}!",
+                                    ms
+                                )))))
+                                .await
+                                .ok();
+                            return Err(anyhow!("Missing messages for milestone {}!", ms).into());
                         }
-                    } else {
-                        error!("Missing message {}", parent);
-                        // TODO: maybe request missing messages? since we can't verify whether a message belongs to
-                        // this milestone unless we have it in the database, we might need to
-                        self.responder
-                            .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
-                                "Missing message {}!",
-                                parent
-                            )))))
-                            .await
-                            .ok();
-                        return Err(anyhow!("Missing message {}!", parent).into());
+                    };
+                    paging_state = messages.paging_state.take();
+                    milestone_data.messages_mut().extend(
+                        messages
+                            .into_iter()
+                            .filter(|m| m.message_id != ms_message_id)
+                            .map(|m| (m.message_id, m)),
+                    );
+                    if paging_state.is_none() {
+                        break;
                     }
                 }
+                let milestone_data = milestone_data.build()?;
                 debug!("Finished processing milestone {}", ms);
                 debug!("Milestone Data:\n{:?}", milestone_data);
                 archiver

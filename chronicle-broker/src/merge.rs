@@ -235,7 +235,7 @@ impl LogFile {
                             }
                         },
                         ValidationLevel::Full => match serde_json::from_str::<MilestoneData>(&line) {
-                            Ok(milestone) => milestone.milestone_index(),
+                            Ok(milestone) => milestone.milestone_index().0,
                             Err(_) => {
                                 self.err = true;
                                 return Err(LogFileError::MalformattedMilestone {

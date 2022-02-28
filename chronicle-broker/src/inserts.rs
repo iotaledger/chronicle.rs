@@ -3,7 +3,6 @@
 
 use super::*;
 use crate::solidifier::{
-    MilestoneMessage,
     SolidifierEvent,
     SolidifierHandle,
 };

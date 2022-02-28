@@ -53,6 +53,27 @@ impl Select<Bee<MessageId>, (), MessageRecord> for ChronicleKeyspace {
     }
 }
 
+impl Select<Bee<MessageId>, (), Paged<Iter<MessageRecord>>> for ChronicleKeyspace {
+    type QueryOrPrepared = PreparedStatement;
+    fn statement(&self) -> SelectStatement {
+        parse_statement!(
+            "SELECT 
+                message_id,
+                message,
+                milestone_index,
+                inclusion_state,
+                conflict_reason,
+                proof
+            FROM #.messages 
+            WHERE milestone_index = ?",
+            self.name()
+        )
+    }
+    fn bind_values<B: Binder>(builder: B, message_id: &Bee<MessageId>, _: &()) -> B {
+        builder.value(message_id)
+    }
+}
+
 impl Select<Bee<MessageId>, (), Paged<Iter<ParentRecord>>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
