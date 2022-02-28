@@ -825,6 +825,31 @@ impl MilestoneDataBuilder {
     }
 }
 
+impl From<MilestoneData> for MilestoneDataBuilder {
+    fn from(d: MilestoneData) -> Self {
+        Self {
+            message_id: d.message_id,
+            milestone_index: d.milestone_index,
+            payload: Some(d.payload),
+            selected_messages: d
+                .messages
+                .iter()
+                .map(|r| {
+                    (
+                        r.message_id,
+                        Selected {
+                            require_proof: r.proof().is_some(),
+                        },
+                    )
+                })
+                .collect(),
+            messages: d.messages.into_iter().map(|r| (r.message_id, r)).collect(),
+            pending: Default::default(),
+            created_by: CreatedBy::Importer,
+        }
+    }
+}
+
 /// Pre-war Milestone data
 /// Used for deserializing old archive files
 #[derive(Debug, Deserialize, Serialize)]
@@ -902,10 +927,12 @@ pub enum CreatedBy {
     Incoming = 0,
     /// Created by the new expected messages from the network
     Expected = 1,
-    /// Created by solidifiy/sync request from syncer
+    /// Created by solidify/sync request from syncer
     Syncer = 2,
     /// Created by the exporter
     Exporter = 3,
+    /// Created by the archive file importer
+    Importer = 4,
 }
 
 impl Default for CreatedBy {

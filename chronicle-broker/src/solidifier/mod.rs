@@ -102,7 +102,7 @@ pub enum SolidifierEvent {
     Message(MessageRecord, Option<Selected>),
     /// Close MessageId that doesn't belong at all to Solidifier of milestone u32
     Close(MessageId, u32),
-    /// Solidifiy request from Syncer.
+    /// solidify request from Syncer.
     /// Solidifier should collect milestonedata and pass it to Syncer(not archiver)
     Solidify(Result<u32, u32>),
     /// CqlResult from scylla worker;
@@ -128,7 +128,7 @@ pub enum CqlResult {
     SyncedMilestone(u32),
 }
 
-/// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
+/// Solidifier state, each Solidifier solidify subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier<T: FilterBuilder> {
     keyspace: ChronicleKeyspace,
     partition_id: u8,
@@ -390,7 +390,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         // remove it from unreachable (if we already tried to solidify it before)
         self.unreachable.pop(&milestone_index);
         info!(
-            "Solidifier id: {}. got solidifiy request for milestone_index: {}",
+            "Solidifier id: {}. got solidify request for milestone_index: {}",
             self.partition_id, milestone_index
         );
         // this is request from syncer in order for solidifier to collect,

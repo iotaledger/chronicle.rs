@@ -253,7 +253,7 @@ where
                             milestone_index
                         );
                         // inform solidifier
-                        self.send_err_solidifiy(milestone_index, &solidifier_handles);
+                        self.send_err_solidify(milestone_index, &solidifier_handles);
                     }
                 }
                 CollectorEvent::Message(message_id, message) => {
@@ -483,7 +483,7 @@ where
     T: FilterBuilder,
 {
     /// Send an error event to the solidifier for a given milestone index
-    fn send_err_solidifiy(&self, try_ms_index: u32, solidifier_handles: &HashMap<u8, SolidifierHandle>) {
+    fn send_err_solidify(&self, try_ms_index: u32, solidifier_handles: &HashMap<u8, SolidifierHandle>) {
         // inform solidifier
         let solidifier_id = (try_ms_index % (self.partition_count as u32)) as u8;
         let solidifier_handle = solidifier_handles

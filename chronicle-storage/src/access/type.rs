@@ -277,7 +277,7 @@ pub enum CreatedBy {
     Incoming = 0,
     /// Created by the new expected messages from the network
     Expected = 1,
-    /// Created by solidifiy/sync request from syncer
+    /// Created by solidify/sync request from syncer
     Syncer = 2,
     /// Created by the exporter
     Exporter = 3,

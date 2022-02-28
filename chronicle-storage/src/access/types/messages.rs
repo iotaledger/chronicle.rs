@@ -149,7 +149,7 @@ impl Eq for MessageRecord {}
 #[derive(Debug, Copy, Clone)]
 pub struct Selected {
     /// Store proof in the database
-    require_proof: bool,
+    pub(crate) require_proof: bool,
 }
 
 impl Selected {

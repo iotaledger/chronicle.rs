@@ -10,6 +10,7 @@ use chronicle_storage::access::ChronicleKeyspace;
 use std::{
     collections::BinaryHeap,
     convert::TryFrom,
+    io::BufRead,
     path::PathBuf,
     sync::Arc,
 };
@@ -146,7 +147,7 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                                 }
                             }
                         }
-                        CreatedBy::Syncer | CreatedBy::Exporter => {
+                        CreatedBy::Syncer | CreatedBy::Exporter | CreatedBy::Importer => {
                             // to prevent overlap, we ensure to only handle syncer milestone_data when it's less than
                             // next
                             if milestone_data.milestone_index() < self.next {
@@ -275,7 +276,8 @@ impl Archiver {
         milestone_data_line: &Vec<u8>,
         opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
-        let mut log_file = LogFile::create(&self.dir_path, milestone_index, opt_upper_limit).await?;
+        let mut log_file =
+            LogFile::create(&self.dir_path, milestone_index, opt_upper_limit, Default::default()).await?;
         Self::append(&mut log_file, milestone_data_line, milestone_index, &self.keyspace, 5).await?;
         // check if we hit an upper_ms_limit, as this is possible when the log_file only needs 1 milestone data.
         if log_file.upper_ms_limit == log_file.to_ms_index {
@@ -378,6 +380,40 @@ impl ShutdownEvent for ArchiverEvent {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+#[repr(u8)]
+pub enum LogFileVersion {
+    /// Cpt2 log file without milestone message id
+    V1 = 0,
+    /// Cpt2 log file with milestone message id
+    V2 = 1,
+}
+
+impl Default for LogFileVersion {
+    fn default() -> Self {
+        Self::V2
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum LogFileRecord {
+    /// Cpt2 log file without milestone message id
+    V1(OldMilestoneData),
+    /// Cpt2 log file with milestone message id
+    V2(MilestoneData),
+}
+
+impl LogFileRecord {
+    /// Get the version of this log file record
+    pub fn version(&self) -> LogFileVersion {
+        match self {
+            Self::V1(_) => LogFileVersion::V1,
+            Self::V2(_) => LogFileVersion::V2,
+        }
+    }
+}
+
 #[derive(Debug)]
 /// Write ahead file which stores ordered milestones data by milestone index.
 pub struct LogFile {
@@ -392,6 +428,7 @@ pub struct LogFile {
     /// Identifier if it had io error
     maybe_corrupted: bool,
     finished: bool,
+    version: LogFileVersion,
 }
 
 impl LogFile {
@@ -400,6 +437,7 @@ impl LogFile {
         dir_path: &PathBuf,
         milestone_index: u32,
         opt_upper_limit: Option<u32>,
+        version: LogFileVersion,
     ) -> anyhow::Result<LogFile> {
         let filename = format!("{}.part", milestone_index);
         let file_path = dir_path.join(&filename);
@@ -426,6 +464,7 @@ impl LogFile {
             file: BufReader::new(file),
             maybe_corrupted: false,
             finished: false,
+            version,
         })
     }
 
@@ -489,11 +528,21 @@ impl LogFile {
                     self.finished = true;
                     return Ok(None);
                 }
-                let milestone_data: MilestoneData = serde_json::from_str(&milestone_data_line).map_err(|e| {
-                    self.maybe_corrupted = true;
-                    let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
-                })?;
+                let milestone_data = match self.version {
+                    LogFileVersion::V1 => serde_json::from_str::<OldMilestoneData>(&milestone_data_line)
+                        .map_err(|e| anyhow!(e))
+                        .and_then(|d| d.try_into())
+                        .map_err(|e| {
+                            self.maybe_corrupted = true;
+                            let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
+                            std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
+                        })?,
+                    LogFileVersion::V2 => serde_json::from_str::<MilestoneData>(&milestone_data_line).map_err(|e| {
+                        self.maybe_corrupted = true;
+                        let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
+                    })?,
+                };
                 self.len -= milestone_data_line.len() as u64;
                 Ok(Some(milestone_data))
             }
@@ -541,6 +590,15 @@ impl TryFrom<PathBuf> for LogFile {
             let (from_ms_index, to_ms_index) = (split[0].parse()?, split[1].parse()?);
             let std_file = std::fs::OpenOptions::new().write(false).read(true).open(file_path)?;
             let len = std_file.metadata()?.len();
+            let mut reader = std::io::BufReader::new(&std_file).lines();
+            let version = reader
+                .next()
+                .transpose()
+                .ok()
+                .flatten()
+                .and_then(|l| serde_json::from_str::<LogFileRecord>(&l).ok())
+                .map(|r| r.version())
+                .unwrap_or_default();
             let file = tokio::fs::File::from_std(std_file);
             Ok(LogFile {
                 len,
@@ -551,6 +609,7 @@ impl TryFrom<PathBuf> for LogFile {
                 file: BufReader::new(file),
                 maybe_corrupted: false,
                 finished: false,
+                version,
             })
         } else {
             anyhow::bail!("File path does not point to a file!");

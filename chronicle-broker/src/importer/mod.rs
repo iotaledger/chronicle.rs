@@ -12,7 +12,6 @@ use crate::{
 use bee_message::milestone::MilestoneIndex;
 use chronicle_storage::access::SyncRecord;
 use std::{
-    collections::btree_set,
     ops::Range,
     path::PathBuf,
     sync::atomic::Ordering,
@@ -44,11 +43,11 @@ impl ImportMode for All {
             e
         })?;
         let milestone_index = milestone_data.milestone_index();
-        let mut iterator = milestone_data.messages.into_iter();
-        importer.insert_some_messages(milestone_index, &mut iterator, importer_handle)?;
+        // importer.insert_some_messages(milestone_index, &mut iterator, importer_handle)?;
+        todo!("Call selective filter trait process_milestone_data");
         importer
             .in_progress_milestones_data
-            .insert(milestone_index, (iterator, analytic_record));
+            .insert(milestone_index, milestone_data);
         Ok(())
     }
 }
@@ -97,7 +96,7 @@ pub struct Importer<T> {
     /// The database sync data
     sync_data: SyncData,
     /// In progress milestones data
-    in_progress_milestones_data: HashMap<u32, (btree_set::IntoIter<MessageRecord>, MsAnalyticsRecord)>,
+    in_progress_milestones_data: HashMap<u32, MilestoneData>,
     in_progress_milestones_data_bytes_size: HashMap<u32, usize>,
     /// The flag of end of file
     eof: bool,
@@ -141,7 +140,7 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
     type Channel = UnboundedChannel<ImporterEvent>;
 
     async fn init(&mut self, rt: &mut Rt<Self, BrokerHandle>) -> ActorResult<Self::Data> {
-        let path = info!(
+        info!(
             "Importer {:?} is Initializing, with permanode keyspace: {}",
             self.file_path,
             self.default_keyspace.name()
@@ -197,7 +196,7 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
         Ok(())
     }
 
-    async fn run(&mut self, rt: &mut Rt<Self, BrokerHandle>, data: Self::Data) -> ActorResult<()> {
+    async fn run(&mut self, rt: &mut Rt<Self, BrokerHandle>, _data: Self::Data) -> ActorResult<()> {
         info!("Importer LogFile: {:?} is running", self.file_path);
         // check if it's already EOF and nothing to progress
         if self.in_progress_milestones_data.is_empty() && self.eof {
@@ -291,31 +290,36 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                         continue;
                     }
                     // extract the remaining milestone data iterator
-                    let (mut iter, analytic_record) = self
+                    let mut milestone_data = self
                         .in_progress_milestones_data
                         .remove(&milestone_index)
                         .expect("Expected Entry for milestone data");
-                    let is_empty = iter.len() == 0;
+                    let is_empty = milestone_data.messages().len() == 0;
                     let importer_handle = rt.handle();
                     let keyspace = self.default_keyspace.clone();
                     if !is_empty {
-                        self.insert_some_messages(milestone_index, &mut iter, importer_handle)
-                            .map_err(|e| {
-                                error!("Unable to insert/import more message ,Error: {}", e);
-                                let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
-                                    from_ms: self.from_ms,
-                                    to_ms: self.to_ms,
-                                    msg: "failed".into(),
-                                });
-                                rt.supervisor_handle().send(event).ok();
-                                ActorError::aborted(e)
-                            })?;
+                        // self.insert_some_messages(milestone_index, &mut iter, importer_handle)
+                        //    .map_err(|e| {
+                        //        error!("Unable to insert/import more message ,Error: {}", e);
+                        //        let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
+                        //            from_ms: self.from_ms,
+                        //            to_ms: self.to_ms,
+                        //            msg: "failed".into(),
+                        //        });
+                        //        rt.supervisor_handle().send(event).ok();
+                        //        ActorError::aborted(e)
+                        //    })?;
+                        todo!("Call selective filter trait process_milestone_data");
                     } else {
                         // insert it into analytics and sync table
                         let milestone_index = MilestoneIndex(milestone_index);
                         let synced_by = Some(self.chronicle_id);
                         let logged_by = Some(self.chronicle_id);
                         let sync_record = SyncRecord::new(milestone_index, synced_by, logged_by);
+                        let analytic_record = milestone_data.get_analytic_record().map_err(|e| {
+                            error!("Unable to get analytic record for milestone data. Error: {}", e);
+                            e
+                        })?;
                         let worker = AnalyzeAndSyncWorker::boxed(
                             importer_handle.clone(),
                             keyspace,
@@ -338,8 +342,7 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                         };
                     }
                     // put it back
-                    self.in_progress_milestones_data
-                        .insert(milestone_index, (iter, analytic_record));
+                    self.in_progress_milestones_data.insert(milestone_index, milestone_data);
                     // NOTE: we only delete it once we get Ok CqlResult
                 }
                 ImporterEvent::Shutdown => {
@@ -446,30 +449,6 @@ impl<T: ImportMode> Importer<T> {
             skipped,
         };
         supervisor.send(BrokerEvent::ImporterSession(importer_session)).ok();
-    }
-    pub(crate) fn insert_some_messages(
-        &mut self,
-        milestone_index: u32,
-        milestone_data: &mut btree_set::IntoIter<MessageRecord>,
-        importer_handle: &ImporterHandle,
-    ) -> anyhow::Result<()> {
-        let keyspace = self.default_keyspace.clone();
-        let inherent_worker = MilestoneDataWorker::new(
-            importer_handle.clone(),
-            keyspace,
-            milestone_index,
-            self.retries as usize,
-        );
-        for _ in 0..self.parallelism {
-            if let Some(message) = milestone_data.next() {
-                // Insert the message
-                self.insert_message_with_metadata(&inherent_worker, message)?;
-            } else {
-                // break for loop
-                break;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -721,6 +700,7 @@ where
                 if let Err(worker) = retry_send(&keyspace_name, r, 2) {
                     worker.handle_error(WorkerError::NoRing, None)?;
                 };
+                todo!("Insert analytics record?");
             };
         }
         Ok(())
@@ -759,6 +739,7 @@ where
                 };
             } else {
                 // retry inserting an analytic record
+                todo!("Is this inserting the right thing?");
                 let req = self
                     .keyspace
                     .insert_query(&self.sync_record, &())
@@ -778,50 +759,6 @@ where
             let _ = self.handle.send(ImporterEvent::CqlResult(Err(milestone_index)));
         }
         Ok(())
-    }
-}
-
-/// A milestone data worker
-pub struct MilestoneDataWorker<S>
-where
-    S: 'static + Insert<SyncRecord, ()> + std::fmt::Debug,
-{
-    /// The arced atomic importer handle for a given keyspace
-    arc_handle: std::sync::Arc<AtomicImporterHandle<S>>,
-}
-
-impl<S> MilestoneDataWorker<S>
-where
-    S: 'static + Insert<SyncRecord, ()> + std::fmt::Debug,
-{
-    /// Create a new milestone data worker with an importer handle, a keyspace, a milestone index, and a number of
-    /// retries
-    fn new(importer_handle: ImporterHandle, keyspace: S, milestone_index: u32, retries: usize) -> Self {
-        let any_error = std::sync::atomic::AtomicBool::new(false);
-        let atomic_handle =
-            AtomicImporterHandle::new(importer_handle, keyspace.clone(), milestone_index, any_error, retries);
-        let arc_handle = std::sync::Arc::new(atomic_handle);
-        Self { arc_handle }
-    }
-}
-
-/// Implement the `Inherent` trait for the milestone data worker, so we can get the atomic importer worker
-/// which contains the atomic importer handle of the milestone data worker
-impl<K, V> Inherent<ChronicleKeyspace, K, V> for MilestoneDataWorker<ChronicleKeyspace>
-where
-    K: 'static + Send + Sync + Clone + TokenEncoder + Debug,
-    V: 'static + Send + Sync + Clone + Debug,
-    ChronicleKeyspace: Insert<K, V>,
-{
-    type Output = AtomicImporterWorker<ChronicleKeyspace, K, V>;
-
-    fn inherent_boxed(&self, _keyspace: ChronicleKeyspace, key: K, value: V) -> Box<Self::Output>
-    where
-        ChronicleKeyspace: 'static + Insert<K, V> + Debug,
-        K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
-        V: 'static + Send + Sync + Clone + Debug,
-    {
-        AtomicImporterWorker::boxed(self.arc_handle.clone(), key, value)
     }
 }
 
@@ -906,40 +843,5 @@ where
             let _ = self.handle.send(ImporterEvent::CqlResult(Err(milestone_index)));
         }
         Ok(())
-    }
-}
-
-impl<T: ImportMode> Importer<T> {
-    pub(crate) fn get_keyspace(&self) -> ChronicleKeyspace {
-        self.default_keyspace.clone()
-    }
-    pub(crate) fn insert_message_with_metadata<
-        I: Inherent<ChronicleKeyspace, MessageRecord, ()>
-            + Inherent<ChronicleKeyspace, ParentRecord, ()>
-            + Inherent<ChronicleKeyspace, MilestoneRecord, ()>
-            + Inherent<ChronicleKeyspace, TagHint, MsRangeId>
-            + Inherent<ChronicleKeyspace, AddressHint, MsRangeId>
-            + Inherent<ChronicleKeyspace, LegacyOutputRecord, ()>
-            + Inherent<ChronicleKeyspace, LegacyOutputRecord, TTL>
-            + Inherent<ChronicleKeyspace, TagRecord, ()>
-            + Inherent<ChronicleKeyspace, TagRecord, TTL>
-            + Inherent<ChronicleKeyspace, TransactionRecord, ()>,
-    >(
-        &mut self,
-        inherent_worker: &I,
-        message: MessageRecord,
-    ) -> anyhow::Result<()> {
-        let milestone_index = message
-            .milestone_index
-            .ok_or_else(|| anyhow!("Expected referenced milestone index in metadata"))?;
-        let keyspace = self.get_keyspace();
-        // Insert parents/children
-        inserts::insert_parents(&keyspace, inherent_worker, &message)?;
-        // insert payload (if any)
-        if let Some(payload) = message.payload() {
-            inserts::insert_payload(&keyspace, inherent_worker, payload, &message, None, None)?;
-        }
-        // store message and metadata
-        inserts::insert(&keyspace, inherent_worker, message, ())
     }
 }

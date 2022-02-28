@@ -37,7 +37,7 @@ pub(crate) type RequesterHandle<T> = UnboundedHandle<RequesterEvent<T>>;
 /// Requester events
 #[derive(Debug)]
 pub enum RequesterEvent<T: FilterBuilder> {
-    /// Collector requesting MessageId in order to solidifiy u32 MilestoneIndex
+    /// Collector requesting MessageId in order to solidify u32 MilestoneIndex
     RequestFullMessage(CollectorId, MessageId),
     /// Requesting Milestone for u32 milestone index;
     RequestMilestone(CollectorId, u32),
