@@ -47,6 +47,7 @@ use backstage::{
         SupHandle,
         UnboundedChannel,
         UnboundedHandle,
+        paho_mqtt
     },
     prefab::websocket::{
         GenericResponder,

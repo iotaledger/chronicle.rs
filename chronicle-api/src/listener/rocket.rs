@@ -23,7 +23,10 @@ use ::rocket::{
 };
 use anyhow::anyhow;
 use bee_message::{
-    address::Ed25519Address,
+    address::{
+        Address,
+        Ed25519Address,
+    },
     milestone::{
         Milestone,
         MilestoneIndex,
@@ -95,8 +98,9 @@ pub fn construct_rocket() -> Rocket<Build> {
                 get_message_by_index,
                 get_output_by_transaction_id,
                 get_output,
-                get_ed25519_outputs,
+                get_outputs_by_address,
                 get_transactions_for_address,
+                get_transaction_history_for_address,
                 get_transaction_for_message,
                 get_transaction_included_message,
                 get_milestone,
@@ -482,7 +486,7 @@ async fn get_message_children(
 
     if let Some(true) = expanded {
         Ok(ListenerResponseV1::MessageChildrenExpanded {
-            message_id: message_id.to_string(),
+            message_id: message_id.into_inner(),
             max_results: 2 * page_size,
             count: messages.len(),
             children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
@@ -490,10 +494,10 @@ async fn get_message_children(
         })
     } else {
         Ok(ListenerResponseV1::MessageChildren {
-            message_id: message_id.to_string(),
+            message_id: message_id.into_inner(),
             max_results: 2 * page_size,
             count: messages.len(),
-            children_message_ids: messages.drain(..).map(|record| record.message_id.to_string()).collect(),
+            children_message_ids: messages.drain(..).map(|record| record.message_id).collect(),
             paging_state,
         })
     }
@@ -571,16 +575,16 @@ async fn get_message_by_index(
             index,
             max_results: 2 * page_size,
             count: messages.len(),
-            message_ids: messages.drain(..).map(|record| record.message_id.to_string()).collect(),
+            message_ids: messages.drain(..).map(|record| record.message_id).collect(),
             state,
         })
     }
 }
 
 #[get(
-    "/<keyspace>/addresses/ed25519/<address>/outputs?<included>&<expanded>&<page_size>&<state>&<start_timestamp>&<end_timestamp>"
+    "/<keyspace>/addresses/<address>/outputs?<included>&<expanded>&<page_size>&<state>&<start_timestamp>&<end_timestamp>"
 )]
-async fn get_ed25519_outputs(
+async fn get_outputs_by_address(
     keyspace: String,
     address: String,
     expanded: Option<bool>,
@@ -598,7 +602,7 @@ async fn get_ed25519_outputs(
         })
         .transpose()?;
 
-    let ed25519_address = Bee(Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let address = Bee(Address::try_from_bech32(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
     let page_size = page_size.unwrap_or(100);
 
     let (start_timestamp, end_timestamp) = (
@@ -615,11 +619,11 @@ async fn get_ed25519_outputs(
 
     let mut outputs = page(
         keyspace.clone(),
-        Hint::legacy_outputs_by_address(ed25519_address.0.into()),
+        Hint::legacy_outputs_by_address(address.0),
         page_size,
         &mut state,
         Some(start_timestamp..end_timestamp),
-        ed25519_address,
+        address,
     )
     .await?;
 
@@ -635,7 +639,7 @@ async fn get_ed25519_outputs(
     if let Some(true) = expanded {
         Ok(ListenerResponseV1::OutputsForAddressExpanded {
             address_type: 1,
-            address,
+            address: address.into_inner(),
             max_results: 2 * page_size,
             count: outputs.len(),
             output_ids: outputs
@@ -648,7 +652,7 @@ async fn get_ed25519_outputs(
     } else {
         Ok(ListenerResponseV1::OutputsForAddress {
             address_type: 1,
-            address,
+            address: address.into_inner(),
             max_results: 2 * page_size,
             count: outputs.len(),
             output_ids: outputs.drain(..).map(|record| record.output_id).collect(),
@@ -720,15 +724,15 @@ async fn get_output(keyspace: String, output_id: String) -> ListenerResult {
         is_spent
     };
     Ok(ListenerResponseV1::Output {
-        message_id: output_data.message_id.to_string(),
-        transaction_id: transaction_id.to_string(),
+        message_id: output_data.message_id,
+        transaction_id: transaction_id,
         output_index: index,
         is_spent,
         output: output_data.output.borrow().into(),
     })
 }
 
-#[get("/<keyspace>/transactions/ed25519/<address>?<page_size>&<state>&<start_timestamp>&<end_timestamp>")]
+#[get("/<keyspace>/transactions/<address>?<page_size>&<state>&<start_timestamp>&<end_timestamp>")]
 async fn get_transactions_for_address(
     keyspace: String,
     address: String,
@@ -737,6 +741,7 @@ async fn get_transactions_for_address(
     end_timestamp: Option<u64>,
     state: Option<String>,
 ) -> ListenerResult {
+    todo!("Deprecate or fix this endpoint");
     let mut state = state
         .map(|state| {
             hex::decode(state)
@@ -745,7 +750,7 @@ async fn get_transactions_for_address(
         })
         .transpose()?;
 
-    let ed25519_address = Bee(Ed25519Address::from_str(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let address = Bee(Address::try_from_bech32(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
     let page_size = page_size.unwrap_or(100);
 
     let (start_timestamp, end_timestamp) = (
@@ -762,11 +767,11 @@ async fn get_transactions_for_address(
 
     let outputs = page(
         keyspace.clone(),
-        Hint::legacy_outputs_by_address(ed25519_address.0.into()),
+        Hint::legacy_outputs_by_address(address.0),
         page_size,
         &mut state,
         Some(start_timestamp..end_timestamp),
-        ed25519_address,
+        address,
     )
     .await?;
 
@@ -792,6 +797,59 @@ async fn get_transactions_for_address(
         .map_err(|e| anyhow!(e))?;
 
     Ok(ListenerResponseV1::Transactions { transactions, state })
+}
+
+#[get("/<keyspace>/transaction_history/<address>?<page_size>&<state>&<start_timestamp>&<end_timestamp>")]
+async fn get_transaction_history_for_address(
+    keyspace: String,
+    address: String,
+    page_size: Option<usize>,
+    start_timestamp: Option<u64>,
+    end_timestamp: Option<u64>,
+    state: Option<String>,
+) -> ListenerResult {
+    let mut state = state
+        .map(|state| {
+            hex::decode(state)
+                .map_err(|_| ListenerError::InvalidState)
+                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
+        })
+        .transpose()?;
+
+    let address = Bee(Address::try_from_bech32(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let page_size = page_size.unwrap_or(100);
+
+    let (start_timestamp, end_timestamp) = (
+        start_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(chrono::naive::MIN_DATETIME),
+        end_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(chrono::naive::MAX_DATETIME),
+    );
+    if end_timestamp < start_timestamp {
+        return Err(ListenerError::Other(anyhow!("Invalid time range")));
+    }
+
+    let outputs = page(
+        keyspace.clone(),
+        Hint::legacy_outputs_by_address(address.0),
+        page_size,
+        &mut state,
+        Some(start_timestamp..end_timestamp),
+        address,
+    )
+    .await?;
+
+    let state = state
+        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
+        .transpose()
+        .map_err(|e| anyhow!(e))?;
+
+    Ok(ListenerResponseV1::TransactionHistory {
+        transactions: outputs.into_iter().map(Into::into).collect(),
+        state,
+    })
 }
 
 #[get("/<keyspace>/transactions/<message_id>")]
@@ -839,11 +897,12 @@ async fn get_transaction_included_message(keyspace: String, transaction_id: Stri
 #[get("/<keyspace>/milestones/<index>")]
 async fn get_milestone(keyspace: String, index: u32) -> ListenerResult {
     let keyspace = ChronicleKeyspace::new(keyspace);
+    let milestone_index = MilestoneIndex::from(index);
 
-    query::<Bee<Milestone>, _, _, _>(keyspace, Bee(MilestoneIndex::from(index)), (), None, None)
+    query::<Bee<Milestone>, _, _, _>(keyspace, Bee(milestone_index), (), None, None)
         .await
         .map(|milestone| ListenerResponseV1::Milestone {
-            milestone_index: index,
+            milestone_index,
             message_id: milestone.message_id().to_string(),
             timestamp: milestone.timestamp(),
         })

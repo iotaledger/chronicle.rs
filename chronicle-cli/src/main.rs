@@ -5,8 +5,13 @@ use anyhow::{
     anyhow,
     bail,
 };
-
-use backstage::prefab::websocket::*;
+use backstage::{
+    core::tokio_tungstenite::{
+        connect_async,
+        tungstenite::Message,
+    },
+    prefab::websocket::*,
+};
 use chronicle_broker::{
     application::{
         ImportType,
@@ -42,11 +47,8 @@ use std::{
     },
     process::Command,
 };
-use tokio_tungstenite::{
-    connect_async,
-    tungstenite::Message,
-};
 use url::Url;
+
 #[tokio::main]
 async fn main() {
     process().await.unwrap();

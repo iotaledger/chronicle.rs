@@ -8,9 +8,9 @@ use super::*;
 #[derive(Clone, Copy, Debug)]
 pub struct ParentRecord {
     pub parent_id: MessageId,
+    pub message_id: MessageId,
     pub milestone_index: Option<MilestoneIndex>,
     pub ms_timestamp: Option<NaiveDateTime>,
-    pub message_id: MessageId,
     pub inclusion_state: Option<LedgerInclusionState>,
 }
 
@@ -46,11 +46,11 @@ impl Row for ParentRecord {
     {
         Ok(Self {
             parent_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
+            message_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
             milestone_index: rows
                 .column_value::<Option<Bee<MilestoneIndex>>>()?
                 .map(|a| a.into_inner()),
             ms_timestamp: rows.column_value()?,
-            message_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
             inclusion_state: rows.column_value()?,
         })
     }
@@ -60,9 +60,9 @@ impl<B: Binder> Bindable<B> for ParentRecord {
     fn bind(&self, binder: B) -> B {
         binder
             .value(Bee(self.parent_id))
-            .value(self.milestone_index.as_ref().map(|ms| Bee(ms)))
-            .value(self.ms_timestamp)
             .value(Bee(self.message_id))
+            .value(self.milestone_index.as_ref().map(Bee))
+            .value(self.ms_timestamp)
             .value(self.inclusion_state.as_ref().map(|l| *l as u8))
     }
 }
