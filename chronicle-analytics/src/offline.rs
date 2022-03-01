@@ -358,6 +358,7 @@ impl Reporter {
         pb.enable_steady_tick(200);
         pb.set_length(final_report.len() as u64);
 
+        // TODO: implement conversion for Vec<Date, ReportRow> to MemTable
         let mut date_column: Vec<String> = Vec::new();
         let mut total_addresses_column: Vec<u64> = Vec::new();
         let mut recv_addresses_column: Vec<u64> = Vec::new();
