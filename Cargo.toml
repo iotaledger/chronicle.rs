@@ -6,6 +6,7 @@ members = [
     "chronicle-storage",
     "chronicle-filter",
     "chronicle-cli",
+    "chronicle-analytics",
     "chronicle-common"
 ]
 default-members = [
