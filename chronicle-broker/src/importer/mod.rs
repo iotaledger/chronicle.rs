@@ -9,56 +9,20 @@ use crate::{
     },
     archiver::LogFile,
 };
-use bee_message::milestone::MilestoneIndex;
-use chronicle_storage::access::SyncRecord;
 use std::{
     ops::Range,
     path::PathBuf,
-    sync::atomic::Ordering,
 };
 
 type ImporterHandle = UnboundedHandle<ImporterEvent>;
 
-/// Import all records to all tables
-pub struct All;
-pub struct Analytics;
-
-/// Defines the Importer Mode
-pub trait ImportMode: Sized + Send + 'static {
-    /// Instruct how to import the milestone data
-    fn handle_milestone_data(
-        milestone_data: MilestoneData,
-        importer_handle: &ImporterHandle,
-        importer: &mut Importer<Self>,
-    ) -> anyhow::Result<()>;
-}
-impl ImportMode for All {
-    fn handle_milestone_data(
-        milestone_data: MilestoneData,
-        importer_handle: &ImporterHandle,
-        importer: &mut Importer<All>,
-    ) -> anyhow::Result<()> {
-        let analytic_record = milestone_data.get_analytic_record().map_err(|e| {
-            error!("Unable to get analytic record for milestone data. Error: {}", e);
-            e
-        })?;
-        let milestone_index = milestone_data.milestone_index();
-        // importer.insert_some_messages(milestone_index, &mut iterator, importer_handle)?;
-        todo!("Call selective filter trait process_milestone_data");
-        importer
-            .in_progress_milestones_data
-            .insert(milestone_index, milestone_data);
-        Ok(())
-    }
-}
-
 /// Importer events
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum ImporterEvent {
-    /// The result of an insert into the database
-    CqlResult(Result<u32, u32>),
-    /// Indicator to continue processing
-    ProcessMore(u32),
+    /// The result of an milestone data importer for a given milestone data by its milestone index
+    FromMilestoneDataImporter(ScopeId, Result<u32, u32>),
+    /// Used by MilestoneData Importer to push their service
+    Microservice(ScopeId, Service, Option<ActorResult<()>>),
     /// Shutdown the importer
     Shutdown,
 }
@@ -69,8 +33,20 @@ impl ShutdownEvent for ImporterEvent {
     }
 }
 
+impl<T> EolEvent<T> for ImporterEvent {
+    fn eol_event(scope: ScopeId, service: Service, _actor: T, r: ActorResult<()>) -> Self {
+        Self::Microservice(scope, service, Some(r))
+    }
+}
+
+impl<T> ReportEvent<T> for ImporterEvent {
+    fn report_event(scope: ScopeId, service: Service) -> Self {
+        Self::Microservice(scope, service, None)
+    }
+}
+
 /// Importer state
-pub struct Importer<T> {
+pub struct Importer<T: FilterBuilder> {
     /// The file path of the importer
     file_path: PathBuf,
     /// The log file
@@ -95,21 +71,23 @@ pub struct Importer<T> {
     import_range: std::ops::Range<u32>,
     /// The database sync data
     sync_data: SyncData,
-    /// In progress milestones data
-    in_progress_milestones_data: HashMap<u32, MilestoneData>,
+    /// In progress milestones data with thier bytes size
     in_progress_milestones_data_bytes_size: HashMap<u32, usize>,
     /// The flag of end of file
     eof: bool,
-    /// Import mode marker
-    _mode: std::marker::PhantomData<T>,
+    /// The user defined actor handle
+    uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+    /// filter
+    filter_builder: T,
 }
-impl<T: ImportMode> Importer<T> {
+impl<T: FilterBuilder> Importer<T> {
     pub(crate) fn new(
         default_keyspace: ChronicleKeyspace,
         file_path: PathBuf,
         resume: bool,
         import_range: Range<u32>,
-        import_type: T,
+        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+        filter_builder: T,
         parallelism: u8,
         retries: u8,
     ) -> Self {
@@ -122,20 +100,20 @@ impl<T: ImportMode> Importer<T> {
             default_keyspace,
             parallelism,
             chronicle_id: 0,
-            in_progress_milestones_data: HashMap::new(),
             in_progress_milestones_data_bytes_size: HashMap::new(),
             retries,
             resume,
             import_range,
             sync_data: SyncData::default(),
             eof: false,
-            _mode: std::marker::PhantomData::<T>,
+            uda_handle,
+            filter_builder,
         }
     }
 }
 
 #[async_trait]
-impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
+impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
     type Data = ();
     type Channel = UnboundedChannel<ImporterEvent>;
 
@@ -184,22 +162,17 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                 })?;
         }
         self.log_file.replace(log_file);
-        self.init_importing(rt.handle(), rt.supervisor_handle())
-            .await
-            .map_err(|e| {
-                error!("Unable to init importing process. Error: {}", e);
-                ActorError::aborted(e)
-            })?;
+        self.init_importing(rt).await?;
         rt.supervisor_handle()
             .send(BrokerEvent::ImporterSession(importer_session))
             .ok();
         Ok(())
     }
 
-    async fn run(&mut self, rt: &mut Rt<Self, BrokerHandle>, _data: Self::Data) -> ActorResult<()> {
+    async fn run(&mut self, rt: &mut Rt<Self, BrokerHandle>, idle_md_importer: Self::Data) -> ActorResult<()> {
         info!("Importer LogFile: {:?} is running", self.file_path);
         // check if it's already EOF and nothing to progress
-        if self.in_progress_milestones_data.is_empty() && self.eof {
+        if self.eof {
             warn!("Skipped already imported LogFile: {:?}", self.file_path);
             let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
                 from_ms: self.from_ms,
@@ -211,14 +184,9 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
         }
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
-                ImporterEvent::CqlResult(result) => {
+                ImporterEvent::FromMilestoneDataImporter(scope_id, result) => {
                     match result {
                         Ok(milestone_index) => {
-                            // remove it from in_progress
-                            let _ = self
-                                .in_progress_milestones_data
-                                .remove(&milestone_index)
-                                .expect("Expected entry for a milestone data");
                             info!("Imported milestone data for milestone index: {}", milestone_index);
                             let ms_bytes_size = self
                                 .in_progress_milestones_data_bytes_size
@@ -234,6 +202,8 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                                 ms_bytes_size,
                                 skipped,
                             );
+                            // Mark the milestone index as synced and logged in the database.
+                            self.insert_sync_record(rt, milestone_index).await?;
                             // check if we should process more
                             if !rt.service().is_stopping() {
                                 // process one more
@@ -249,7 +219,7 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                                         ActorError::aborted(e)
                                     })?
                                 {
-                                    T::handle_milestone_data(milestone_data, rt.handle(), self).map_err(|e| {
+                                    rt.send(scope_id, milestone_data).await.map_err(|e| {
                                         error!("{}", e);
                                         let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
                                             from_ms: self.from_ms,
@@ -261,10 +231,10 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                                     })?;
                                 } else {
                                     // no more milestone data.
-                                    if self.in_progress_milestones_data.is_empty() {
+                                    if self.in_progress_milestones_data_bytes_size.is_empty() {
                                         // shut it down
                                         info!("Imported the LogFile: {:?}", self.file_path);
-                                        break;
+                                        rt.stop();
                                     }
                                 };
                             }
@@ -276,74 +246,19 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
                                 msg: "failed".into(),
                             });
                             rt.supervisor_handle().send(event).ok();
-                            // an outage in scylla so we abort
+                            // likely an outage in scylla so we abort
                             return Err(ActorError::aborted_msg(format!(
-                                "Unable to import milestone {}",
-                                milestone_index
+                                "Unable to import LogFile {:?}",
+                                self.file_path,
                             )));
                         }
                     }
                 }
-                // note: we receive this variant in All modes.
-                ImporterEvent::ProcessMore(milestone_index) => {
-                    if rt.service().is_stopping() {
-                        continue;
+                ImporterEvent::Microservice(scope_id, service, r_opt) => {
+                    rt.upsert_microservice(scope_id, service);
+                    if rt.microservices_stopped() {
+                        break;
                     }
-                    // extract the remaining milestone data iterator
-                    let mut milestone_data = self
-                        .in_progress_milestones_data
-                        .remove(&milestone_index)
-                        .expect("Expected Entry for milestone data");
-                    let is_empty = milestone_data.messages().len() == 0;
-                    let importer_handle = rt.handle();
-                    let keyspace = self.default_keyspace.clone();
-                    if !is_empty {
-                        // self.insert_some_messages(milestone_index, &mut iter, importer_handle)
-                        //    .map_err(|e| {
-                        //        error!("Unable to insert/import more message ,Error: {}", e);
-                        //        let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
-                        //            from_ms: self.from_ms,
-                        //            to_ms: self.to_ms,
-                        //            msg: "failed".into(),
-                        //        });
-                        //        rt.supervisor_handle().send(event).ok();
-                        //        ActorError::aborted(e)
-                        //    })?;
-                        todo!("Call selective filter trait process_milestone_data");
-                    } else {
-                        // insert it into analytics and sync table
-                        let milestone_index = MilestoneIndex(milestone_index);
-                        let synced_by = Some(self.chronicle_id);
-                        let logged_by = Some(self.chronicle_id);
-                        let sync_record = SyncRecord::new(milestone_index, synced_by, logged_by);
-                        let analytic_record = milestone_data.get_analytic_record().map_err(|e| {
-                            error!("Unable to get analytic record for milestone data. Error: {}", e);
-                            e
-                        })?;
-                        let worker = AnalyzeAndSyncWorker::boxed(
-                            importer_handle.clone(),
-                            keyspace,
-                            analytic_record.clone(),
-                            sync_record,
-                            self.retries.into(),
-                        );
-                        if let Err(RequestError::Ring(r)) = self
-                            .default_keyspace
-                            .insert_prepared(&analytic_record, &())
-                            .consistency(Consistency::Quorum)
-                            .build()
-                            .map_err(|e| ActorError::exit(e))?
-                            .send_local_with_worker(worker)
-                        {
-                            let keyspace_name = self.default_keyspace.name();
-                            if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                                worker.handle_error(WorkerError::NoRing, None)?;
-                            };
-                        };
-                    }
-                    // put it back
-                    self.in_progress_milestones_data.insert(milestone_index, milestone_data);
-                    // NOTE: we only delete it once we get Ok CqlResult
                 }
                 ImporterEvent::Shutdown => {
                     rt.update_status(ServiceStatus::Stopping).await;
@@ -366,15 +281,20 @@ impl<T: ImportMode> Actor<BrokerHandle> for Importer<T> {
         Ok(())
     }
 }
-impl<T: ImportMode> Importer<T> {
+impl<T: FilterBuilder> Importer<T> {
     async fn init_importing(
         &mut self,
-        importer_handle: &ImporterHandle,
-        supervisor: &BrokerHandle,
-    ) -> anyhow::Result<()> {
-        for _ in 0..self.parallelism {
-            if let Some(milestone_data) = self.next_milestone_data(supervisor).await? {
-                T::handle_milestone_data(milestone_data, importer_handle, self)?;
+        rt: &mut Rt<Self, BrokerHandle>,
+    ) -> anyhow::Result<<Self as Actor<BrokerHandle>>::Data> {
+        for id in 0..self.parallelism {
+            if let Some(milestone_data) = self.next_milestone_data(rt.supervisor_handle()).await? {
+                let milestone_data_importer = milestone_data_importer::MilestoneDataImporter::new(
+                    self.filter_builder.clone(),
+                    self.uda_handle.clone(),
+                );
+                rt.start(format!("{}", id), milestone_data_importer)
+                    .await?
+                    .send(milestone_data)?;
             } else {
                 self.eof = true;
                 break;
@@ -394,7 +314,7 @@ impl<T: ImportMode> Importer<T> {
         loop {
             let pre_len = log_file.len();
             if let Some(milestone_data) = log_file.next().await? {
-                let milestone_index = milestone_data.milestone_index();
+                let milestone_index = milestone_data.milestone_index().0;
                 let not_in_import_range = !self.import_range.contains(&milestone_index);
                 let resume = self.resume && self.sync_data.completed.iter().any(|r| r.contains(&milestone_index));
                 if resume || not_in_import_range {
@@ -413,7 +333,7 @@ impl<T: ImportMode> Importer<T> {
                         ms_bytes_size,
                         skipped,
                     );
-                    // skip this synced milestone data
+                    // skip this synced milestone data, todo, maybe remove this, as tokio implemented budget
                     if scan_budget > 0 {
                         scan_budget -= 1;
                     } else {
@@ -450,398 +370,25 @@ impl<T: ImportMode> Importer<T> {
         };
         supervisor.send(BrokerEvent::ImporterSession(importer_session)).ok();
     }
-}
-
-impl Importer<Analytics> {
-    pub(crate) fn insert_analytic_record(
-        &self,
-        importer_handle: ImporterHandle,
-        analytic_record: &MsAnalyticsRecord,
-    ) -> anyhow::Result<()> {
-        let keyspace = self.default_keyspace.clone();
-        let worker = AnalyzeWorker::boxed(
-            importer_handle,
-            keyspace,
-            analytic_record.clone(),
-            self.retries as usize,
+    async fn insert_sync_record(&mut self, rt: &mut Rt<Self, BrokerHandle>, milestone_index: u32) -> ActorResult<()> {
+        let sync_record = SyncRecord::new(
+            bee_message::milestone::MilestoneIndex(milestone_index),
+            Some(0),
+            Some(0),
         );
-        if let Err(RequestError::Ring(r)) = self
-            .default_keyspace
-            .insert_prepared(analytic_record, &())
+        self.default_keyspace
+            .insert(&sync_record, &())
             .consistency(Consistency::Quorum)
             .build()?
-            .send_local_with_worker(worker)
-        {
-            let keyspace_name = self.default_keyspace.name();
-            if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                worker.handle_error(WorkerError::NoRing, None)?;
-            };
-        };
-
-        Ok(())
+            .worker()
+            .with_retries(self.retries as usize)
+            .get_local()
+            .await
+            .map_err(|e| {
+                warn!("Scylla cluster is likely going through an outage");
+                ActorError::aborted_msg("Unable to insert sync record due to potential outage")
+            })
     }
 }
 
-/// Scylla worker implementation for the importer
-#[derive(Clone, Debug)]
-pub struct AtomicImporterWorker<S, K, V>
-where
-    S: 'static + Insert<K, V> + std::fmt::Debug + Insert<SyncRecord, ()>,
-    K: 'static + Send,
-    V: 'static + Send,
-{
-    handle: std::sync::Arc<AtomicImporterHandle<S>>,
-    keyspace: S,
-    key: K,
-    value: V,
-    retries: usize,
-}
-/// An atomic importer handle
-#[derive(Debug)]
-pub struct AtomicImporterHandle<S>
-where
-    S: 'static + Insert<SyncRecord, ()> + std::fmt::Debug,
-{
-    /// The importer handle
-    pub(crate) handle: ImporterHandle,
-    /// The keyspace
-    pub(crate) keyspace: S,
-    /// The milestone index
-    pub(crate) milestone_index: u32,
-    /// The atomic flag to indicate any error
-    pub(crate) any_error: std::sync::atomic::AtomicBool,
-    /// The number of retires
-    pub(crate) retries: usize,
-}
-
-impl<S> AtomicImporterHandle<S>
-where
-    S: 'static + Insert<SyncRecord, ()> + std::fmt::Debug,
-{
-    /// Create a new atomic importer handle with an importer handle, a keyspace, a milestone index, an atomic error
-    /// indicator, and a number of retires
-    pub fn new(
-        handle: ImporterHandle,
-        keyspace: S,
-        milestone_index: u32,
-        any_error: std::sync::atomic::AtomicBool,
-        retries: usize,
-    ) -> Self {
-        Self {
-            handle,
-            keyspace,
-            milestone_index,
-            any_error,
-            retries,
-        }
-    }
-}
-impl<S: Insert<K, V>, K, V> AtomicImporterWorker<S, K, V>
-where
-    S: 'static + Insert<K, V> + Insert<SyncRecord, ()> + std::fmt::Debug,
-    K: 'static + Send + std::fmt::Debug,
-    V: 'static + Send + std::fmt::Debug,
-{
-    /// Create a new atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a number of
-    /// retries
-    pub fn new(handle: std::sync::Arc<AtomicImporterHandle<S>>, key: K, value: V) -> Self {
-        let keyspace = handle.keyspace.clone();
-        let retries = handle.retries;
-        Self {
-            handle,
-            keyspace,
-            key,
-            value,
-            retries,
-        }
-    }
-    /// Create a new boxed atomic importer worker with an atomic importer handle, a keyspace, a key, a value, and a
-    /// number of retries
-    pub fn boxed(handle: std::sync::Arc<AtomicImporterHandle<S>>, key: K, value: V) -> Box<Self> {
-        Box::new(Self::new(handle, key, value))
-    }
-}
-
-impl<S, K, V> Worker for AtomicImporterWorker<S, K, V>
-where
-    S: 'static + Insert<K, V> + std::fmt::Debug + Insert<SyncRecord, ()> + Insert<MsAnalyticsRecord, ()>,
-    K: 'static + Send + Clone + Sync + std::fmt::Debug + TokenEncoder,
-    V: 'static + Send + Clone + Sync + std::fmt::Debug,
-{
-    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
-        Decoder::from(giveload.try_into()?).get_void()
-    }
-    fn handle_error(
-        mut self: Box<Self>,
-        mut error: WorkerError,
-        reporter: Option<&ReporterHandle>,
-    ) -> anyhow::Result<()> {
-        if let WorkerError::Cql(ref mut cql_error) = error {
-            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let statement = self.keyspace.insert_statement::<K, V>();
-                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
-            }
-        }
-        if self.retries > 0 {
-            self.retries -= 1;
-            // currently we assume all cql/worker errors are retryable, but we might change this in future
-            let req = self
-                .keyspace
-                .insert_query(&self.key, &self.value)
-                .consistency(Consistency::Quorum)
-                .build()?;
-            let keyspace_name = self.keyspace.name();
-            if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
-                if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                    worker.handle_error(WorkerError::NoRing, None)?
-                };
-            };
-        } else {
-            // no more retries
-            self.handle.any_error.store(true, Ordering::Relaxed);
-        }
-        Ok(())
-    }
-}
-
-impl<S> Drop for AtomicImporterHandle<S>
-where
-    S: 'static + Insert<SyncRecord, ()> + std::fmt::Debug,
-{
-    fn drop(&mut self) {
-        let any_error = self.any_error.load(Ordering::Relaxed);
-        if any_error {
-            let _ = self.handle.send(ImporterEvent::CqlResult(Err(self.milestone_index)));
-        } else {
-            // tell importer to process more
-            let _ = self.handle.send(ImporterEvent::ProcessMore(self.milestone_index));
-        }
-    }
-}
-
-/// Analyze allownd Sync worker for the importer
-#[derive(Clone, Debug)]
-pub struct AnalyzeAndSyncWorker<S>
-where
-    S: 'static + Insert<SyncRecord, ()>,
-{
-    /// The importer handle
-    handle: ImporterHandle,
-    /// The keyspace
-    keyspace: S,
-    /// The `analytics` table row
-    analytic_record: MsAnalyticsRecord,
-    /// Identify if we analyzed the
-    analyzed: bool, // if true we sync
-    /// The `sync` table row
-    sync_record: SyncRecord,
-    /// The number of retries
-    retries: usize,
-}
-
-impl<S> AnalyzeAndSyncWorker<S>
-where
-    S: 'static + Insert<SyncRecord, ()>,
-{
-    /// Create a new sync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a number of
-    /// retries
-    pub fn new(
-        handle: ImporterHandle,
-        keyspace: S,
-        analytic_record: MsAnalyticsRecord,
-        sync_record: SyncRecord,
-        retries: usize,
-    ) -> Self {
-        Self {
-            handle,
-            keyspace,
-            analytic_record,
-            sync_record,
-            analyzed: false,
-            retries,
-        }
-    }
-    ///  Create a new boxed ync worker with an importer handle, a keyspace, a `sync` table row (`SyncRecord`), and a
-    /// number of retries
-    pub fn boxed(
-        handle: ImporterHandle,
-        keyspace: S,
-        analytic_record: MsAnalyticsRecord,
-        sync_record: SyncRecord,
-        retries: usize,
-    ) -> Box<Self> {
-        Box::new(Self::new(handle, keyspace, analytic_record, sync_record, retries))
-    }
-}
-
-/// Implement the Scylla `Worker` trait
-impl<S> Worker for AnalyzeAndSyncWorker<S>
-where
-    S: 'static + std::fmt::Debug + Insert<SyncRecord, ()> + Insert<MsAnalyticsRecord, ()>,
-{
-    fn handle_response(mut self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
-        Decoder::from(giveload.try_into()?).get_void()?;
-        let milestone_index = *self.sync_record.milestone_index;
-        if self.analyzed {
-            // tell importer
-            self.handle.send(ImporterEvent::CqlResult(Ok(milestone_index))).ok();
-        } else {
-            // set it to be analyzed, as this response is for analytic record
-            self.analyzed = true;
-            // insert sync record
-            let keyspace_name = self.keyspace.name();
-            if let Err(RequestError::Ring(r)) = self
-                .keyspace
-                .insert_prepared(&self.sync_record, &())
-                .consistency(Consistency::Quorum)
-                .build()?
-                .send_local_with_worker(self)
-            {
-                if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                    worker.handle_error(WorkerError::NoRing, None)?;
-                };
-                todo!("Insert analytics record?");
-            };
-        }
-        Ok(())
-    }
-    fn handle_error(
-        mut self: Box<Self>,
-        mut error: WorkerError,
-        reporter: Option<&ReporterHandle>,
-    ) -> anyhow::Result<()> {
-        if let WorkerError::Cql(ref mut cql_error) = error {
-            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let statement;
-                if self.analyzed {
-                    statement = self.keyspace.insert_statement::<SyncRecord, ()>();
-                } else {
-                    statement = self.keyspace.insert_statement::<MsAnalyticsRecord, ()>();
-                }
-                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
-            }
-        }
-        if self.retries > 0 {
-            self.retries -= 1;
-            // currently we assume all cql/worker errors are retryable, but we might change this in future
-            if self.analyzed {
-                // retry inserting an sync record
-                let req = self
-                    .keyspace
-                    .insert_query(&self.sync_record, &())
-                    .consistency(Consistency::Quorum)
-                    .build()?;
-                let keyspace_name = self.keyspace.name();
-                if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
-                    if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                        worker.handle_error(WorkerError::NoRing, None)?
-                    };
-                };
-            } else {
-                // retry inserting an analytic record
-                todo!("Is this inserting the right thing?");
-                let req = self
-                    .keyspace
-                    .insert_query(&self.sync_record, &())
-                    .consistency(Consistency::Quorum)
-                    .build()?;
-                let keyspace_name = self.keyspace.name();
-                if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
-                    if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                        worker.handle_error(WorkerError::NoRing, None)?
-                    };
-                };
-            }
-        } else {
-            // no more retries
-            // respond with error
-            let milestone_index = *self.sync_record.milestone_index;
-            let _ = self.handle.send(ImporterEvent::CqlResult(Err(milestone_index)));
-        }
-        Ok(())
-    }
-}
-
-/// Scylla worker implementation for importer when running in Analytics mode
-#[derive(Clone, Debug)]
-pub struct AnalyzeWorker<S>
-where
-    S: 'static + Insert<MsAnalyticsRecord, ()>,
-{
-    /// The importer handle
-    handle: ImporterHandle,
-    /// The keyspace
-    keyspace: S,
-    /// The `analytics` table row
-    analytic_record: MsAnalyticsRecord,
-    /// The number of retries
-    retries: usize,
-}
-
-impl<S> AnalyzeWorker<S>
-where
-    S: 'static + Insert<MsAnalyticsRecord, ()>,
-{
-    /// Create a new AnalyzeWorker with an importer handle, a keyspace, a `analytics` table row (`MsAnalyticsRecord`),
-    /// and a number of retries
-    pub fn new(handle: ImporterHandle, keyspace: S, analytic_record: MsAnalyticsRecord, retries: usize) -> Self {
-        Self {
-            handle,
-            keyspace,
-            analytic_record,
-            retries,
-        }
-    }
-    /// Create a new boxed AnalyzeWorker with an importer handle, a keyspace, a `analytics` table row
-    /// (`MsAnalyticsRecord`), and a number of retries
-    pub fn boxed(handle: ImporterHandle, keyspace: S, analytic_record: MsAnalyticsRecord, retries: usize) -> Box<Self> {
-        Box::new(Self::new(handle, keyspace, analytic_record, retries))
-    }
-}
-
-/// Implement the Scylla `Worker` trait
-impl<S> Worker for AnalyzeWorker<S>
-where
-    S: 'static + std::fmt::Debug + Insert<MsAnalyticsRecord, ()>,
-{
-    fn handle_response(self: Box<Self>, giveload: Vec<u8>) -> anyhow::Result<()> {
-        Decoder::from(giveload.try_into()?).get_void()?;
-        let milestone_index = self.analytic_record.milestone_index.0;
-        self.handle.send(ImporterEvent::CqlResult(Ok(milestone_index))).ok();
-        Ok(())
-    }
-    fn handle_error(
-        mut self: Box<Self>,
-        mut error: WorkerError,
-        reporter: Option<&ReporterHandle>,
-    ) -> anyhow::Result<()> {
-        if let WorkerError::Cql(ref mut cql_error) = error {
-            if let (Some(id), Some(reporter)) = (cql_error.take_unprepared_id(), reporter) {
-                let statement = self.keyspace.statement();
-                PrepareWorker::new(id, statement.into()).send_to_reporter(reporter).ok();
-            }
-        }
-        if self.retries > 0 {
-            self.retries -= 1;
-            // currently we assume all cql/worker errors are retryable, but we might change this in future
-            // retry inserting an analytic record
-            let req = self
-                .keyspace
-                .insert_query(&self.analytic_record, &())
-                .consistency(Consistency::Quorum)
-                .build()?;
-            let keyspace_name = self.keyspace.name();
-            if let Err(RequestError::Ring(r)) = req.send_global_with_worker(self) {
-                if let Err(worker) = retry_send(&keyspace_name, r, 2) {
-                    worker.handle_error(WorkerError::NoRing, None)?
-                };
-            };
-        } else {
-            // no more retries
-            // respond with error
-            let milestone_index = self.analytic_record.milestone_index.0;
-            let _ = self.handle.send(ImporterEvent::CqlResult(Err(milestone_index)));
-        }
-        Ok(())
-    }
-}
+mod milestone_data_importer;

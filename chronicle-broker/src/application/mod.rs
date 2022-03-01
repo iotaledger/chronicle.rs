@@ -30,6 +30,7 @@ use anyhow::{
 use async_trait::async_trait;
 use backstage::{
     core::{
+        paho_mqtt,
         Actor,
         ActorError,
         ActorRequest,
@@ -47,7 +48,6 @@ use backstage::{
         SupHandle,
         UnboundedChannel,
         UnboundedHandle,
-        paho_mqtt
     },
     prefab::websocket::{
         GenericResponder,
