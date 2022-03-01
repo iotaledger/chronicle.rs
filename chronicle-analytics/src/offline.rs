@@ -35,6 +35,23 @@ use crypto::hashes::{
     Digest,
 };
 
+use datafusion::{
+    arrow::{
+        array::{
+            Float32Array,
+            StringArray,
+            UInt64Array,
+        },
+        datatypes::{
+            DataType,
+            Field,
+            Schema,
+        },
+        record_batch::RecordBatch,
+    },
+    datasource::MemTable,
+    from_slice::FromSlice,
+};
 use indicatif::{
     MultiProgress,
     ProgressBar,
@@ -261,10 +278,9 @@ pub fn get_tasks(
 }
 
 impl Reporter {
-    /// The minier which returns the best crackability and mined iteration.
-    pub async fn run(&mut self) -> anyhow::Result<()> {
+    /// Run the reporter and return the memory table
+    pub async fn run(&mut self) -> anyhow::Result<MemTable> {
         // Need a progress bar for each task
-
         let sty = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} (eta: {eta})")
             .progress_chars("##-");
@@ -339,14 +355,76 @@ impl Reporter {
         pb.set_style(sty.clone());
         pb.enable_steady_tick(200);
         pb.set_length(final_report.len() as u64);
+
+        let mut date_column: Vec<String> = Vec::new();
+        let mut total_addresses_column: Vec<u64> = Vec::new();
+        let mut recv_addresses_column: Vec<u64> = Vec::new();
+        let mut send_addresses_column: Vec<u64> = Vec::new();
+        let mut avg_outputs_column: Vec<f32> = Vec::new();
+        let mut max_outputs_column: Vec<u64> = Vec::new();
+        let mut message_count_column: Vec<u64> = Vec::new();
+        let mut included_transaction_count_column: Vec<u64> = Vec::new();
+        let mut conflicting_transaction_count_column: Vec<u64> = Vec::new();
+        let mut total_transaction_count_column: Vec<u64> = Vec::new();
+        let mut transferred_tokens_column: Vec<u64> = Vec::new();
+
+        // define a schema.
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("date", DataType::Utf8, false),
+            Field::new("total_addresses", DataType::UInt64, false),
+            Field::new("recv_addresses", DataType::UInt64, false),
+            Field::new("send_addresses", DataType::UInt64, false),
+            Field::new("avg_outputs", DataType::Float32, false),
+            Field::new("max_outputs", DataType::UInt64, false),
+            Field::new("message_count", DataType::UInt64, false),
+            Field::new("included_transaction_count", DataType::UInt64, false),
+            Field::new("conflicting_transaction_count", DataType::UInt64, false),
+            Field::new("total_transaction_count", DataType::UInt64, false),
+            Field::new("transferred_tokens", DataType::UInt64, false),
+        ]));
+
         for (date, data) in final_report {
             pb.set_message(format!("Writing data for date {}", date));
-            println!("Writing data for date {}, data {:?}", date, data);
-            writer.serialize(ReportRow::from((date, data)))?;
+            let row = ReportRow::from((date, data));
+            writer.serialize(row.clone())?;
+
+            // New added
+            date_column.push(date.format("%Y-%m-%d").to_string());
+            total_addresses_column.push(row.total_addresses.try_into().unwrap());
+            recv_addresses_column.push(row.recv_addresses.try_into().unwrap());
+            send_addresses_column.push(row.send_addresses.try_into().unwrap());
+            avg_outputs_column.push(row.avg_outputs);
+            max_outputs_column.push(row.max_outputs.try_into().unwrap());
+            message_count_column.push(row.message_count);
+            included_transaction_count_column.push(row.included_transaction_count);
+            conflicting_transaction_count_column.push(row.conflicting_transaction_count);
+            total_transaction_count_column.push(row.total_transaction_count);
+            transferred_tokens_column.push(row.transferred_tokens.try_into().unwrap());
+
             pb.inc(1);
         }
         pb.finish_with_message(format!("Saved report at {}", report_path.to_string_lossy()));
-        Ok(())
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from_slice(&date_column)),
+                Arc::new(UInt64Array::from_slice(&total_addresses_column)),
+                Arc::new(UInt64Array::from_slice(&recv_addresses_column)),
+                Arc::new(UInt64Array::from_slice(&send_addresses_column)),
+                Arc::new(Float32Array::from_slice(&avg_outputs_column)),
+                Arc::new(UInt64Array::from_slice(&max_outputs_column)),
+                Arc::new(UInt64Array::from_slice(&message_count_column)),
+                Arc::new(UInt64Array::from_slice(&included_transaction_count_column)),
+                Arc::new(UInt64Array::from_slice(&conflicting_transaction_count_column)),
+                Arc::new(UInt64Array::from_slice(&total_transaction_count_column)),
+                Arc::new(UInt64Array::from_slice(&transferred_tokens_column)),
+            ],
+        )?;
+        // declare a table in memory. In spark API, this corresponds to createDataFrame(...).
+        let mem_table = MemTable::try_new(schema.clone(), vec![vec![batch]])?;
+
+        Ok(mem_table)
     }
 }
 
