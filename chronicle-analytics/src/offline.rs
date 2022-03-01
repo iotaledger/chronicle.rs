@@ -74,12 +74,14 @@ use tokio::{
         BufReader,
     },
     sync::{
-        mpsc::UnboundedSender,
+        mpsc::{
+            unbounded_channel,
+            UnboundedSender,
+        },
         Mutex,
         MutexGuard,
     },
 };
-
 /// Builder for a Reporter.
 pub struct ReporterBuilder {
     /// The directory contains the input logs.
@@ -306,8 +308,7 @@ impl Reporter {
         // Create a channel for each task to send paths for processing
         let (mut senders, mut receivers) = (Vec::new(), Vec::new());
         for (sender, receiver) in
-            std::iter::repeat_with(|| tokio::sync::mpsc::unbounded_channel::<(u32, u32, PathBuf)>())
-                .take(self.num_tasks)
+            std::iter::repeat_with(|| unbounded_channel::<MilestoneRangePath>()).take(self.num_tasks)
         {
             senders.push(sender);
             receivers.push(receiver);
