@@ -285,6 +285,7 @@ impl Reporter {
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} (eta: {eta})")
             .progress_chars("##-");
 
+        // TODO: decouple with the mp?
         let mp = MultiProgress::new();
         let pbs = std::iter::repeat_with(|| {
             let pb = mp.add(ProgressBar::new(0));
@@ -348,6 +349,7 @@ impl Reporter {
                 }
             }
         }
+        // TODO: decouple with generating the csv file
         let report_path = PathBuf::from(self.historical_log_directory.clone())
             .join(format!("report_{}to{}.csv", self.range.start, self.range.end));
         let mut writer = csv::Writer::from_path(&report_path)?;
@@ -388,7 +390,7 @@ impl Reporter {
             let row = ReportRow::from((date, data));
             writer.serialize(row.clone())?;
 
-            // New added
+            // TODO: error handling
             date_column.push(date.format("%Y-%m-%d").to_string());
             total_addresses_column.push(row.total_addresses.try_into().unwrap());
             recv_addresses_column.push(row.recv_addresses.try_into().unwrap());
@@ -401,6 +403,7 @@ impl Reporter {
             total_transaction_count_column.push(row.total_transaction_count);
             transferred_tokens_column.push(row.transferred_tokens.try_into().unwrap());
 
+            // TODO: decouple with pb?
             pb.inc(1);
         }
         pb.finish_with_message(format!("Saved report at {}", report_path.to_string_lossy()));
