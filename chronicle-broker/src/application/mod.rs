@@ -294,15 +294,6 @@ pub enum Topology {
     },
 }
 
-/// Import types
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Copy, Clone)]
-pub enum ImportType {
-    /// Import everything
-    All,
-    /// Import only Analytics data
-    Analytics,
-}
-
 /// Enum used by importer to keep the sockets up to date with most recent progress.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ImporterSession {
@@ -416,13 +407,17 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                 ActorError::exit_msg("ChronicleBroker cannot proceed initializing without scylla service")
             })?;
         let mut uda_handle = None;
-        if let Ok(sync_data) = self.query_sync_table().await {
-            log::info!("{:#?}", sync_data);
-            // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
-            uda_handle = self.maybe_start(rt, sync_data).await?; //?
-        } else {
-            rt.update_status(ServiceStatus::Idle).await;
-        };
+        match self.query_sync_table().await {
+            Ok(sync_data) => {
+                log::info!("{:#?}", sync_data);
+                // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
+                uda_handle = self.maybe_start(rt, sync_data).await?; //?
+            }
+            Err(e) => {
+                log::error!("Unable to get sync record, error: {}", e);
+                rt.update_status(ServiceStatus::Idle).await;
+            }
+        }
         Ok((scylla_service, uda_handle))
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, (mut scylla_service, mut uda_handle): Self::Data) -> ActorResult<()> {

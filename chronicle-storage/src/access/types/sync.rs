@@ -78,67 +78,59 @@ pub struct SyncData {
 
 impl SyncData {
     /// Try to fetch the sync data from the sync table for the provided keyspace and sync range
-    pub async fn try_fetch<S: 'static + Select<MsRangeId, SyncRange, Iter<SyncRecord>>>(
+    pub async fn try_fetch<S: 'static + Select<(), (), Iter<SyncRecord>>>(
         keyspace: &S,
         sync_range: SyncRange,
         retries: usize,
     ) -> anyhow::Result<SyncData> {
-        let ms_range_ids =
-            (sync_range.start() / SyncRecord::MS_CHUNK_SIZE)..(sync_range.end() / SyncRecord::MS_CHUNK_SIZE);
-        let res = futures::stream::iter(ms_range_ids)
-            .then(|ms_range_id| async move {
-                Ok::<_, RequestError>((
-                    ms_range_id,
-                    keyspace
-                        .select(&ms_range_id, &sync_range)
-                        .consistency(Consistency::One)
-                        .build()?
-                        .worker()
-                        .with_retries(retries)
-                        .get_local()
-                        .await?,
-                ))
-            })
-            .try_collect::<BTreeMap<u32, Option<Iter<SyncRecord>>>>()
+        let res = keyspace
+            .select(&(), &())
+            .consistency(Consistency::One)
+            .build()?
+            .worker()
+            .with_retries(retries)
+            .get_local()
             .await?;
-        let mut res_iter = res.into_values().filter_map(|v| v).flatten();
         let mut sync_data = SyncData::default();
-        if let Some(SyncRecord {
-            milestone_index,
-            logged_by,
-            ..
-        }) = res_iter.next()
-        {
-            // push missing row/gap (if any)
-            sync_data.process_gaps(sync_range.to, *milestone_index);
-            sync_data.process_rest(&logged_by, *milestone_index, &None);
-            let mut pre_ms = milestone_index;
-            let mut pre_lb = logged_by;
-            // Generate and identify missing gaps in order to fill them
-            while let Some(SyncRecord {
+        if let Some(mut res_iter) = res {
+            if let Some(SyncRecord {
                 milestone_index,
                 logged_by,
                 ..
             }) = res_iter.next()
             {
-                // check if there are any missings
-                sync_data.process_gaps(*pre_ms, *milestone_index);
-                sync_data.process_rest(&logged_by, *milestone_index, &pre_lb);
-                pre_ms = milestone_index;
-                pre_lb = logged_by;
+                // push missing row/gap (if any)
+                sync_data.process_gaps(sync_range.to, *milestone_index);
+                sync_data.process_rest(&logged_by, *milestone_index, &None);
+                let mut pre_ms = milestone_index;
+                let mut pre_lb = logged_by;
+                // Generate and identify missing gaps in order to fill them
+                while let Some(SyncRecord {
+                    milestone_index,
+                    logged_by,
+                    ..
+                }) = res_iter.next()
+                {
+                    // check if there are any missings
+                    sync_data.process_gaps(*pre_ms, *milestone_index);
+                    sync_data.process_rest(&logged_by, *milestone_index, &pre_lb);
+                    pre_ms = milestone_index;
+                    pre_lb = logged_by;
+                }
+                // pre_ms is the most recent milestone we processed
+                // it's also the lowest milestone index in the select response
+                // so anything < pre_ms && anything >= (self.sync_range.from - 1)
+                // (lower provided sync bound) are missing
+                // push missing row/gap (if any)
+                sync_data.process_gaps(*pre_ms, sync_range.from - 1);
+            } else {
+                // Everything is missing as gaps
+                sync_data.process_gaps(sync_range.to, sync_range.from - 1);
             }
-            // pre_ms is the most recent milestone we processed
-            // it's also the lowest milestone index in the select response
-            // so anything < pre_ms && anything >= (self.sync_range.from - 1)
-            // (lower provided sync bound) are missing
-            // push missing row/gap (if any)
-            sync_data.process_gaps(*pre_ms, sync_range.from - 1);
-            Ok(sync_data)
         } else {
-            // Everything is missing as gaps
             sync_data.process_gaps(sync_range.to, sync_range.from - 1);
-            Ok(sync_data)
         }
+        Ok(sync_data)
     }
     /// Takes the lowest gap from the sync_data
     pub fn take_lowest_gap(&mut self) -> Option<Range<u32>> {

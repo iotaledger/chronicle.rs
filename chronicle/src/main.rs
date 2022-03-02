@@ -6,9 +6,9 @@
 use async_trait::async_trait;
 use backstage::core::*;
 use chronicle_api::application::*;
-use chronicle_broker::{
-    application::ChronicleBroker,
-    SelectivePermanodeConfig,
+use chronicle_broker::application::{
+    permanode::PermanodeConfig,
+    ChronicleBroker,
 };
 use chronicle_common::{
     alert,
@@ -286,8 +286,8 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             milestone_index int,
             PRIMARY KEY (transaction_id, idx, variant, message_id)
         );
-        
-        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.transactions_by_state AS 
+
+        CREATE MATERIALIZED VIEW IF NOT EXISTS #0.transactions_by_state AS
             SELECT transaction_id, idx, variant, message_id, inclusion_state
             FROM #0.transactions
             WHERE transaction_id IS NOT NULL
@@ -296,7 +296,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND message_id IS NOT NULL
             AND inclusion_state IS NOT NULL
         PRIMARY KEY (transaction_id, inclusion_state, idx, variant, message_id);
-        
+
         CREATE TABLE IF NOT EXISTS #0.milestones (
             milestone_index int,
             message_id text,
@@ -304,22 +304,22 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             payload blob,
             PRIMARY KEY (milestone_index, message_id)
         );
-        
+
         CREATE TABLE IF NOT EXISTS #0.tag_hints (
             tag text,
             table_kind text,
             ms_range_id int,
             PRIMARY KEY (tag, ms_range_id)
         ) WITH CLUSTERING ORDER BY (ms_range_id DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.addresses_hints (
             address text,
-            output_kind text, 
-            variant text, 
+            output_kind text,
+            variant text,
             ms_range_id int,
             PRIMARY KEY (address, output_kind, variant, ms_range_id)
-        ) WITH CLUSTERING ORDER BY (ms_range_id DESC);
-        
+        ) WITH CLUSTERING ORDER BY (output_kind DESC, variant DESC, ms_range_id DESC);
+
         CREATE TABLE IF NOT EXISTS #0.basic_outputs (
             output_id text,
             ms_range_id int,
@@ -332,7 +332,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             data blob,
             PRIMARY KEY (output_id, ms_range_id, milestone_index, ms_timestamp)
         ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.basic_outputs_by_address AS
             SELECT * from #0.basic_outputs
             WHERE output_id IS NOT NULL
@@ -342,7 +342,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((address, ms_range_id), ms_timestamp, milestone_index, output_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.basic_outputs_by_tag AS
             SELECT * from #0.basic_outputs
             WHERE output_id IS NOT NULL
@@ -352,7 +352,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((tag, ms_range_id), ms_timestamp, milestone_index, output_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.basic_outputs_by_sender AS
             SELECT * from #0.basic_outputs
             WHERE output_id IS NOT NULL
@@ -362,7 +362,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((sender, ms_range_id), ms_timestamp, milestone_index, output_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.alias_outputs (
             alias_id text,
             ms_range_id int,
@@ -376,7 +376,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             data blob,
             PRIMARY KEY (alias_id, ms_range_id, milestone_index, ms_timestamp)
         ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_sender AS
             SELECT * from #0.alias_outputs
             WHERE alias_id IS NOT NULL
@@ -386,7 +386,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((sender, ms_range_id), ms_timestamp, milestone_index, alias_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_issuer AS
             SELECT * from #0.alias_outputs
             WHERE alias_id IS NOT NULL
@@ -396,7 +396,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((issuer, ms_range_id), ms_timestamp, milestone_index, alias_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_state_controller AS
             SELECT * from #0.alias_outputs
             WHERE alias_id IS NOT NULL
@@ -406,7 +406,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((state_controller, ms_range_id), ms_timestamp, milestone_index, alias_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.alias_outputs_by_governor AS
             SELECT * from #0.alias_outputs
             WHERE alias_id IS NOT NULL
@@ -416,7 +416,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((governor, ms_range_id), ms_timestamp, milestone_index, alias_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.foundry_outputs (
             foundry_id text,
             ms_range_id int,
@@ -427,7 +427,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             data blob,
             PRIMARY KEY (foundry_id, ms_range_id, milestone_index, ms_timestamp)
         ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.foundry_outputs_by_address AS
             SELECT * from #0.foundry_outputs
             WHERE foundry_id IS NOT NULL
@@ -437,7 +437,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((address, ms_range_id), ms_timestamp, milestone_index, foundry_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.nft_outputs (
             nft_id text,
             ms_range_id int,
@@ -452,7 +452,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             data blob,
             PRIMARY KEY (nft_id, ms_range_id, milestone_index, ms_timestamp)
         ) WITH CLUSTERING ORDER BY (ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_address AS
             SELECT * from #0.nft_outputs
             WHERE nft_id IS NOT NULL
@@ -462,7 +462,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((address, ms_range_id), ms_timestamp, milestone_index, nft_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_dust_return_address AS
             SELECT * from #0.nft_outputs
             WHERE nft_id IS NOT NULL
@@ -472,7 +472,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((dust_return_address, ms_range_id), ms_timestamp, milestone_index, nft_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_sender AS
             SELECT * from #0.nft_outputs
             WHERE nft_id IS NOT NULL
@@ -482,7 +482,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((sender, ms_range_id), ms_timestamp, milestone_index, nft_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_issuer AS
             SELECT * from #0.nft_outputs
             WHERE nft_id IS NOT NULL
@@ -492,7 +492,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((issuer, ms_range_id), ms_timestamp, milestone_index, nft_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.nft_outputs_by_tag AS
             SELECT * from #0.nft_outputs
             WHERE nft_id IS NOT NULL
@@ -502,7 +502,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((tag, ms_range_id), ms_timestamp, milestone_index, nft_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.legacy_outputs (
             output_id text,
             output_type tinyint,
@@ -514,7 +514,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             data blob,
             PRIMARY KEY (output_id, output_type, ms_range_id, milestone_index, ms_timestamp)
         ) WITH CLUSTERING ORDER BY (output_type ASC, ms_range_id DESC, milestone_index DESC, ms_timestamp DESC);
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.legacy_outputs_by_address AS
             SELECT * from #0.legacy_outputs
             WHERE output_id IS NOT NULL
@@ -525,7 +525,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND milestone_index IS NOT NULL
         PRIMARY KEY ((address, ms_range_id), output_type, ms_timestamp, milestone_index, output_id)
         WITH CLUSTERING ORDER BY (output_type ASC, ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.tags (
             tag text,
             ms_range_id int,
@@ -535,7 +535,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             inclusion_state blob,
             PRIMARY KEY ((tag, ms_range_id), ms_timestamp, milestone_index)
         ) WITH CLUSTERING ORDER BY (ms_timestamp DESC, milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.parents (
             parent_id text,
             milestone_index int,
@@ -544,7 +544,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             inclusion_state tinyint,
             PRIMARY KEY (parent_id, message_id)
         );
-        
+
         CREATE MATERIALIZED VIEW IF NOT EXISTS #0.parents_by_ms AS
             SELECT * from #0.parents
             WHERE parent_id IS NOT NULL
@@ -553,7 +553,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             AND ms_timestamp IS NOT NULL
         PRIMARY KEY (parent_id, ms_timestamp, message_id)
         WITH CLUSTERING ORDER BY (ms_timestamp DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.sync (
             ms_range_id int,
             milestone_index int,
@@ -561,7 +561,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             logged_by tinyint,
             PRIMARY KEY (ms_range_id, milestone_index)
         ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.ms_analytics (
             ms_range_id int,
             milestone_index int,
@@ -570,7 +570,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             transferred_tokens bigint,
             PRIMARY KEY (ms_range_id, milestone_index)
         ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.daily_analytics (
             year int,
             date date,
@@ -579,7 +579,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             recv_addresses int,
             PRIMARY KEY (year, date)
         ) WITH CLUSTERING ORDER BY (date DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.address_analytics (
             address text,
             milestone_index int,
@@ -587,14 +587,14 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             recv_tokens bigint,
             PRIMARY KEY (address, milestone_index)
         ) WITH CLUSTERING ORDER BY (milestone_index DESC);
-        
+
         CREATE TABLE IF NOT EXISTS #0.date_cache (
             date date,
             start_ms int,
             end_ms int,
             PRIMARY KEY (date)
         );
-        
+
         CREATE TABLE IF NOT EXISTS #0.metrics_cache (
             date date,
             variant text,
@@ -611,17 +611,24 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             "Creating table: {}",
             match query {
                 Statement::DataDefinition(DataDefinitionStatement::CreateTable(ref s)) => &s.table,
-                _ => unreachable!(),
+                Statement::MaterializedView(MaterializedViewStatement::Create(ref s)) => &s.name,
+                r => unreachable!("{}", r),
             }
         );
         log::info!("Query: {}", query);
         query
+            .clone()
             .execute()
             .consistency(Consistency::All)
             .build()?
             .get_global()
             .await
-            .map_err(|e| anyhow::Error::msg(format!("Could not verify if table was created! error: {}", e)))?;
+            .map_err(|e| {
+                anyhow::Error::msg(format!(
+                    "Could not verify if table was created! error: {}, q: {}",
+                    e, query
+                ))
+            })?;
     }
     log::info!("Created Chronicle tables for keyspace name: {}", keyspace_config.name);
     log::info!(

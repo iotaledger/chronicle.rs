@@ -21,8 +21,8 @@ impl Select<Bee<MessageId>, (), Bee<Message>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT message 
-            FROM #.messages 
+            "SELECT message
+            FROM #.messages
             WHERE message_id = ?",
             self.name()
         )
@@ -36,14 +36,14 @@ impl Select<Bee<MessageId>, (), MessageRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT 
+            "SELECT
                 message_id,
                 message,
                 milestone_index,
                 inclusion_state,
                 conflict_reason,
                 proof
-            FROM #.messages 
+            FROM #.messages
             WHERE message_id = ?",
             self.name()
         )
@@ -57,14 +57,14 @@ impl Select<Bee<MessageId>, (), Paged<Iter<MessageRecord>>> for ChronicleKeyspac
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT 
+            "SELECT
                 message_id,
                 message,
                 milestone_index,
                 inclusion_state,
                 conflict_reason,
                 proof
-            FROM #.messages 
+            FROM #.messages
             WHERE milestone_index = ?",
             self.name()
         )
@@ -329,8 +329,8 @@ impl Select<Bee<MilestoneIndex>, (), Bee<Milestone>> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> SelectStatement {
         parse_statement!(
-            "SELECT message_id, timestamp 
-            FROM #.milestones 
+            "SELECT message_id, timestamp
+            FROM #.milestones
             WHERE milestone_index = ?",
             self.name()
         )
@@ -347,7 +347,7 @@ impl Select<AddressHint, (), Iter<MsRangeId>> for ChronicleKeyspace {
         parse_statement!(
             "SELECT ms_range_id
             FROM #.address_hints
-            WHERE address = ? 
+            WHERE address = ?
             AND output_kind = ?
             AND variant = ?",
             self.name()
@@ -366,7 +366,7 @@ impl Select<TagHint, (), Iter<MsRangeId>> for ChronicleKeyspace {
         parse_statement!(
             "SELECT ms_range_id
             FROM #.tag_hints
-            WHERE tag = ? 
+            WHERE tag = ?
             AND table_kind = ?",
             self.name()
         )
@@ -392,9 +392,9 @@ impl Select<MsRangeId, SyncRange, Iter<SyncRecord>> for ChronicleKeyspace {
     fn statement(&self) -> SelectStatement {
         parse_statement!(
             "SELECT *
-            FROM #.sync 
-            WHERE ms_range_id = ? 
-            AND milestone_index >= ? 
+            FROM #.sync
+            WHERE ms_range_id = ?
+            AND milestone_index >= ?
             AND milestone_index < ?",
             self.name()
         )
@@ -412,7 +412,7 @@ impl Select<MsRangeId, (), Iter<MsAnalyticsRecord>> for ChronicleKeyspace {
     fn statement(&self) -> SelectStatement {
         parse_statement!(
             "SELECT *
-            FROM #.ms_analytics 
+            FROM #.ms_analytics
             WHERE ms_range_id = ?",
             self.name()
         )
@@ -427,9 +427,9 @@ impl Select<MsRangeId, Range<MilestoneIndex>, Iter<MsAnalyticsRecord>> for Chron
     fn statement(&self) -> SelectStatement {
         parse_statement!(
             "SELECT *
-            FROM #.ms_analytics 
-            WHERE ms_range_id = ? 
-            AND milestone_index >= ? 
+            FROM #.ms_analytics
+            WHERE ms_range_id = ?
+            AND milestone_index >= ?
             AND milestone_index < ?",
             self.name()
         )
@@ -447,9 +447,9 @@ impl Select<u32, Range<NaiveDate>, Iter<DailyAnalyticsRecord>> for ChronicleKeys
     fn statement(&self) -> SelectStatement {
         parse_statement!(
             "SELECT *
-            FROM #.daily_analytics 
-            WHERE year = ? 
-            AND date >= ? 
+            FROM #.daily_analytics
+            WHERE year = ?
+            AND date >= ?
             AND date <= ?",
             self.name()
         )

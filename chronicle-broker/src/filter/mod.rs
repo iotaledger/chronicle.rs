@@ -43,7 +43,7 @@ pub trait FilterBuilder:
 /// Atomic process handle
 #[derive(Debug)]
 pub struct AtomicProcessHandle {
-    pub(crate) handle: tokio::sync::oneshot::Sender<Result<u32, u32>>,
+    pub(crate) handle: Option<tokio::sync::oneshot::Sender<Result<u32, u32>>>,
     pub(crate) milestone_index: u32,
     pub(crate) any_error: std::sync::atomic::AtomicBool,
 }
@@ -52,7 +52,7 @@ impl AtomicProcessHandle {
     /// Create a new Atomic solidifier handle
     pub fn new(handle: tokio::sync::oneshot::Sender<Result<u32, u32>>, milestone_index: u32) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self {
-            handle,
+            handle: Some(handle),
             milestone_index,
             any_error: std::sync::atomic::AtomicBool::new(false),
         })
@@ -68,12 +68,10 @@ impl Drop for AtomicProcessHandle {
         let any_error = self.any_error.load(std::sync::atomic::Ordering::Acquire);
         if any_error {
             // respond with err
-            todo!()
-            // self.handle.send(Ok(self.milestone_index)).ok();
+            self.handle.take().and_then(|h| h.send(Ok(self.milestone_index)).ok());
         } else {
             // respond with void
-            todo!()
-            // self.handle.send(Err(self.milestone_index)).ok();
+            self.handle.take().and_then(|h| h.send(Err(self.milestone_index)).ok());
         }
     }
 }
