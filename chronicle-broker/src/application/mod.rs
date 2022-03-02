@@ -21,7 +21,10 @@ use super::{
     },
     syncer::Syncer,
 };
-use crate::SyncRange;
+use crate::{
+    importer::Importer,
+    SyncRange,
+};
 use anyhow::{
     anyhow,
     bail,
@@ -35,6 +38,7 @@ use backstage::{
         ActorError,
         ActorRequest,
         ActorResult,
+        Channel,
         EolEvent,
         Event,
         ReportEvent,
@@ -97,7 +101,7 @@ pub struct ChronicleBroker<T: FilterBuilder> {
     pub request_timeout_secs: u8,
     pub keyspace: ChronicleKeyspace,
     pub sync_range: SyncRange,
-    pub selective_builder: T,
+    pub filter_builder: T,
 }
 
 impl<T: FilterBuilder> Default for ChronicleBroker<T> {
@@ -116,7 +120,7 @@ impl<T: FilterBuilder> Default for ChronicleBroker<T> {
             api_endpoints: Default::default(),
             sync_range: Default::default(),
             mqtt_brokers: Default::default(),
-            selective_builder: Default::default(),
+            filter_builder: Default::default(),
         }
     }
 }
@@ -135,7 +139,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         cache_capacity: usize,
         requester_budget: usize,
         request_timeout_secs: u8,
-        selective_builder: T,
+        filter_builder: T,
     ) -> Self {
         if logs_dir.is_some() && max_log_size.is_none() {
             max_log_size = Some(super::archiver::MAX_LOG_SIZE);
@@ -154,7 +158,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
             request_timeout_secs,
             cache_capacity,
             requester_budget,
-            selective_builder,
+            filter_builder,
         }
     }
     /// Add mqtt broker, and verify it.
@@ -284,8 +288,6 @@ pub enum Topology {
         resume: bool,
         /// Provide optional import range
         import_range: Option<Range<u32>>,
-        /// The type of import requested
-        import_type: ImportType,
     },
     Export {
         range: Range<u32>,
@@ -302,7 +304,7 @@ pub enum ImportType {
 }
 
 /// Enum used by importer to keep the sockets up to date with most recent progress.
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ImporterSession {
     /// Create/update progress bar state
     ProgressBar {
@@ -362,14 +364,14 @@ pub type TopologyResponse = Result<TopologyOk, TopologyErr>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TopologyOk {
-    Import,
+    Import(ImporterSession),
     Export(ExporterStatus),
     AddMqtt,
     RemoveMqtt,
     // TODO: fill in the rest
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Error)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Error, Clone)]
 #[error("message: {message:?}")]
 /// Topology error,
 pub struct TopologyErr {
@@ -384,7 +386,10 @@ impl TopologyErr {
 
 #[async_trait]
 impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
-    type Data = Service;
+    type Data = (
+        Service,
+        Option<<<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle>,
+    );
     type Channel = UnboundedChannel<BrokerEvent>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
         log::info!("ChronicleBroker is initializing");
@@ -410,16 +415,21 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                 log::error!("ChronicleBroker cannot proceed initializing without scylla service");
                 ActorError::exit_msg("ChronicleBroker cannot proceed initializing without scylla service")
             })?;
+        let mut uda_handle = None;
         if let Ok(sync_data) = self.query_sync_table().await {
             log::info!("{:#?}", sync_data);
             // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
-            self.maybe_start(rt, sync_data).await?; //?
+            uda_handle = self.maybe_start(rt, sync_data).await?; //?
         } else {
             rt.update_status(ServiceStatus::Idle).await;
         };
-        Ok(scylla_service)
+        Ok((scylla_service, uda_handle))
     }
-    async fn run(&mut self, rt: &mut Rt<Self, S>, mut scylla_service: Self::Data) -> ActorResult<()> {
+    async fn run(&mut self, rt: &mut Rt<Self, S>, (mut scylla_service, mut uda_handle): Self::Data) -> ActorResult<()> {
+        let mut parallelism_points = self.parallelism;
+        let mut pending_imports = Vec::new();
+        let mut in_progress_importers = HashMap::new();
+        let mut active_import_responders = Vec::new();
         log::info!("ChronicleBroker is {}", rt.service().status());
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
@@ -485,7 +495,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                                                     } else {
                                                         log::info!("Successfully inserted mqtt: {}", &mqtt);
                                                         responder.reply(Ok(TopologyOk::AddMqtt)).await.ok();
-                                                        self.maybe_start(rt, sync_data).await?;
+                                                        uda_handle = self.maybe_start(rt, sync_data).await?;
                                                     };
                                                 }
                                                 Err(err) => {
@@ -513,7 +523,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                                         match self.query_sync_table().await {
                                             Ok(sync_data) => {
                                                 // try to resume
-                                                self.maybe_start(rt, sync_data).await?;
+                                                uda_handle = self.maybe_start(rt, sync_data).await?;
                                             }
                                             Err(err) => {
                                                 log::error!("Unable to query sync table to resume the broker while re-adding mqtt: {}, error: {}", mqtt, err);
@@ -664,8 +674,32 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                                     .ok();
                             };
                         }
-                        Topology::Import { .. } => {
-                            todo!("handle importer")
+                        Topology::Import {
+                            path,
+                            resume,
+                            import_range,
+                        } => {
+                            if !rt.service().is_stopping() {
+                                if let Some(uda_handle) = uda_handle.as_ref() {
+                                    self.handle_import(
+                                        rt,
+                                        topology,
+                                        &mut parallelism_points,
+                                        &mut pending_imports,
+                                        &mut active_import_responders,
+                                        &mut in_progress_importers,
+                                        uda_handle,
+                                    )
+                                    .await;
+                                    self.try_close_importer_session(
+                                        &mut in_progress_importers,
+                                        &mut active_import_responders,
+                                    )
+                                    .await;
+                                }
+                            } else {
+                                // respond with error
+                            }
                         }
                         Topology::Export { range: ms_range } => {
                             let responder =
@@ -745,9 +779,49 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                             }
                         } else {
                             // rest micro service
-                            // replace todo remove it only if it's importer or exporter service
-                            if service.actor_type_id == TypeId::of::<Exporter>() {
+                            if service.actor_type_id == TypeId::of::<Exporter>()
+                                || service.actor_type_id == TypeId::of::<Importer<T>>()
+                            {
                                 rt.remove_microservice(scope_id);
+                                if let Some(maybe_importer_dir) = service.directory().as_ref() {
+                                    if let Some(parallelism) = in_progress_importers.remove(maybe_importer_dir) {
+                                        parallelism_points += parallelism;
+                                        // check if there are any pending
+                                        'a: while let Some(import_topology) = pending_imports.pop() {
+                                            if let Some(uda_h) = uda_handle.as_ref() {
+                                                self.handle_import(
+                                                    rt,
+                                                    import_topology,
+                                                    &mut parallelism_points,
+                                                    pending_imports.as_mut(),
+                                                    active_import_responders.as_mut(),
+                                                    &mut in_progress_importers,
+                                                    uda_h,
+                                                )
+                                                .await;
+                                                break 'a;
+                                            } else {
+                                                // abort all pending imports
+                                                let socket_msg = TopologyResponse::Err(TopologyErr::new(format!(
+                                                    "Unable to handle import for topology: {:?}, broker status: {}, error: no user defined handle",
+                                                    import_topology,
+                                                    rt.service().status(),
+                                                )));
+                                                self.respond_to_active_importer_sessions(
+                                                    &active_import_responders,
+                                                    socket_msg,
+                                                )
+                                                .await;
+                                            }
+                                            // check if we finished all in_progress_importers
+                                            self.try_close_importer_session(
+                                                &mut in_progress_importers,
+                                                &mut active_import_responders,
+                                            )
+                                            .await;
+                                        }
+                                    };
+                                }
                             } else {
                                 rt.upsert_microservice(scope_id, service.clone());
                             }
@@ -874,12 +948,16 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
 
 impl<T: FilterBuilder> ChronicleBroker<T> {
     // Note: It should never be invoked if scylla were in outage, or self service is stopping
-    async fn maybe_start<S: SupHandle<Self>>(&self, rt: &mut Rt<Self, S>, sync_data: SyncData) -> ActorResult<()> {
+    async fn maybe_start<S: SupHandle<Self>>(
+        &self,
+        rt: &mut Rt<Self, S>,
+        sync_data: SyncData,
+    ) -> ActorResult<Option<<<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle>> {
         // start only if there is at least one mqtt feed source in each topic (messages and refmessages)
         if self.mqtt_brokers.is_empty() || self.api_endpoints.is_empty() {
             log::warn!("Cannot start children of the broker without at least one broker and endpoint!");
             rt.update_status(ServiceStatus::Idle).await;
-            return Ok(());
+            return Ok(None);
         } // todo verfiy at least one endpoint is working, else return Ok(()) and set outage status
           // First remove the old resources ( if any, as this is possible if maybe_start is invoked to restart the
           // children)
@@ -887,7 +965,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         rt.remove_resource::<RequesterHandles<T>>().await;
         rt.remove_resource::<HashMap<u8, SolidifierHandle>>().await;
         // build Selective mode
-        let (uda_actor, uda_channel) = self.selective_builder.clone().build().await.map_err(|e| {
+        let (uda_actor, uda_channel) = self.filter_builder.clone().build().await.map_err(|e| {
             log::error!("Broker unable to build selective, error: {}", e);
             ActorError::exit_msg(format!("Broker unable to build selective, error: {}", e))
         })?;
@@ -932,7 +1010,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         if balanced == 0 {
             log::error!("Unable to reach balanced feed sources state");
             rt.update_status(ServiceStatus::Outage).await;
-            return Ok(());
+            return Ok(None);
         } else if balanced == mqtt_pair_count {
             log::info!("Successfully reached balanced feed source state");
             rt.update_status(ServiceStatus::Running).await;
@@ -968,6 +1046,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         rt.spawn("syncer".to_string(), syncer).await?;
         // spawn selective_actor
         let (uda_handle, _) = rt.spawn_with_channel("uda".to_string(), uda_actor, uda_channel).await?;
+
         // -- spawn collectors and solidifiers
         for partition_id in 0..self.partition_count {
             let collector = Collector::<T>::new(
@@ -976,7 +1055,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
                 self.retries,
                 self.cache_capacity,
                 self.requester_budget,
-                self.selective_builder.clone(),
+                self.filter_builder.clone(),
                 uda_handle.clone(),
             );
             let (c_handle, signal) = rt.spawn(format!("collector{}", partition_id), collector).await?;
@@ -988,7 +1067,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
                 MessageIdPartitioner::new(self.partition_count),
                 gap_start,
                 self.retries,
-                self.selective_builder.clone(),
+                self.filter_builder.clone(),
                 uda_handle.clone(),
             );
             let (s_handle, signal) = rt.spawn(format!("solidifier{}", partition_id), solidifier).await?;
@@ -1010,13 +1089,238 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
                 .map_err(|e| ActorError::aborted(e))??;
         }
         log::info!("ChronicleBroker successfully started");
-        Ok(())
+        Ok(Some(uda_handle))
+    }
+    async fn handle_import<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        import_topology: Topology,
+        parallelism_points: &mut u8,
+        pending_imports: &mut Vec<Topology>,
+        active_import_responders: &mut Vec<TopologyResponder>,
+        in_progress_importers: &mut HashMap<String, u8>,
+        uda_handle: &<<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+    ) {
+        if let Topology::Import {
+            ref path,
+            resume,
+            ref import_range,
+        } = import_topology
+        {
+            // check if we have enough parallelism points
+            if *parallelism_points == 0 {
+                // add it to pending list
+                pending_imports.push(import_topology);
+                return ();
+            }
+            let import_range = import_range.clone().unwrap_or(self.sync_range.from..self.sync_range.to);
+            if path.is_file() {
+                self.spawn_importer(
+                    rt,
+                    path.clone(),
+                    resume,
+                    import_range.clone(),
+                    *parallelism_points,
+                    in_progress_importers,
+                    parallelism_points,
+                    uda_handle.clone(),
+                    active_import_responders,
+                )
+                .await;
+            } else if path.is_dir() {
+                self.spawn_importers(
+                    rt,
+                    path.clone(),
+                    resume,
+                    import_range,
+                    in_progress_importers,
+                    parallelism_points,
+                    uda_handle,
+                    pending_imports,
+                    active_import_responders,
+                )
+                .await;
+            } else {
+                let event = ImporterSession::PathError {
+                    path: path.clone(),
+                    msg: "Invalid path".into(),
+                };
+                let socket_msg = TopologyResponse::Ok(TopologyOk::Import(event));
+                self.respond_to_active_importer_sessions(active_import_responders, socket_msg)
+                    .await;
+            }
+        }
+    }
+    async fn try_close_importer_session(
+        &self,
+        in_progress_importers: &mut HashMap<String, u8>,
+        active_import_responders: &mut Vec<TopologyResponder>,
+    ) {
+        if in_progress_importers.is_empty() {
+            let event = ImporterSession::Close;
+            let socket_msg = TopologyResponse::Ok(TopologyOk::Import(event));
+            self.respond_to_active_importer_sessions(active_import_responders, socket_msg)
+                .await;
+            // clear any active importer, as the sessions are closed
+            active_import_responders.clear();
+        }
+    }
+    async fn start_importer<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        file_path: PathBuf,
+        resume: bool,
+        import_range: Range<u32>,
+        parallelism: u8,
+        in_progress_importers: &mut HashMap<String, u8>,
+        parallelism_points: &mut u8,
+        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+    ) {
+        let dir = format!("{}", file_path.to_str().expect("Failed to convert file path to string"));
+        if in_progress_importers.contains_key(&dir) {
+            log::warn!("Cannot start an existing importer for LogFile: {}", dir);
+            return ();
+        }
+        let importer = Importer::<T>::new(
+            self.keyspace.clone(),
+            file_path,
+            resume,
+            import_range,
+            uda_handle,
+            self.filter_builder.clone(),
+            parallelism,
+            self.retries,
+        );
+        if let Err(e) = rt.start(dir.clone(), importer).await {
+            log::error!("Unable to start importer for LogFile: {}, error: {}", dir, e);
+        } else {
+            in_progress_importers.insert(dir, parallelism);
+        }
+    }
+    async fn spawn_importer<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        file_path: PathBuf,
+        resume: bool,
+        import_range: Range<u32>,
+        parallelism: u8,
+        in_progress_importers: &mut HashMap<String, u8>,
+        parallelism_points: &mut u8,
+        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+        active_import_responders: &mut Vec<TopologyResponder>,
+    ) {
+        if let Some(path_str) = file_path.to_str() {
+            self.start_importer(
+                rt,
+                file_path,
+                resume,
+                import_range,
+                parallelism,
+                in_progress_importers,
+                parallelism_points,
+                uda_handle,
+            );
+        } else {
+            // return the reducted points
+            *parallelism_points += parallelism;
+            let event = ImporterSession::PathError {
+                path: file_path,
+                msg: "Unable to convert path to string".into(),
+            };
+
+            let socket_msg = TopologyResponse::Ok(TopologyOk::Import(event));
+            self.respond_to_active_importer_sessions(active_import_responders, socket_msg)
+                .await;
+        }
+    }
+    async fn spawn_importers<S: SupHandle<Self>>(
+        &mut self,
+        rt: &mut Rt<Self, S>,
+        path: PathBuf,
+        resume: bool,
+        import_range: Range<u32>,
+        in_progress_importers: &mut HashMap<String, u8>,
+        parallelism_points: &mut u8,
+        uda_handle: &<<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+        pending_imports: &mut Vec<Topology>,
+        active_import_responders: &mut Vec<TopologyResponder>,
+    ) {
+        let mut import_files = Vec::new();
+        if let Ok(mut dir_entry) = tokio::fs::read_dir(&path).await {
+            while let Ok(Some(p)) = dir_entry.next_entry().await {
+                let file_path = p.path();
+                if file_path.is_file() {
+                    import_files.push(file_path);
+                }
+            }
+        };
+        let import_files_len = import_files.len();
+        if import_files_len == 0 {
+            let event = ImporterSession::PathError {
+                path,
+                msg: "No LogFiles in the provided path".into(),
+            };
+            let socket_msg = TopologyResponse::Ok(TopologyOk::Import(event));
+            self.respond_to_active_importer_sessions(active_import_responders, socket_msg)
+                .await;
+            return ();
+        }
+        if *parallelism_points as usize > import_files_len {
+            let parallelism = (*parallelism_points as usize / import_files_len) as u8;
+            for file_path in import_files {
+                self.spawn_importer(
+                    rt,
+                    file_path,
+                    resume,
+                    import_range.clone(),
+                    parallelism,
+                    in_progress_importers,
+                    parallelism_points,
+                    uda_handle.clone(),
+                    active_import_responders,
+                )
+                .await
+            }
+        } else {
+            // unwrap is safe
+            let file_path = import_files.pop().expect("Expected import file");
+            self.spawn_importer(
+                rt,
+                file_path,
+                resume,
+                import_range.clone(),
+                *parallelism_points,
+                in_progress_importers,
+                parallelism_points,
+                uda_handle.clone(),
+                active_import_responders,
+            )
+            .await;
+            // convert any remaining into pending_imports
+            for file_path in import_files {
+                let topology = Topology::Import {
+                    path: file_path,
+                    resume,
+                    import_range: Some(import_range.clone()),
+                };
+                pending_imports.push(topology);
+            }
+        }
+    }
+    pub(crate) async fn respond_to_active_importer_sessions(
+        &self,
+        responders: &Vec<TopologyResponder>,
+        response: TopologyResponse,
+    ) {
+        for responder in responders.iter() {
+            responder.reply(response.clone()).await;
+        }
     }
 }
 
 impl<T: FilterBuilder> ChronicleBroker<T> {
     pub(super) async fn query_sync_table(&self) -> ActorResult<SyncData> {
-        SyncData::try_fetch(&self.keyspace, self.sync_range, 10)
+        SyncData::try_fetch(&self.keyspace, &self.sync_range, 10)
             .await
             .map_err(|e| {
                 log::error!("{}", e);

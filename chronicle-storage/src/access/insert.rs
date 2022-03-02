@@ -10,13 +10,13 @@ impl Insert<MessageRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.messages (
-                message_id, 
-                message, 
-                milestone_index, 
-                inclusion_state, 
-                conflict_reason, 
+                message_id,
+                message,
+                milestone_index,
+                inclusion_state,
+                conflict_reason,
                 proof
-            ) 
+            )
             VALUES (?, ?, ?, ?, ?, ?)",
             self.name()
         )
@@ -31,10 +31,10 @@ impl Insert<MessageRecord, TTL> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.messages (
-                message_id, 
-                message, 
+                message_id,
+                message,
                 est_milestone_index
-            ) 
+            )
             VALUES (?, ?, ?)
             USING TTL ?",
             self.name()
@@ -55,10 +55,10 @@ impl Insert<ParentRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.parents (
-                parent_id, 
-                milestone_index, 
-                ms_timestamp, 
-                message_id, 
+                parent_id,
+                milestone_index,
+                ms_timestamp,
+                message_id,
                 inclusion_state
             )
             VALUES (?, ?, ?, ?, ?)",
@@ -76,10 +76,10 @@ impl Insert<TagHint, MsRangeId> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.tag_hints (
-                tag, 
-                table_kind, 
+                tag,
+                table_kind,
                 ms_range_id
-            ) 
+            )
             VALUES (?, ?, ?)",
             self.name()
         )
@@ -95,11 +95,11 @@ impl Insert<AddressHint, MsRangeId> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.addresses_hints (
-                address, 
-                output_kind, 
-                variant, 
+                address,
+                output_kind,
+                variant,
                 ms_range_id
-            ) 
+            )
             VALUES (?, ?, ?, ?)",
             self.name()
         )
@@ -119,9 +119,9 @@ impl Insert<SyncRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.sync (
-                ms_range_id, 
-                milestone_index, 
-                synced_by, 
+                ms_range_id,
+                milestone_index,
+                synced_by,
                 logged_by
             )
             VALUES (?, ?, ?, ?)",
@@ -144,9 +144,9 @@ impl Insert<TransactionRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.transactions (
-                transaction_id, 
-                idx, 
-                variant, 
+                transaction_id,
+                idx,
+                variant,
                 message_id,
                 data,
                 milestone_index,
@@ -166,9 +166,9 @@ impl Insert<TransactionRecord, TTL> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.transactions (
-                transaction_id, 
-                idx, 
-                variant, 
+                transaction_id,
+                idx,
+                variant,
                 message_id,
                 data,
                 est_milestone_index
@@ -486,11 +486,11 @@ impl Insert<MilestoneRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.milestones (
-                milestone_index, 
-                message_id, 
-                timestamp, 
+                milestone_index,
+                message_id,
+                timestamp,
                 payload
-            ) 
+            )
             VALUES (?, ?, ?, ?)",
             self.name()
         )
@@ -505,12 +505,12 @@ impl Insert<MsAnalyticsRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.ms_analytics (
-                ms_range_id, 
-                milestone_index, 
-                message_count, 
+                ms_range_id,
+                milestone_index,
+                message_count,
                 transaction_count,
                 transferred_tokens
-            ) 
+            )
             VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
@@ -525,12 +525,12 @@ impl Insert<DailyAnalyticsRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.daily_analytics (
-                year, 
-                date, 
-                total_addresses, 
+                year,
+                date,
+                total_addresses,
                 send_addresses,
                 recv_addresses
-            ) 
+            )
             VALUES (?, ?, ?, ?, ?)",
             self.name()
         )
@@ -545,11 +545,11 @@ impl Insert<AddressAnalyticsRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.address_analytics (
-                address, 
-                milestone_index, 
-                sent_tokens, 
+                address,
+                milestone_index,
+                sent_tokens,
                 recv_tokens
-            ) 
+            )
             VALUES (?, ?, ?, ?)",
             self.name()
         )
@@ -564,12 +564,12 @@ impl Insert<MetricsCacheRecord, ()> for ChronicleKeyspace {
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.metrics_cache (
-                date, 
-                variant, 
-                metric, 
+                date,
+                variant,
+                metric,
                 value,
                 metric_value
-            ) 
+            )
             VALUES (?, ?, ?, ?, ?)",
             self.name()
         )

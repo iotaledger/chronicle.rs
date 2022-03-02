@@ -17,6 +17,7 @@ use chronicle_storage::access::{
     MilestoneDataBuilder,
     Selected,
 };
+
 use scylla_rs::prelude::*;
 use serde::Serialize;
 use std::fmt::Debug;

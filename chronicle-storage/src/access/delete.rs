@@ -7,7 +7,7 @@ impl Delete<Bee<OutputId>, (), LegacyOutputRecord> for ChronicleKeyspace {
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> DeleteStatement {
         parse_statement!(
-            "DELETE FROM #.legacy_outputs 
+            "DELETE FROM #.legacy_outputs
             WHERE output_id = ?",
             self.name()
         )
@@ -22,7 +22,7 @@ impl Delete<(String, MsRangeId), (Bee<MilestoneIndex>, Bee<MessageId>), TagRecor
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> DeleteStatement {
         parse_statement!(
-            "DELETE FROM #.tags 
+            "DELETE FROM #.tags
             WHERE tag = ?
             AND ms_range_id = ?
             AND milestone_index = ?
@@ -48,8 +48,8 @@ impl Delete<Bee<MessageId>, Bee<MessageId>, ParentRecord> for ChronicleKeyspace 
     type QueryOrPrepared = PreparedStatement;
     fn statement(&self) -> DeleteStatement {
         parse_statement!(
-            "DELETE FROM #.parents 
-            WHERE parent_id = ? 
+            "DELETE FROM #.parents
+            WHERE parent_id = ?
             AND message_id = ?",
             self.name()
         )
