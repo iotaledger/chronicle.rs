@@ -621,7 +621,7 @@ impl Merger {
                         // Perform validation if JIT is enabled or we are looking at an overlapping milestone
                         if milestone_index < active.end || self.validation_level == ValidationLevel::JustInTime {
                             if let Ok(idx) =
-                                serde_json::from_str::<MilestoneData>(&ms_line).map(|data| data.milestone_index())
+                                serde_json::from_str::<MilestoneData>(&ms_line).map(|data| data.milestone_index().0)
                             {
                                 if idx < start || idx >= end {
                                     consumed_file.err = true;

@@ -129,8 +129,7 @@ impl FilterBuilder for PermanodeConfig {
                     .insert(&message, &())
                     .consistency(Consistency::Quorum)
                     .build()?;
-                let worker =
-                    AtomicProcessWorker::boxed(atomic_handle.clone(), self.keyspace.clone(), message.clone(), (), 5);
+                let worker = AtomicProcessWorker::boxed(todo!(), self.keyspace.clone(), message.clone(), (), 5);
                 let keyspace_name = self.keyspace.name();
                 if let Err(RequestError::Ring(r)) = req.send_local_with_worker(worker) {
                     if let Err(worker) = retry_send(&keyspace_name, r, 2) {
@@ -178,8 +177,6 @@ impl FilterBuilder for PermanodeConfig {
         }
         // insert cache records
         todo!("insert cache records");
-
-        Ok(())
     }
 }
 

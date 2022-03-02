@@ -451,7 +451,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                         }
                         continue;
                     }
-                    match topology {
+                    match &topology {
                         Topology::AddMqtt(mqtt) => {
                             if !scylla_service.is_running() || !scylla_service.is_degraded() {
                                 if let Some(responder) = responder_opt.as_ref() {
@@ -1320,7 +1320,7 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
 
 impl<T: FilterBuilder> ChronicleBroker<T> {
     pub(super) async fn query_sync_table(&self) -> ActorResult<SyncData> {
-        SyncData::try_fetch(&self.keyspace, &self.sync_range, 10)
+        SyncData::try_fetch(&self.keyspace, self.sync_range, 10)
             .await
             .map_err(|e| {
                 log::error!("{}", e);

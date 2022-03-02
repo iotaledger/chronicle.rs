@@ -95,9 +95,9 @@ where
                         }
                     };
                 debug!("Found milestone message {}", milestone.message_id());
-                milestone_data.set_milestone(MilestoneMessage { message: milestone });
+                milestone_data.set_milestone(MilestoneMessage::new(milestone));
                 loop {
-                    let messages = match query::<Paged<Iter<MessageRecord>>, _, _>(
+                    let mut messages = match query::<Paged<Iter<MessageRecord>>, _, _>(
                         &self.keyspace,
                         &Bee(ms_message_id),
                         None,

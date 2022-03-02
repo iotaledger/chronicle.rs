@@ -68,10 +68,12 @@ impl Drop for AtomicProcessHandle {
         let any_error = self.any_error.load(std::sync::atomic::Ordering::Acquire);
         if any_error {
             // respond with err
-            self.handle.send(Ok(self.milestone_index)).ok();
+            todo!()
+            // self.handle.send(Ok(self.milestone_index)).ok();
         } else {
             // respond with void
-            self.handle.send(Err(self.milestone_index)).ok();
+            todo!()
+            // self.handle.send(Err(self.milestone_index)).ok();
         }
     }
 }

@@ -28,30 +28,10 @@ impl AliasOutputRecord {
             alias_id,
             partition_data,
             inclusion_state,
-            sender: data
-                .feature_blocks()
-                .binary_search_by_key(&SenderFeatureBlock::KIND, FeatureBlock::kind)
-                .ok()
-                .and_then(|idx| {
-                    if let FeatureBlock::Sender(fb) = &data.feature_blocks()[idx] {
-                        Some(*fb.address())
-                    } else {
-                        None
-                    }
-                }),
-            issuer: data
-                .feature_blocks()
-                .binary_search_by_key(&IssuerFeatureBlock::KIND, FeatureBlock::kind)
-                .ok()
-                .and_then(|idx| {
-                    if let FeatureBlock::Issuer(fb) = &data.feature_blocks()[idx] {
-                        Some(*fb.address())
-                    } else {
-                        None
-                    }
-                }),
-            state_controller: *data.state_controller(),
-            governor: *data.governor(),
+            sender: data.feature_blocks().sender().map(|fb| *fb.address()),
+            issuer: data.feature_blocks().issuer().map(|fb| *fb.address()),
+            state_controller: *data.state_controller_address(),
+            governor: *data.governor_address(),
             data,
         }
     }

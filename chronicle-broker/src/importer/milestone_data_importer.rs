@@ -37,7 +37,7 @@ impl<T: FilterBuilder> Actor<ImporterHandle> for MilestoneDataImporter<T> {
             {
                 error!(
                     "MilestoneDataImporter, id: {}, failed to import milestone data for index: {}, error: {}",
-                    rt.service().directory().unwrap_or_default(),
+                    rt.service().directory().clone().unwrap_or_default(),
                     milestone_index,
                     e
                 );

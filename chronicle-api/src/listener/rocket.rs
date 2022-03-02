@@ -602,7 +602,9 @@ async fn get_outputs_by_address(
         })
         .transpose()?;
 
-    let address = Bee(Address::try_from_bech32(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let address = Bee(Address::try_from_bech32(&address)
+        .map_err(|e| ListenerError::BadParse(e.into()))?
+        .1);
     let page_size = page_size.unwrap_or(100);
 
     let (start_timestamp, end_timestamp) = (
@@ -750,7 +752,9 @@ async fn get_transactions_for_address(
         })
         .transpose()?;
 
-    let address = Bee(Address::try_from_bech32(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let address = Bee(Address::try_from_bech32(&address)
+        .map_err(|e| ListenerError::BadParse(e.into()))?
+        .1);
     let page_size = page_size.unwrap_or(100);
 
     let (start_timestamp, end_timestamp) = (
@@ -816,7 +820,9 @@ async fn get_transaction_history_for_address(
         })
         .transpose()?;
 
-    let address = Bee(Address::try_from_bech32(&address).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let address = Bee(Address::try_from_bech32(&address)
+        .map_err(|e| ListenerError::BadParse(e.into()))?
+        .1);
     let page_size = page_size.unwrap_or(100);
 
     let (start_timestamp, end_timestamp) = (

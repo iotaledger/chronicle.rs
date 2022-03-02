@@ -164,7 +164,7 @@ where
     async fn run(
         &mut self,
         rt: &mut Rt<Self, S>,
-        (solidifier_handles, mut requester_handles): Self::Data,
+        (mut solidifier_handles, mut requester_handles): Self::Data,
     ) -> ActorResult<()> {
         log::info!("{:?} is running", rt.service().directory());
         while let Some(event) = rt.inbox_mut().next().await {
@@ -256,7 +256,9 @@ where
                                 // duplicated processed msg, no need to process it.
                                 continue;
                             } else {
-                                let metadata = metadata_opt.expect("Failed to get metadata entry from the cache");
+                                let metadata = metadata_opt
+                                    .as_mut()
+                                    .expect("Failed to get metadata entry from the cache");
                                 let mut msg_record = MessageRecord::new(message_id, message);
 
                                 msg_record.milestone_index = Some(MilestoneIndex(
@@ -267,7 +269,7 @@ where
                                     ),
                                 ));
                                 msg_record.inclusion_state =
-                                    metadata.ledger_inclusion_state.and_then(|l| Some(l.into()));
+                                    metadata.ledger_inclusion_state.clone().and_then(|l| Some(l.into()));
                                 msg_record.conflict_reason =
                                     if let Some(conflict_reason_u8) = metadata.conflict_reason.as_ref() {
                                         Some(
@@ -285,12 +287,10 @@ where
                                     .selective_builder
                                     .filter_message(&self.uda_handle, &msg_record)
                                     .await?;
+                                let selected = selected.clone();
+                                drop(entry);
                                 // push it to solidifier
-                                self.push_message_record_to_solidifier(
-                                    msg_record,
-                                    &solidifier_handles,
-                                    selected.clone(),
-                                );
+                                self.push_message_record_to_solidifier(msg_record, &solidifier_handles, selected);
                             }
                         }
                         None => {
@@ -316,7 +316,8 @@ where
                     // check if the msg and metadata already in lru cache
                     let message_id = MessageId::from_str(&metadata.message_id).unwrap();
                     // check if msg already in lru cache
-                    match self.lru_msg.get_mut(&message_id) {
+                    let entry = self.lru_msg.get_mut(&message_id);
+                    match entry {
                         Some((Some(msg), metadata_opt, timestamp, selected)) => {
                             // check if it's already presisted
                             if metadata_opt.is_some() {
@@ -347,12 +348,11 @@ where
                                     .map(|elapsed| CONFIRMATION_TIME_COLLECTOR.set(elapsed.as_millis() as f64));
                                 // filter the message
                                 *selected = self.selective_builder.filter_message(&self.uda_handle, &msg).await?;
+                                let selected = selected.clone();
+                                let msg = msg.clone();
+                                drop(entry);
                                 // push message to solidifier
-                                self.push_message_record_to_solidifier(
-                                    msg.clone(),
-                                    &solidifier_handles,
-                                    selected.clone(),
-                                );
+                                self.push_message_record_to_solidifier(msg, &solidifier_handles, selected);
                                 // cleanup any pending or requested requests
                                 self.close_requests(&message_id, ref_ms, &solidifier_handles);
                             }
@@ -376,7 +376,8 @@ where
                                         if self.requester_usage < self.requester_budget {
                                             self.request_full_message(&mut requester_handles, message_id);
                                             // it might already has pending requests
-                                            let value = self.pending_requests.remove(&message_id).unwrap_or_default();
+                                            let mut value =
+                                                self.pending_requests.remove(&message_id).unwrap_or_default();
                                             value.insert(try_ms_index);
                                             self.requested_requests.insert(message_id, value);
                                         } else {
@@ -396,7 +397,7 @@ where
                                             if self.requester_usage < self.requester_budget {
                                                 self.request_full_message(&mut requester_handles, message_id);
                                                 // it might already has pending requests
-                                                let value =
+                                                let mut value =
                                                     self.pending_requests.remove(&message_id).unwrap_or_default();
                                                 value.insert(try_ms_index);
                                                 self.requested_requests.insert(message_id, hashset! {try_ms_index});
@@ -411,18 +412,22 @@ where
                                     } else {
                                         // check if ms is try_ms_index
                                         let ms = msg_opt
+                                            .as_ref()
                                             .expect("Failed to unwrap message record")
                                             .milestone_index()
                                             .expect("Unable to find milestone index")
                                             .0;
                                         if ms == try_ms_index {
+                                            let selected_opt = selected_opt.clone();
+                                            let msg_opt = msg_opt.clone().expect("Unable to find message record");
+                                            drop(entry);
                                             // todo, either backpressure solidifier requests using TTL (preferred),
                                             // or wrap MilestoneMessage and Message using arc where we check
                                             // strong_count before pushing message/milestone.
                                             self.push_message_record_to_solidifier(
-                                                msg_opt.expect("Unable to find message record"),
+                                                msg_opt,
                                                 &solidifier_handles,
-                                                selected_opt.clone(),
+                                                selected_opt,
                                             );
                                         } else {
                                             self.push_close_to_solidifier(
@@ -460,7 +465,7 @@ where
     }
     /// Send an error event to the solidifier for a given milestone index
     fn process_failed_requested_request(
-        &self,
+        &mut self,
         message_id: &MessageId,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
     ) {
@@ -599,10 +604,10 @@ where
         let message_id = *msg_record.message_id();
         let solidifier_id = self.solidifier_id(ref_ms.0);
         // check if the message is milestone
-        if let Some(Payload::Milestone(milestone_payload)) = msg_record.message.payload() {
+        if let Some(Payload::Milestone(milestone_payload)) = msg_record.message().payload() {
             // send it as milestone only if the ledger inclusion state not conflicting
             if let LedgerInclusionState::Conflicting = msg_record
-                .inclusion_state
+                .inclusion_state()
                 .expect("Failed to get inclusion state within a message record")
             {
                 // send it as regular message, as it's invalid milestone
@@ -613,7 +618,6 @@ where
                 let milestone_message = msg_record.try_into().expect(
                     "Failed to create milestone message from message record, in order to push it to solidifier",
                 );
-                let milestone_index = milestone_payload.essence().index().0;
                 solidifier_handles.get(&solidifier_id).and_then(|h| {
                     h.send(SolidifierEvent::Milestone(milestone_message, selected.clone()))
                         .ok()

@@ -233,6 +233,9 @@ impl std::convert::TryFrom<MessageRecord> for MilestoneMessage {
 }
 
 impl MilestoneMessage {
+    pub fn new(message: MessageRecord) -> Self {
+        Self { message }
+    }
     /// Returns the message record
     pub fn message(&self) -> &MessageRecord {
         &self.message
@@ -262,5 +265,16 @@ impl MilestoneMessage {
         } else {
             unreachable!("No milestone payload in milestone message")
         }
+    }
+
+    pub fn into_inner(self) -> MessageRecord {
+        self.message
+    }
+}
+
+impl Deref for MilestoneMessage {
+    type Target = MessageRecord;
+    fn deref(&self) -> &Self::Target {
+        &self.message
     }
 }

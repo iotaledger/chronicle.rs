@@ -12,29 +12,28 @@ use crate::{
     MilestoneRangePath,
 };
 use anyhow::anyhow;
-
-use tokio::{
-    sync::mpsc::UnboundedReceiver,
-    task::JoinHandle,
+use bee_message::{
+    address::{
+        Address,
+        Ed25519Address,
+    },
+    output::Output,
+    payload::{
+        transaction::TransactionEssence,
+        Payload,
+    },
+    signature::Signature,
+    unlock_block::UnlockBlock,
 };
-
 use chronicle_storage::access::{
-    Address,
-    Ed25519Address,
-    Essence,
     LedgerInclusionState,
     MilestoneData,
-    Output,
-    Payload,
-    SignatureUnlock,
-    UnlockBlock,
 };
 use chrono::NaiveDate;
 use crypto::hashes::{
     blake2b::Blake2b256,
     Digest,
 };
-
 use datafusion::{
     arrow::{
         array::{
@@ -76,11 +75,13 @@ use tokio::{
     sync::{
         mpsc::{
             unbounded_channel,
+            UnboundedReceiver,
             UnboundedSender,
         },
         Mutex,
         MutexGuard,
     },
+    task::JoinHandle,
 };
 /// Builder for a Reporter.
 pub struct ReporterBuilder {
@@ -167,25 +168,18 @@ pub fn update_report(
 ) -> (u64, bool) {
     let mut processed_milestone_count = 0;
     let mut stop_processing = false;
-    if contained_range.contains(&data.milestone_index()) {
-        let date = chrono::NaiveDateTime::from_timestamp(
-            data.milestone()
-                .ok_or_else(|| anyhow!("No milestone data for {}", data.milestone_index()))
-                .unwrap()
-                .essence()
-                .timestamp() as i64,
-            0,
-        )
-        .date();
+    if contained_range.contains(&data.milestone_index().0) {
+        let date =
+            chrono::NaiveDateTime::from_timestamp(data.milestone_payload().essence().timestamp() as i64, 0).date();
 
         let report = report.entry(date).or_default();
         report.message_count += data.messages().len() as u64;
-        for (metadata, payload) in data.messages().values().filter_map(|f| match f.0.payload() {
-            Some(Payload::Transaction(t)) => Some((&f.1, &**t)),
+        for (message_rec, payload) in data.messages().iter().filter_map(|f| match f.message().payload() {
+            Some(Payload::Transaction(t)) => Some((f, &**t)),
             _ => None,
         }) {
-            let Essence::Regular(regular_essence) = payload.essence();
-            if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Included) {
+            let TransactionEssence::Regular(regular_essence) = payload.essence();
+            if matches!(message_rec.inclusion_state(), Some(LedgerInclusionState::Included)) {
                 report.included_transaction_count += 1;
 
                 for output in regular_essence.outputs() {
@@ -204,14 +198,15 @@ pub fn update_report(
                 }
 
                 for unlock in payload.unlock_blocks().iter() {
-                    if let UnlockBlock::Signature(SignatureUnlock::Ed25519(sig)) = unlock {
+                    if let UnlockBlock::Signature(sig_block) = unlock {
+                        let Signature::Ed25519(sig) = sig_block.signature();
                         let address =
                             Address::Ed25519(Ed25519Address::new(Blake2b256::digest(sig.public_key()).into()));
                         report.total_addresses.insert(address);
                         report.send_addresses.insert(address);
                     }
                 }
-            } else if metadata.ledger_inclusion_state == Some(LedgerInclusionState::Conflicting) {
+            } else if matches!(message_rec.inclusion_state(), Some(LedgerInclusionState::Conflicting)) {
                 report.conflicting_transaction_count += 1;
             }
             for output in regular_essence.outputs() {
@@ -228,7 +223,7 @@ pub fn update_report(
             report.total_transaction_count += 1;
         }
         processed_milestone_count += 1;
-    } else if data.milestone_index() > contained_range.end {
+    } else if data.milestone_index().0 > contained_range.end {
         stop_processing = true;
     }
     return (processed_milestone_count, stop_processing);

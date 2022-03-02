@@ -78,7 +78,7 @@ pub(crate) fn insert_payload<
                     .map(|h| message.milestone_index.unwrap_or_default().0 % h.len() as u32)
                     .unwrap_or_default() as u8;
                 if let Some(solidifier_handle) = solidifier_handles.and_then(|h| h.get(&solidifier_id)) {
-                    let ms_message = MilestoneMessage::new(message.message_id, (&**milestone).clone(), message.clone());
+                    let ms_message = MilestoneMessage::new(message.clone());
                     let _ = solidifier_handle.send(SolidifierEvent::Milestone(ms_message, selected_opt));
                 };
                 insert(

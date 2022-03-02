@@ -32,48 +32,14 @@ impl NftOutputRecord {
             address: *data.address(),
             dust_return_address: data
                 .unlock_conditions()
-                .binary_search_by_key(&StorageDepositReturnUnlockCondition::KIND, UnlockCondition::kind)
-                .ok()
-                .and_then(|idx| {
-                    if let UnlockCondition::StorageDepositReturn(c) = &data.unlock_conditions()[idx] {
-                        Some(*c.return_address())
-                    } else {
-                        None
-                    }
-                }),
-            sender: data
-                .feature_blocks()
-                .binary_search_by_key(&SenderFeatureBlock::KIND, FeatureBlock::kind)
-                .ok()
-                .and_then(|idx| {
-                    if let FeatureBlock::Sender(fb) = &data.feature_blocks()[idx] {
-                        Some(*fb.address())
-                    } else {
-                        None
-                    }
-                }),
-            issuer: data
-                .feature_blocks()
-                .binary_search_by_key(&IssuerFeatureBlock::KIND, FeatureBlock::kind)
-                .ok()
-                .and_then(|idx| {
-                    if let FeatureBlock::Issuer(fb) = &data.feature_blocks()[idx] {
-                        Some(*fb.address())
-                    } else {
-                        None
-                    }
-                }),
+                .storage_deposit_return()
+                .map(|u| *u.return_address()),
+            sender: data.feature_blocks().sender().map(|fb| *fb.address()),
+            issuer: data.feature_blocks().issuer().map(|fb| *fb.address()),
             tag: data
                 .feature_blocks()
-                .binary_search_by_key(&TagFeatureBlock::KIND, FeatureBlock::kind)
-                .ok()
-                .and_then(|idx| {
-                    if let FeatureBlock::Tag(fb) = &data.feature_blocks()[idx] {
-                        Some(String::from_utf8_lossy(fb.tag()).into_owned())
-                    } else {
-                        None
-                    }
-                }),
+                .tag()
+                .map(|fb| String::from_utf8_lossy(fb.tag()).into_owned()),
             data,
         }
     }

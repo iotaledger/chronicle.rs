@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! This module defines the report data structures.
 
-use chronicle_storage::access::Address;
-
+use bee_message::address::Address;
 use chrono::NaiveDate;
 use serde::Serialize;
 use std::collections::{

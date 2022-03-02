@@ -138,7 +138,7 @@ impl Syncer {
                 warn!("Syncer got aborted while sleeping");
                 ActorError::aborted_msg("Syncer got aborted while sleeping")
             })?;
-        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, &self.sync_range, 10).await {
+        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, self.sync_range, 10).await {
             info!("Updated the sync data");
             self.sync_data = sync_data;
             if archiver.is_some() {

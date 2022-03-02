@@ -144,6 +144,7 @@ impl std::convert::TryFrom<MilestoneDataBuilder> for MilestoneDataSearch {
         }
         let milestone_message_id = data
             .milestone()
+            .as_ref()
             .expect("Failed to get milestone from milestone data builder") // unwrap is safe, as this right after valid check.
             .message()
             .message_id();

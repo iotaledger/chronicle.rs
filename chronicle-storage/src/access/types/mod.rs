@@ -552,7 +552,7 @@ impl ColumnDecoder for Bee<Address> {
     {
         Address::try_from_bech32(&String::try_decode_column(slice)?)
             .map_err(|e| anyhow!("{:?}", e))
-            .map(Into::into)
+            .map(|a| a.1.into())
     }
 }
 
@@ -675,6 +675,17 @@ impl MilestoneData {
     /// Get the milestone's messages
     pub fn messages(&self) -> &BTreeSet<MessageRecord> {
         &self.messages
+    }
+
+    pub fn milestone(&self) -> &MilestoneMessage {
+        &self.milestone
+    }
+
+    pub fn milestone_payload(&self) -> &MilestonePayload {
+        match self.milestone().message().payload().expect("Milestone message is not a milestone") {
+            Payload::Milestone(ref payload) => &**payload,
+            _ => panic!("Milestone message is not a milestone"),
+        }
     }
 }
 

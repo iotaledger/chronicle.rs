@@ -148,7 +148,7 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
         // fetch sync data from the keyspace
         if self.resume {
             let sync_range = SyncRange { from, to };
-            self.sync_data = SyncData::try_fetch(&self.default_keyspace, &sync_range, 10)
+            self.sync_data = SyncData::try_fetch(&self.default_keyspace, sync_range, 10)
                 .await
                 .map_err(|e| {
                     error!("Unable to fetch SyncData {}", e);
