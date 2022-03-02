@@ -74,11 +74,11 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
         // try to create directory first
         if let Err(e) = tokio::fs::create_dir(self.dir_path.clone().into_boxed_path()).await {
             if e.kind() != std::io::ErrorKind::AlreadyExists {
-                alert!("Unable to create log directory, error: {}", e).await.ok();
+                /*alert!("Unable to create log directory, error: {}", e).await.ok();
                 return Err(ActorError::exit_msg(format!(
                     "Unable to create log directory, error: {}",
                     e
-                )));
+                )));*/
             }
         };
         Ok(())
@@ -455,11 +455,11 @@ impl LogFile {
             Err(e) => {
                 // Check if the error was because of disk overflow
                 if let std::io::ErrorKind::WriteZero = e.kind() {
-                    alert!(
-                        "Possible disk overflow occurred while creating archive file {}",
-                        filename
-                    )
-                    .await?;
+                    // alert!(
+                    // "Possible disk overflow occurred while creating archive file {}",
+                    // filename
+                    // )
+                    // .await?;
                 }
                 bail!("Unable to create log file: {}, error: {}", filename, e);
             }
@@ -500,11 +500,11 @@ impl LogFile {
             self.maybe_corrupted = true;
             // Check if the error was because of disk overflow
             if let std::io::ErrorKind::WriteZero = e.kind() {
-                alert!(
+                /*alert!(
                     "Possible disk overflow occurred while writing to archive file {}",
                     self.filename
                 )
-                .await?;
+                .await?;*/
             }
             bail!(
                 "Unable to append milestone data line into the log file: {}, error: {}",

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use bee_message::Message;
 
 /////////////////// Messages tables ////////////////////////////
 impl Insert<MessageRecord, ()> for ChronicleKeyspace {
