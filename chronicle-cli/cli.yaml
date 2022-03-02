@@ -259,3 +259,28 @@ subcommands:
             about: >-
               Validate log files without modifying them. This will perform various checks and output any issues
               as well as whether or not they can be handled by the merge process.
+        - report:
+            short: r
+            about: >-
+              Generate a CSV of analytics data from a range of milestones.
+            args:
+              - range:
+                  takes_value: true
+                  required: false
+                  value_name: RANGE
+                  help: >-
+                    The range of milestone indexes to use. Can be a single milestone (ex. 100) 
+                    or any two numbers separated by anything (ex. 100-1000, 100..1000, 100 to 1000 will all work).
+              - directory:
+                  short: d
+                  long: dir
+                  takes_value: true
+                  value_name: DIR
+                  help: The directory containing archive files to import. Defaults to the configured output directory.
+              - tasks:
+                  short: t
+                  long: tasks
+                  required: false
+                  takes_value: true
+                  value_name: NUM_TASKS
+                  help: The number of concurrent tasks to use when analyzing reports.
