@@ -47,10 +47,8 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
     async fn init(&mut self, rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
         log::info!("{:?} is initializing", &rt.service().directory());
         register_metrics();
-        let keyspaces: HashMap<String, PartitionConfig> = self.keyspaces.clone().into_iter().collect();
         let rocket = backstage::prefab::rocket::RocketServer::new(
             super::listener::construct_rocket()
-                .manage(keyspaces)
                 .ignite()
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?,

@@ -2,29 +2,35 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bee_message::{
+    address::Address,
     input::Input,
-    prelude::{
-        MilestoneIndex,
+    milestone::MilestoneIndex,
+    output::{
         Output,
         OutputId,
     },
+    payload::transaction::TransactionId,
     Message,
+    MessageId,
 };
-use bee_rest_api::types::dtos::{
-    InputDto,
-    OutputDto,
-    PayloadDto,
-    UnlockBlockDto,
+use bee_rest_api::types::{
+    dtos::{
+        InputDto,
+        OutputDto,
+        PayloadDto,
+        UnlockBlockDto,
+    },
+    responses::MessageMetadataResponse,
 };
 use chronicle_storage::access::{
-    AddressRecord,
-    AnalyticData,
-    IndexationRecord,
     InputData,
     LedgerInclusionState,
-    MessageMetadata,
+    LegacyOutputRecord,
+    MsAnalyticsRecord,
+    MsRangeId,
+    OutputType,
     ParentRecord,
-    Partitioned,
+    TagRecord,
     TransactionRes,
     UnlockRes,
 };
@@ -37,12 +43,13 @@ use std::{
         Borrow,
         Cow,
     },
+    collections::VecDeque,
     convert::TryFrom,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum ListenerResponse {
+pub(crate) enum ListenerResponseV1 {
     /// Response of GET /info
     Info {
         name: String,
@@ -54,54 +61,37 @@ pub(crate) enum ListenerResponse {
     /// and GET /api/<keyspace>/transactions/<transaction_id>/included-message
     Message {
         #[serde(rename = "networkId")]
-        network_id: String,
+        network_id: Option<String>,
+        #[serde(rename = "protocolVersion")]
+        protocol_version: u8,
         #[serde(rename = "parentMessageIds")]
-        parents: Vec<String>,
+        parents: Vec<MessageId>,
         payload: Option<PayloadDto>,
         nonce: String,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>/metadata
-    MessageMetadata {
-        #[serde(rename = "messageId")]
-        message_id: String,
-        #[serde(rename = "parentMessageIds")]
-        parent_message_ids: Vec<String>,
-        #[serde(rename = "isSolid")]
-        is_solid: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "referencedByMilestoneIndex")]
-        referenced_by_milestone_index: Option<u32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "ledgerInclusionState")]
-        ledger_inclusion_state: Option<LedgerInclusionState>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "shouldPromote")]
-        should_promote: Option<bool>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "shouldReattach")]
-        should_reattach: Option<bool>,
-    },
+    MessageMetadata(MessageMetadataResponse),
     /// Response of GET /api/<keyspace>/messages/<message_id>/children
     MessageChildren {
         #[serde(rename = "messageId")]
-        message_id: String,
+        message_id: MessageId,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
         #[serde(rename = "childrenMessageIds")]
-        children_message_ids: Vec<String>,
-        state: Option<String>,
+        children_message_ids: Vec<MessageId>,
+        paging_state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>/children[?expanded=true]
     MessageChildrenExpanded {
         #[serde(rename = "messageId")]
-        message_id: String,
+        message_id: MessageId,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
         #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<Record>,
-        state: Option<String>,
+        paging_state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?<index>
     MessagesForIndex {
@@ -110,7 +100,7 @@ pub(crate) enum ListenerResponse {
         max_results: usize,
         count: usize,
         #[serde(rename = "messageIds")]
-        message_ids: Vec<String>,
+        message_ids: Vec<MessageId>,
         state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?<index>[&expanded=true]
@@ -128,7 +118,7 @@ pub(crate) enum ListenerResponse {
         // The type of the address (1=Ed25519).
         #[serde(rename = "addressType")]
         address_type: u8,
-        address: String,
+        address: Address,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
@@ -141,7 +131,7 @@ pub(crate) enum ListenerResponse {
         // The type of the address (1=Ed25519).
         #[serde(rename = "addressType")]
         address_type: u8,
-        address: String,
+        address: Address,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
@@ -152,9 +142,9 @@ pub(crate) enum ListenerResponse {
     /// Response of GET /api/<keyspace>/outputs/<output_id>
     Output {
         #[serde(rename = "messageId")]
-        message_id: String,
+        message_id: MessageId,
         #[serde(rename = "transactionId")]
-        transaction_id: String,
+        transaction_id: TransactionId,
         #[serde(rename = "outputIndex")]
         output_index: u16,
         #[serde(rename = "isSpent")]
@@ -168,45 +158,62 @@ pub(crate) enum ListenerResponse {
         transactions: Vec<Transaction>,
         state: Option<String>,
     },
+    TransactionHistory {
+        transactions: Vec<Transfer>,
+        state: Option<String>,
+    },
     /// Response of GET /api/<keyspace>/milestone/<index>
     Milestone {
         #[serde(rename = "index")]
-        milestone_index: u32,
+        milestone_index: MilestoneIndex,
         #[serde(rename = "messageId")]
         message_id: String,
         timestamp: u64,
     },
     /// Response of GET /api/<keyspace>/analytics[?start=<u32>&end=<u32>]
-    Analytics { ranges: Vec<AnalyticData> },
+    Analytics { ranges: Vec<MsAnalyticsRecord> },
 }
 
-impl TryFrom<Message> for ListenerResponse {
+impl TryFrom<Message> for ListenerResponseV1 {
     type Error = Cow<'static, str>;
 
     fn try_from(message: Message) -> Result<Self, Self::Error> {
-        Ok(ListenerResponse::Message {
-            network_id: message.network_id().to_string(),
-            parents: message.parents().iter().map(|p| p.to_string()).collect(),
-            payload: message.payload().as_ref().map(Into::into),
+        Ok(ListenerResponseV1::Message {
+            network_id: None,
+            protocol_version: message.protocol_version(),
+            parents: message.parents().iter().map(|p| *p).collect(),
+            payload: message.payload().map(Into::into),
             nonce: message.nonce().to_string(),
         })
     }
 }
 
-impl From<MessageMetadata> for ListenerResponse {
-    fn from(metadata: MessageMetadata) -> Self {
-        ListenerResponse::MessageMetadata {
-            message_id: metadata.message_id.to_string(),
-            parent_message_ids: metadata
-                .parent_message_ids
-                .into_iter()
-                .map(|id| id.to_string())
-                .collect(),
-            is_solid: metadata.is_solid,
-            referenced_by_milestone_index: metadata.referenced_by_milestone_index,
-            ledger_inclusion_state: metadata.ledger_inclusion_state,
-            should_promote: metadata.should_promote,
-            should_reattach: metadata.should_reattach,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Transfer {
+    #[serde(rename = "outputId")]
+    pub output_id: OutputId,
+    #[serde(rename = "outputType")]
+    pub output_type: OutputType,
+    #[serde(rename = "isUsed")]
+    pub is_used: bool,
+    #[serde(rename = "inclusionState")]
+    pub inclusion_state: Option<LedgerInclusionState>,
+    #[serde(rename = "messageId")]
+    pub message_id: MessageId,
+    pub amount: Option<u64>,
+    pub address: Address,
+}
+
+impl From<LegacyOutputRecord> for Transfer {
+    fn from(rec: LegacyOutputRecord) -> Self {
+        Self {
+            output_id: rec.output_id,
+            output_type: rec.output_type,
+            is_used: rec.is_used as u8 != 0,
+            inclusion_state: rec.inclusion_state,
+            message_id: rec.message_id,
+            amount: rec.amount,
+            address: rec.address,
         }
     }
 }
@@ -220,34 +227,34 @@ pub(crate) struct Record {
     pub milestone_index: u32,
 }
 
-impl TryFrom<Partitioned<AddressRecord>> for Record {
+impl TryFrom<LegacyOutputRecord> for Record {
     type Error = anyhow::Error;
 
-    fn try_from(record: Partitioned<AddressRecord>) -> Result<Self, Self::Error> {
+    fn try_from(record: LegacyOutputRecord) -> Result<Self, Self::Error> {
         Ok(Record {
-            id: OutputId::new(record.transaction_id, record.index)?.to_string(),
-            inclusion_state: record.ledger_inclusion_state,
-            milestone_index: record.milestone_index(),
+            id: record.output_id.to_string(),
+            inclusion_state: record.inclusion_state,
+            milestone_index: record.partition_data.milestone_index.0,
         })
     }
 }
 
-impl From<Partitioned<IndexationRecord>> for Record {
-    fn from(record: Partitioned<IndexationRecord>) -> Self {
+impl From<TagRecord> for Record {
+    fn from(record: TagRecord) -> Self {
         Record {
             id: record.message_id.to_string(),
-            inclusion_state: record.ledger_inclusion_state,
-            milestone_index: record.milestone_index(),
+            inclusion_state: record.inclusion_state,
+            milestone_index: record.partition_data.milestone_index.0,
         }
     }
 }
 
-impl From<Partitioned<ParentRecord>> for Record {
-    fn from(record: Partitioned<ParentRecord>) -> Self {
+impl From<ParentRecord> for Record {
+    fn from(record: ParentRecord) -> Self {
         Record {
             id: record.message_id.to_string(),
-            inclusion_state: record.ledger_inclusion_state,
-            milestone_index: record.milestone_index(),
+            inclusion_state: record.inclusion_state,
+            milestone_index: record.milestone_index.unwrap_or_default().0,
         }
     }
 }
@@ -256,10 +263,10 @@ impl From<Partitioned<ParentRecord>> for Record {
 pub(crate) struct Transaction {
     /// The created output's message id
     #[serde(rename = "messageId")]
-    pub message_id: String,
+    pub message_id: MessageId,
     /// The confirmation timestamp
     #[serde(rename = "milestoneIndex")]
-    pub milestone_index: Option<u32>,
+    pub milestone_index: Option<MilestoneIndex>,
     /// The output
     pub outputs: Vec<MaybeSpentOutput>,
     /// The inputs, if they exist
@@ -269,8 +276,8 @@ pub(crate) struct Transaction {
 impl From<TransactionRes> for Transaction {
     fn from(o: TransactionRes) -> Self {
         Self {
-            message_id: o.message_id.to_string(),
-            milestone_index: o.milestone_index.map(|ms| ms.0),
+            message_id: o.message_id,
+            milestone_index: o.milestone_index,
             outputs: o.outputs.into_iter().map(Into::into).collect(),
             inputs: o
                 .inputs
@@ -292,14 +299,14 @@ impl From<TransactionRes> for Transaction {
 pub(crate) struct MaybeSpentOutput {
     pub output: OutputDto,
     #[serde(rename = "spendingMessageId")]
-    pub spending_message_id: Option<String>,
+    pub spending_message_id: Option<MessageId>,
 }
 
 impl From<(Output, Option<UnlockRes>)> for MaybeSpentOutput {
     fn from((o, u): (Output, Option<UnlockRes>)) -> Self {
         Self {
             output: o.borrow().into(),
-            spending_message_id: u.map(|u| u.message_id.to_string()),
+            spending_message_id: u.map(|u| u.message_id),
         }
     }
 }
@@ -307,14 +314,14 @@ impl From<(Output, Option<UnlockRes>)> for MaybeSpentOutput {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Unlock {
     #[serde(rename = "messageId")]
-    pub message_id: String,
+    pub message_id: MessageId,
     pub block: UnlockBlockDto,
 }
 
 impl From<UnlockRes> for Unlock {
     fn from(u: UnlockRes) -> Self {
         Unlock {
-            message_id: u.message_id.to_string(),
+            message_id: u.message_id,
             block: u.block.borrow().into(),
         }
     }
@@ -324,28 +331,15 @@ impl From<UnlockRes> for Unlock {
 pub(crate) struct StateData {
     #[serde(rename = "pagingState")]
     pub paging_state: Option<Vec<u8>>,
-    #[serde(rename = "lastPartitionId")]
-    pub last_partition_id: Option<u16>,
-    #[serde(rename = "lastMilestoneIndex")]
-    pub last_milestone_index: Option<u32>,
     #[serde(rename = "partitionIds")]
-    pub partition_ids: Vec<(MilestoneIndex, u16)>,
+    pub ms_range_ids: VecDeque<MsRangeId>,
 }
 
-impl From<(Option<Vec<u8>>, Option<u16>, Option<u32>, Vec<(MilestoneIndex, u16)>)> for StateData {
-    fn from(
-        (paging_state, last_partition_id, last_milestone_index, partition_ids): (
-            Option<Vec<u8>>,
-            Option<u16>,
-            Option<u32>,
-            Vec<(MilestoneIndex, u16)>,
-        ),
-    ) -> Self {
+impl From<(Option<Vec<u8>>, VecDeque<MsRangeId>)> for StateData {
+    fn from((paging_state, ms_range_ids): (Option<Vec<u8>>, VecDeque<MsRangeId>)) -> Self {
         Self {
             paging_state,
-            last_partition_id,
-            last_milestone_index,
-            partition_ids,
+            ms_range_ids,
         }
     }
 }

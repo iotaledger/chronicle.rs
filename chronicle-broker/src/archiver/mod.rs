@@ -4,13 +4,15 @@
 use super::*;
 use crate::syncer::Ascending;
 use anyhow::bail;
-use bee_message::prelude::MilestoneIndex;
+use bee_message::milestone::MilestoneIndex;
 use chronicle_common::alert;
 use chronicle_storage::access::ChronicleKeyspace;
 use std::{
     collections::BinaryHeap,
     convert::TryFrom,
+    io::BufRead,
     path::PathBuf,
+    sync::Arc,
 };
 use tokio::{
     fs::{
@@ -96,26 +98,29 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                         };
                     }
                 }
-                ArchiverEvent::MilestoneData(milestone_data, opt_upper_limit) => {
+                ArchiverEvent::MilestoneData(milestone_data, created_by, opt_upper_limit) => {
                     info!(
                         "Archiver received milestone data for index: {}, upper_ms_limit: {:?}",
                         milestone_data.milestone_index(),
                         opt_upper_limit
                     );
                     // check if it belongs to new incoming data
-                    match milestone_data.created_by() {
+                    match created_by {
                         CreatedBy::Incoming | CreatedBy::Expected => {
                             self.milestones_data.push(Ascending::new(milestone_data));
                             while let Some(ms_data) = self.milestones_data.pop() {
                                 let ms_index = ms_data.milestone_index();
-                                if self.next.eq(&ms_index) {
-                                    if let Err(e) = self.handle_milestone_data(ms_data.into(), opt_upper_limit).await {
+                                if self.next == ms_index.0 {
+                                    if let Err(e) = self
+                                        .handle_milestone_data(ms_data.into(), created_by, opt_upper_limit)
+                                        .await
+                                    {
                                         error!("{}", e);
                                         self.finish_in_progress().await;
                                         return Err(ActorError::exit(e));
                                     };
                                     self.next += 1;
-                                } else if ms_index > self.next {
+                                } else if ms_index.0 > self.next {
                                     // Safety check to prevent potential rare race condition
                                     // check if we buffered too much.
                                     if self.milestones_data.len() > MAX_MILESTONE_DATA_LEN {
@@ -127,15 +132,16 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                                             return Err(ActorError::exit(e));
                                         };
                                         // this supposed to create new file
-                                        if let Err(e) =
-                                            self.handle_milestone_data(ms_data.into(), opt_upper_limit).await
+                                        if let Err(e) = self
+                                            .handle_milestone_data(ms_data.into(), created_by, opt_upper_limit)
+                                            .await
                                         {
                                             error!("{}", e);
                                             self.finish_in_progress().await;
                                             return Err(ActorError::exit(e));
                                         }
                                         // reset next
-                                        self.next = ms_index + 1;
+                                        self.next = ms_index.0 + 1;
                                     } else {
                                         self.milestones_data.push(ms_data);
                                         break;
@@ -145,20 +151,23 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
                                 }
                             }
                         }
-                        CreatedBy::Syncer | CreatedBy::Exporter => {
+                        CreatedBy::Syncer | CreatedBy::Exporter | CreatedBy::Importer => {
                             // to prevent overlap, we ensure to only handle syncer milestone_data when it's less than
                             // next
-                            if milestone_data.milestone_index() < self.next {
+                            if milestone_data.milestone_index().0 < self.next {
                                 // handle syncer milestone data;
-                                if let Err(e) = self.handle_milestone_data(milestone_data, opt_upper_limit).await {
+                                if let Err(e) = self
+                                    .handle_milestone_data(milestone_data, created_by, opt_upper_limit)
+                                    .await
+                                {
                                     error!("{}", e);
                                     self.finish_in_progress().await;
                                     return Err(ActorError::exit(e));
                                 }
                                 // it overlaps with the incoming flow.
-                            } else if milestone_data.milestone_index() == self.next {
+                            } else if milestone_data.milestone_index().0 == self.next {
                                 // we handle the milestone_data from syncer as Incoming without upper_ms_limit
-                                if let Err(e) = self.handle_milestone_data(milestone_data, None).await {
+                                if let Err(e) = self.handle_milestone_data(milestone_data, created_by, None).await {
                                     error!("{}", e);
                                     self.finish_in_progress().await;
                                     return Err(ActorError::exit(e));
@@ -199,10 +208,12 @@ impl Archiver {
     async fn handle_milestone_data(
         &mut self,
         milestone_data: MilestoneData,
+        created_by: CreatedBy,
         mut opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
-        let milestone_index = milestone_data.milestone_index();
-        let mut milestone_data_json = serde_json::to_string(&milestone_data).unwrap();
+        let milestone_index = milestone_data.milestone_index().0;
+        let mut milestone_data_json = serde_json::to_string(&milestone_data)
+            .map_err(|e| anyhow::anyhow!("Unable to convert milestone data to json string, error: {}", e))?;
         milestone_data_json.push('\n');
         let milestone_data_line: Vec<u8> = milestone_data_json.into();
 
@@ -233,7 +244,7 @@ impl Archiver {
                 );
                 // check if the milestone_index already belongs to an existing processed logs
                 let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
-                if not_processed || milestone_data.created_by() == &CreatedBy::Exporter {
+                if not_processed || created_by == CreatedBy::Exporter {
                     // create new file
                     info!(
                         "Creating new log file starting from milestone index: {}",
@@ -247,7 +258,7 @@ impl Archiver {
         } else {
             // check if the milestone_index already belongs to an existing processed files/ranges;
             let not_processed = !self.processed.iter().any(|r| r.contains(&milestone_index));
-            if not_processed || milestone_data.created_by() == &CreatedBy::Exporter {
+            if not_processed || created_by == CreatedBy::Exporter {
                 info!(
                     "Creating new log file starting from milestone index: {}",
                     milestone_index
@@ -274,7 +285,8 @@ impl Archiver {
         milestone_data_line: &Vec<u8>,
         opt_upper_limit: Option<u32>,
     ) -> anyhow::Result<()> {
-        let mut log_file = LogFile::create(&self.dir_path, milestone_index, opt_upper_limit).await?;
+        let mut log_file =
+            LogFile::create(&self.dir_path, milestone_index, opt_upper_limit, Default::default()).await?;
         Self::append(&mut log_file, milestone_data_line, milestone_index, &self.keyspace, 5).await?;
         // check if we hit an upper_ms_limit, as this is possible when the log_file only needs 1 milestone data.
         if log_file.upper_ms_limit == log_file.to_ms_index {
@@ -329,7 +341,7 @@ impl Archiver {
         // insert into the DB, without caring about the response
         let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
         keyspace
-            .insert(&"permanode".to_string(), &synced_record)
+            .insert(&synced_record, &())
             .consistency(Consistency::Quorum)
             .build()?
             .worker()
@@ -364,7 +376,7 @@ type UpperLimit = u32;
 /// Archiver events
 pub enum ArchiverEvent {
     /// Milestone data to be archived
-    MilestoneData(MilestoneData, Option<UpperLimit>),
+    MilestoneData(MilestoneData, CreatedBy, Option<UpperLimit>),
     /// Close the milestone with given index
     Close(u32),
     /// Shutdown the archiver
@@ -374,6 +386,40 @@ pub enum ArchiverEvent {
 impl ShutdownEvent for ArchiverEvent {
     fn shutdown_event() -> Self {
         Self::Shutdown
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(u8)]
+pub enum LogFileVersion {
+    /// Cpt2 log file without milestone message id
+    V1 = 0,
+    /// Cpt2 log file with milestone message id
+    V2 = 1,
+}
+
+impl Default for LogFileVersion {
+    fn default() -> Self {
+        Self::V2
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum LogFileRecord {
+    /// Cpt2 log file without milestone message id
+    V1(OldMilestoneData),
+    /// Cpt2 log file with milestone message id
+    V2(MilestoneData),
+}
+
+impl LogFileRecord {
+    /// Get the version of this log file record
+    pub fn version(&self) -> LogFileVersion {
+        match self {
+            Self::V1(_) => LogFileVersion::V1,
+            Self::V2(_) => LogFileVersion::V2,
+        }
     }
 }
 
@@ -391,6 +437,7 @@ pub struct LogFile {
     /// Identifier if it had io error
     maybe_corrupted: bool,
     finished: bool,
+    version: LogFileVersion,
 }
 
 impl LogFile {
@@ -399,6 +446,7 @@ impl LogFile {
         dir_path: &PathBuf,
         milestone_index: u32,
         opt_upper_limit: Option<u32>,
+        version: LogFileVersion,
     ) -> anyhow::Result<LogFile> {
         let filename = format!("{}.part", milestone_index);
         let file_path = dir_path.join(&filename);
@@ -425,6 +473,7 @@ impl LogFile {
             file: BufReader::new(file),
             maybe_corrupted: false,
             finished: false,
+            version,
         })
     }
 
@@ -488,11 +537,21 @@ impl LogFile {
                     self.finished = true;
                     return Ok(None);
                 }
-                let milestone_data: MilestoneData = serde_json::from_str(&milestone_data_line).map_err(|e| {
-                    self.maybe_corrupted = true;
-                    let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
-                })?;
+                let milestone_data = match self.version {
+                    LogFileVersion::V1 => serde_json::from_str::<OldMilestoneData>(&milestone_data_line)
+                        .map_err(|e| anyhow!(e))
+                        .and_then(|d| d.try_into())
+                        .map_err(|e| {
+                            self.maybe_corrupted = true;
+                            let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
+                            std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
+                        })?,
+                    LogFileVersion::V2 => serde_json::from_str::<MilestoneData>(&milestone_data_line).map_err(|e| {
+                        self.maybe_corrupted = true;
+                        let error_fmt = format!("Unable to deserialize milestone data bytes. Error: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, error_fmt)
+                    })?,
+                };
                 self.len -= milestone_data_line.len() as u64;
                 Ok(Some(milestone_data))
             }
@@ -540,6 +599,15 @@ impl TryFrom<PathBuf> for LogFile {
             let (from_ms_index, to_ms_index) = (split[0].parse()?, split[1].parse()?);
             let std_file = std::fs::OpenOptions::new().write(false).read(true).open(file_path)?;
             let len = std_file.metadata()?.len();
+            let mut reader = std::io::BufReader::new(&std_file).lines();
+            let version = reader
+                .next()
+                .transpose()
+                .ok()
+                .flatten()
+                .and_then(|l| serde_json::from_str::<LogFileRecord>(&l).ok())
+                .map(|r| r.version())
+                .unwrap_or_default();
             let file = tokio::fs::File::from_std(std_file);
             Ok(LogFile {
                 len,
@@ -550,6 +618,7 @@ impl TryFrom<PathBuf> for LogFile {
                 file: BufReader::new(file),
                 maybe_corrupted: false,
                 finished: false,
+                version,
             })
         } else {
             anyhow::bail!("File path does not point to a file!");

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <style>
+    </style>
+
+    <title>Active IOTA Addresses</title>
+</head>
+
+<body class="text-center">
+    <div class="chart-container" style="position: relative; height:40vh; width:80vw">
+        <canvas id="myChart"></canvas>
+    </div>
+</body>
+
+<script src="https://code.jquery.com/jquery-3.6.0.slim.min.js"
+    integrity="sha256-u7e5khyithlIdTpu22PHhENmPcRdFiHRjhAuHcs05RI="
+    crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+<script type="text/javascript">
+    $(document).ready(function() {
+        const myChart = new Chart($('#myChart'), {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Active IOTA Addresses',
+                    borderColor: 'rgb(153, 102, 255)',
+                    backgroundColor: 'rgb(202, 175, 255)',
+                    data: [{% for pt in data %} { 
+                        date: "{{pt.date}}", 
+                        total_addresses: {{pt.total_addresses}},
+                        send_addresses: {{pt.send_addresses}},
+                        recv_addresses: {{pt.recv_addresses}},
+                    }, {% endfor %}]
+                }]
+            },
+            options: {
+                parsing: {
+                    xAxisKey: 'date',
+                    yAxisKey: 'total_addresses'
+                },
+                radius: 0,
+                scales: {
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: "Active Addresses",
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false,
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            afterBody: function(ctx) {
+                                return [
+                                    `Sending Addresses: ${ctx[0].raw.send_addresses}`,
+                                    `Receiving Addresses: ${ctx[0].raw.recv_addresses}`
+                                ];
+                            }
+                        },
+                        usePointStyle: true,
+                    }
+                },
+            }
+        });
+
+    });
+</script>
+
+</html>

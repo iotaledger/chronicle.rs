@@ -2,7 +2,7 @@
 name = "chronicle-common"
 version = "0.4.0"
 authors = ["IOTA Stiftung"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 name = "chronicle_common"
@@ -13,23 +13,12 @@ path = "src/lib.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-ron = "0.6"
+ron = "0.7"
 reqwest = { version = "0.11", features = ["json"] }
 log = "0.4"
 url = { version = "2.2", features = ["serde"] }
-rand = "0.8"
-futures = "0.3.13"
-prometheus = "0.12"
+prometheus = "0.13"
 lazy_static = "1.4"
 tokio = "1.14"
-glob = "0.3"
 anyhow = "1.0"
-maplit = "1.0"
 arc-swap = "1.5.0"
-
-[dependencies.paho-mqtt]
-version = "0.9"
-default-features = false
-features = [
-    "bundled"
-]

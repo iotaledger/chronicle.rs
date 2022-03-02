@@ -10,8 +10,12 @@ use super::{
     *,
 };
 use backstage::core::MqttChannel;
+use bee_rest_api::types::responses::MessageMetadataResponse;
 use futures::stream::StreamExt;
-use std::time::Duration;
+use std::{
+    str::FromStr,
+    time::Duration,
+};
 
 #[async_trait]
 impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
@@ -57,7 +61,7 @@ impl<T: Topic> ChannelBuilder<MqttChannel> for Mqtt<T> {
             ActorError::restart(e, None)
         })?;
         info!("Subscribed AsyncClient: {}, topic: {}", &self.url.as_str(), T::name());
-        let mqtt_channel = MqttChannel::new(client, self.stream_capacity, stream);
+        let mqtt_channel = MqttChannel::new(client, stream);
         Ok(mqtt_channel)
     }
 }
@@ -112,8 +116,8 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
         log::info!("{:?} is running", &rt.service().directory());
         while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
             if let Some(msg) = msg_opt {
-                if let Ok(msg) = Message::unpack(&mut msg.payload()) {
-                    let (message_id, _) = msg.id();
+                if let Ok(msg) = Message::unpack_verified(&mut msg.payload()) {
+                    let message_id = msg.id();
                     // partitioning based on first byte of the message_id
                     let collector_partition_id = self.partitioner.partition_id(&message_id);
                     if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
@@ -130,7 +134,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
 }
 
 #[async_trait]
-impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadata> {
+impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadataResponse> {
     type Data = CollectorHandles;
     type Channel = MqttChannel;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
@@ -140,9 +144,11 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadata> {
         log::info!("{:?} is running", &rt.service().directory());
         while let Some(msg_ref_opt) = rt.inbox_mut().stream().next().await {
             if let Some(msg_ref) = msg_ref_opt {
-                if let Ok(msg_ref) = serde_json::from_str::<MessageMetadata>(&msg_ref.payload_str()) {
+                if let Ok(msg_ref) = serde_json::from_str::<MessageMetadataResponse>(&msg_ref.payload_str()) {
                     // partitioning based on first byte of the message_id
-                    let collector_partition_id = self.partitioner.partition_id(&msg_ref.message_id);
+                    let collector_partition_id = self
+                        .partitioner
+                        .partition_id(&MessageId::from_str(&msg_ref.message_id).unwrap());
                     if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
                         collector_handle.send(CollectorEvent::MessageReferenced(msg_ref)).ok();
                     }
@@ -211,7 +217,7 @@ impl Topic for Message {
     }
 }
 
-impl Topic for MessageMetadata {
+impl Topic for MessageMetadataResponse {
     fn name() -> &'static str {
         "messages/referenced"
     }

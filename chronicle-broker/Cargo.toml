@@ -2,7 +2,7 @@
 name = "chronicle-broker"
 version = "0.3.0"
 authors = ["IOTA Stiftung"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 name = "chronicle_broker"
@@ -11,30 +11,32 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common", optional = true }
 chronicle-storage = { path = "../chronicle-storage" }
-chronicle-filter = { path = "../chronicle-filter", optional = true }
 backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", optional = true, features = ["paho-mqtt"] }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 log = { version = "0.4", optional = true }
-tokio-tungstenite = { version = "0.16", optional = true }
 reqwest = { version = "0.11", features = ["json"], optional = true }
 futures = { version = "0.3", optional = true }
 async-trait = { version = "0.1", optional = true }
-lru = { version = "0.6", optional = true }
+lru = { version = "0.7", optional = true }
 rand = { version = "0.8", optional = true }
 url = { version = "2.2", features = ["serde"] }
-bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "dev", optional = true }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "dev", optional = true }
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "dev", features = ["serde"] }
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"], optional = true }
+bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
 hex = { version = "0.4", optional = true }
 anyhow = { version = "1.0", optional = true }
 tokio = { version = "1.15", optional = true }
-paho-mqtt = { version = "0.9", default-features = false, features = ["bundled"], optional = true }
 thiserror = { version = "1.0" }
 indicatif = { version = "0.16", optional = true }
 glob = {version = "0.3", optional = true }
-async-recursion = "0.3.2"
+async-recursion = "1.0"
+iota-crypto = "0.9.1"
+chrono = "0.4.19"
+pin-project-lite = "0.2.8"
+packable = { version = "0.2", features = [ "io", "std", "usize" ] }
+wildmatch = "2.1"
+linked-hash-map = "0.5"
 
 [features]
 default = ["merge"]
@@ -64,23 +66,18 @@ analytic = [
 ]
 application = [
     "chronicle-common",
-    "chronicle-filter",
-    "backstage",
+    "backstage/tungstenite",
     "scylla-rs",
     "serde_json",
     "log",
-    "tokio-tungstenite",
     "reqwest",
     "futures",
     "async-trait",
     "lru",
     "rand",
-    "bee-common",
     "bee-rest-api",
     "hex",
     "anyhow",
     "tokio/full",
-    "paho-mqtt",
-    "sync"
+    "sync",
 ]
-filter = ["chronicle-filter"]

@@ -8,3 +8,5 @@
 pub mod access;
 /// Defines keyspace implementations
 pub mod keyspaces;
+
+pub use bee_tangle::ConflictReason;

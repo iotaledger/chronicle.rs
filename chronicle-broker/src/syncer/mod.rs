@@ -14,6 +14,7 @@ use super::{
 use chronicle_storage::keyspaces::ChronicleKeyspace;
 use std::{
     ops::Deref,
+    sync::Arc,
     time::Duration,
 };
 pub(crate) type SyncerHandle = AbortableUnboundedHandle<SyncerEvent>;
@@ -137,7 +138,7 @@ impl Syncer {
                 warn!("Syncer got aborted while sleeping");
                 ActorError::aborted_msg("Syncer got aborted while sleeping")
             })?;
-        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, &self.sync_range, 10).await {
+        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, self.sync_range, 10).await {
             info!("Updated the sync data");
             self.sync_data = sync_data;
             if archiver.is_some() {
@@ -173,11 +174,15 @@ impl Syncer {
             // check if we could send the next expected milestone_index
             while let Some(ms_data) = self.milestones_data.pop() {
                 let ms_index = ms_data.milestone_index();
-                if self.next.eq(&ms_index) {
+                if self.next == ms_index.0 {
                     // push it to archiver
                     archiver_handle.as_ref().and_then(|h| {
-                        h.send(ArchiverEvent::MilestoneData(ms_data.into(), upper_ms_limit))
-                            .ok()
+                        h.send(ArchiverEvent::MilestoneData(
+                            ms_data.into(),
+                            CreatedBy::Syncer,
+                            upper_ms_limit,
+                        ))
+                        .ok()
                     });
                     self.next += 1;
                 } else {
@@ -364,7 +369,7 @@ impl Syncer {
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
     ) -> ActorResult<()> {
         // start from the lowest gap
-        if let Some(mut gap) = self.sync_data.take_lowest_gap() {
+        if let Some(gap) = self.sync_data.take_lowest_gap() {
             // ensure gap.end != i32::MAX
             if !gap.end.eq(&(i32::MAX as u32)) {
                 info!("Filling the gap {:?}", gap);
