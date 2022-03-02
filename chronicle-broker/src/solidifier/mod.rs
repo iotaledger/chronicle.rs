@@ -306,8 +306,8 @@ impl<T: FilterBuilder> Solidifier<T> {
         let milestone_data = self
             .milestones_data
             .remove(&milestone_index)
-            .expect("Expected milestone data for milestone_index");
-        let created_by = milestone_data.created_by().clone();
+            .ok_or_else(|| anyhow!("Expected milestone data for milestone_index"))?;
+        let created_by = *milestone_data.created_by();
         // uda process
         let milestone_index = milestone_data.milestone_index();
         let milestone_data = self
@@ -339,8 +339,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         let milestone_data = self
             .milestones_data
             .remove(&milestone_index)
-            .expect("Expected milestone data for milestone_index");
-        let created_by = milestone_data.created_by().clone();
+            .ok_or_else(|| anyhow!("Expected milestone data for milestone_index"))?;
         // uda process
         let milestone_data = self
             .selective_builder

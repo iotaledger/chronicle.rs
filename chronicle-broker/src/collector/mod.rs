@@ -389,7 +389,7 @@ where
                                         }
                                     }
                                 }
-                                Some((msg_opt, metadata_opt, timestamp, selected_opt)) => {
+                                Some((msg_opt, metadata_opt, _, selected_opt)) => {
                                     if msg_opt.is_none() || metadata_opt.is_none() {
                                         if let Some(requested) = self.requested_requests.get_mut(&message_id) {
                                             requested.insert(try_ms_index);
@@ -411,24 +411,27 @@ where
                                         }
                                     } else {
                                         // check if ms is try_ms_index
-                                        let ms = msg_opt
-                                            .as_ref()
-                                            .expect("Failed to unwrap message record")
-                                            .milestone_index()
-                                            .expect("Unable to find milestone index")
-                                            .0;
-                                        if ms == try_ms_index {
-                                            let selected_opt = selected_opt.clone();
-                                            let msg_opt = msg_opt.clone().expect("Unable to find message record");
-                                            drop(entry);
-                                            // todo, either backpressure solidifier requests using TTL (preferred),
-                                            // or wrap MilestoneMessage and Message using arc where we check
-                                            // strong_count before pushing message/milestone.
-                                            self.push_message_record_to_solidifier(
-                                                msg_opt,
-                                                &solidifier_handles,
-                                                selected_opt,
-                                            );
+                                        if let Some(ms) = metadata_opt.as_ref().unwrap().referenced_by_milestone_index {
+                                            if ms == try_ms_index {
+                                                let selected_opt = selected_opt.clone();
+                                                let msg = msg_opt.clone().unwrap();
+                                                drop(entry);
+                                                // todo, either backpressure solidifier requests using TTL (preferred),
+                                                // or wrap MilestoneMessage and Message using arc where we check
+                                                // strong_count before pushing message/milestone.
+                                                self.push_message_record_to_solidifier(
+                                                    msg,
+                                                    &solidifier_handles,
+                                                    selected_opt,
+                                                );
+                                            } else {
+                                                self.push_close_to_solidifier(
+                                                    self.solidifier_id(try_ms_index),
+                                                    message_id,
+                                                    try_ms_index,
+                                                    &solidifier_handles,
+                                                );
+                                            }
                                         } else {
                                             self.push_close_to_solidifier(
                                                 self.solidifier_id(try_ms_index),
@@ -601,10 +604,9 @@ where
         let ref_ms = *msg_record
             .milestone_index()
             .expect("Failed to get milestone index within a message record");
-        let message_id = *msg_record.message_id();
         let solidifier_id = self.solidifier_id(ref_ms.0);
         // check if the message is milestone
-        if let Some(Payload::Milestone(milestone_payload)) = msg_record.message().payload() {
+        if let Some(Payload::Milestone(_)) = msg_record.message().payload() {
             // send it as milestone only if the ledger inclusion state not conflicting
             if let LedgerInclusionState::Conflicting = msg_record
                 .inclusion_state()

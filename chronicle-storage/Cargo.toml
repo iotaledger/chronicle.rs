@@ -21,7 +21,7 @@ serde = { version = "1.0", features = ["derive"] }
 rand = "0.8"
 anyhow = "1.0"
 thiserror = "1.0"
-futures = { version = "0.3", optional = true }
+futures = "0.3"
 tokio = { version = "1.15", optional = true }
 packable = { version = "0.2", features = [ "io", "std", "usize" ] }
 chrono = "0.4"
@@ -37,7 +37,4 @@ num_cpus = "1.13"
 
 [features]
 sync = [ "tokio/full" ]
-analytic = [
-    "futures",
-    "tokio/full",
-]
+analytic = [ "tokio/full" ]
