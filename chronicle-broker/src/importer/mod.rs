@@ -169,7 +169,7 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
         Ok(())
     }
 
-    async fn run(&mut self, rt: &mut Rt<Self, BrokerHandle>, idle_md_importer: Self::Data) -> ActorResult<()> {
+    async fn run(&mut self, rt: &mut Rt<Self, BrokerHandle>, _: Self::Data) -> ActorResult<()> {
         info!("Importer LogFile: {:?} is running", self.file_path);
         // check if it's already EOF and nothing to progress
         if self.eof {

@@ -18,6 +18,7 @@ use bee_message::{
         Address,
         Ed25519Address,
     },
+    input::Input,
     output::Output,
     payload::{
         transaction::TransactionEssence,
@@ -36,6 +37,7 @@ use chronicle_storage::access::{
     MilestoneData,
     MilestoneDataBuilder,
     Selected,
+    *,
 };
 use chrono::{
     DateTime,
@@ -94,25 +96,26 @@ impl FilterBuilder for PermanodeConfig {
     async fn filter_message(
         &self,
         _handle: &AbortableUnboundedHandle<()>,
-        _message: &MessageRecord,
+        message: &MessageRecord,
     ) -> anyhow::Result<Option<Selected>> {
+        // todo get retries, ttl;
+        persist_new_message(&self.keyspace, message, BasicHandle, 10, TTL::new(3600));
         Ok(Some(Selected::select()))
     }
-    async fn process_milestone_data_builder(
+    async fn process_milestone_data(
         &self,
         _handle: &AbortableUnboundedHandle<()>,
         milestone_data: MilestoneDataBuilder,
     ) -> anyhow::Result<MilestoneData> {
+        if !milestone_data.valid() {
+            anyhow::bail!("Cannot process milestone data using invalid milestone data builder")
+        }
         let milestone_index = milestone_data.milestone_index();
         let milestone_timestamp_secs = milestone_data
             .timestamp()
             .ok_or_else(|| anyhow::anyhow!("No milestone timestamp"))?;
         let dt = NaiveDateTime::from_timestamp(milestone_timestamp_secs as i64, 0);
         let date = DateTime::<Utc>::from_utc(dt, Utc);
-        let epoch = Utc.ymd(1970, 1, 1).and_hms(0, 0, 0);
-        let diff = date.signed_duration_since(epoch);
-        diff.num_days();
-        // let s = Utc.from_utc_date(&dt);
         // convert it to searchable struct
         let mut milestone_data_search: MilestoneDataSearch = milestone_data.try_into()?;
         // The accumulators
@@ -120,8 +123,12 @@ impl FilterBuilder for PermanodeConfig {
         let mut message_count: u32 = 0;
         let mut transferred_tokens: u64 = 0;
         let mut addresses: HashMap<Address, (Sent, Recv, SentOrRecv)> = HashMap::new();
-        while let Some((proof_opt, mut message)) = milestone_data_search.next().await {
-            message.proof = proof_opt;
+        // handle the very first milestone message
+        if let Some(ms_message) = milestone_data_search.next().await {
+            message_count += 1;
+            todo!("handle milestone message");
+        }
+        while let Some(mut message) = milestone_data_search.next().await {
             // Insert the proof(if any)
             if message.proof().is_some() {
                 let req = self
@@ -199,4 +206,362 @@ where
         }
         Ok(())
     }
+}
+
+pub(crate) fn persist_confirmed_message<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    message: MessageRecord,
+    milestone_index: u32,
+    ms_timestamp: NaiveDateTime,
+    handle: I,
+    retries: u8,
+) {
+    // insert message record into messages table
+    insert_message(keyspace, handle, message.clone(), retries);
+    // insert parents into parents table
+    insert_parents(keyspace, handle, &message, Some(ms_timestamp), retries);
+    // insert payload
+    insert_payload(keyspace, handle, &message, Some(ms_timestamp), None, retries);
+}
+
+pub(crate) fn persist_new_message<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    message: &MessageRecord,
+    handle: I,
+    retries: u8,
+    ttl: TTL,
+) {
+    // insert message record into messages table
+    insert_message_maybe_ttl(keyspace, handle, message.clone(), ttl, retries);
+    // insert parents into parents table
+    insert_parents(keyspace, handle, &message, None, retries);
+    // insert payload
+    insert_payload(keyspace, handle, &message, None, Some(ttl), retries);
+}
+
+/// Insert the message record
+fn insert_message<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    handle: I,
+    message: MessageRecord,
+    retries: u8,
+) -> anyhow::Result<()> {
+    create_and_send_request(keyspace, message, (), retries, handle)
+}
+
+/// Insert the message record with time to live duration
+fn insert_message_maybe_ttl<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    handle: I,
+    mut message: MessageRecord,
+    ttl: TTL,
+    retries: u8,
+) -> anyhow::Result<()> {
+    if !message.inclusion_state().is_some() {
+        // make sure message milestone exist
+        message.milestone_index.replace(
+            message
+                .milestone_index
+                .map(|m| m)
+                .unwrap_or(bee_message::milestone::MilestoneIndex(u32::MAX)),
+        );
+        create_and_send_request(keyspace, message, ttl, retries, handle)?;
+    } else {
+        insert_message(keyspace, handle, message, retries)?;
+    }
+    Ok(())
+}
+
+/// Insert the message parents
+fn insert_parents<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    handle: I,
+    message: &MessageRecord,
+    ms_timestamp: Option<NaiveDateTime>,
+    retries: u8,
+) -> anyhow::Result<()> {
+    for parent_id in message.parents().iter() {
+        let parent_record = ParentRecord::new(
+            *parent_id,
+            message.milestone_index,
+            ms_timestamp,
+            message.message_id,
+            message.inclusion_state,
+        );
+        create_and_send_request(keyspace, parent_record, (), retries, handle)?
+    }
+    Ok(())
+}
+
+/// Insert the message parents
+fn insert_payload<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    handle: I,
+    message: &MessageRecord,
+    ms_timestamp: Option<NaiveDateTime>,
+    ttl: Option<TTL>,
+    retries: u8,
+) -> anyhow::Result<()> {
+    if let Some(payload) = message.payload() {
+        match payload {
+            Payload::Indexation(indexation) => insert_index(
+                keyspace,
+                message,
+                hex::encode(indexation.index()),
+                ms_timestamp,
+                ttl,
+                handle,
+                retries,
+            )?,
+            Payload::Transaction(transaction) => {
+                insert_transaction(keyspace, message, transaction, ms_timestamp, ttl, handle, retries)?;
+            }
+            Payload::Milestone(milestone) => {
+                todo!("milestone record")
+            }
+
+            // remaining payload types
+            e => {
+                log::warn!("Skipping unsupported payload variant: {:?}", e);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Insert the `Indexation` of a given message id to the table
+fn insert_index<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    message: &MessageRecord,
+    index: String,
+    timestamp: Option<NaiveDateTime>,
+    mut ttl: Option<TTL>,
+    handle: I,
+    retries: u8,
+) -> anyhow::Result<()> {
+    let milestone_index = message.milestone_index.unwrap_or_default();
+    let ms_range_id = message
+        .milestone_index
+        .map(|ms| TagRecord::range_id(ms.0))
+        .unwrap_or(u32::MAX);
+    let index_record = TagRecord {
+        tag: index,
+        partition_data: PartitionData::new(
+            ms_range_id,
+            milestone_index,
+            timestamp.unwrap_or(Utc::now().naive_utc()),
+        ),
+        message_id: message.message_id,
+        inclusion_state: message.inclusion_state,
+    };
+    if let Some(ttl) = ttl.as_ref() {
+        create_and_send_request(keyspace, index_record, ttl.clone(), retries, handle)?;
+    } else {
+        create_and_send_request(keyspace, index_record, (), retries, handle)?;
+    }
+    // insert hint record
+    let hint = TagHint {
+        tag: index,
+        table_kind: TagHintVariant::Regular,
+    };
+    create_and_send_request(keyspace, hint, ms_range_id, retries, handle)
+}
+
+/// Insert the transaction to the table
+fn insert_transaction<I: Inherent>(
+    keyspace: &ChronicleKeyspace,
+    message: &MessageRecord,
+    transaction: &bee_message::payload::TransactionPayload,
+    timestamp: Option<NaiveDateTime>,
+    mut ttl: Option<TTL>,
+    handle: I,
+    retries: u8,
+) -> anyhow::Result<()> {
+    let transaction_id = transaction.id();
+    let unlock_blocks = transaction.unlock_blocks();
+    let TransactionEssence::Regular(regular) = transaction.essence();
+    {
+        for (idx, input) in regular.inputs().iter().enumerate() {
+            // insert utxoinput row along with input row
+            match input {
+                Input::Utxo(utxo_input) => {
+                    let unlock_block = &unlock_blocks[idx];
+                    let input_data = InputData::utxo(utxo_input.clone(), unlock_block.clone());
+                    let input_record = TransactionRecord::input(
+                        transaction_id,
+                        idx as u16,
+                        message.message_id,
+                        input_data,
+                        message.inclusion_state,
+                        message.milestone_index,
+                    );
+                    if let Some(ttl) = ttl.as_ref() {
+                        create_and_send_request(keyspace, input_record, ttl.clone(), retries, handle)?;
+                    } else {
+                        create_and_send_request(keyspace, input_record, (), retries, handle)?;
+                    }
+                    // this is the spent_output which the input is spending from
+                    let output_id = utxo_input.output_id();
+                    let spent_output_tx_id = output_id.transaction_id();
+                    let spent_output_idx = output_id.index();
+                    // therefore we insert utxo_input.output_id() -> unlock_block to indicate that this output
+                    // is_spent;
+                    let unlock_data = UnlockData::new(transaction_id, idx as u16, unlock_block.clone());
+                    let unlock_record = TransactionRecord::input(
+                        *spent_output_tx_id,
+                        spent_output_idx,
+                        message.message_id,
+                        input_data,
+                        message.inclusion_state,
+                        message.milestone_index,
+                    );
+                    if let Some(ttl) = ttl.as_ref() {
+                        create_and_send_request(keyspace, input_record, ttl.clone(), retries, handle)?;
+                        create_and_send_request(keyspace, unlock_record, ttl.clone(), retries, handle)?;
+                    } else {
+                        create_and_send_request(keyspace, input_record, (), retries, handle)?;
+                        create_and_send_request(keyspace, unlock_record, (), retries, handle)?;
+                    }
+                }
+                Input::Treasury(treasury_input) => {
+                    let input_data = InputData::treasury(treasury_input.clone());
+                    let treasury_record = TransactionRecord::input(
+                        transaction_id,
+                        idx as u16,
+                        message.message_id,
+                        input_data,
+                        message.inclusion_state,
+                        message.milestone_index,
+                    );
+                    if let Some(ttl) = ttl.as_ref() {
+                        create_and_send_request(keyspace, treasury_record, ttl.clone(), retries, handle)?;
+                    } else {
+                        create_and_send_request(keyspace, treasury_record, (), retries, handle)?;
+                    }
+                }
+            }
+        }
+
+        let ms_range_id = message
+            .milestone_index
+            .map(|ms| TagRecord::range_id(ms.0))
+            .unwrap_or(u32::MAX);
+        for (idx, output) in regular.outputs().iter().enumerate() {
+            // generic output record in transactions table
+            let output_record = TransactionRecord::output(
+                transaction_id,
+                idx as u16,
+                message.message_id,
+                output.clone(),
+                message.inclusion_state,
+                message.milestone_index,
+            );
+            // remaining output record, depends on the output type
+            match output {
+                Output::SignatureLockedSingle(o) => {
+                    let record = LegacyOutputRecord::created(
+                        bee_message::output::OutputId::new(transaction_id, idx as u16)?,
+                        PartitionData::new(
+                            ms_range_id,
+                            message
+                                .milestone_index
+                                .unwrap_or(bee_message::milestone::MilestoneIndex(u32::MAX)),
+                            timestamp.unwrap_or(Utc::now().naive_utc()),
+                        ),
+                        message.inclusion_state,
+                        output.clone(),
+                        message.message_id,
+                    )?;
+                    let hint = AddressHint {
+                        address: *o.address(),
+                        output_table: OutputTable::Legacy,
+                        variant: AddressHintVariant::Address,
+                    };
+
+                    if let Some(ttl) = ttl.as_ref() {
+                        create_and_send_request(keyspace, record, ttl.clone(), retries, handle)?;
+                    } else {
+                        create_and_send_request(keyspace, record, (), retries, handle)?;
+                    }
+                    create_and_send_request(keyspace, hint, ms_range_id, retries, handle)?;
+                }
+                Output::SignatureLockedDustAllowance(o) => {
+                    let record = LegacyOutputRecord::created(
+                        bee_message::output::OutputId::new(transaction_id, idx as u16)?,
+                        PartitionData::new(
+                            ms_range_id,
+                            message
+                                .milestone_index
+                                .unwrap_or(bee_message::milestone::MilestoneIndex(u32::MAX)),
+                            timestamp.unwrap_or(Utc::now().naive_utc()),
+                        ),
+                        message.inclusion_state,
+                        output.clone(),
+                        message.message_id,
+                    )?;
+                    let hint = AddressHint {
+                        address: *o.address(),
+                        output_table: OutputTable::Legacy,
+                        variant: AddressHintVariant::Address,
+                    };
+                    if let Some(ttl) = ttl.as_ref() {
+                        create_and_send_request(keyspace, record, ttl.clone(), retries, handle)?;
+                    } else {
+                        create_and_send_request(keyspace, record, (), retries, handle)?;
+                    }
+                    create_and_send_request(keyspace, hint, ms_range_id, retries, handle)?;
+                }
+                _ => todo!("Support remaining output types"),
+            }
+        }
+        if let Some(payload) = regular.payload() {
+            insert_payload(keyspace, handle, message, timestamp, ttl, retries)?
+        }
+    };
+    Ok(())
+}
+
+fn create_and_send_request<I: Inherent, K, V>(
+    keyspace: &ChronicleKeyspace,
+    key: K,
+    value: V,
+    retries: u8,
+    handle: I,
+) -> anyhow::Result<()>
+where
+    ChronicleKeyspace: 'static + Insert<K, V>,
+    K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
+    V: 'static + Send + Sync + Clone + Debug,
+{
+    match create_request(keyspace, key, value) {
+        Ok(request) => {
+            let worker = handle.atomic_worker(request.clone(), retries);
+            let token = request.token();
+            let payload: Vec<u8> = request.into();
+            if let Err(r) = send_local(Some(keyspace.as_str()), token, payload, worker) {
+                if let Err(worker) = retry_send(Some(keyspace.as_str()), r, 1) {
+                    worker.handle_error(WorkerError::NoRing, None)?
+                };
+            };
+            Ok(())
+        }
+        Err(e) => {
+            handle.set_error();
+            anyhow::bail!("Unable to create request, error: {}", e)
+        }
+    }
+}
+
+/// The low-level create request function to insert a key/value pair through an inherent worker
+fn create_request<K, V>(keyspace: &ChronicleKeyspace, key: K, value: V) -> anyhow::Result<CommonRequest>
+where
+    ChronicleKeyspace: 'static + Insert<K, V>,
+    K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
+    V: 'static + Send + Sync + Clone + Debug,
+{
+    Ok(keyspace
+        .insert(&key, &value)
+        .consistency(Consistency::Quorum)
+        .build()?
+        .into())
 }

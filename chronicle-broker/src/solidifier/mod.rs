@@ -312,7 +312,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         let milestone_index = milestone_data.milestone_index();
         let milestone_data = self
             .selective_builder
-            .process_milestone_data_builder(&self.uda_handle, milestone_data)
+            .process_milestone_data(&self.uda_handle, milestone_data)
             .await?;
         self.insert_sync_record(rt, milestone_index).await?;
         if let Some(archiver_handle) = archive_handle.as_ref() {
@@ -343,7 +343,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         // uda process
         let milestone_data = self
             .selective_builder
-            .process_milestone_data_builder(&self.uda_handle, milestone_data)
+            .process_milestone_data(&self.uda_handle, milestone_data)
             .await?;
         info!(
             "solidifier_id: {}, is pushing the milestone data for index: {}, to Syncer",

@@ -19,6 +19,10 @@ impl ChronicleKeyspace {
     pub fn new(name: String) -> Self {
         Self { name: name.into() }
     }
+    /// Return the keyspace name as str
+    pub fn as_str(&self) -> &str {
+        &self.name
+    }
 }
 
 impl std::fmt::Display for ChronicleKeyspace {

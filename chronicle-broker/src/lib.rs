@@ -121,104 +121,6 @@ pub(crate) trait Inherent<S, K, V> {
         V: 'static + Send + Sync + Clone + Debug;
 }
 
-pin_project! {
-    #[must_use = "futures/streams do nothing unless you poll them"]
-    pub struct MilestoneDataSearch {
-        #[pin]
-        data: MilestoneDataBuilder,
-        #[pin]
-        should_be_visited: VecDeque<Proof>,
-        #[pin]
-        visited: HashSet<MessageId>,
-        budget: usize,
-        counter: usize,
-    }
-}
-
-impl std::convert::TryFrom<MilestoneDataBuilder> for MilestoneDataSearch {
-    type Error = anyhow::Error;
-
-    fn try_from(data: MilestoneDataBuilder) -> Result<Self, Self::Error> {
-        if !data.valid() {
-            anyhow::bail!("cannot make milestone data search struct for uncompleted milestone data")
-        }
-        let milestone_message_id = data
-            .milestone()
-            .as_ref()
-            .unwrap() // unwrap is safe, as this right after valid check.
-            .message()
-            .message_id();
-        let mut should_be_visited = VecDeque::new();
-        // we start from the root
-        should_be_visited.push_back(Proof::new(data.milestone_index(), vec![*milestone_message_id]));
-        Ok(Self {
-            data,
-            should_be_visited,
-            visited: Default::default(),
-            budget: 128,
-            counter: 0,
-        })
-    }
-}
-
-impl futures::stream::Stream for MilestoneDataSearch {
-    type Item = (Option<Proof>, MessageRecord);
-
-    fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut project = self.as_mut().project();
-        if project.counter == project.budget {
-            *project.counter = 0;
-            cx.waker().wake_by_ref();
-            return Poll::Pending;
-        }
-        while let Some(current_proof) = project.should_be_visited.pop_front() {
-            *project.counter += 1;
-            let message_id = *current_proof.path().last().expect("The path should never be empty");
-            project.visited.insert(message_id);
-            // iterate over its parents
-            if let Some(message) = project.data.messages().get(&message_id) {
-                let parents_iter = message.parents().iter();
-                for parent_id in parents_iter {
-                    if !project.visited.contains(parent_id) {
-                        let mut vertex = current_proof.clone();
-                        vertex.path_mut().push(parent_id.clone());
-                        project.should_be_visited.push_back(vertex);
-                    }
-                }
-                // check if this message is selected
-                if project.data.selected_messages().contains_key(&message_id) {
-                    return Poll::Ready(Some((Some(current_proof), message.clone())));
-                } else {
-                    return Poll::Ready(Some((None, message.clone())));
-                }
-            } else {
-                // reached the end of the branch, proceed to the next should_be_visited
-                continue;
-            }
-        }
-        Poll::Ready(None)
-    }
-}
-
-#[async_trait::async_trait]
-
-pub trait SelectiveBuilder<S: SupHandle<Self::Actor>>:
-    'static + Debug + PartialEq + Eq + Sized + Send + Clone + Serialize + Sync + std::default::Default
-{
-    type Actor: Actor<S>;
-    async fn build(&self) -> anyhow::Result<(Self::Actor, <Self::Actor as Actor<S>>::Channel)>;
-    async fn filter_message(
-        &self,
-        handle: &<<Self::Actor as Actor<S>>::Channel as Channel>::Handle,
-        message: &MessageRecord,
-    ) -> anyhow::Result<Option<Selected>>;
-    async fn process_milestone_data(
-        &self,
-        handle: &<<Self::Actor as Actor<S>>::Channel as Channel>::Handle,
-        milestone_data: std::sync::Arc<MilestoneDataBuilder>,
-    ) -> anyhow::Result<()>;
-}
-
 // NOTE the selective impl not complete
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SelectivePermanodeConfig {
@@ -239,7 +141,7 @@ impl FilterBuilder for SelectivePermanodeConfig {
     ) -> anyhow::Result<Option<Selected>> {
         todo!()
     }
-    async fn process_milestone_data_builder(
+    async fn process_milestone_data(
         &self,
         handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
         milestone_data: MilestoneDataBuilder,

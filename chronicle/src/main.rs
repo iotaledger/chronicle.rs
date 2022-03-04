@@ -625,7 +625,7 @@ async fn init_database(keyspace_config: &KeyspaceConfig) -> anyhow::Result<()> {
             .await
             .map_err(|e| {
                 anyhow::Error::msg(format!(
-                    "Could not verify if table was created! error: {}, q: {}",
+                    "Could not verify if table was created! error: {}, query: {}",
                     e, query
                 ))
             })?;

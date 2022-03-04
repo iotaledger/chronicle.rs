@@ -37,7 +37,7 @@ pub(crate) fn insert_parents<I: Inherent<ChronicleKeyspace, ParentRecord, ()>>(
     }
     Ok(())
 }
-// NOT complete, TODO finish it.
+
 pub(crate) fn insert_payload<
     I: Inherent<ChronicleKeyspace, LegacyOutputRecord, ()>
         + Inherent<ChronicleKeyspace, LegacyOutputRecord, TTL>

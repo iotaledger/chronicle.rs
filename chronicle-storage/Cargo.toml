@@ -27,6 +27,7 @@ packable = { version = "0.2", features = [ "io", "std", "usize" ] }
 chrono = "0.4"
 primitive-types = { version = "0.11", default-features = false, features = [ "serde" ] }
 derive_more = "0.99"
+pin-project-lite = "0.2.8"
 
 [dev-dependencies]
 bee-pow = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }

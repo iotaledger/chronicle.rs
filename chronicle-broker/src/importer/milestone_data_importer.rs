@@ -32,7 +32,7 @@ impl<T: FilterBuilder> Actor<ImporterHandle> for MilestoneDataImporter<T> {
             let milestone_data_builder = milestone_data.into();
             if let Err(e) = self
                 .filter
-                .process_milestone_data_builder(&self.uda_handle, milestone_data_builder)
+                .process_milestone_data(&self.uda_handle, milestone_data_builder)
                 .await
             {
                 error!(
