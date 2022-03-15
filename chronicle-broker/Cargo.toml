@@ -22,8 +22,8 @@ async-trait = { version = "0.1", optional = true }
 lru = { version = "0.7", optional = true }
 rand = { version = "0.8", optional = true }
 url = { version = "2.2", features = ["serde"] }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"], optional = true }
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
+bee-rest-api = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"], optional = true }
+bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
 hex = { version = "0.4", optional = true }
 anyhow = { version = "1.0", optional = true }
 tokio = { version = "1.15", optional = true }

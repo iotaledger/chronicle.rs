@@ -21,7 +21,6 @@ use bee_message::{
         transaction::TransactionId,
         MilestonePayload,
     },
-    Message,
     MessageId,
 };
 use scylla_rs::{

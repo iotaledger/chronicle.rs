@@ -116,13 +116,17 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
         log::info!("{:?} is running", &rt.service().directory());
         while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
             if let Some(msg) = msg_opt {
-                if let Ok(msg) = Message::unpack_verified(&mut msg.payload()) {
-                    let message_id = msg.id();
-                    // partitioning based on first byte of the message_id
-                    let collector_partition_id = self.partitioner.partition_id(&message_id);
-                    if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
-                        collector_handle.send(CollectorEvent::Message(message_id, msg)).ok();
+                match Chrysalis::unpack_verified(&mut msg.payload()) {
+                    Ok(msg) => {
+                        let msg: Message = msg.into();
+                        let message_id = msg.id();
+                        // partitioning based on first byte of the message_id
+                        let collector_partition_id = self.partitioner.partition_id(&message_id);
+                        if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
+                            collector_handle.send(CollectorEvent::Message(message_id, msg)).ok();
+                        }
                     }
+                    Err(e) => error!("{}", e),
                 };
             } else {
                 Self::reconnecting::<S>(rt).await?

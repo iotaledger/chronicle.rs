@@ -13,9 +13,10 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "backstage" }
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
-bee-tangle = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false }
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"] }
+bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1", "cpt2"] }
+bee-message-old = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, features = ["serde"], package = "bee-message" }
+bee-tangle = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false }
+bee-rest-api = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"] }
 async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 rand = "0.8"
@@ -28,9 +29,10 @@ chrono = "0.4"
 primitive-types = { version = "0.11", default-features = false, features = [ "serde" ] }
 derive_more = "0.99"
 pin-project-lite = "0.2.8"
+bee-pow = "0.2.0"
+iota-crypto = { version = "0.9.1", default-features = false, features = [ "ed25519", "blake2b" ] }
 
 [dev-dependencies]
-bee-pow = { git = "https://github.com/iotaledger/bee.git", branch = "dev" }
 tokio = { version = "1.15", features = ["macros", "signal"] }
 log = "0.4"
 futures = "0.3"

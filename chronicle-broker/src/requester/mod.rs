@@ -12,7 +12,7 @@ use super::{
 };
 use backstage::core::Event;
 use bee_rest_api::types::{
-    dtos::MessageDto,
+    dtos::ChrysalisMessageDto,
     responses::{
         MessageMetadataResponse,
         MilestoneResponse,
@@ -282,7 +282,7 @@ impl<T: FilterBuilder> Requester<T> {
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
         let message_response = self
             .reqwest_client
-            .get(get_message_url)
+            .get(get_message_url.clone())
             .send()
             .await
             .map_err(|e| error!("Error sending request for message: {}\n {:#}", message_id, e));
@@ -294,10 +294,32 @@ impl<T: FilterBuilder> Requester<T> {
             .map_err(|e| error!("Error sending request for metadata: {}\n {:#}", message_id, e));
         if let (Ok(message_response), Ok(metadata_response)) = (message_response, metadata_response) {
             if message_response.status().is_success() && metadata_response.status().is_success() {
-                let message = message_response
-                    .json::<JsonData<MessageDto>>()
+                let debug_message_url = remote_url
+                    .join(&format!(
+                        "messages/{}",
+                        "f75c111993d0cc83e83887d6878728c2568966d3f637a3e06acf3b7048e8b283"
+                    ))
+                    .unwrap();
+                let debug_message_response = self
+                    .reqwest_client
+                    .get(debug_message_url)
+                    .send()
                     .await
-                    .map_err(|e| error!("Error deserializing message: {}\n {:#}", message_id, e));
+                    .unwrap()
+                    .text()
+                    .await
+                    .unwrap();
+
+                println!("{}", debug_message_response);
+                let message = message_response
+                    .json::<JsonData<ChrysalisMessageDto>>()
+                    .await
+                    .map_err(|e| {
+                        error!(
+                            "Error deserializing message: {}\n {:#}, text: {}",
+                            message_id, e, debug_message_response
+                        )
+                    });
                 let metadata = metadata_response
                     .json::<JsonData<MessageMetadataResponse>>()
                     .await

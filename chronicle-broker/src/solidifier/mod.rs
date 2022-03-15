@@ -62,17 +62,6 @@ impl ShutdownEvent for SolidifierEvent {
     }
 }
 
-/// Cql Results
-#[derive(Debug)]
-pub enum CqlResult {
-    /// Message was persisted
-    PersistedMsg(MessageId, u32),
-    /// Indicate that the milestone data got processed
-    Processed(u32),
-    /// Milestone was synced
-    SyncedMilestone(u32),
-}
-
 /// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier<T: FilterBuilder> {
     keyspace: ChronicleKeyspace,
@@ -349,7 +338,7 @@ impl<T: FilterBuilder> Solidifier<T> {
             "solidifier_id: {}, is pushing the milestone data for index: {}, to Syncer",
             self.partition_id, milestone_index
         );
-        self.insert_sync_record(rt, milestone_index).await?;
+        self.insert_sync_record(rt, milestone_index).await?; //
         let syncer_event = SyncerEvent::MilestoneData(milestone_data);
         syncer_handle.send(syncer_event).ok();
         Ok(())

@@ -24,7 +24,6 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-
 pub(crate) type CollectorId = u8;
 pub(crate) type CollectorHandle = UnboundedHandle<CollectorEvent>;
 pub(crate) type CollectorHandles = HashMap<CollectorId, CollectorHandle>;

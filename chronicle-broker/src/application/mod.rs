@@ -20,6 +20,7 @@ use super::{
         SolidifierHandle,
     },
     syncer::Syncer,
+    Message,
 };
 use crate::{
     importer::Importer,
@@ -30,6 +31,7 @@ use anyhow::{
     bail,
     Result,
 };
+
 use async_trait::async_trait;
 use backstage::{
     core::{
@@ -59,7 +61,6 @@ use backstage::{
         Responder,
     },
 };
-use bee_message::Message;
 use bee_rest_api::types::responses::MessageMetadataResponse;
 use chronicle_storage::{
     access::SyncData,
@@ -448,7 +449,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                     }
                     match &topology {
                         Topology::AddMqtt(mqtt) => {
-                            if !scylla_service.is_running() || !scylla_service.is_degraded() {
+                            if !scylla_service.is_running() && !scylla_service.is_degraded() {
                                 if let Some(responder) = responder_opt.as_ref() {
                                     log::warn!(
                                         "Cannot add an mqtt: {}, while scylla is {}",
@@ -723,6 +724,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for ChronicleBroker<T> {
                             || service.actor_type_id == mqtt_msg_ref_type_id
                         {
                             // todo ensure to shutdown the other mqtt broker
+
                             // deserialize the url
                             let mqtt_url = service
                                 .directory()

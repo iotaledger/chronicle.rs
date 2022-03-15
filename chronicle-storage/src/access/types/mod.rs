@@ -64,7 +64,6 @@ use bee_message::{
         MilestonePayload,
         Payload,
     },
-    Message,
     MessageId,
 };
 use chronicle_common::Wrapper;
@@ -439,8 +438,11 @@ macro_rules! impl_simple_packable {
 
         impl ColumnEncoder for Bee<$t> {
             fn encode(&self, buffer: &mut Vec<u8>) {
-                // TODO: Do these need to encode the length first???
+                buffer.extend_from_slice(&[0, 0, 0, 0]);
+                let l = buffer.len();
                 self.pack(buffer).ok();
+                let packed_len = (buffer.len() - l) as i32;
+                buffer[(l - 4)..l].copy_from_slice(&packed_len.to_be_bytes());
             }
         }
 
@@ -452,8 +454,11 @@ macro_rules! impl_simple_packable {
 
         impl ColumnEncoder for Bee<&$t> {
             fn encode(&self, buffer: &mut Vec<u8>) {
-                // TODO: Do these need to encode the length first???
+                buffer.extend_from_slice(&[0, 0, 0, 0]);
+                let l = buffer.len();
                 self.pack(buffer).ok();
+                let packed_len = (buffer.len() - l) as i32;
+                buffer[(l - 4)..l].copy_from_slice(&packed_len.to_be_bytes());
             }
         }
 
@@ -465,8 +470,11 @@ macro_rules! impl_simple_packable {
 
         impl ColumnEncoder for Bee<&mut $t> {
             fn encode(&self, buffer: &mut Vec<u8>) {
-                // TODO: Do these need to encode the length first???
+                buffer.extend_from_slice(&[0, 0, 0, 0]);
+                let l = buffer.len();
                 self.pack(buffer).ok();
+                let packed_len = (buffer.len() - l) as i32;
+                buffer[(l - 4)..l].copy_from_slice(&packed_len.to_be_bytes());
             }
         }
 
@@ -598,7 +606,8 @@ impl TokenEncoder for Bee<&mut Address> {
     }
 }
 
-impl_simple_packable!(Message);
+impl_simple_packable!(bee_message::Message);
+impl_simple_packable!(messages::Message);
 impl_simple_packable!(Output);
 impl_simple_packable!(BasicOutput);
 impl_simple_packable!(AliasOutput);
@@ -665,13 +674,19 @@ pub struct OutputRes {
 }
 
 /// Milestone data
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MilestoneData {
     pub milestone: MilestoneMessage,
     pub messages: BTreeSet<MessageRecord>,
 }
 
 impl MilestoneData {
+    pub fn new(milestone: MilestoneMessage) -> Self {
+        Self {
+            milestone,
+            messages: BTreeSet::new(),
+        }
+    }
     pub fn message_id(&self) -> &MessageId {
         self.milestone.message().message_id()
     }
@@ -731,22 +746,17 @@ impl MilestoneDataBuilder {
     }
     pub fn add_message(&mut self, message: MessageRecord, selected: Option<Selected>) -> anyhow::Result<()> {
         let message_id = message.message_id;
-        ensure!(
-            self.messages.insert(message_id, message).is_none(),
-            "Message already exists"
-        );
+        self.messages.insert(message_id, message);
         if let Some(selected) = selected {
             self.selected_messages.insert(message_id, selected);
         }
         Ok(())
     }
-    pub fn add_pending(&mut self, message_id: MessageId) -> anyhow::Result<()> {
-        ensure!(self.pending.insert(message_id), "Message already pending");
-        Ok(())
+    pub fn add_pending(&mut self, message_id: MessageId) -> bool {
+        self.pending.insert(message_id)
     }
-    pub fn remove_pending(&mut self, message_id: MessageId) -> anyhow::Result<()> {
-        ensure!(self.pending.remove(&message_id), "Message not pending");
-        Ok(())
+    pub fn remove_pending(&mut self, message_id: MessageId) -> bool {
+        self.pending.remove(&message_id)
     }
     /// Get the milestone's messages
     pub fn messages(&self) -> &BTreeMap<MessageId, MessageRecord> {
@@ -921,7 +931,7 @@ impl TryInto<MilestoneData> for OldMilestoneData {
                 .values()
                 .find_map(|m| match m.0.payload() {
                     Some(payload) => match payload {
-                        bee_message::payload::Payload::Milestone(_) => {
+                        bee_message_old::payload::Payload::Milestone(_) => {
                             let m: MessageRecord = m.clone().into();
                             Some(m.try_into().unwrap()) // safe to unwrap as the milestone payload check already done.
                         }
@@ -937,13 +947,13 @@ impl TryInto<MilestoneData> for OldMilestoneData {
 
 /// A "full" message payload, including both message and metadata
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct OldFullMessage(pub Message, pub OldMessageMetadata);
+pub struct OldFullMessage(pub bee_message_old::Message, pub OldMessageMetadata);
 
 impl Into<MessageRecord> for OldFullMessage {
     fn into(self) -> MessageRecord {
         MessageRecord {
             message_id: self.1.message_id,
-            message: self.0,
+            message: self.0.try_into().unwrap(),
             milestone_index: self.1.referenced_by_milestone_index.map(|i| MilestoneIndex(i)),
             inclusion_state: self.1.ledger_inclusion_state,
             conflict_reason: None,

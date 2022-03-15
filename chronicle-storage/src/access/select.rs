@@ -269,6 +269,7 @@ impl RowsDecoder for TransactionRes {
         let mut outputs = BTreeMap::new();
         let mut unlock_blocks = BTreeMap::new();
         let mut inputs = BTreeMap::new();
+        let mut receipts = Vec::new();
         let mut metadata = None;
         for (message_id, transaction_data, idx, inclusion_state, milestone_index) in Self::Row::rows_iter(decoder)? {
             let message_id = MessageId::from_str(&message_id)?;
@@ -291,6 +292,9 @@ impl RowsDecoder for TransactionRes {
                 TransactionData::Input(i) => {
                     inputs.insert(idx, i);
                 }
+                TransactionData::Receipt(r) => {
+                    receipts.push(r);
+                }
             }
         }
         let outputs = outputs
@@ -302,6 +306,7 @@ impl RowsDecoder for TransactionRes {
             milestone_index,
             outputs,
             inputs: inputs.into_iter().map(|(_, i)| (i)).collect(),
+            receipts,
         }))
     }
 }

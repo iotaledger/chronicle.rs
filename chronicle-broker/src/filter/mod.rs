@@ -6,10 +6,7 @@ use backstage::core::{
     Actor,
     Channel,
 };
-use bee_message::{
-    Message,
-    MessageId,
-};
+use bee_message::MessageId;
 use bee_rest_api::types::responses::MessageMetadataResponse;
 use chronicle_storage::access::{
     MessageRecord,
@@ -58,9 +55,9 @@ impl AtomicProcessHandle {
             any_error: std::sync::atomic::AtomicBool::new(false),
         })
     }
-    /// set any_error to true
-    pub fn set_error(&self) {
-        self.any_error.store(true, std::sync::atomic::Ordering::Release);
+    /// return any error atomic bool
+    pub fn any_error(&self) -> &std::sync::atomic::AtomicBool {
+        &self.any_error
     }
     /// Create atomic worker
     pub fn atomic_worker<R: Into<CommonRequest> + Request>(
@@ -85,20 +82,21 @@ impl Drop for AtomicProcessHandle {
     }
 }
 
-pub trait Inherent {
+pub trait Inherent: Clone {
     fn atomic_worker<R: Into<CommonRequest> + Request>(self, request: R, retries: u8) -> Box<dyn Worker + 'static>;
-    fn set_error(&mut self) {}
+    fn set_error(&self) {}
 }
 impl Inherent for std::sync::Arc<AtomicProcessHandle> {
     fn atomic_worker<R: Request + Into<CommonRequest>>(self, request: R, retries: u8) -> Box<dyn Worker + 'static> {
         Box::new(self.atomic_worker(request, retries))
     }
-    fn set_error(&mut self) {
-        self.set_error()
+    fn set_error(&self) {
+        self.any_error().store(true, std::sync::atomic::Ordering::Release);
     }
 }
 
 /// Basic handle, used to insert new message, where consistency is not important
+#[derive(Clone, Debug)]
 pub struct BasicHandle;
 
 impl Inherent for BasicHandle {
@@ -150,29 +148,28 @@ impl Worker for AtomicProcessWorker {
                     PrepareWorker::new(id, statement.try_into().unwrap())
                         .send_to_reporter(reporter)
                         .ok();
-                    if let Ok(query) =
-                        Query::from_payload_unchecked(self.request.payload()).convert_to_query(&statement.to_string())
-                    {
+                    let mut query = Query::from_payload_unchecked(self.request.payload());
+                    if let Ok(_) = query.convert_to_query(&self.request.statement().to_string()) {
                         let retry_request = ReporterEvent::Request {
                             worker: self,
                             payload: query.0,
                         };
                         reporter.send(retry_request).ok();
                         return Ok(());
-                    };
+                    }
                 }
             }
         }
         if self.retries > 0 {
             self.retries -= 1;
             let payload = self.request.payload();
-            let keyspace = self.request.keyspace();
             let token = self.request.token();
-            if let Err(r) = send_global(keyspace.map(|ks| ks.as_str()), token, payload, self) {
-                if let Err(worker) = retry_send(keyspace.map(|ks| ks.as_str()), r, 2) {
+            let keyspace = self.request.keyspace();
+            if let Err(r) = send_global(keyspace.as_ref().map(|ks| ks.as_str()), token, payload, self) {
+                if let Err(worker) = retry_send(keyspace.as_ref().map(|ks| ks.as_str()), r, 2) {
                     worker.handle_error(WorkerError::NoRing, None)?
                 }; // it went through
-            };
+            }
         } else {
             // no more retries
             self.handle.set_error();

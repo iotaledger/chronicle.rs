@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use bee_message::Message;
 
 /////////////////// Messages tables ////////////////////////////
 impl Insert<MessageRecord, ()> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
+    type QueryOrPrepared = QueryStatement;
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.messages (
@@ -27,7 +26,7 @@ impl Insert<MessageRecord, ()> for ChronicleKeyspace {
 }
 
 impl Insert<MessageRecord, TTL> for ChronicleKeyspace {
-    type QueryOrPrepared = PreparedStatement;
+    type QueryOrPrepared = QueryStatement;
     fn statement(&self) -> InsertStatement {
         parse_statement!(
             "INSERT INTO #.messages (

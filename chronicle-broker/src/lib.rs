@@ -35,11 +35,13 @@ pub mod syncer;
 #[cfg(feature = "application")]
 pub mod filter;
 
-mod inserts;
+#[cfg(feature = "application")]
 use application::{
     permanode::Uda,
     BrokerHandle,
 };
+
+#[cfg(feature = "application")]
 use filter::{
     AtomicProcessHandle,
     FilterBuilder,
@@ -52,10 +54,7 @@ mod app {
         bail,
         ensure,
     };
-    pub use bee_message::{
-        Message,
-        MessageId,
-    };
+    pub use bee_message::MessageId;
     pub use chronicle_common::SyncRange;
     pub use chronicle_storage::access::*;
     pub use log::*;
@@ -107,65 +106,6 @@ pub(crate) use app::*;
 #[cfg(feature = "merge")]
 /// Provide the archive file merger functionality;
 pub mod merge;
+
+#[cfg(feature = "application")]
 use async_trait::async_trait;
-use pin_project_lite::pin_project;
-use wildmatch::WildMatch;
-
-/// The inherent trait to return a boxed worker for a given key/value pair in a keyspace
-pub(crate) trait Inherent<S, K, V> {
-    type Output: Worker;
-    fn inherent_boxed(&self, keyspace: S, key: K, value: V) -> Box<Self::Output>
-    where
-        S: 'static + Insert<K, V> + Debug,
-        K: 'static + Send + Sync + Clone + Debug + TokenEncoder,
-        V: 'static + Send + Sync + Clone + Debug;
-}
-
-// NOTE the selective impl not complete
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct SelectivePermanodeConfig {
-    // indexation_keys: Vec<u8>,
-}
-
-#[async_trait]
-impl FilterBuilder for SelectivePermanodeConfig {
-    type Actor = Uda;
-
-    async fn build(&self) -> anyhow::Result<(Self::Actor, <Self::Actor as Actor<BrokerHandle>>::Channel)> {
-        todo!()
-    }
-    async fn filter_message(
-        &self,
-        handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-        message: &MessageRecord,
-    ) -> anyhow::Result<Option<Selected>> {
-        todo!()
-    }
-    async fn process_milestone_data(
-        &self,
-        handle: &<<Self::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-        milestone_data: MilestoneDataBuilder,
-    ) -> anyhow::Result<MilestoneData> {
-        todo!()
-    }
-}
-
-#[derive(Clone, Debug, Default, Copy)]
-pub struct SelectivePermanode;
-
-// todo impl deserialize and serialize
-pub enum IndexationKey {
-    Text(WildMatch),
-    Hex(WildMatch),
-}
-
-struct HexedIndex {
-    /// The hexed index with wildcard
-    hexed_index: WildMatch,
-}
-
-impl HexedIndex {
-    fn new(hexed_index: WildMatch) -> Self {
-        Self { hexed_index }
-    }
-}

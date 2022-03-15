@@ -3,7 +3,6 @@
 
 use super::*;
 use bee_common::packable::Packable;
-use bee_message::Message;
 use chronicle_common::Wrapper;
 use std::{
     collections::{
