@@ -4,6 +4,7 @@
 use super::*;
 use crate::responses::*;
 use ::rocket::{
+    catchers,
     fairing::{
         Fairing,
         Info,
@@ -15,11 +16,13 @@ use ::rocket::{
         content,
         Responder,
     },
+    routes,
     serde::json::Json,
     Build,
     Data,
     Request,
     Response,
+    State,
 };
 use anyhow::anyhow;
 use bee_message::{
@@ -31,9 +34,15 @@ use bee_message::{
         Milestone,
         MilestoneIndex,
     },
-    output::OutputId,
+    output::{
+        Output,
+        OutputId,
+    },
     payload::{
-        transaction::TransactionId,
+        transaction::{
+            TransactionEssence,
+            TransactionId,
+        },
         Payload,
     },
     Message,
@@ -56,7 +65,16 @@ use chronicle_common::{
 };
 use chronicle_storage::{
     access::OutputRes,
-    keyspaces::ChronicleKeyspace,
+    mongodb::{
+        bson::{
+            self,
+            doc,
+            Document,
+        },
+        options::FindOptions,
+        Collection,
+        Database,
+    },
 };
 use chrono::NaiveDateTime;
 use futures::{
@@ -82,7 +100,7 @@ use std::{
 };
 
 #[allow(missing_docs)]
-pub fn construct_rocket() -> Rocket<Build> {
+pub fn construct_rocket(database: Database) -> Rocket<Build> {
     ::rocket::build()
         .mount(
             "/api",
@@ -99,7 +117,6 @@ pub fn construct_rocket() -> Rocket<Build> {
                 get_output_by_transaction_id,
                 get_output,
                 get_outputs_by_address,
-                get_transactions_for_address,
                 get_transaction_history_for_address,
                 get_transaction_for_message,
                 get_transaction_included_message,
@@ -111,6 +128,7 @@ pub fn construct_rocket() -> Rocket<Build> {
         .attach(Template::fairing())
         .attach(CORS)
         .attach(RequestTimer)
+        .manage(database)
         .register("/", catchers![internal_error, not_found])
 }
 
@@ -265,163 +283,33 @@ async fn service() -> Result<Json<Service>, ListenerError> {
     Ok(Json(service))
 }
 
-#[get("/<keyspace>/sync")]
-async fn sync(keyspace: String) -> Result<Json<SyncData>, ListenerError> {
-    let keyspace = ChronicleKeyspace::new(keyspace);
-    SyncData::try_fetch(&keyspace, SyncRange::default(), 3)
+#[get("/sync")]
+async fn sync(database: &State<Database>) -> Result<Json<SyncData>, ListenerError> {
+    SyncData::try_fetch(&database.collection("sync"), SyncRange::default())
         .await
         .map(|s| Json(s))
         .map_err(|e| ListenerError::Other(e.into()))
 }
 
-async fn query<O, K, V, S>(
-    keyspace: S,
-    key: K,
-    variables: V,
-    page_size: Option<i32>,
-    paging_state: Option<Vec<u8>>,
-) -> Result<O, ListenerError>
-where
-    S: 'static + Select<K, V, O>,
-    K: 'static + Send + Sync + Clone + TokenEncoder,
-    V: 'static + Send + Sync + Clone,
-    O: 'static + Send + Sync + Clone + Debug + RowsDecoder,
-{
-    let request = keyspace.select::<O>(&key, &variables).consistency(Consistency::One);
-    if let Some(page_size) = page_size {
-        request.page_size(page_size).paging_state(&paging_state)
-    } else {
-        request.paging_state(&paging_state)
-    }
-    .build()?
-    .worker()
-    .with_retries(3)
-    .get_local()
-    .await
-    .map_err(|e| e.into())
-    .and_then(|res| res.ok_or_else(|| ListenerError::NoResults))
-}
-async fn page<K, O>(
-    keyspace: String,
-    hint: Hint,
-    page_size: usize,
-    state: &mut Option<StateData>,
-    range: Option<Range<NaiveDateTime>>,
-    key: K,
-) -> Result<Vec<O>, ListenerError>
-where
-    K: 'static + Send + Sync + Clone + TokenEncoder,
-    O: 'static + Send + Sync + Clone + Debug,
-    ChronicleKeyspace: Select<(K, MsRangeId), Range<NaiveDateTime>, Paged<Vec<O>>>,
-    Paged<Vec<O>>: RowsDecoder,
-{
-    let total_start_timestamp = std::time::Instant::now();
-    let mut start_timestamp = total_start_timestamp;
-
-    let keyspace = ChronicleKeyspace::new(keyspace);
-    let range = range.unwrap_or_else(|| chrono::naive::MIN_DATETIME..chrono::naive::MAX_DATETIME);
-    // Get the list of partitions which contain records for this request.
-    // These may have been passed in by the client, in which case we do not need
-    // to query for them.
-    match state {
-        Some(state) => {
-            if state.ms_range_ids.is_empty() {
-                return Err(ListenerError::InvalidState);
-            }
-        }
-        None => {
-            let ms_range_ids = match hint {
-                Hint::Address(address_hint) => {
-                    query::<Iter<MsRangeId>, _, _, _>(keyspace.clone(), address_hint, (), None, None).await?
-                }
-
-                Hint::Tag(tag_hint) => {
-                    query::<Iter<MsRangeId>, _, _, _>(keyspace.clone(), tag_hint, (), None, None).await?
-                }
-            };
-            if ms_range_ids.is_empty() {
-                return Err(ListenerError::NoResults);
-            }
-            state.replace((None, ms_range_ids.into_iter().collect::<VecDeque<_>>()).into());
-        }
-    };
-
-    let StateData {
-        ms_range_ids,
-        paging_state,
-    } = &mut state.as_mut().unwrap();
-
-    debug!(
-        "Setup time: {} ms",
-        (std::time::Instant::now() - start_timestamp).as_millis()
-    );
-
-    // The resulting list
-    let mut results = Vec::new();
-    while let Some(&ms_range_id) = ms_range_ids.front() {
-        debug!("Gathering results from partition {}", ms_range_id);
-
-        if results.len() < page_size {
-            // Fetch a chunk of results if we need them to fill the page size
-            start_timestamp = std::time::Instant::now();
-            debug!(
-                "Fetching results for milestone range id: {}, num_requested: {}",
-                ms_range_id,
-                page_size - results.len()
-            );
-            let mut res = query::<Paged<Vec<O>>, _, _, _>(
-                keyspace.clone(),
-                (key.clone(), ms_range_id),
-                range.clone(),
-                Some((page_size - results.len()) as i32),
-                std::mem::take(paging_state),
-            )
-            .await?;
-            debug!(
-                "Fetch time: {} ms",
-                (std::time::Instant::now() - start_timestamp).as_millis()
-            );
-            if let Some(ps) = std::mem::take(&mut res.paging_state) {
-                paging_state.replace(ps);
-            } else {
-                ms_range_ids.pop_front();
-            }
-            results.extend(res.into_iter());
-        }
-    }
-
-    debug!(
-        "Total time: {} ms",
-        (std::time::Instant::now() - total_start_timestamp).as_millis()
-    );
-
-    Ok(results)
+#[get("/messages/<message_id>")]
+async fn get_message(database: &State<Database>, message_id: String) -> ListenerResult {
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    database
+        .collection::<MessageRecord>("messages")
+        .find_one(doc! {"message_id": bson::to_bson(&message_id).unwrap()}, None)
+        .await?
+        .ok_or_else(|| ListenerError::NoResults)
+        .map(|rec| rec.message.into())
 }
 
-#[get("/<keyspace>/messages/<message_id>")]
-async fn get_message(keyspace: String, message_id: String) -> ListenerResult {
-    let keyspace = ChronicleKeyspace::new(keyspace);
-    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
-    query::<Bee<Message>, _, _, _>(keyspace, message_id, (), None, None)
-        .await
-        .and_then(|message| {
-            message
-                .into_inner()
-                .try_into()
-                .map_err(|e: Cow<'static, str>| anyhow!(e).into())
-        })
-}
-
-#[get("/<keyspace>/messages/<message_id>/metadata")]
-async fn get_message_metadata(keyspace: String, message_id: String) -> ListenerResult {
-    let keyspace = ChronicleKeyspace::new(keyspace);
-    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
-    query::<MessageRecord, _, _, _>(keyspace, message_id, (), None, None)
-        .await
-        .map_err(|e| match e {
-            ListenerError::NoResults => ListenerError::NotFound,
-            _ => e,
-        })
+#[get("/messages/<message_id>/metadata")]
+async fn get_message_metadata(database: &State<Database>, message_id: String) -> ListenerResult {
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    database
+        .collection::<MessageRecord>("messages")
+        .find_one(doc! {"message_id": bson::to_bson(&message_id).unwrap()}, None)
+        .await?
+        .ok_or_else(|| ListenerError::NoResults)
         .map(|res| {
             ListenerResponseV1::MessageMetadata(MessageMetadataResponse {
                 message_id: res.message_id.to_string(),
@@ -437,91 +325,65 @@ async fn get_message_metadata(keyspace: String, message_id: String) -> ListenerR
         })
 }
 
-#[get("/<keyspace>/messages/<message_id>/children?<page_size>&<expanded>&<paging_state>")]
+#[get("/messages/<message_id>/children?<page_size>&<page>&<expanded>")]
 async fn get_message_children(
-    keyspace: String,
+    database: &State<Database>,
     message_id: String,
     page_size: Option<usize>,
+    page: Option<usize>,
     expanded: Option<bool>,
-    paging_state: Option<String>,
 ) -> ListenerResult {
-    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     let page_size = page_size.unwrap_or(100);
+    let page = page.unwrap_or(0);
 
-    let mut paging_state = paging_state
-        .map(|state| hex::decode(state).map_err(|_| ListenerError::InvalidState))
-        .transpose()?;
-
-    let keyspace = ChronicleKeyspace::new(keyspace);
-
-    let mut mut_page_size = page_size;
-    let mut messages = Vec::new();
-    while mut_page_size > MAX_PAGE_SIZE {
-        let mut res = query::<Paged<Iter<ParentRecord>>, _, _, _>(
-            keyspace.clone(),
-            message_id,
-            (),
-            Some(MAX_PAGE_SIZE as i32),
-            paging_state.take(),
+    let messages = database
+        .collection::<MessageRecord>("messages")
+        .find(
+            doc! {"message.parents": bson::to_bson(&message_id).unwrap()},
+            FindOptions::builder()
+                .skip((page_size * page) as u64)
+                .sort(doc! {"milestone_index": -1})
+                .limit(page_size as i64)
+                .build(),
         )
+        .await?
+        .try_collect::<Vec<_>>()
         .await?;
-        paging_state = res.paging_state.take();
-        messages.extend(res.into_iter());
-        mut_page_size -= MAX_PAGE_SIZE;
-    }
-    if mut_page_size > 0 {
-        let mut res = query::<Paged<Iter<ParentRecord>>, _, _, _>(
-            keyspace.clone(),
-            message_id,
-            (),
-            Some(MAX_PAGE_SIZE as i32),
-            paging_state.take(),
-        )
-        .await?;
-        paging_state = res.paging_state.take();
-        messages.extend(res.into_iter());
-    }
-
-    let paging_state = paging_state.map(|ref state| hex::encode(state));
 
     if let Some(true) = expanded {
         Ok(ListenerResponseV1::MessageChildrenExpanded {
-            message_id: message_id.into_inner(),
-            max_results: 2 * page_size,
+            message_id,
+            max_results: page_size,
             count: messages.len(),
-            children_message_ids: messages.drain(..).map(|record| record.into()).collect(),
-            paging_state,
+            children_message_ids: messages.into_iter().map(|record| record.into()).collect(),
         })
     } else {
         Ok(ListenerResponseV1::MessageChildren {
-            message_id: message_id.into_inner(),
-            max_results: 2 * page_size,
+            message_id,
+            max_results: page_size,
             count: messages.len(),
-            children_message_ids: messages.drain(..).map(|record| record.message_id).collect(),
-            paging_state,
+            children_message_ids: messages.into_iter().map(|record| record.message_id).collect(),
         })
     }
 }
 
-#[get("/<keyspace>/messages?<index>&<page_size>&<utf8>&<expanded>&<state>&<start_timestamp>&<end_timestamp>")]
+#[get("/messages?<index>&<page_size>&<page>&<utf8>&<expanded>&<start_timestamp>&<end_timestamp>")]
 async fn get_message_by_index(
-    keyspace: String,
+    database: &State<Database>,
     mut index: String,
     page_size: Option<usize>,
+    page: Option<usize>,
     utf8: Option<bool>,
     expanded: Option<bool>,
     start_timestamp: Option<u64>,
     end_timestamp: Option<u64>,
-    state: Option<String>,
 ) -> ListenerResult {
     if let Some(true) = utf8 {
         index = hex::encode(index);
     }
-    if Vec::<u8>::from_hex(index.clone())
-        .map_err(|_| ListenerError::InvalidHex)?
-        .len()
-        > 64
-    {
+    let index_bytes = Vec::<u8>::from_hex(index.clone()).map_err(|_| ListenerError::InvalidHex)?;
+    if index_bytes.len() > 64 {
         return Err(ListenerError::IndexTooLarge);
     }
 
@@ -537,75 +399,53 @@ async fn get_message_by_index(
         return Err(ListenerError::Other(anyhow!("Invalid time range")));
     }
 
-    let mut state = state
-        .map(|state| {
-            hex::decode(state)
-                .map_err(|_| ListenerError::InvalidState)
-                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
-        })
-        .transpose()?;
-
     let page_size = page_size.unwrap_or(1000);
+    let page = page.unwrap_or(0);
 
-    let mut messages = page(
-        keyspace.clone(),
-        Hint::tags(index.clone()),
-        page_size,
-        &mut state,
-        Some(start_timestamp..end_timestamp),
-        index.clone(),
-    )
-    .await?;
-
-    let state = state
-        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
-        .transpose()
-        .map_err(|e| anyhow!(e))?;
+    let messages = database
+        .collection::<MessageRecord>("messages")
+        .find(
+            doc! {"message.payload.index": bson::to_bson(&index_bytes).unwrap()},
+            FindOptions::builder()
+                .skip((page_size * page) as u64)
+                .sort(doc! {"milestone_index": -1})
+                .limit(page_size as i64)
+                .build(),
+        )
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?;
 
     if let Some(true) = expanded {
         Ok(ListenerResponseV1::MessagesForIndexExpanded {
             index,
-            max_results: 2 * page_size,
+            max_results: page_size,
             count: messages.len(),
-            message_ids: messages.drain(..).map(|record| record.into()).collect(),
-            state,
+            message_ids: messages.into_iter().map(|record| record.into()).collect(),
         })
     } else {
         Ok(ListenerResponseV1::MessagesForIndex {
             index,
-            max_results: 2 * page_size,
+            max_results: page_size,
             count: messages.len(),
-            message_ids: messages.drain(..).map(|record| record.message_id).collect(),
-            state,
+            message_ids: messages.into_iter().map(|record| record.message_id).collect(),
         })
     }
 }
 
-#[get(
-    "/<keyspace>/addresses/<address>/outputs?<included>&<expanded>&<page_size>&<state>&<start_timestamp>&<end_timestamp>"
-)]
+#[get("/addresses/<address>/outputs?<included>&<expanded>&<page_size>&<page>&<start_timestamp>&<end_timestamp>")]
 async fn get_outputs_by_address(
-    keyspace: String,
+    database: &State<Database>,
     address: String,
     expanded: Option<bool>,
     included: Option<bool>,
     page_size: Option<usize>,
+    page: Option<usize>,
     start_timestamp: Option<u64>,
     end_timestamp: Option<u64>,
-    state: Option<String>,
 ) -> ListenerResult {
-    let mut state = state
-        .map(|state| {
-            hex::decode(state)
-                .map_err(|_| ListenerError::InvalidState)
-                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
-        })
-        .transpose()?;
-
-    let address = Bee(Address::try_from_bech32(&address)
-        .map_err(|e| ListenerError::BadParse(e.into()))?
-        .1);
     let page_size = page_size.unwrap_or(100);
+    let page = page.unwrap_or(0);
 
     let (start_timestamp, end_timestamp) = (
         start_timestamp
@@ -619,143 +459,170 @@ async fn get_outputs_by_address(
         return Err(ListenerError::Other(anyhow!("Invalid time range")));
     }
 
-    let mut outputs = page(
-        keyspace.clone(),
-        Hint::legacy_outputs_by_address(address.0),
-        page_size,
-        &mut state,
-        Some(start_timestamp..end_timestamp),
-        address,
-    )
-    .await?;
+    let mut outputs = database
+        .collection::<MessageRecord>("messages")
+        .find(
+            doc! {"payload.data.essence.outputs.data.address.data": &address},
+            FindOptions::builder()
+                .skip((page_size * page) as u64)
+                .sort(doc! {"milestone_index": -1})
+                .limit(page_size as i64)
+                .build(),
+        )
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let address = Address::try_from_bech32(&address)
+        .map_err(|e| ListenerError::BadParse(e.into()))?
+        .1;
 
     if included.unwrap_or(true) {
         outputs.retain(|record| matches!(record.inclusion_state, Some(LedgerInclusionState::Included)))
     }
 
-    let state = state
-        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
-        .transpose()
-        .map_err(|e| anyhow!(e))?;
-
     if let Some(true) = expanded {
         Ok(ListenerResponseV1::OutputsForAddressExpanded {
-            address_type: 1,
-            address: address.into_inner(),
-            max_results: 2 * page_size,
+            address,
+            max_results: page_size,
             count: outputs.len(),
             output_ids: outputs
-                .drain(..)
-                .map(|record| Ok(record.try_into()?))
-                .filter_map(|r: anyhow::Result<responses::Record>| r.ok())
+                .into_iter()
+                .map(|record| {
+                    if let Some(Payload::Transaction(p)) = record.payload() {
+                        let TransactionEssence::Regular(e) = p.essence();
+                        e.outputs()
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(idx, output)| match output {
+                                Output::SignatureLockedSingle(o) => {
+                                    if o.address() == &address {
+                                        let output_id = OutputId::new(p.id(), idx as u16).unwrap();
+                                        Some(Record {
+                                            id: output_id.to_string(),
+                                            inclusion_state: record.inclusion_state,
+                                            milestone_index: record.milestone_index.unwrap().0,
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }
+                                _ => todo!(),
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        unreachable!()
+                    }
+                })
+                .flatten()
                 .collect(),
-            state,
         })
     } else {
         Ok(ListenerResponseV1::OutputsForAddress {
-            address_type: 1,
-            address: address.into_inner(),
-            max_results: 2 * page_size,
+            address,
+            max_results: page_size,
             count: outputs.len(),
-            output_ids: outputs.drain(..).map(|record| record.output_id).collect(),
-            state,
+            output_ids: outputs
+                .into_iter()
+                .map(|record| {
+                    if let Some(Payload::Transaction(p)) = record.payload() {
+                        let TransactionEssence::Regular(e) = p.essence();
+                        e.outputs()
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(idx, output)| match output {
+                                Output::SignatureLockedSingle(o) => {
+                                    if o.address() == &address {
+                                        Some(OutputId::new(p.id(), idx as u16).unwrap())
+                                    } else {
+                                        None
+                                    }
+                                }
+                                _ => todo!(),
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        unreachable!()
+                    }
+                })
+                .flatten()
+                .collect(),
         })
     }
 }
 
-#[get("/<keyspace>/outputs/<transaction_id>/<idx>")]
-async fn get_output_by_transaction_id(keyspace: String, transaction_id: String, idx: u16) -> ListenerResult {
-    get_output(
-        keyspace,
-        TransactionId::from_str(&transaction_id)
-            .and_then(|t| OutputId::new(t, idx))
-            .map_err(|e| ListenerError::BadParse(e.into()))?
-            .to_string(),
-    )
-    .await
+#[get("/outputs/<transaction_id>/<idx>")]
+async fn get_output_by_transaction_id(database: &State<Database>, transaction_id: String, idx: u16) -> ListenerResult {
+    let output = database
+        .collection::<MessageRecord>("messages")
+        .find_one(doc! {"payload.c_transaction_id": transaction_id}, None)
+        .await?
+        .ok_or_else(|| ListenerError::NoResults)?;
+
+    todo!()
+
+    // let is_spent = if output_data.unlock_blocks.is_empty() {
+    //     false
+    // } else {
+    //     let mut is_spent = false;
+    //     let mut query_message_ids = HashSet::new();
+    //     for UnlockRes {
+    //         message_id,
+    //         block: _,
+    //         inclusion_state,
+    //     } in output_data.unlock_blocks.iter()
+    //     {
+    //         if *inclusion_state == Some(LedgerInclusionState::Included) {
+    //             is_spent = true;
+    //             break;
+    //         } else {
+    //             query_message_ids.insert(message_id);
+    //         }
+    //     }
+    //     if !query_message_ids.is_empty() {
+    //         let queries = query_message_ids.drain().map(|&message_id| {
+    //             query::<MessageRecord, _, _, _>(
+    //                 ChronicleKeyspace::new(keyspace.clone()),
+    //                 Bee(message_id.clone()),
+    //                 (),
+    //                 None,
+    //                 None,
+    //             )
+    //         });
+    //         is_spent = futures::future::join_all(queries)
+    //             .await
+    //             .drain(..)
+    //             .filter_map(|res| res.ok())
+    //             .any(|rec| rec.inclusion_state == Some(LedgerInclusionState::Included));
+    //     }
+    //     is_spent
+    // };
+    // Ok(ListenerResponseV1::Output {
+    //     message_id: output_data.message_id,
+    //     transaction_id: transaction_id,
+    //     output_index: index,
+    //     is_spent,
+    //     output: output_data.output.borrow().into(),
+    // })
 }
 
-#[get("/<keyspace>/outputs/<output_id>")]
-async fn get_output(keyspace: String, output_id: String) -> ListenerResult {
-    let (transaction_id, index) = OutputId::from_str(&output_id)
-        .map_err(|e| ListenerError::BadParse(e.into()))?
-        .split();
-
-    let output_data = query::<OutputRes, _, _, _>(
-        ChronicleKeyspace::new(keyspace.clone()),
-        Bee(transaction_id.clone()),
-        index,
-        None,
-        None,
-    )
-    .await?;
-    let is_spent = if output_data.unlock_blocks.is_empty() {
-        false
-    } else {
-        let mut is_spent = false;
-        let mut query_message_ids = HashSet::new();
-        for UnlockRes {
-            message_id,
-            block: _,
-            inclusion_state,
-        } in output_data.unlock_blocks.iter()
-        {
-            if *inclusion_state == Some(LedgerInclusionState::Included) {
-                is_spent = true;
-                break;
-            } else {
-                query_message_ids.insert(message_id);
-            }
-        }
-        if !query_message_ids.is_empty() {
-            let queries = query_message_ids.drain().map(|&message_id| {
-                query::<MessageRecord, _, _, _>(
-                    ChronicleKeyspace::new(keyspace.clone()),
-                    Bee(message_id.clone()),
-                    (),
-                    None,
-                    None,
-                )
-            });
-            is_spent = futures::future::join_all(queries)
-                .await
-                .drain(..)
-                .filter_map(|res| res.ok())
-                .any(|rec| rec.inclusion_state == Some(LedgerInclusionState::Included));
-        }
-        is_spent
-    };
-    Ok(ListenerResponseV1::Output {
-        message_id: output_data.message_id,
-        transaction_id: transaction_id,
-        output_index: index,
-        is_spent,
-        output: output_data.output.borrow().into(),
-    })
+#[get("/outputs/<output_id>")]
+async fn get_output(database: &State<Database>, output_id: String) -> ListenerResult {
+    let output_id = OutputId::from_str(&output_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    get_output_by_transaction_id(database, output_id.transaction_id().to_string(), output_id.index()).await
 }
 
-#[get("/<keyspace>/transactions/<address>?<page_size>&<state>&<start_timestamp>&<end_timestamp>")]
-async fn get_transactions_for_address(
-    keyspace: String,
+#[get("/transaction_history/<address>?<page_size>&<page>&<start_timestamp>&<end_timestamp>")]
+async fn get_transaction_history_for_address(
+    database: &State<Database>,
     address: String,
     page_size: Option<usize>,
+    page: Option<usize>,
     start_timestamp: Option<u64>,
     end_timestamp: Option<u64>,
-    state: Option<String>,
 ) -> ListenerResult {
-    todo!("Deprecate or fix this endpoint");
-    let mut state = state
-        .map(|state| {
-            hex::decode(state)
-                .map_err(|_| ListenerError::InvalidState)
-                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
-        })
-        .transpose()?;
-
-    let address = Bee(Address::try_from_bech32(&address)
-        .map_err(|e| ListenerError::BadParse(e.into()))?
-        .1);
     let page_size = page_size.unwrap_or(100);
+    let page = page.unwrap_or(0);
 
     let (start_timestamp, end_timestamp) = (
         start_timestamp
@@ -769,100 +636,40 @@ async fn get_transactions_for_address(
         return Err(ListenerError::Other(anyhow!("Invalid time range")));
     }
 
-    let outputs = page(
-        keyspace.clone(),
-        Hint::legacy_outputs_by_address(address.0),
-        page_size,
-        &mut state,
-        Some(start_timestamp..end_timestamp),
-        address,
-    )
-    .await?;
-
-    let transactions = futures::stream::iter(outputs)
-        .map(|o| (o, keyspace.clone()))
-        .then(|(o, keyspace)| async move {
-            query::<TransactionRes, _, _, _>(
-                ChronicleKeyspace::new(keyspace),
-                Bee(*o.output_id.transaction_id()),
-                (),
-                None,
-                None,
-            )
-            .await
-            .map(Into::into)
-        })
-        .try_collect()
+    let outputs = database
+        .collection::<MessageRecord>("messages")
+        .find(
+            doc! {"payload.data.essence.c_transactions.address": &address},
+            FindOptions::builder()
+                .skip((page_size * page) as u64)
+                .sort(doc! {"milestone_index": -1})
+                .limit(page_size as i64)
+                .build(),
+        )
+        .await?
+        .try_collect::<Vec<_>>()
         .await?;
 
-    let state = state
-        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
-        .transpose()
-        .map_err(|e| anyhow!(e))?;
-
-    Ok(ListenerResponseV1::Transactions { transactions, state })
-}
-
-#[get("/<keyspace>/transaction_history/<address>?<page_size>&<state>&<start_timestamp>&<end_timestamp>")]
-async fn get_transaction_history_for_address(
-    keyspace: String,
-    address: String,
-    page_size: Option<usize>,
-    start_timestamp: Option<u64>,
-    end_timestamp: Option<u64>,
-    state: Option<String>,
-) -> ListenerResult {
-    let mut state = state
-        .map(|state| {
-            hex::decode(state)
-                .map_err(|_| ListenerError::InvalidState)
-                .and_then(|v| bincode::deserialize::<StateData>(&v).map_err(|_| ListenerError::InvalidState))
-        })
-        .transpose()?;
-
-    let address = Bee(Address::try_from_bech32(&address)
+    let address = Address::try_from_bech32(&address)
         .map_err(|e| ListenerError::BadParse(e.into()))?
-        .1);
-    let page_size = page_size.unwrap_or(100);
+        .1;
 
-    let (start_timestamp, end_timestamp) = (
-        start_timestamp
-            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
-            .unwrap_or(chrono::naive::MIN_DATETIME),
-        end_timestamp
-            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
-            .unwrap_or(chrono::naive::MAX_DATETIME),
-    );
-    if end_timestamp < start_timestamp {
-        return Err(ListenerError::Other(anyhow!("Invalid time range")));
-    }
+    todo!()
 
-    let outputs = page(
-        keyspace.clone(),
-        Hint::legacy_outputs_by_address(address.0),
-        page_size,
-        &mut state,
-        Some(start_timestamp..end_timestamp),
-        address,
-    )
-    .await?;
-
-    let state = state
-        .map(|state| bincode::serialize(&state).map(|v| hex::encode(v)))
-        .transpose()
-        .map_err(|e| anyhow!(e))?;
-
-    Ok(ListenerResponseV1::TransactionHistory {
-        transactions: outputs.into_iter().map(Into::into).collect(),
-        state,
-    })
+    // Ok(ListenerResponseV1::TransactionHistory {
+    //     transactions: outputs.into_iter().map(Into::into).collect(),
+    //     state,
+    // })
 }
 
-#[get("/<keyspace>/transactions/<message_id>")]
-async fn get_transaction_for_message(keyspace: String, message_id: String) -> ListenerResult {
-    let keyspace = ChronicleKeyspace::new(keyspace);
-    let message_id = Bee(MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?);
-    let message = query::<Bee<Message>, _, _, _>(keyspace.clone(), message_id, (), None, None).await?;
+#[get("/transactions/<message_id>")]
+async fn get_transaction_for_message(database: &State<Database>, message_id: String) -> ListenerResult {
+    let message_id = MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let message = database
+        .collection::<MessageRecord>("messages")
+        .find_one(doc! {"message_id": bson::to_bson(&message_id).unwrap()}, None)
+        .await?
+        .ok_or_else(|| ListenerError::NoResults)?;
     let transaction_id = if let Some(payload) = message.payload() {
         match payload {
             Payload::Transaction(p) => p.id(),
@@ -871,52 +678,39 @@ async fn get_transaction_for_message(keyspace: String, message_id: String) -> Li
     } else {
         return Err(ListenerError::NoResults);
     };
-    let transaction = query::<TransactionRes, _, _, _>(keyspace, Bee(transaction_id), (), None, None).await?;
-    Ok(ListenerResponseV1::Transaction(transaction.into()))
+    todo!()
+    // Ok(ListenerResponseV1::Transaction(transaction.into()))
 }
 
-#[get("/<keyspace>/transactions/<transaction_id>/included-message")]
-async fn get_transaction_included_message(keyspace: String, transaction_id: String) -> ListenerResult {
-    let keyspace = ChronicleKeyspace::new(keyspace);
+#[get("/transactions/<transaction_id>/included-message")]
+async fn get_transaction_included_message(database: &State<Database>, transaction_id: String) -> ListenerResult {
+    let transaction_id = TransactionId::from_str(&transaction_id).map_err(|e| ListenerError::Other(anyhow!(e)))?;
 
-    let transaction_id = Bee(TransactionId::from_str(&transaction_id).map_err(|e| ListenerError::Other(anyhow!(e)))?);
-
-    let message_id = query::<Option<Bee<MessageId>>, _, _, _>(
-        keyspace.clone(),
-        transaction_id,
-        LedgerInclusionState::Included,
-        None,
-        None,
-    )
-    .await?
-    .ok_or_else(|| ListenerError::NoResults)?;
-    query::<Bee<Message>, _, _, _>(keyspace, message_id, (), None, None)
-        .await
-        .and_then(|message| {
-            message
-                .into_inner()
-                .try_into()
-                .map_err(|e: Cow<'static, str>| anyhow!(e).into())
-        })
+    todo!()
 }
 
-#[get("/<keyspace>/milestones/<index>")]
-async fn get_milestone(keyspace: String, index: u32) -> ListenerResult {
-    let keyspace = ChronicleKeyspace::new(keyspace);
+#[get("/milestones/<index>")]
+async fn get_milestone(database: &State<Database>, index: u32) -> ListenerResult {
     let milestone_index = MilestoneIndex::from(index);
 
-    query::<Bee<Milestone>, _, _, _>(keyspace, Bee(milestone_index), (), None, None)
-        .await
-        .map(|milestone| ListenerResponseV1::Milestone {
+    database
+        .collection::<MessageRecord>("messages")
+        .find_one(doc! {"payload.essence.index": index}, None)
+        .await?
+        .ok_or_else(|| ListenerError::NoResults)
+        .map(|rec| ListenerResponseV1::Milestone {
             milestone_index,
-            message_id: milestone.message_id().to_string(),
-            timestamp: milestone.timestamp(),
+            message_id: rec.message_id,
+            timestamp: if let Some(Payload::Milestone(m)) = rec.payload() {
+                m.essence().timestamp()
+            } else {
+                unreachable!()
+            },
         })
 }
 
-#[get("/<keyspace>/analytics?<start>&<end>")]
-async fn get_analytics(keyspace: String, start: Option<u32>, end: Option<u32>) -> ListenerResult {
-    let keyspace = ChronicleKeyspace::new(keyspace);
+#[get("/analytics?<start>&<end>")]
+async fn get_analytics(database: &State<Database>, start: Option<u32>, end: Option<u32>) -> ListenerResult {
     todo!()
 
     // let range = start.unwrap_or(1)..end.unwrap_or(i32::MAX as u32);
@@ -985,6 +779,10 @@ mod tests {
             LocalResponse,
         },
     };
+    use chronicle_storage::mongodb::{
+        self,
+        options::ClientOptions,
+    };
     use serde_json::Value;
 
     fn check_cors_headers(res: &LocalResponse) {
@@ -1009,7 +807,9 @@ mod tests {
     async fn construct_client() -> Client {
         let mut keyspaces = HashSet::new();
         keyspaces.insert("permanode".to_string());
-        let rocket = construct_rocket().manage(keyspaces);
+        let client =
+            mongodb::Client::with_options(ClientOptions::parse("mongodb://localhost:27017").await.unwrap()).unwrap();
+        let rocket = construct_rocket(client.database("permanode")).manage(keyspaces);
         Client::tracked(rocket).await.expect("Invalid rocket instance!")
     }
 

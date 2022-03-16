@@ -14,7 +14,6 @@ required-features = ["application"]
 
 [dependencies]
 backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features= ["paho-mqtt", "ron_config", "tungstenite"] }
-scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage" }
 chronicle-common = { path = "../chronicle-common" }
 chronicle-api = { path = "../chronicle-api" }
 chronicle-storage = { path = "../chronicle-storage" }

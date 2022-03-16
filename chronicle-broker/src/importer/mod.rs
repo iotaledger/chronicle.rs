@@ -1,5 +1,6 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use crate::{
     application::{
@@ -9,6 +10,7 @@ use crate::{
     },
     archiver::LogFile,
 };
+use bee_message::milestone::MilestoneIndex;
 use std::{
     ops::Range,
     path::PathBuf,
@@ -57,8 +59,8 @@ pub struct Importer<T: FilterBuilder> {
     from_ms: u32,
     /// to milestone index
     to_ms: u32,
-    /// The default Chronicle keyspace
-    default_keyspace: ChronicleKeyspace,
+    /// Sync records
+    sync_records: Collection<SyncRecord>,
     /// The number of retires per query
     retries: u8,
     /// The chronicle id
@@ -82,7 +84,7 @@ pub struct Importer<T: FilterBuilder> {
 }
 impl<T: FilterBuilder> Importer<T> {
     pub(crate) fn new(
-        default_keyspace: ChronicleKeyspace,
+        sync_records: Collection<SyncRecord>,
         file_path: PathBuf,
         resume: bool,
         import_range: Range<u32>,
@@ -97,7 +99,7 @@ impl<T: FilterBuilder> Importer<T> {
             log_file_size: 0,
             from_ms: 0,
             to_ms: 0,
-            default_keyspace,
+            sync_records,
             parallelism,
             chronicle_id: 0,
             in_progress_milestones_data_bytes_size: HashMap::new(),
@@ -118,11 +120,7 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
     type Channel = UnboundedChannel<ImporterEvent>;
 
     async fn init(&mut self, rt: &mut Rt<Self, BrokerHandle>) -> ActorResult<Self::Data> {
-        info!(
-            "Importer {:?} is Initializing, with permanode keyspace: {}",
-            self.file_path,
-            self.default_keyspace.name()
-        );
+        info!("Importer {:?} is Initializing", self.file_path,);
         let log_file = LogFile::try_from(self.file_path.clone()).map_err(|e| {
             error!("Unable to create LogFile. Error: {}", e);
             let event = BrokerEvent::ImporterSession(ImporterSession::PathError {
@@ -148,18 +146,16 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
         // fetch sync data from the keyspace
         if self.resume {
             let sync_range = SyncRange { from, to };
-            self.sync_data = SyncData::try_fetch(&self.default_keyspace, sync_range, 10)
-                .await
-                .map_err(|e| {
-                    error!("Unable to fetch SyncData {}", e);
-                    let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
-                        from_ms: self.from_ms,
-                        to_ms: self.to_ms,
-                        msg: "failed".into(),
-                    });
-                    rt.supervisor_handle().send(event).ok();
-                    ActorError::aborted(e)
-                })?;
+            self.sync_data = SyncData::try_fetch(&self.sync_records, sync_range).await.map_err(|e| {
+                error!("Unable to fetch SyncData {}", e);
+                let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
+                    from_ms: self.from_ms,
+                    to_ms: self.to_ms,
+                    msg: "failed".into(),
+                });
+                rt.supervisor_handle().send(event).ok();
+                ActorError::aborted(e)
+            })?;
         }
         self.log_file.replace(log_file);
         self.init_importing(rt).await?;
@@ -373,23 +369,12 @@ impl<T: FilterBuilder> Importer<T> {
         supervisor.send(BrokerEvent::ImporterSession(importer_session)).ok();
     }
     async fn insert_sync_record(&mut self, rt: &mut Rt<Self, BrokerHandle>, milestone_index: u32) -> ActorResult<()> {
-        let sync_record = SyncRecord::new(
-            bee_message::milestone::MilestoneIndex(milestone_index),
-            Some(0),
-            Some(0),
-        );
-        self.default_keyspace
-            .insert(&sync_record, &())
-            .consistency(Consistency::Quorum)
-            .build()?
-            .worker()
-            .with_retries(self.retries as usize)
-            .get_local()
-            .await
-            .map_err(|e| {
-                warn!("Scylla cluster is likely going through an outage");
-                ActorError::aborted_msg("Unable to insert sync record due to potential outage")
-            })
+        let sync_record = SyncRecord::new(MilestoneIndex(milestone_index), Some(0), Some(0));
+        self.sync_records.insert_one(sync_record, None).await.map_err(|e| {
+            warn!("Database cluster is likely going through an outage");
+            ActorError::restart_msg("Unable to insert sync record due to potential outage", None)
+        });
+        Ok(())
     }
 }
 

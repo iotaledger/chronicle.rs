@@ -38,19 +38,6 @@ impl TagHint {
         &self.table_kind
     }
 }
-
-impl TokenEncoder for TagHint {
-    fn encode_token(&self) -> TokenEncodeChain {
-        self.tag().into()
-    }
-}
-
-impl<B: Binder> Bindable<B> for TagHint {
-    fn bind(&self, binder: B) -> B {
-        binder.value(&self.tag).value(&self.table_kind)
-    }
-}
-
 /// Hint variants
 #[derive(Clone, Debug)]
 pub enum TagHintVariant {
@@ -73,11 +60,5 @@ impl Display for TagHintVariant {
                 TagHintVariant::NftOutput => "NftOutput",
             }
         )
-    }
-}
-
-impl ColumnEncoder for TagHintVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.to_string().encode(buffer)
     }
 }

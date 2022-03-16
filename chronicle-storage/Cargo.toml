@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
-scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "backstage" }
+mongodb = "2.1"
 bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1", "cpt2"] }
 bee-message-old = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, features = ["serde"], package = "bee-message" }
 bee-tangle = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false }

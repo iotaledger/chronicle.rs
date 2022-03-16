@@ -12,23 +12,19 @@ use crate::{
     },
 };
 use anyhow::anyhow;
-use bee_message::milestone::{
-    Milestone,
-    MilestoneIndex,
-};
 use std::ops::Range;
 
 pub struct Exporter {
     ms_range: Range<u32>,
-    keyspace: ChronicleKeyspace,
+    message_records: Collection<MessageRecord>,
     responder: TopologyResponder,
 }
 
 impl Exporter {
-    pub fn new(ms_range: Range<u32>, keyspace: ChronicleKeyspace, responder: TopologyResponder) -> Self {
+    pub fn new(ms_range: Range<u32>, message_records: Collection<MessageRecord>, responder: TopologyResponder) -> Self {
         Self {
             ms_range,
-            keyspace,
+            message_records,
             responder,
         }
     }
@@ -73,61 +69,25 @@ where
                 .await
                 .ok();
 
-            if let Some(milestone) =
-                query::<Bee<Milestone>, _, _>(&self.keyspace, &Bee(MilestoneIndex::from(ms)), None, None).await?
+            if let Some(milestone) = self
+                .message_records
+                .find_one(doc! {"message.payload": {"essence.index": ms}}, None)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?
             {
-                let ms_message_id = *milestone.message_id();
                 let mut milestone_data = MilestoneDataBuilder::new(ms, CreatedBy::Exporter);
-                debug!("Found milestone data {}", milestone.message_id());
-                let mut paging_state = None;
-                let milestone =
-                    match query::<MessageRecord, _, _>(&self.keyspace, &Bee(ms_message_id), None, None).await? {
-                        Some(m) => m,
-                        None => {
-                            self.responder
-                                .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
-                                    "Missing milestone message {}!",
-                                    ms
-                                )))))
-                                .await
-                                .ok();
-                            return Err(anyhow!("Missing milestone message {}!", ms).into());
-                        }
-                    };
                 debug!("Found milestone message {}", milestone.message_id());
                 milestone_data.set_milestone(MilestoneMessage::new(milestone));
-                loop {
-                    let mut messages = match query::<Paged<Iter<MessageRecord>>, _, _>(
-                        &self.keyspace,
-                        &Bee(ms_message_id),
-                        None,
-                        paging_state,
-                    )
-                    .await?
-                    {
-                        Some(m) => m,
-                        None => {
-                            self.responder
-                                .reply(Ok(TopologyOk::Export(ExporterStatus::Failed(format!(
-                                    "Missing messages for milestone {}!",
-                                    ms
-                                )))))
-                                .await
-                                .ok();
-                            return Err(anyhow!("Missing messages for milestone {}!", ms).into());
-                        }
-                    };
-                    paging_state = messages.paging_state.take();
-                    milestone_data.messages_mut().extend(
-                        messages
-                            .into_iter()
-                            .filter(|m| m.message_id != ms_message_id)
-                            .map(|m| (m.message_id, m)),
-                    );
-                    if paging_state.is_none() {
-                        break;
-                    }
+
+                let mut messages = self
+                    .message_records
+                    .find(doc! {"milestone_index": ms}, None)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                while let Some(message) = messages.try_next().await.map_err(|e| anyhow::anyhow!(e))? {
+                    milestone_data.add_message(message, None);
                 }
+
                 let milestone_data = milestone_data.build()?;
                 debug!("Finished processing milestone {}", ms);
                 debug!("Milestone Data:\n{:?}", milestone_data);
@@ -156,28 +116,4 @@ where
             .ok();
         Ok(())
     }
-}
-
-async fn query<V, S, K>(
-    keyspace: &S,
-    key: &K,
-    page_size: Option<i32>,
-    paging_state: Option<Vec<u8>>,
-) -> anyhow::Result<Option<V>>
-where
-    S: 'static + Select<K, (), V> + Clone,
-    K: 'static + Send + Sync + Clone + TokenEncoder,
-    V: 'static + Send + Sync + Clone + std::fmt::Debug + RowsDecoder,
-{
-    let request = keyspace.select::<V>(&key, &()).consistency(Consistency::One);
-    Ok(if let Some(page_size) = page_size {
-        request.page_size(page_size).paging_state(&paging_state)
-    } else {
-        request.paging_state(&paging_state)
-    }
-    .build()?
-    .worker()
-    .with_retries(3)
-    .get_local()
-    .await?)
 }

@@ -34,4 +34,3 @@ extern crate rocket;
 
 use async_trait::async_trait;
 use backstage::core::*;
-use scylla_rs::prelude::*;

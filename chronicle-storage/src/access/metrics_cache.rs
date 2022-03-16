@@ -38,65 +38,11 @@ impl DerefMut for MetricsCacheCount {
         &mut self.0
     }
 }
-impl ColumnDecoder for MetricsCacheCount {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(MetricsCacheCount(u64::try_decode_column(slice)?))
-    }
-}
-
-impl TokenEncoder for MetricsCacheRecord {
-    fn encode_token(&self) -> TokenEncodeChain {
-        (&self.date).into()
-    }
-}
-
-impl Row for MetricsCacheRecord {
-    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(Self {
-            date: rows.column_value()?,
-            variant: {
-                let variant = rows.column_value::<String>()?;
-                match variant.as_str() {
-                    "address" => MetricsVariant::Address(AddressMetrics::from_str(&rows.column_value::<String>()?)?),
-                    "index" => MetricsVariant::Index(IndexMetrics::from_str(&rows.column_value::<String>()?)?),
-                    _ => Err(anyhow!("Invalid address metrics variant: {}", variant))?,
-                }
-            },
-            value: rows.column_value()?,
-            metric_value: rows.column_value()?,
-        })
-    }
-}
-
-impl<B: Binder> Bindable<B> for MetricsCacheRecord {
-    fn bind(&self, binder: B) -> B {
-        binder
-            .value(self.date)
-            .bind(self.variant)
-            .value(&self.value)
-            .value(&self.metric_value)
-    }
-}
 
 #[derive(Copy, Clone, Debug)]
 pub enum MetricsVariant {
     Address(AddressMetrics),
     Index(IndexMetrics),
-}
-
-impl<B: Binder> Bindable<B> for MetricsVariant {
-    fn bind(&self, binder: B) -> B {
-        match self {
-            Self::Address(address) => binder.value("address").value(address.to_string()),
-            Self::Index(index) => binder.value("index").value(index.to_string()),
-        }
-    }
 }
 
 #[derive(Copy, Clone, Debug)]

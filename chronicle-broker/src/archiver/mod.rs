@@ -5,14 +5,11 @@ use super::*;
 use crate::syncer::Ascending;
 use anyhow::bail;
 use bee_message::milestone::MilestoneIndex;
-use chronicle_common::alert;
-use chronicle_storage::access::ChronicleKeyspace;
 use std::{
     collections::BinaryHeap,
     convert::TryFrom,
     io::BufRead,
     path::PathBuf,
-    sync::Arc,
 };
 use tokio::{
     fs::{
@@ -39,14 +36,14 @@ pub struct Archiver {
     cleanup: Vec<u32>,
     processed: Vec<std::ops::Range<u32>>,
     milestones_data: BinaryHeap<Ascending<MilestoneData>>,
-    keyspace: ChronicleKeyspace,
+    sync_records: Collection<SyncRecord>,
     next: u32,
 }
 
 impl Archiver {
     pub(crate) fn new<T: Into<PathBuf>>(
         dir_path: T,
-        keyspace: ChronicleKeyspace,
+        sync_records: Collection<SyncRecord>,
         next: u32,
         max_log_size: Option<u64>,
     ) -> Self {
@@ -57,7 +54,7 @@ impl Archiver {
             cleanup: Vec::with_capacity(2),
             max_log_size: max_log_size.unwrap_or(MAX_LOG_SIZE),
             processed: Vec::new(),
-            keyspace,
+            sync_records,
             milestones_data,
             next,
         }
@@ -225,7 +222,7 @@ impl Archiver {
         {
             // append milestone data to the log file if the file_size still less than max limit
             if (milestone_data_line.len() as u64) + log_file.len() < self.max_log_size {
-                Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace, 10).await?;
+                Self::append(log_file, &milestone_data_line, milestone_index, &self.sync_records, 10).await?;
                 // check if now the log_file reached an upper limit to finish the file
                 if log_file.upper_ms_limit == log_file.to_ms_index {
                     self.cleanup.push(log_file.from_ms_index);
@@ -287,7 +284,7 @@ impl Archiver {
     ) -> anyhow::Result<()> {
         let mut log_file =
             LogFile::create(&self.dir_path, milestone_index, opt_upper_limit, Default::default()).await?;
-        Self::append(&mut log_file, milestone_data_line, milestone_index, &self.keyspace, 5).await?;
+        Self::append(&mut log_file, milestone_data_line, milestone_index, &self.sync_records, 5).await?;
         // check if we hit an upper_ms_limit, as this is possible when the log_file only needs 1 milestone data.
         if log_file.upper_ms_limit == log_file.to_ms_index {
             // finish it
@@ -334,20 +331,16 @@ impl Archiver {
         log_file: &mut LogFile,
         milestone_data_line: &Vec<u8>,
         ms_index: u32,
-        keyspace: &ChronicleKeyspace,
+        sync_records: &Collection<SyncRecord>,
         retries: usize,
     ) -> anyhow::Result<()> {
         log_file.append_line(&milestone_data_line).await?;
         // insert into the DB, without caring about the response
-        let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
-        keyspace
-            .insert(&synced_record, &())
-            .consistency(Consistency::Quorum)
-            .build()?
-            .worker()
-            .with_retries(retries)
-            .send_local()
-            .ok();
+        let sync_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
+        sync_records.insert_one(sync_record, None).await.map_err(|e| {
+            warn!("Database cluster is likely going through an outage");
+            ActorError::restart_msg("Unable to insert sync record due to potential outage", None)
+        });
         Ok(())
     }
     async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> anyhow::Result<()> {

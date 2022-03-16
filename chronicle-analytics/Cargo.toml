@@ -14,7 +14,7 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage" }
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
+bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1", "cpt2"] }
 tokio = { version = "1.15" }
 futures = "0.3"
 url = "2.2"

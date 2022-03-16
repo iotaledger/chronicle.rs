@@ -9,7 +9,13 @@ use super::{
     },
     *,
 };
-use backstage::core::MqttChannel;
+use backstage::core::{
+    paho_mqtt::{
+        AsyncClient,
+        CreateOptionsBuilder,
+    },
+    MqttChannel,
+};
 use bee_rest_api::types::responses::MessageMetadataResponse;
 use futures::stream::StreamExt;
 use std::{

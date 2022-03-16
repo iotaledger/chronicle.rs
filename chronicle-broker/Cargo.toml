@@ -12,7 +12,6 @@ path = "src/lib.rs"
 chronicle-common = { path = "../chronicle-common", optional = true }
 chronicle-storage = { path = "../chronicle-storage" }
 backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", optional = true, features = ["paho-mqtt"] }
-scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 log = { version = "0.4", optional = true }
@@ -23,7 +22,7 @@ lru = { version = "0.7", optional = true }
 rand = { version = "0.8", optional = true }
 url = { version = "2.2", features = ["serde"] }
 bee-rest-api = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"], optional = true }
-bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
+bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1", "cpt2"] }
 hex = { version = "0.4", optional = true }
 anyhow = { version = "1.0", optional = true }
 tokio = { version = "1.15", optional = true }
@@ -43,7 +42,6 @@ default = ["merge"]
 sync = [
     "chronicle-common",
     "chronicle-storage/sync",
-    "scylla-rs",
     "anyhow",
     "tokio/full",
 ]
@@ -60,14 +58,12 @@ merge = [
 analytic = [
     "chronicle-common",
     "anyhow",
-    "scylla-rs",
     "tokio/full",
     "futures",
 ]
 application = [
     "chronicle-common",
     "backstage/tungstenite",
-    "scylla-rs",
     "serde_json",
     "log",
     "reqwest",

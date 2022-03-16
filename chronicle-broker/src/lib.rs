@@ -42,10 +42,7 @@ use application::{
 };
 
 #[cfg(feature = "application")]
-use filter::{
-    AtomicProcessHandle,
-    FilterBuilder,
-};
+use filter::FilterBuilder;
 
 #[cfg(feature = "application")]
 mod app {
@@ -54,19 +51,15 @@ mod app {
         bail,
         ensure,
     };
+    pub use backstage::core::*;
     pub use bee_message::MessageId;
     pub use chronicle_common::SyncRange;
-    pub use chronicle_storage::access::*;
+    pub use chronicle_storage::*;
     pub use log::*;
     pub use packable::{
         Packable,
         PackableExt,
     };
-    pub use paho_mqtt::{
-        AsyncClient,
-        CreateOptionsBuilder,
-    };
-    pub use scylla_rs::prelude::*;
     pub use serde::{
         Deserialize,
         Serialize,
@@ -88,16 +81,16 @@ mod app {
     };
     pub use url::Url;
 }
+use futures::TryStreamExt;
+use mongodb::{
+    bson::doc,
+    options::FindOptions,
+    Collection,
+    Database,
+};
 use std::{
-    collections::{
-        HashSet,
-        VecDeque,
-    },
+    collections::HashSet,
     fmt::Debug,
-    task::{
-        Context,
-        Poll,
-    },
 };
 
 #[cfg(feature = "application")]

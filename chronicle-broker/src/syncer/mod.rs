@@ -11,10 +11,8 @@ use super::{
     },
     *,
 };
-use chronicle_storage::keyspaces::ChronicleKeyspace;
 use std::{
     ops::Deref,
-    sync::Arc,
     time::Duration,
 };
 pub(crate) type SyncerHandle = AbortableUnboundedHandle<SyncerEvent>;
@@ -79,7 +77,7 @@ pub enum SyncerEvent {
 pub struct Syncer {
     sync_data: SyncData,
     update_sync_data_every: Duration,
-    keyspace: ChronicleKeyspace,
+    sync_records: Collection<SyncRecord>,
     sync_range: SyncRange,
     parallelism: u8,
     active: Option<Active>,
@@ -98,12 +96,12 @@ impl Syncer {
         sync_range: SyncRange,
         update_sync_data_every: Duration,
         parallelism: u8,
-        keyspace: ChronicleKeyspace,
+        sync_records: Collection<SyncRecord>,
     ) -> Self {
         Self {
             sync_data,
             update_sync_data_every,
-            keyspace,
+            sync_records,
             sync_range,
             parallelism,
             active: None,
@@ -138,7 +136,7 @@ impl Syncer {
                 warn!("Syncer got aborted while sleeping");
                 ActorError::aborted_msg("Syncer got aborted while sleeping")
             })?;
-        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, self.sync_range, 10).await {
+        if let Ok(sync_data) = SyncData::try_fetch(&self.sync_records, self.sync_range).await {
             info!("Updated the sync data");
             self.sync_data = sync_data;
             if archiver.is_some() {

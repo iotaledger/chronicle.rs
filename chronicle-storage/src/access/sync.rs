@@ -3,20 +3,13 @@
 
 use super::*;
 use chronicle_common::SyncRange;
-use futures::{
-    StreamExt,
-    TryStreamExt,
-};
-use std::{
-    collections::BTreeMap,
-    ops::Range,
-};
+use futures::TryStreamExt;
+use std::ops::Range;
 
 /// A 'sync' table row
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct SyncRecord {
-    pub ms_range_id: MsRangeId,
     pub milestone_index: MilestoneIndex,
     pub synced_by: Option<SyncedBy>,
     pub logged_by: Option<LoggedBy>,
@@ -26,42 +19,10 @@ impl SyncRecord {
     /// Creates a new sync row
     pub fn new(milestone_index: MilestoneIndex, synced_by: Option<SyncedBy>, logged_by: Option<LoggedBy>) -> Self {
         Self {
-            ms_range_id: Self::range_id(milestone_index.0),
             milestone_index,
             synced_by,
             logged_by,
         }
-    }
-}
-
-impl Partitioned for SyncRecord {
-    const MS_CHUNK_SIZE: u32 = 250_000;
-}
-
-impl TokenEncoder for SyncRecord {
-    fn encode_token(&self) -> TokenEncodeChain {
-        (&self.ms_range_id).into()
-    }
-}
-
-impl Row for SyncRecord {
-    fn try_decode_row<T: ColumnValue>(rows: &mut T) -> anyhow::Result<Self> {
-        Ok(Self {
-            ms_range_id: rows.column_value()?,
-            milestone_index: rows.column_value::<Bee<MilestoneIndex>>()?.into_inner(),
-            synced_by: rows.column_value()?,
-            logged_by: rows.column_value()?,
-        })
-    }
-}
-
-impl<B: Binder> Bindable<B> for SyncRecord {
-    fn bind(&self, binder: B) -> B {
-        binder
-            .value(self.ms_range_id)
-            .value(Bee(self.milestone_index))
-            .value(self.synced_by)
-            .value(self.logged_by)
     }
 }
 
@@ -78,58 +39,44 @@ pub struct SyncData {
 
 impl SyncData {
     /// Try to fetch the sync data from the sync table for the provided keyspace and sync range
-    pub async fn try_fetch<S: 'static + Select<(), (), Iter<SyncRecord>>>(
-        keyspace: &S,
-        sync_range: SyncRange,
-        retries: usize,
-    ) -> anyhow::Result<SyncData> {
-        let res = keyspace
-            .select(&(), &())
-            .consistency(Consistency::One)
-            .build()?
-            .worker()
-            .with_retries(retries)
-            .get_local()
-            .await?;
+    pub async fn try_fetch(collection: &Collection<SyncRecord>, sync_range: SyncRange) -> anyhow::Result<SyncData> {
+        let mut res = collection.find(None, None).await?;
         let mut sync_data = SyncData::default();
-        if let Some(mut res_iter) = res {
-            if let Some(SyncRecord {
+        if let Some(SyncRecord {
+            milestone_index,
+            logged_by,
+            ..
+        }) = res.try_next().await?
+        {
+            // push missing row/gap (if any)
+            sync_data.process_gaps(sync_range.to, *milestone_index);
+            sync_data.process_rest(&logged_by, *milestone_index, &None);
+            let mut pre_ms = milestone_index;
+            let mut pre_lb = logged_by;
+            // Generate and identify missing gaps in order to fill them
+            while let Some(SyncRecord {
                 milestone_index,
                 logged_by,
                 ..
-            }) = res_iter.next()
+            }) = res.try_next().await?
             {
-                // push missing row/gap (if any)
-                sync_data.process_gaps(sync_range.to, *milestone_index);
-                sync_data.process_rest(&logged_by, *milestone_index, &None);
-                let mut pre_ms = milestone_index;
-                let mut pre_lb = logged_by;
-                // Generate and identify missing gaps in order to fill them
-                while let Some(SyncRecord {
-                    milestone_index,
-                    logged_by,
-                    ..
-                }) = res_iter.next()
-                {
-                    // check if there are any missings
-                    sync_data.process_gaps(*pre_ms, *milestone_index);
-                    sync_data.process_rest(&logged_by, *milestone_index, &pre_lb);
-                    pre_ms = milestone_index;
-                    pre_lb = logged_by;
-                }
-                // pre_ms is the most recent milestone we processed
-                // it's also the lowest milestone index in the select response
-                // so anything < pre_ms && anything >= (self.sync_range.from - 1)
-                // (lower provided sync bound) are missing
-                // push missing row/gap (if any)
-                sync_data.process_gaps(*pre_ms, sync_range.from - 1);
-            } else {
-                // Everything is missing as gaps
-                sync_data.process_gaps(sync_range.to, sync_range.from - 1);
+                // check if there are any missings
+                sync_data.process_gaps(*pre_ms, *milestone_index);
+                sync_data.process_rest(&logged_by, *milestone_index, &pre_lb);
+                pre_ms = milestone_index;
+                pre_lb = logged_by;
             }
+            // pre_ms is the most recent milestone we processed
+            // it's also the lowest milestone index in the select response
+            // so anything < pre_ms && anything >= (self.sync_range.from - 1)
+            // (lower provided sync bound) are missing
+            // push missing row/gap (if any)
+            sync_data.process_gaps(*pre_ms, sync_range.from - 1);
         } else {
+            // Everything is missing as gaps
             sync_data.process_gaps(sync_range.to, sync_range.from - 1);
         }
+
         Ok(sync_data)
     }
     /// Takes the lowest gap from the sync_data

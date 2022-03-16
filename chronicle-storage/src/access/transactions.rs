@@ -133,45 +133,6 @@ impl TransactionRecord {
         &self.inclusion_state
     }
 }
-
-impl Row for TransactionRecord {
-    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(Self {
-            transaction_id: rows.column_value::<Bee<TransactionId>>()?.into_inner(),
-            idx: rows.column_value()?,
-            variant: rows.column_value()?,
-            message_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
-            data: rows.column_value()?,
-            milestone_index: rows
-                .column_value::<Option<Bee<MilestoneIndex>>>()?
-                .map(|i| i.into_inner()),
-            inclusion_state: rows.column_value()?,
-        })
-    }
-}
-
-impl TokenEncoder for TransactionRecord {
-    fn encode_token(&self) -> TokenEncodeChain {
-        (&Bee(&self.transaction_id)).into()
-    }
-}
-
-impl<B: Binder> Bindable<B> for TransactionRecord {
-    fn bind(&self, binder: B) -> B {
-        binder
-            .value(Bee(&self.transaction_id))
-            .value(self.idx)
-            .value(self.variant as u8)
-            .value(Bee(&self.message_id))
-            .value(&self.data)
-            .value(self.milestone_index.as_ref().map(Bee))
-            .value(self.inclusion_state)
-    }
-}
-
 /// Transaction variants. Can be Input, Output, or Unlock.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug)]
@@ -184,32 +145,6 @@ pub enum TransactionVariant {
     Unlock = 2,
     /// A Receipt payload, used to point to treasury payload
     Receipt = 3,
-}
-
-impl ColumnDecoder for TransactionVariant {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        Ok(match std::str::from_utf8(slice)? {
-            "input" => TransactionVariant::Input,
-            "output" => TransactionVariant::Output,
-            "unlock" => TransactionVariant::Unlock,
-            "receipt" => TransactionVariant::Receipt,
-            _ => bail!("Unexpected variant type"),
-        })
-    }
-}
-
-impl ColumnEncoder for TransactionVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        let variant;
-        match self {
-            TransactionVariant::Input => variant = "input",
-            TransactionVariant::Output => variant = "output",
-            TransactionVariant::Unlock => variant = "unlock",
-            TransactionVariant::Receipt => variant = "receipt",
-        }
-        buffer.extend(&i32::to_be_bytes(variant.len() as i32));
-        buffer.extend(variant.as_bytes());
-    }
 }
 
 /// A transaction's unlock data, to be stored in a `transactions` row.
@@ -276,19 +211,6 @@ pub enum TransactionData {
     /// A receipt payload which can be used to trace back to migrated/treasury funds
     #[packable(tag = 3)]
     Receipt(bee_message::payload::ReceiptPayload),
-}
-
-impl ColumnEncoder for TransactionData {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        buffer.extend(i32::to_be_bytes(self.packed_len() as i32));
-        self.pack(buffer).ok();
-    }
-}
-
-impl ColumnDecoder for TransactionData {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        Self::unpack_verified(slice).map_err(|e| anyhow!("{:?}", e))
-    }
 }
 
 /// A result struct which holds a retrieved transaction

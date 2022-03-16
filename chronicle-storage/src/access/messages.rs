@@ -2,21 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use bee_rest_api::types::{
-    dtos::ChrysalisMessageDto,
-    responses::MessageMetadataResponse,
-};
-use bee_tangle::ConflictReason;
-use packable::{
-    error::UnpackError,
-    prefix::{
-        UnpackPrefixError,
-        VecPrefix,
-    },
-};
-
-use std::convert::Infallible;
-
 use bee_message::{
     parent::Parents,
     payload::{
@@ -26,20 +11,24 @@ use bee_message::{
     Error,
     MessageId,
 };
-
 use bee_pow::providers::{
-    miner::Miner,
     NonceProvider,
     NonceProviderBuilder,
 };
-
+use bee_rest_api::types::{
+    dtos::ChrysalisMessageDto,
+    responses::MessageMetadataResponse,
+};
+use bee_tangle::ConflictReason;
 use crypto::hashes::{
     blake2b::Blake2b256,
     Digest,
 };
-
 use packable::{
-    error::UnpackErrorExt,
+    error::{
+        UnpackError,
+        UnpackErrorExt,
+    },
     packer::Packer,
     unpacker::Unpacker,
     Packable,
@@ -683,6 +672,7 @@ pub struct MessageRecord {
     pub message_id: MessageId,
     pub message: Message,
     pub milestone_index: Option<MilestoneIndex>,
+    // TODO: Add timestamp?
     pub inclusion_state: Option<LedgerInclusionState>,
     pub conflict_reason: Option<ConflictReason>,
     pub proof: Option<Proof>,
@@ -766,42 +756,6 @@ impl From<(Message, MessageMetadataResponse)> for MessageRecord {
     }
 }
 
-impl TokenEncoder for MessageRecord {
-    fn encode_token(&self) -> TokenEncodeChain {
-        (&Bee(&self.message_id)).into()
-    }
-}
-
-impl Row for MessageRecord {
-    fn try_decode_row<R: Rows + ColumnValue>(rows: &mut R) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(Self {
-            message_id: rows.column_value::<Bee<MessageId>>()?.into_inner(),
-            message: rows.column_value::<Bee<Message>>()?.into_inner(),
-            milestone_index: rows
-                .column_value::<Option<Bee<MilestoneIndex>>>()?
-                .map(|a| a.into_inner()),
-            inclusion_state: rows.column_value()?,
-            conflict_reason: rows.column_value::<Option<u8>>()?.map(|r| r.try_into()).transpose()?,
-            proof: rows.column_value()?,
-        })
-    }
-}
-
-impl<B: Binder> Bindable<B> for MessageRecord {
-    fn bind(&self, binder: B) -> B {
-        binder
-            .value(Bee(self.message_id))
-            .value(Bee(&self.message))
-            .value(self.milestone_index.as_ref().map(Bee))
-            .value(self.inclusion_state.as_ref().map(|l| *l as u8))
-            .value(self.conflict_reason.as_ref().map(|c| *c as u8))
-            .value(&self.proof)
-    }
-}
-
 impl PartialOrd for MessageRecord {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -860,22 +814,6 @@ impl Proof {
     }
     pub fn path_mut(&mut self) -> &mut Vec<MessageId> {
         &mut self.path
-    }
-}
-
-impl ColumnEncoder for Proof {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        buffer.extend(&i32::to_be_bytes(self.packed_len() as i32));
-        self.pack(buffer).ok();
-    }
-}
-
-impl ColumnDecoder for Proof {
-    fn try_decode_column(slice: &[u8]) -> anyhow::Result<Self> {
-        Self::unpack_verified(slice).map_err(|e| match e {
-            UnpackError::Packable(e) => e,
-            UnpackError::Unpacker(e) => anyhow!(e),
-        })
     }
 }
 

@@ -72,21 +72,6 @@ impl AddressHint {
     }
 }
 
-impl TokenEncoder for AddressHint {
-    fn encode_token(&self) -> TokenEncodeChain {
-        (&Bee(&self.address)).into()
-    }
-}
-
-impl<B: Binder> Bindable<B> for AddressHint {
-    fn bind(&self, binder: B) -> B {
-        binder
-            .value(Bee(self.address))
-            .value(&self.output_table)
-            .value(&self.variant)
-    }
-}
-
 /// Hint variants
 #[derive(Clone, Debug)]
 pub enum AddressHintVariant {
@@ -115,12 +100,6 @@ impl Display for AddressHintVariant {
     }
 }
 
-impl ColumnEncoder for AddressHintVariant {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.to_string().encode(buffer)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum OutputTable {
     Legacy,
@@ -143,11 +122,5 @@ impl Display for OutputTable {
                 Self::Foundry => "Foundry",
             }
         )
-    }
-}
-
-impl ColumnEncoder for OutputTable {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        self.to_string().encode(buffer)
     }
 }

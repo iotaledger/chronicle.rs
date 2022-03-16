@@ -11,7 +11,6 @@ path = "src/lib.rs"
 [dependencies]
 chronicle-common = { path = "../chronicle-common" }
 chronicle-storage = { path = "../chronicle-storage", features = ["sync", "analytic"] }
-scylla-rs = { git = "https://github.com/iotaledger/scylla.rs", branch = "backstage" }
 backstage = { git = "https://github.com/iotaledger/backstage", branch = "stable", features = ["tungstenite"] }
 bee-rest-api = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"] }
 bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1", "cpt2"] }

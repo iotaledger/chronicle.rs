@@ -9,7 +9,6 @@ use crate::{
     requester::*,
     solidifier::*,
 };
-use anyhow::bail;
 use backstage::core::Channel;
 use bee_message::{
     milestone::MilestoneIndex,
@@ -22,7 +21,6 @@ use lru::LruCache;
 use std::{
     fmt::Debug,
     str::FromStr,
-    sync::Arc,
 };
 pub(crate) type CollectorId = u8;
 pub(crate) type CollectorHandle = UnboundedHandle<CollectorEvent>;
@@ -399,7 +397,7 @@ where
                                                 let mut value =
                                                     self.pending_requests.remove(&message_id).unwrap_or_default();
                                                 value.insert(try_ms_index);
-                                                self.requested_requests.insert(message_id, hashset! {try_ms_index});
+                                                self.requested_requests.insert(message_id, value);
                                             } else {
                                                 // insert it into pending to be requested eventaully
                                                 self.pending_requests

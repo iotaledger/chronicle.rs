@@ -22,20 +22,8 @@ use super::{
 use bee_message::{
     milestone::MilestoneIndex,
     parent::Parents,
-    payload::{
-        MilestonePayload,
-        Payload,
-    },
 };
-use chronicle_common::alert;
-use lru::LruCache;
-use std::{
-    fmt::Debug,
-    sync::{
-        atomic::Ordering,
-        Arc,
-    },
-};
+use std::fmt::Debug;
 
 /// The solidifier handle type
 pub type SolidifierHandle = UnboundedHandle<SolidifierEvent>;
@@ -64,7 +52,7 @@ impl ShutdownEvent for SolidifierEvent {
 
 /// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier<T: FilterBuilder> {
-    keyspace: ChronicleKeyspace,
+    database: Database,
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneDataBuilder>,
     message_id_partitioner: MessageIdPartitioner,
@@ -76,7 +64,7 @@ pub struct Solidifier<T: FilterBuilder> {
 
 impl<T: FilterBuilder> Solidifier<T> {
     pub(super) fn new(
-        keyspace: ChronicleKeyspace,
+        database: Database,
         partition_id: u8,
         partitioner: MessageIdPartitioner,
         gap_start: u32,
@@ -85,7 +73,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
     ) -> Self {
         Self {
-            keyspace,
+            database,
             partition_id,
             milestones_data: HashMap::new(),
             message_id_partitioner: partitioner,
@@ -349,18 +337,12 @@ impl<T: FilterBuilder> Solidifier<T> {
         milestone_index: u32,
     ) -> ActorResult<()> {
         let sync_record = SyncRecord::new(MilestoneIndex(milestone_index), Some(0), None);
-        self.keyspace
-            .insert(&sync_record, &())
-            .consistency(Consistency::Quorum)
-            .build()?
-            .worker()
-            .with_retries(self.retries as usize)
-            .get_local()
-            .await
-            .map_err(|e| {
-                warn!("Scylla cluster is likely going through an outage");
-                ActorError::restart_msg("Unable to insert sync record due to potential outage", None)
-            })
+        let sync_records = self.database.collection("sync");
+        sync_records.insert_one(sync_record, None).await.map_err(|e| {
+            warn!("Database cluster is likely going through an outage");
+            ActorError::restart_msg("Unable to insert sync record due to potential outage", None)
+        });
+        Ok(())
     }
     async fn handle_milestone_msg<S: SupHandle<Self>>(
         &mut self,

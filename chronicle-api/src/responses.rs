@@ -10,7 +10,6 @@ use bee_message::{
         OutputId,
     },
     payload::transaction::TransactionId,
-    Message,
     MessageId,
 };
 use bee_rest_api::types::{
@@ -22,28 +21,26 @@ use bee_rest_api::types::{
     },
     responses::MessageMetadataResponse,
 };
-use chronicle_storage::access::{
-    InputData,
-    LedgerInclusionState,
-    LegacyOutputRecord,
-    MsAnalyticsRecord,
-    MsRangeId,
-    OutputType,
-    ParentRecord,
-    TagRecord,
-    TransactionRes,
-    UnlockRes,
+use chronicle_storage::{
+    access::{
+        InputData,
+        LedgerInclusionState,
+        LegacyOutputRecord,
+        MsAnalyticsRecord,
+        OutputType,
+        TagRecord,
+        TransactionRes,
+        UnlockRes,
+    },
+    MessageRecord,
+    ProtocolId,
 };
 use serde::{
     Deserialize,
     Serialize,
 };
 use std::{
-    borrow::{
-        Borrow,
-        Cow,
-    },
-    collections::VecDeque,
+    borrow::Borrow,
     convert::TryFrom,
 };
 
@@ -62,8 +59,8 @@ pub(crate) enum ListenerResponseV1 {
     Message {
         #[serde(rename = "networkId")]
         network_id: Option<String>,
-        #[serde(rename = "protocolVersion")]
-        protocol_version: u8,
+        #[serde(rename = "protocolId")]
+        protocol_id: ProtocolId,
         #[serde(rename = "parentMessageIds")]
         parents: Vec<MessageId>,
         payload: Option<PayloadDto>,
@@ -80,7 +77,6 @@ pub(crate) enum ListenerResponseV1 {
         count: usize,
         #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<MessageId>,
-        paging_state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages/<message_id>/children[?expanded=true]
     MessageChildrenExpanded {
@@ -91,7 +87,6 @@ pub(crate) enum ListenerResponseV1 {
         count: usize,
         #[serde(rename = "childrenMessageIds")]
         children_message_ids: Vec<Record>,
-        paging_state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?<index>
     MessagesForIndex {
@@ -101,7 +96,6 @@ pub(crate) enum ListenerResponseV1 {
         count: usize,
         #[serde(rename = "messageIds")]
         message_ids: Vec<MessageId>,
-        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/messages?<index>[&expanded=true]
     MessagesForIndexExpanded {
@@ -111,33 +105,24 @@ pub(crate) enum ListenerResponseV1 {
         count: usize,
         #[serde(rename = "messageIds")]
         message_ids: Vec<Record>,
-        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/addresses/<address>/outputs
     OutputsForAddress {
-        // The type of the address (1=Ed25519).
-        #[serde(rename = "addressType")]
-        address_type: u8,
         address: Address,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
         #[serde(rename = "outputIds")]
         output_ids: Vec<OutputId>,
-        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/addresses/<address>/outputs[?expanded=true]
     OutputsForAddressExpanded {
-        // The type of the address (1=Ed25519).
-        #[serde(rename = "addressType")]
-        address_type: u8,
         address: Address,
         #[serde(rename = "maxResults")]
         max_results: usize,
         count: usize,
         #[serde(rename = "outputIds")]
         output_ids: Vec<Record>,
-        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/outputs/<output_id>
     Output {
@@ -156,35 +141,33 @@ pub(crate) enum ListenerResponseV1 {
     /// Response of GET /api/<keyspace>/transactions/ed25519/<address>
     Transactions {
         transactions: Vec<Transaction>,
-        state: Option<String>,
     },
     TransactionHistory {
         transactions: Vec<Transfer>,
-        state: Option<String>,
     },
     /// Response of GET /api/<keyspace>/milestone/<index>
     Milestone {
         #[serde(rename = "index")]
         milestone_index: MilestoneIndex,
         #[serde(rename = "messageId")]
-        message_id: String,
+        message_id: MessageId,
         timestamp: u64,
     },
     /// Response of GET /api/<keyspace>/analytics[?start=<u32>&end=<u32>]
-    Analytics { ranges: Vec<MsAnalyticsRecord> },
+    Analytics {
+        ranges: Vec<MsAnalyticsRecord>,
+    },
 }
 
-impl TryFrom<Message> for ListenerResponseV1 {
-    type Error = Cow<'static, str>;
-
-    fn try_from(message: Message) -> Result<Self, Self::Error> {
-        Ok(ListenerResponseV1::Message {
+impl From<chronicle_storage::Message> for ListenerResponseV1 {
+    fn from(message: chronicle_storage::Message) -> Self {
+        ListenerResponseV1::Message {
             network_id: None,
-            protocol_version: message.protocol_version(),
+            protocol_id: message.protocol_id(),
             parents: message.parents().iter().map(|p| *p).collect(),
             payload: message.payload().map(Into::into),
             nonce: message.nonce().to_string(),
-        })
+        }
     }
 }
 
@@ -249,8 +232,8 @@ impl From<TagRecord> for Record {
     }
 }
 
-impl From<ParentRecord> for Record {
-    fn from(record: ParentRecord) -> Self {
+impl From<MessageRecord> for Record {
+    fn from(record: MessageRecord) -> Self {
         Record {
             id: record.message_id.to_string(),
             inclusion_state: record.inclusion_state,
@@ -331,15 +314,10 @@ impl From<UnlockRes> for Unlock {
 pub(crate) struct StateData {
     #[serde(rename = "pagingState")]
     pub paging_state: Option<Vec<u8>>,
-    #[serde(rename = "partitionIds")]
-    pub ms_range_ids: VecDeque<MsRangeId>,
 }
 
-impl From<(Option<Vec<u8>>, VecDeque<MsRangeId>)> for StateData {
-    fn from((paging_state, ms_range_ids): (Option<Vec<u8>>, VecDeque<MsRangeId>)) -> Self {
-        Self {
-            paging_state,
-            ms_range_ids,
-        }
+impl From<Option<Vec<u8>>> for StateData {
+    fn from(paging_state: Option<Vec<u8>>) -> Self {
+        Self { paging_state }
     }
 }

@@ -25,7 +25,7 @@ mod rocket;
 enum ListenerError {
     #[error("No results returned!")]
     NoResults,
-    #[error("No response from scylla!")]
+    #[error("No response from the database!")]
     NoResponseError,
     #[error("Provided index is too large! (Max 64 bytes)")]
     IndexTooLarge,
@@ -57,24 +57,10 @@ impl ListenerError {
     }
 }
 
-impl From<RequestError> for ListenerError {
-    fn from(e: RequestError) -> Self {
+impl From<chronicle_storage::mongodb::error::Error> for ListenerError {
+    fn from(e: chronicle_storage::mongodb::error::Error) -> Self {
         anyhow::anyhow!(e).into()
     }
-}
-
-/// A listener event
-pub enum Event {
-    /// Response from scylla with a payload
-    Response {
-        /// The payload.
-        giveload: Vec<u8>,
-    },
-    /// Error from scylla
-    Error {
-        /// The Error kind.
-        kind: WorkerError,
-    },
 }
 
 /// A success wrapper for API responses
