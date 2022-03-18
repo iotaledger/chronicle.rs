@@ -1,18 +1,33 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
-use crate::syncer::Ascending;
+use super::{
+    filter::FilterHandle,
+    *,
+};
 use anyhow::bail;
-use bee_message::milestone::MilestoneIndex;
-use chronicle_common::alert;
-use chronicle_storage::access::ChronicleKeyspace;
+use backstage::core::{
+    Actor,
+    ActorError,
+    ActorResult,
+    Rt,
+    ShutdownEvent,
+    SupHandle,
+    UnboundedChannel,
+    UnboundedHandle,
+};
+use futures::stream::StreamExt;
+use chronicle_common::types::{
+    Ascending,
+    CreatedBy,
+    MilestoneData,
+    OldMilestoneData,
+};
 use std::{
     collections::BinaryHeap,
     convert::TryFrom,
     io::BufRead,
     path::PathBuf,
-    sync::Arc,
 };
 use tokio::{
     fs::{
@@ -32,24 +47,19 @@ pub const MAX_LOG_SIZE: u64 = u32::MAX as u64;
 const MAX_MILESTONE_DATA_LEN: usize = 4;
 
 /// Archiver state
-pub struct Archiver {
+pub struct Archiver<T: FilterBuilder> {
     dir_path: PathBuf,
     logs: Vec<LogFile>,
     max_log_size: u64,
     cleanup: Vec<u32>,
     processed: Vec<std::ops::Range<u32>>,
     milestones_data: BinaryHeap<Ascending<MilestoneData>>,
-    keyspace: ChronicleKeyspace,
     next: u32,
+    filter_handle: T::Handle,
 }
 
-impl Archiver {
-    pub(crate) fn new<T: Into<PathBuf>>(
-        dir_path: T,
-        keyspace: ChronicleKeyspace,
-        next: u32,
-        max_log_size: Option<u64>,
-    ) -> Self {
+impl<T: FilterBuilder> Archiver<T> {
+    pub(crate) fn new<P: Into<PathBuf>>(dir_path: P, max_log_size: Option<u64>, filter_handle: T::Handle) -> Self {
         let milestones_data: BinaryHeap<Ascending<MilestoneData>> = BinaryHeap::new();
         Self {
             dir_path: dir_path.into(),
@@ -57,15 +67,15 @@ impl Archiver {
             cleanup: Vec::with_capacity(2),
             max_log_size: max_log_size.unwrap_or(MAX_LOG_SIZE),
             processed: Vec::new(),
-            keyspace,
             milestones_data,
-            next,
+            next: 1,
+            filter_handle,
         }
     }
 }
 
 #[async_trait]
-impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
+impl<Sup: SupHandle<Self>, T: FilterBuilder> Actor<Sup> for Archiver<T> {
     type Data = ();
     type Channel = UnboundedChannel<ArchiverEvent>;
 
@@ -190,7 +200,7 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for Archiver {
     }
 }
 
-impl Archiver {
+impl<T: FilterBuilder> Archiver<T> {
     async fn close_log_file(&mut self, milestone_index: u32) -> anyhow::Result<()> {
         if let Some((i, log_file)) = self
             .logs
@@ -225,7 +235,7 @@ impl Archiver {
         {
             // append milestone data to the log file if the file_size still less than max limit
             if (milestone_data_line.len() as u64) + log_file.len() < self.max_log_size {
-                Self::append(log_file, &milestone_data_line, milestone_index, &self.keyspace, 10).await?;
+                Self::append(log_file, &milestone_data_line, milestone_index, &self.filter_handle).await?;
                 // check if now the log_file reached an upper limit to finish the file
                 if log_file.upper_ms_limit == log_file.to_ms_index {
                     self.cleanup.push(log_file.from_ms_index);
@@ -287,7 +297,7 @@ impl Archiver {
     ) -> anyhow::Result<()> {
         let mut log_file =
             LogFile::create(&self.dir_path, milestone_index, opt_upper_limit, Default::default()).await?;
-        Self::append(&mut log_file, milestone_data_line, milestone_index, &self.keyspace, 5).await?;
+        Self::append(&mut log_file, milestone_data_line, milestone_index, &self.filter_handle).await?;
         // check if we hit an upper_ms_limit, as this is possible when the log_file only needs 1 milestone data.
         if log_file.upper_ms_limit == log_file.to_ms_index {
             // finish it
@@ -334,20 +344,10 @@ impl Archiver {
         log_file: &mut LogFile,
         milestone_data_line: &Vec<u8>,
         ms_index: u32,
-        keyspace: &ChronicleKeyspace,
-        retries: usize,
+        filter_handle: &T::Handle,
     ) -> anyhow::Result<()> {
         log_file.append_line(&milestone_data_line).await?;
-        // insert into the DB, without caring about the response
-        let synced_record = SyncRecord::new(MilestoneIndex(ms_index), None, Some(0));
-        keyspace
-            .insert(&synced_record, &())
-            .consistency(Consistency::Quorum)
-            .build()?
-            .worker()
-            .with_retries(retries)
-            .send_local()
-            .ok();
+        filter_handle.logged(ms_index).await?;
         Ok(())
     }
     async fn finish_log_file(log_file: &mut LogFile, dir_path: &PathBuf) -> anyhow::Result<()> {

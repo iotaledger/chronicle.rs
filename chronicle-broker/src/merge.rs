@@ -5,7 +5,7 @@ use anyhow::{
     anyhow,
     bail,
 };
-use chronicle_storage::access::MilestoneData;
+use chronicle_common::types::MilestoneData;
 use indicatif::{
     ProgressBar,
     ProgressStyle,

@@ -1,11 +1,11 @@
 [workspace]
 members = [
     "chronicle",
-    "chronicle-api",
+    #"chronicle-api",
     "chronicle-broker",
-    "chronicle-storage",
-    "chronicle-cli",
-    "chronicle-analytics",
+    #"chronicle-storage",
+    #"chronicle-cli",
+    #"chronicle-analytics", //todo uncomment
     "chronicle-common"
 ]
 default-members = [

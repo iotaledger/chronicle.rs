@@ -319,53 +319,6 @@ pub trait Partitioned {
     }
 }
 
-/// A message's ledger inclusion state
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum LedgerInclusionState {
-    /// A conflicting message, ex. a double spend
-    #[serde(rename = "conflicting")]
-    Conflicting = 0,
-    /// A successful, included message
-    #[serde(rename = "included")]
-    Included = 1,
-    /// A message without a transaction
-    #[serde(rename = "noTransaction")]
-    NoTransaction = 2,
-}
-
-impl TryFrom<u8> for LedgerInclusionState {
-    type Error = anyhow::Error;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Conflicting),
-            1 => Ok(Self::Included),
-            2 => Ok(Self::NoTransaction),
-            n => bail!("Unexpected ledger inclusion byte state: {}", n),
-        }
-    }
-}
-
-impl From<LedgerInclusionStateDto> for LedgerInclusionState {
-    fn from(value: LedgerInclusionStateDto) -> Self {
-        match value {
-            LedgerInclusionStateDto::Conflicting => Self::Conflicting,
-            LedgerInclusionStateDto::Included => Self::Included,
-            LedgerInclusionStateDto::NoTransaction => Self::NoTransaction,
-        }
-    }
-}
-
-impl Into<LedgerInclusionStateDto> for LedgerInclusionState {
-    fn into(self) -> LedgerInclusionStateDto {
-        match self {
-            Self::Conflicting => LedgerInclusionStateDto::Conflicting,
-            Self::Included => LedgerInclusionStateDto::Included,
-            Self::NoTransaction => LedgerInclusionStateDto::NoTransaction,
-        }
-    }
-}
-
 impl ColumnEncoder for LedgerInclusionState {
     fn encode(&self, buffer: &mut Vec<u8>) {
         let num = *self as u8;
@@ -701,18 +654,6 @@ impl MilestoneData {
     pub fn milestone(&self) -> &MilestoneMessage {
         &self.milestone
     }
-
-    pub fn milestone_payload(&self) -> &MilestonePayload {
-        match self
-            .milestone()
-            .message()
-            .payload()
-            .expect("Milestone message is not a milestone")
-        {
-            Payload::Milestone(ref payload) => &**payload,
-            _ => panic!("Milestone message is not a milestone"),
-        }
-    }
 }
 
 /// Milestone data builder
@@ -888,9 +829,9 @@ impl futures::stream::Stream for MilestoneDataSearch {
             let is_selected = project.data.selected_messages().contains_key(&message_id);
             // iterate over its parents
             if let Some(message) = project.data.messages_mut().get_mut(&message_id) {
-                let parents_iter = message.parents().iter();
+                let parents_iter = message.parents();
                 for parent_id in parents_iter {
-                    if !project.visited.contains(parent_id) {
+                    if !project.visited.contains(&parent_id) {
                         let mut vertex = current_proof.clone();
                         vertex.path_mut().push(parent_id.clone());
                         project.should_be_visited.push_back(vertex);
@@ -953,7 +894,7 @@ impl Into<MessageRecord> for OldFullMessage {
     fn into(self) -> MessageRecord {
         MessageRecord {
             message_id: self.1.message_id,
-            message: self.0.try_into().unwrap(),
+            message: self.0.into(),
             milestone_index: self.1.referenced_by_milestone_index.map(|i| MilestoneIndex(i)),
             inclusion_state: self.1.ledger_inclusion_state,
             conflict_reason: None,
@@ -980,34 +921,6 @@ pub struct OldMessageMetadata {
     pub should_promote: Option<bool>,
     #[serde(rename = "shouldReattach")]
     pub should_reattach: Option<bool>,
-}
-
-/// Created by sources
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[repr(u8)]
-pub enum CreatedBy {
-    /// Created by the new incoming messages from the network
-    Incoming = 0,
-    /// Created by the new expected messages from the network
-    Expected = 1,
-    /// Created by solidify/sync request from syncer
-    Syncer = 2,
-    /// Created by the exporter
-    Exporter = 3,
-    /// Created by the archive file importer
-    Importer = 4,
-}
-
-impl Default for CreatedBy {
-    fn default() -> Self {
-        Self::Incoming
-    }
-}
-
-impl From<CreatedBy> for u8 {
-    fn from(value: CreatedBy) -> u8 {
-        value as u8
-    }
 }
 
 /// An index in plain-text, unhashed

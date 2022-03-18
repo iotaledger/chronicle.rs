@@ -5,22 +5,37 @@ use super::{
         ArchiverEvent,
         ArchiverHandle,
     },
+    filter::FilterHandle,
     solidifier::{
         SolidifierEvent,
         SolidifierHandle,
     },
     *,
 };
-use chronicle_storage::keyspaces::ChronicleKeyspace;
+use futures::stream::StreamExt;
+use backstage::core::{
+    AbortableUnboundedChannel,
+    AbortableUnboundedHandle,
+    Actor,
+    ActorError,
+    ActorResult,
+    Rt,
+    SupHandle,
+};
+use chronicle_common::types::{
+    Ascending,
+    CreatedBy,
+    MilestoneData,
+    SyncData,
+};
 use std::{
     ops::Deref,
-    sync::Arc,
     time::Duration,
 };
 pub(crate) type SyncerHandle = AbortableUnboundedHandle<SyncerEvent>;
 
 #[async_trait]
-impl<S: SupHandle<Self>> Actor<S> for Syncer {
+impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Syncer<T> {
     type Data = (HashMap<u8, SolidifierHandle>, Option<ArchiverHandle>); // solidifiers_handles and archiver handle
     type Channel = AbortableUnboundedChannel<SyncerEvent>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
@@ -76,11 +91,9 @@ pub enum SyncerEvent {
 }
 
 /// Syncer state
-pub struct Syncer {
+pub struct Syncer<T: FilterBuilder> {
     sync_data: SyncData,
     update_sync_data_every: Duration,
-    keyspace: ChronicleKeyspace,
-    sync_range: SyncRange,
     parallelism: u8,
     active: Option<Active>,
     milestones_data: BinaryHeap<Ascending<MilestoneData>>,
@@ -90,21 +103,14 @@ pub struct Syncer {
     initial_gap_start: u32,
     initial_gap_end: u32,
     prev_closed_log_filename: u32,
+    filter_handle: T::Handle,
 }
 
-impl Syncer {
-    pub(super) fn new(
-        sync_data: SyncData,
-        sync_range: SyncRange,
-        update_sync_data_every: Duration,
-        parallelism: u8,
-        keyspace: ChronicleKeyspace,
-    ) -> Self {
+impl<T: FilterBuilder> Syncer<T> {
+    pub(super) fn new(update_sync_data_every: Duration, parallelism: u8, filter_handle: T::Handle) -> Self {
         Self {
-            sync_data,
+            sync_data: SyncData::default(),
             update_sync_data_every,
-            keyspace,
-            sync_range,
             parallelism,
             active: None,
             milestones_data: BinaryHeap::new(),
@@ -114,6 +120,7 @@ impl Syncer {
             initial_gap_start: 0,
             initial_gap_end: 0,
             prev_closed_log_filename: 0,
+            filter_handle,
         }
     }
 }
@@ -124,7 +131,7 @@ enum Active {
     FillGaps(std::ops::Range<u32>),
 }
 
-impl Syncer {
+impl<T: FilterBuilder> Syncer<T> {
     async fn update_sync<S: SupHandle<Self>>(
         &mut self,
         rt: &mut Rt<Self, S>,
@@ -138,7 +145,7 @@ impl Syncer {
                 warn!("Syncer got aborted while sleeping");
                 ActorError::aborted_msg("Syncer got aborted while sleeping")
             })?;
-        if let Ok(sync_data) = SyncData::try_fetch(&self.keyspace, self.sync_range, 10).await {
+        if let Ok(sync_data) = self.filter_handle.sync_data(None).await {
             info!("Updated the sync data");
             self.sync_data = sync_data;
             if archiver.is_some() {
@@ -147,7 +154,6 @@ impl Syncer {
                 self.fill_gaps(rt, solidifier_handles).await?
             }
         } else {
-            // todo replace with alerts
             error!("Unable to update sync data");
             rt.abortable(tokio::time::sleep(self.update_sync_data_every))
                 .await
@@ -390,50 +396,3 @@ impl Syncer {
         Ok(())
     }
 }
-
-/// ASC ordering wrapper
-pub struct Ascending<T> {
-    inner: T,
-}
-
-impl<T> Deref for Ascending<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl std::convert::Into<MilestoneData> for Ascending<MilestoneData> {
-    fn into(self) -> MilestoneData {
-        self.inner
-    }
-}
-
-impl Ascending<MilestoneData> {
-    /// Wrap milestone data with ASC ordering
-    pub fn new(milestone_data: MilestoneData) -> Self {
-        Self { inner: milestone_data }
-    }
-}
-
-impl std::cmp::Ord for Ascending<MilestoneData> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.inner.milestone_index().cmp(&self.inner.milestone_index())
-    }
-}
-impl std::cmp::PartialOrd for Ascending<MilestoneData> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(other.inner.milestone_index().cmp(&self.inner.milestone_index()))
-    }
-}
-impl std::cmp::PartialEq for Ascending<MilestoneData> {
-    fn eq(&self, other: &Self) -> bool {
-        if self.inner.milestone_index() == other.inner.milestone_index() {
-            true
-        } else {
-            false
-        }
-    }
-}
-impl std::cmp::Eq for Ascending<MilestoneData> {}

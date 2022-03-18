@@ -1,7 +1,7 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    filter::FilterBuilder,
+    filter::FilterHandle,
     *,
 };
 use crate::{
@@ -10,16 +10,35 @@ use crate::{
     solidifier::*,
 };
 use anyhow::bail;
-use backstage::core::Channel;
+use backstage::core::{
+    Actor,
+    ActorError,
+    ActorResult,
+    Rt,
+    ShutdownEvent,
+    UnboundedChannel,
+    UnboundedHandle,
+};
 use bee_message::{
     milestone::MilestoneIndex,
-    payload::Payload,
+    MessageId,
 };
-use bee_rest_api::types::responses::MessageMetadataResponse;
-use chronicle_common::metrics::CONFIRMATION_TIME_COLLECTOR;
+use chronicle_common::{
+    metrics::CONFIRMATION_TIME_COLLECTOR,
+    types::{
+        CreatedBy,
+        LedgerInclusionState,
+        Message,
+        MessageRecord,
+        Selected,
+    },
+};
+use futures::stream::StreamExt;
 use linked_hash_map::LinkedHashMap;
 use lru::LruCache;
+use maplit::hashset;
 use std::{
+    collections::HashSet,
     fmt::Debug,
     str::FromStr,
     sync::Arc,
@@ -27,6 +46,8 @@ use std::{
 pub(crate) type CollectorId = u8;
 pub(crate) type CollectorHandle = UnboundedHandle<CollectorEvent>;
 pub(crate) type CollectorHandles = HashMap<CollectorId, CollectorHandle>;
+
+use bee_rest_api_old::types::responses::MessageMetadataResponse;
 
 /// Collector events
 #[derive(Debug)]
@@ -53,7 +74,7 @@ impl ShutdownEvent for CollectorEvent {
 /// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
-    FullMessage(u8, u32, MessageId, CreatedBy),
+    FullMessage(u8, u32, bee_message::MessageId, CreatedBy),
     /// Ask for a milestone with the given index
     MilestoneMessage(u32),
 }
@@ -95,7 +116,7 @@ where
     ref_ms: MilestoneIndex,
     /// The LRU cache from message id to (milestone index, message) pair
     lru_msg: LruCache<
-        MessageId,
+        bee_message::MessageId,
         (
             Option<MessageRecord>,
             Option<MessageMetadataResponse>,
@@ -110,10 +131,8 @@ where
     pending_requests: LinkedHashMap<MessageId, HashSet<u32>>,
     /// Flag the requested messages
     requested_requests: HashMap<MessageId, HashSet<u32>>,
-    /// selective builder
-    selective_builder: T,
-    /// uda actor handle
-    uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+    /// Filter handle
+    filter_handle: T::Handle,
 }
 
 impl<T: FilterBuilder> Collector<T> {
@@ -123,8 +142,7 @@ impl<T: FilterBuilder> Collector<T> {
         retries: u8,
         lru_capacity: usize,
         requester_budget: usize,
-        selective_builder: T,
-        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+        filter_handle: T::Handle,
     ) -> Self {
         Self {
             partition_id,
@@ -137,21 +155,19 @@ impl<T: FilterBuilder> Collector<T> {
             lru_msg: LruCache::new(lru_capacity),
             pending_requests: LinkedHashMap::new(),
             requested_requests: HashMap::new(),
-            selective_builder,
-            uda_handle,
+            filter_handle,
         }
     }
 }
 
 #[async_trait]
-impl<S, T> Actor<S> for Collector<T>
+impl<T> Actor<BrokerHandle> for Collector<T>
 where
-    S: SupHandle<Self>,
     T: FilterBuilder,
 {
     type Data = (HashMap<u8, SolidifierHandle>, RequesterHandles<T>);
     type Channel = UnboundedChannel<CollectorEvent>;
-    async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
+    async fn init(&mut self, rt: &mut Rt<Self, BrokerHandle>) -> ActorResult<Self::Data> {
         log::info!("{:?} is initializing", rt.service().directory());
         let parent_id = rt
             .parent_id()
@@ -162,7 +178,7 @@ where
     }
     async fn run(
         &mut self,
-        rt: &mut Rt<Self, S>,
+        rt: &mut Rt<Self, BrokerHandle>,
         (mut solidifier_handles, mut requester_handles): Self::Data,
     ) -> ActorResult<()> {
         log::info!("{:?} is running", rt.service().directory());
@@ -174,12 +190,9 @@ where
                         // convert it to msg_record
                         let msg_record: MessageRecord = message_and_metadata.into();
                         let message_id = *msg_record.message_id();
-                        if let Some(Payload::Milestone(milestone_payload)) = msg_record.message().payload() {
+                        if msg_record.message().is_milestone() {
                             // filter the message
-                            let selected = self
-                                .selective_builder
-                                .filter_message(&self.uda_handle, &msg_record)
-                                .await?;
+                            let selected = self.filter_handle.filter_message(&msg_record).await?;
                             let solidifier_id = self.solidifier_id(ms_index);
                             let milestone_message = msg_record.try_into()?;
                             solidifier_handles
@@ -211,10 +224,7 @@ where
                     if let Some((message, metadata)) = message_and_metadata {
                         let msg_record = (message, metadata.clone()).into();
                         // filter the message
-                        let selected = self
-                            .selective_builder
-                            .filter_message(&self.uda_handle, &msg_record)
-                            .await?;
+                        let selected = self.filter_handle.filter_message(&msg_record).await?;
                         // push message or milestone to solidifier
                         self.push_message_record_to_solidifier(msg_record.clone(), &solidifier_handles, selected);
                         // process requested requests for this message_id
@@ -282,10 +292,7 @@ where
                                 // message already has confirmed metadata
                                 msg_opt.replace(msg_record.clone());
                                 // filter the message
-                                *selected = self
-                                    .selective_builder
-                                    .filter_message(&self.uda_handle, &msg_record)
-                                    .await?;
+                                *selected = self.filter_handle.filter_message(&msg_record).await?;
                                 let selected = selected.clone();
                                 drop(entry);
                                 // push it to solidifier
@@ -295,10 +302,7 @@ where
                         None => {
                             let msg_record = MessageRecord::new(message_id, message);
                             // filter the message
-                            let selected = self
-                                .selective_builder
-                                .filter_message(&self.uda_handle, &msg_record)
-                                .await?;
+                            let selected = self.filter_handle.filter_message(&msg_record).await?;
                             // add it to the cache in order to filter it again.
                             self.lru_msg
                                 .put(message_id, (Some(msg_record), None, std::time::SystemTime::now(), None));
@@ -346,7 +350,7 @@ where
                                     .elapsed()
                                     .map(|elapsed| CONFIRMATION_TIME_COLLECTOR.set(elapsed.as_millis() as f64));
                                 // filter the message
-                                *selected = self.selective_builder.filter_message(&self.uda_handle, &msg).await?;
+                                *selected = self.filter_handle.filter_message(&msg).await?;
                                 let selected = selected.clone();
                                 let msg = msg.clone();
                                 drop(entry);
@@ -605,7 +609,7 @@ where
             .expect("Failed to get milestone index within a message record");
         let solidifier_id = self.solidifier_id(ref_ms.0);
         // check if the message is milestone
-        if let Some(Payload::Milestone(_)) = msg_record.message().payload() {
+        if msg_record.message().is_milestone() {
             // send it as milestone only if the ledger inclusion state not conflicting
             if let LedgerInclusionState::Conflicting = msg_record
                 .inclusion_state()

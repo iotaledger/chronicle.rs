@@ -12,30 +12,41 @@ use super::{
         CollectorHandle,
         MessageIdPartitioner,
     },
-    filter::FilterBuilder,
+    filter::{
+        FilterBuilder,
+        FilterHandle,
+    },
     syncer::{
         SyncerEvent,
         SyncerHandle,
     },
     *,
 };
+use backstage::core::{
+    Actor,
+    ActorError,
+    ActorResult,
+    Rt,
+    ShutdownEvent,
+    SupHandle,
+    UnboundedChannel,
+    UnboundedHandle,
+};
+
 use bee_message::{
     milestone::MilestoneIndex,
-    parent::Parents,
-    payload::{
-        MilestonePayload,
-        Payload,
-    },
+    MessageId,
 };
-use chronicle_common::alert;
-use lru::LruCache;
-use std::{
-    fmt::Debug,
-    sync::{
-        atomic::Ordering,
-        Arc,
-    },
+use chronicle_common::types::{
+    CreatedBy,
+    MessageRecord,
+    MilestoneData,
+    MilestoneDataBuilder,
+    MilestoneMessage,
+    Selected,
 };
+use futures::stream::StreamExt;
+use std::fmt::Debug;
 
 /// The solidifier handle type
 pub type SolidifierHandle = UnboundedHandle<SolidifierEvent>;
@@ -64,35 +75,21 @@ impl ShutdownEvent for SolidifierEvent {
 
 /// Solidifier state, each Solidifier solidifiy subset of (milestones_index % solidifier_count == partition_id)
 pub struct Solidifier<T: FilterBuilder> {
-    keyspace: ChronicleKeyspace,
     partition_id: u8,
     milestones_data: HashMap<u32, MilestoneDataBuilder>,
     message_id_partitioner: MessageIdPartitioner,
     expected: u32,
-    retries: u8,
-    selective_builder: T,
-    uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
+    filter_handle: T::Handle,
 }
 
 impl<T: FilterBuilder> Solidifier<T> {
-    pub(super) fn new(
-        keyspace: ChronicleKeyspace,
-        partition_id: u8,
-        partitioner: MessageIdPartitioner,
-        gap_start: u32,
-        retries: u8,
-        selective_builder: T,
-        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-    ) -> Self {
+    pub(super) fn new(partition_id: u8, partitioner: MessageIdPartitioner, filter_handle: T::Handle) -> Self {
         Self {
-            keyspace,
             partition_id,
             milestones_data: HashMap::new(),
             message_id_partitioner: partitioner,
-            expected: gap_start,
-            retries,
-            selective_builder,
-            uda_handle,
+            expected: 1,
+            filter_handle,
         }
     }
 }
@@ -299,11 +296,8 @@ impl<T: FilterBuilder> Solidifier<T> {
         let created_by = *milestone_data.created_by();
         // uda process
         let milestone_index = milestone_data.milestone_index();
-        let milestone_data = self
-            .selective_builder
-            .process_milestone_data(&self.uda_handle, milestone_data)
-            .await?;
-        self.insert_sync_record(rt, milestone_index).await?;
+        let milestone_data = self.filter_handle.process_milestone_data(milestone_data).await?;
+        self.filter_handle.synced(milestone_index.into()).await?;
         if let Some(archiver_handle) = archive_handle.as_ref() {
             info!(
                 "solidifier_id: {}, is pushing the milestone data for index: {}, to Archiver",
@@ -330,37 +324,15 @@ impl<T: FilterBuilder> Solidifier<T> {
             .remove(&milestone_index)
             .ok_or_else(|| anyhow!("Expected milestone data for milestone_index"))?;
         // uda process
-        let milestone_data = self
-            .selective_builder
-            .process_milestone_data(&self.uda_handle, milestone_data)
-            .await?;
+        let milestone_data = self.filter_handle.process_milestone_data(milestone_data).await?;
         info!(
             "solidifier_id: {}, is pushing the milestone data for index: {}, to Syncer",
             self.partition_id, milestone_index
         );
-        self.insert_sync_record(rt, milestone_index).await?; //
+        self.filter_handle.synced(milestone_index.into()).await?;
         let syncer_event = SyncerEvent::MilestoneData(milestone_data);
         syncer_handle.send(syncer_event).ok();
         Ok(())
-    }
-    async fn insert_sync_record<S: SupHandle<Self>>(
-        &mut self,
-        rt: &mut Rt<Self, S>,
-        milestone_index: u32,
-    ) -> ActorResult<()> {
-        let sync_record = SyncRecord::new(MilestoneIndex(milestone_index), Some(0), None);
-        self.keyspace
-            .insert(&sync_record, &())
-            .consistency(Consistency::Quorum)
-            .build()?
-            .worker()
-            .with_retries(self.retries as usize)
-            .get_local()
-            .await
-            .map_err(|e| {
-                warn!("Scylla cluster is likely going through an outage");
-                ActorError::restart_msg("Unable to insert sync record due to potential outage", None)
-            })
     }
     async fn handle_milestone_msg<S: SupHandle<Self>>(
         &mut self,
@@ -377,7 +349,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         let ms_count = self.milestones_data.len();
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
             Self::process_parents(
-                milestone_message.message().parents(),
+                milestone_message.message().parents().as_ref(),
                 milestone_data,
                 collector_handles,
                 partitioner,
@@ -418,7 +390,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         Ok(())
     }
     fn process_parents(
-        parents: &Parents,
+        parents: &[MessageId],
         milestone_data: &mut MilestoneDataBuilder,
         collectors_handles: &HashMap<u8, CollectorHandle>,
         partitioner: &MessageIdPartitioner,
@@ -613,7 +585,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         selected: Option<Selected>,
     ) {
         Self::process_parents(
-            message.parents(),
+            message.parents().as_ref(),
             milestone_data,
             collector_handles,
             partitioner,

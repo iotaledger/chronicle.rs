@@ -36,15 +36,12 @@ pub mod syncer;
 pub mod filter;
 
 #[cfg(feature = "application")]
-use application::{
-    permanode::Uda,
-    BrokerHandle,
-};
+use application::BrokerHandle;
 
 #[cfg(feature = "application")]
 use filter::{
-    AtomicProcessHandle,
     FilterBuilder,
+    FilterHandle,
 };
 
 #[cfg(feature = "application")]
@@ -54,19 +51,8 @@ mod app {
         bail,
         ensure,
     };
-    pub use bee_message::MessageId;
     pub use chronicle_common::SyncRange;
-    pub use chronicle_storage::access::*;
     pub use log::*;
-    pub use packable::{
-        Packable,
-        PackableExt,
-    };
-    pub use paho_mqtt::{
-        AsyncClient,
-        CreateOptionsBuilder,
-    };
-    pub use scylla_rs::prelude::*;
     pub use serde::{
         Deserialize,
         Serialize,
@@ -88,17 +74,6 @@ mod app {
     };
     pub use url::Url;
 }
-use std::{
-    collections::{
-        HashSet,
-        VecDeque,
-    },
-    fmt::Debug,
-    task::{
-        Context,
-        Poll,
-    },
-};
 
 #[cfg(feature = "application")]
 pub(crate) use app::*;

@@ -2,24 +2,44 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
     application::ChronicleBroker,
+    async_trait,
     collector::{
         CollectorEvent,
         CollectorHandle,
+        CollectorHandles,
         CollectorId,
     },
     filter::FilterBuilder,
-    *,
 };
-use backstage::core::Event;
-use bee_rest_api::types::{
-    dtos::ChrysalisMessageDto,
+
+use backstage::core::{
+    Actor,
+    ActorError,
+    ActorResult,
+    Event,
+    Rt,
+    ShutdownEvent,
+    SupHandle,
+    UnboundedChannel,
+    UnboundedHandle,
+};
+
+use bee_rest_api_old::types::{
+    dtos::MessageDto,
     responses::{
         MessageMetadataResponse,
         MilestoneResponse,
     },
 };
-use chronicle_common::Wrapper;
-use collector::CollectorHandles;
+use futures::stream::StreamExt;
+
+use chronicle_common::{
+    types::{
+        JsonData,
+        Message,
+    },
+    Wrapper,
+};
 use rand::{
     prelude::SliceRandom,
     thread_rng,
@@ -38,7 +58,7 @@ pub(crate) type RequesterHandle<T> = UnboundedHandle<RequesterEvent<T>>;
 #[derive(Debug)]
 pub enum RequesterEvent<T: FilterBuilder> {
     /// Collector requesting MessageId in order to solidify u32 MilestoneIndex
-    RequestFullMessage(CollectorId, MessageId),
+    RequestFullMessage(CollectorId, bee_message::MessageId),
     /// Requesting Milestone for u32 milestone index;
     RequestMilestone(CollectorId, u32),
     /// Subscribed backstage event
@@ -113,7 +133,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Requester<T> {
                         self.request_full_message_with_retries(collector_handle, message_id)
                             .await?;
                     } else {
-                        error!("Invalid collector_id, unable to request full message {}", message_id);
+                        log::error!("Invalid collector_id, unable to request full message {}", message_id);
                     }
                 }
                 RequesterEvent::RequestMilestone(collector_id, milestone_index) => {
@@ -121,7 +141,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Requester<T> {
                         self.request_milestone_message_with_retries(collector_handle, milestone_index)
                             .await?;
                     } else {
-                        error!("Invalid collector_id, unable to request milestone {}", milestone_index);
+                        log::error!("Invalid collector_id, unable to request milestone {}", milestone_index);
                     }
                 }
                 RequesterEvent::ChronicleBroker(backstage_event) => {
@@ -161,7 +181,7 @@ impl<T: FilterBuilder> Requester<T> {
     async fn request_full_message_with_retries(
         &mut self,
         collector_handle: &CollectorHandle,
-        message_id: MessageId,
+        message_id: bee_message::MessageId,
     ) -> ActorResult<()> {
         let mut retries = self.retries;
         loop {
@@ -251,23 +271,24 @@ impl<T: FilterBuilder> Requester<T> {
             .get(get_milestone_url)
             .send()
             .await
-            .map_err(|e| error!("Error sending request for milestone: {}\n {:#}", milestone_index, e));
+            .map_err(|e| log::error!("Error sending request for milestone: {}\n {:#}", milestone_index, e));
         if let Ok(milestone_response) = milestone_response {
             if milestone_response.status().is_success() {
                 let milestone = milestone_response
                     .json::<JsonData<MilestoneResponse>>()
                     .await
-                    .map_err(|e| error!("Error deserializing milestone: {}\n {:#}", milestone_index, e));
+                    .map_err(|e| log::error!("Error deserializing milestone: {}\n {:#}", milestone_index, e));
                 if let Ok(milestone) = milestone {
                     let milestone = milestone.into_inner();
-                    let message_id = MessageId::from_str(&milestone.message_id).expect("Expected message_id as string");
+                    let message_id =
+                        bee_message::MessageId::from_str(&milestone.message_id).expect("Expected message_id as string");
                     return self.request_message_and_metadata(remote_url, message_id).await;
                 }
             } else {
                 if !milestone_response.status().is_success() {
                     let url = milestone_response.url().clone();
                     let err = milestone_response.json::<Value>().await;
-                    error!("Received error requesting milestone from {}:\n {:#?}", url, err);
+                    log::error!("Received error requesting milestone from {}:\n {:#?}", url, err);
                 }
             }
         }
@@ -276,7 +297,7 @@ impl<T: FilterBuilder> Requester<T> {
     async fn request_message_and_metadata(
         &mut self,
         remote_url: &Url,
-        message_id: MessageId,
+        message_id: bee_message::MessageId,
     ) -> anyhow::Result<(Message, MessageMetadataResponse)> {
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();
@@ -285,63 +306,44 @@ impl<T: FilterBuilder> Requester<T> {
             .get(get_message_url.clone())
             .send()
             .await
-            .map_err(|e| error!("Error sending request for message: {}\n {:#}", message_id, e));
+            .map_err(|e| log::error!("Error sending request for message: {}\n {:#}", message_id, e));
         let metadata_response = self
             .reqwest_client
             .get(get_metadata_url)
             .send()
             .await
-            .map_err(|e| error!("Error sending request for metadata: {}\n {:#}", message_id, e));
+            .map_err(|e| log::error!("Error sending request for metadata: {}\n {:#}", message_id, e));
         if let (Ok(message_response), Ok(metadata_response)) = (message_response, metadata_response) {
             if message_response.status().is_success() && metadata_response.status().is_success() {
-                let debug_message_url = remote_url
-                    .join(&format!(
-                        "messages/{}",
-                        "f75c111993d0cc83e83887d6878728c2568966d3f637a3e06acf3b7048e8b283"
-                    ))
-                    .unwrap();
-                let debug_message_response = self
-                    .reqwest_client
-                    .get(debug_message_url)
-                    .send()
-                    .await
-                    .unwrap()
-                    .text()
-                    .await
-                    .unwrap();
-
-                println!("{}", debug_message_response);
                 let message = message_response
-                    .json::<JsonData<ChrysalisMessageDto>>()
+                    .json::<JsonData<MessageDto>>()
                     .await
-                    .map_err(|e| {
-                        error!(
-                            "Error deserializing message: {}\n {:#}, text: {}",
-                            message_id, e, debug_message_response
-                        )
-                    });
+                    .map_err(|e| log::error!("Error deserializing message: {}\n {:#}", message_id, e));
                 let metadata = metadata_response
                     .json::<JsonData<MessageMetadataResponse>>()
                     .await
-                    .map_err(|e| error!("Error deserializing metadata: {}\n {:#}", message_id, e));
+                    .map_err(|e| log::error!("Error deserializing metadata: {}\n {:#}", message_id, e));
                 if let (Ok(message), Ok(metadata)) = (message, metadata) {
                     let message_dto = message.into_inner();
-                    let message = Message::try_from(&message_dto).unwrap();
-                    let metadata = metadata.into_inner();
-                    if metadata.referenced_by_milestone_index.is_some() {
-                        return Ok((message, metadata));
-                    }
+                    if let Ok(message) = Message::try_from(message_dto) {
+                        let metadata = metadata.into_inner();
+                        if metadata.referenced_by_milestone_index.is_some() {
+                            return Ok((message, metadata));
+                        }
+                    } else {
+                        anyhow::bail!("Unable to convert message dto type into actual message type")
+                    };
                 }
             } else {
                 if !message_response.status().is_success() {
                     let url = message_response.url().clone();
                     let err = message_response.json::<Value>().await;
-                    error!("Received error requesting message from {}:\n {:#?}", url, err);
+                    log::error!("Received error requesting message from {}:\n {:#?}", url, err);
                 }
                 if !metadata_response.status().is_success() {
                     let url = metadata_response.url().clone();
                     let err = metadata_response.json::<Value>().await;
-                    error!("Received error requesting metadata from {}:\n {:#?}", url, err);
+                    log::error!("Received error requesting metadata from {}:\n {:#?}", url, err);
                 }
             }
         }

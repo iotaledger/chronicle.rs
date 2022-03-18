@@ -1,19 +1,17 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use crate::application::BrokerHandle;
-
-type MilestoneDataImporterHandle = UnboundedHandle<MilestoneData>;
+use backstage::core::AbortableUnboundedChannel;
+use filter::FilterHandle;
 
 /// MilestoneData Importer state
 pub struct MilestoneDataImporter<T: FilterBuilder> {
-    uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-    filter: T,
+    filter_handle: T::Handle,
 }
 
 impl<T: FilterBuilder> MilestoneDataImporter<T> {
-    pub(crate) fn new(filter: T, uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle) -> Self {
-        Self { filter, uda_handle }
+    pub(crate) fn new(filter_handle: T::Handle) -> Self {
+        Self { filter_handle }
     }
 }
 
@@ -30,11 +28,7 @@ impl<T: FilterBuilder> Actor<ImporterHandle> for MilestoneDataImporter<T> {
         while let Some(milestone_data) = rt.inbox_mut().next().await {
             let milestone_index = milestone_data.milestone_index().0;
             let milestone_data_builder = milestone_data.into();
-            if let Err(e) = self
-                .filter
-                .process_milestone_data(&self.uda_handle, milestone_data_builder)
-                .await
-            {
+            if let Err(e) = self.filter_handle.process_milestone_data(milestone_data_builder).await {
                 error!(
                     "MilestoneDataImporter, id: {}, failed to import milestone data for index: {}, error: {}",
                     rt.service().directory().clone().unwrap_or_default(),

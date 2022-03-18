@@ -9,11 +9,29 @@ use crate::{
     },
     archiver::LogFile,
 };
+use backstage::core::{
+    Actor,
+    ActorError,
+    ActorResult,
+    EolEvent,
+    ReportEvent,
+    Rt,
+    ScopeId,
+    Service,
+    ServiceStatus,
+    ShutdownEvent,
+    UnboundedChannel,
+    UnboundedHandle,
+};
+use chronicle_common::types::{
+    MilestoneData,
+    SyncData,
+};
+use futures::stream::StreamExt;
 use std::{
     ops::Range,
     path::PathBuf,
 };
-
 type ImporterHandle = UnboundedHandle<ImporterEvent>;
 
 /// Importer events
@@ -57,10 +75,6 @@ pub struct Importer<T: FilterBuilder> {
     from_ms: u32,
     /// to milestone index
     to_ms: u32,
-    /// The default Chronicle keyspace
-    default_keyspace: ChronicleKeyspace,
-    /// The number of retires per query
-    retries: u8,
     /// The chronicle id
     chronicle_id: u8,
     /// The number of parallelism
@@ -75,21 +89,16 @@ pub struct Importer<T: FilterBuilder> {
     in_progress_milestones_data_bytes_size: HashMap<u32, usize>,
     /// The flag of end of file
     eof: bool,
-    /// The user defined actor handle
-    uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-    /// filter
-    filter_builder: T,
+    /// The user defined filter handle
+    filter_handle: T::Handle,
 }
 impl<T: FilterBuilder> Importer<T> {
     pub(crate) fn new(
-        default_keyspace: ChronicleKeyspace,
         file_path: PathBuf,
         resume: bool,
-        import_range: Range<u32>,
-        uda_handle: <<T::Actor as Actor<BrokerHandle>>::Channel as Channel>::Handle,
-        filter_builder: T,
+        import_range: Option<Range<u32>>,
+        filter_handle: T::Handle,
         parallelism: u8,
-        retries: u8,
     ) -> Self {
         Self {
             file_path,
@@ -97,17 +106,14 @@ impl<T: FilterBuilder> Importer<T> {
             log_file_size: 0,
             from_ms: 0,
             to_ms: 0,
-            default_keyspace,
             parallelism,
             chronicle_id: 0,
             in_progress_milestones_data_bytes_size: HashMap::new(),
-            retries,
             resume,
-            import_range,
+            import_range: import_range.unwrap_or(1..u32::MAX),
             sync_data: SyncData::default(),
             eof: false,
-            uda_handle,
-            filter_builder,
+            filter_handle,
         }
     }
 }
@@ -119,9 +125,9 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
 
     async fn init(&mut self, rt: &mut Rt<Self, BrokerHandle>) -> ActorResult<Self::Data> {
         info!(
-            "Importer {:?} is Initializing, with permanode keyspace: {}",
+            "Importer {:?} is Initializing, with filter: {}",
             self.file_path,
-            self.default_keyspace.name()
+            T::NAME,
         );
         let log_file = LogFile::try_from(self.file_path.clone()).map_err(|e| {
             error!("Unable to create LogFile. Error: {}", e);
@@ -137,6 +143,10 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
         self.log_file_size = log_file.len();
         self.from_ms = from;
         self.to_ms = to;
+        // overwrite the import_range in-case it's 1..max
+        if self.import_range.start == 1 && self.import_range.end == u32::MAX {
+            self.import_range = from..to;
+        }
         let importer_session = ImporterSession::ProgressBar {
             log_file_size: self.log_file_size,
             from_ms: from,
@@ -147,19 +157,16 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
         };
         // fetch sync data from the keyspace
         if self.resume {
-            let sync_range = SyncRange { from, to };
-            self.sync_data = SyncData::try_fetch(&self.default_keyspace, sync_range, 10)
-                .await
-                .map_err(|e| {
-                    error!("Unable to fetch SyncData {}", e);
-                    let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
-                        from_ms: self.from_ms,
-                        to_ms: self.to_ms,
-                        msg: "failed".into(),
-                    });
-                    rt.supervisor_handle().send(event).ok();
-                    ActorError::aborted(e)
-                })?;
+            self.sync_data = self.filter_handle.sync_data(Some(from..to)).await.map_err(|e| {
+                error!("Unable to fetch SyncData {}", e);
+                let event = BrokerEvent::ImporterSession(ImporterSession::Finish {
+                    from_ms: self.from_ms,
+                    to_ms: self.to_ms,
+                    msg: "failed".into(),
+                });
+                rt.supervisor_handle().send(event).ok();
+                ActorError::aborted(e)
+            })?;
         }
         self.log_file.replace(log_file);
         self.init_importing(rt).await?;
@@ -203,7 +210,7 @@ impl<T: FilterBuilder> Actor<BrokerHandle> for Importer<T> {
                                 skipped,
                             );
                             // Mark the milestone index as synced and logged in the database.
-                            self.insert_sync_record(rt, milestone_index).await?;
+                            self.filter_handle.synced(milestone_index).await?;
                             // check if we should process more
                             if !rt.service().is_stopping() {
                                 // process one more
@@ -290,10 +297,8 @@ impl<T: FilterBuilder> Importer<T> {
     ) -> anyhow::Result<<Self as Actor<BrokerHandle>>::Data> {
         for id in 0..self.parallelism {
             if let Some(milestone_data) = self.next_milestone_data(rt.supervisor_handle()).await? {
-                let milestone_data_importer = milestone_data_importer::MilestoneDataImporter::new(
-                    self.filter_builder.clone(),
-                    self.uda_handle.clone(),
-                );
+                let milestone_data_importer =
+                    milestone_data_importer::MilestoneDataImporter::<T>::new(self.filter_handle.clone());
                 rt.start(format!("{}", id), milestone_data_importer)
                     .await?
                     .send(milestone_data)?;
@@ -371,25 +376,6 @@ impl<T: FilterBuilder> Importer<T> {
             skipped,
         };
         supervisor.send(BrokerEvent::ImporterSession(importer_session)).ok();
-    }
-    async fn insert_sync_record(&mut self, rt: &mut Rt<Self, BrokerHandle>, milestone_index: u32) -> ActorResult<()> {
-        let sync_record = SyncRecord::new(
-            bee_message::milestone::MilestoneIndex(milestone_index),
-            Some(0),
-            Some(0),
-        );
-        self.default_keyspace
-            .insert(&sync_record, &())
-            .consistency(Consistency::Quorum)
-            .build()?
-            .worker()
-            .with_retries(self.retries as usize)
-            .get_local()
-            .await
-            .map_err(|e| {
-                warn!("Scylla cluster is likely going through an outage");
-                ActorError::aborted_msg("Unable to insert sync record due to potential outage")
-            })
     }
 }
 

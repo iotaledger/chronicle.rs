@@ -14,7 +14,6 @@ use backstage::{
 };
 use chronicle_broker::{
     application::{
-        ImportType,
         ImporterSession,
         TopologyResponse,
     },

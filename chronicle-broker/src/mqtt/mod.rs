@@ -9,8 +9,26 @@ use super::{
     },
     *,
 };
-use backstage::core::MqttChannel;
-use bee_rest_api::types::responses::MessageMetadataResponse;
+use backstage::core::{
+    paho_mqtt::{
+        self,
+        AsyncClient,
+        CreateOptionsBuilder,
+    },
+    Actor,
+    ActorError,
+    ActorResult,
+    ChannelBuilder,
+    MqttChannel,
+    Rt,
+    ServiceStatus,
+    SupHandle,
+};
+use bee_common::packable::Packable;
+use chronicle_common::types::Message;
+
+type MessageMetadataResponse = bee_rest_api_old::types::responses::MessageMetadataResponse;
+
 use futures::stream::StreamExt;
 use std::{
     str::FromStr,
@@ -116,7 +134,8 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
         log::info!("{:?} is running", &rt.service().directory());
         while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
             if let Some(msg) = msg_opt {
-                match Chrysalis::unpack_verified(&mut msg.payload()) {
+                // todo unpack based on feature
+                match bee_message_old::Message::unpack(&mut msg.payload()) {
                     Ok(msg) => {
                         let msg: Message = msg.into();
                         let message_id = msg.id();
@@ -152,7 +171,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadataResponse> {
                     // partitioning based on first byte of the message_id
                     let collector_partition_id = self
                         .partitioner
-                        .partition_id(&MessageId::from_str(&msg_ref.message_id).unwrap());
+                        .partition_id(&bee_message::MessageId::from_str(&msg_ref.message_id).unwrap());
                     if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
                         collector_handle.send(CollectorEvent::MessageReferenced(msg_ref)).ok();
                     }

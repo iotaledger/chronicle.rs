@@ -5,7 +5,10 @@
 //! Common code for Chronicle
 
 use lazy_static::lazy_static;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::ops::Range;
 
 pub mod alert;
@@ -13,6 +16,9 @@ pub mod alert;
 pub mod config;
 /// Metrics for prometheus integration
 pub mod metrics;
+
+/// Common chronicle types
+pub mod types;
 
 /// Pub send_alert
 pub use alert::send_alert;

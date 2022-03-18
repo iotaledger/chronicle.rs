@@ -10,9 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 chronicle-common = { path = "../chronicle-common", optional = true }
-chronicle-storage = { path = "../chronicle-storage" }
-backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", optional = true, features = ["paho-mqtt"] }
-scylla-rs = { git = "https://github.com/iotaledger/scylla.rs.git", branch = "backstage", optional = true }
+backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", optional = true, features = ["paho-mqtt", "prefabs"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 log = { version = "0.4", optional = true }
@@ -22,8 +20,16 @@ async-trait = { version = "0.1", optional = true }
 lru = { version = "0.7", optional = true }
 rand = { version = "0.8", optional = true }
 url = { version = "2.2", features = ["serde"] }
-bee-rest-api = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["cpt2"], optional = true }
-bee-message = { git = "https://github.com/LouayKamel/bee-1.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde", "cpt2"] }
+maplit = "1.0.2"
+
+bee-common = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop" }
+
+bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false }
+bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false,  features = ["std", "serde"] }
+
+bee-rest-api-old = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, package = "bee-rest-api" }
+bee-message-old = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, features = ["serde"], package = "bee-message" }
+
 hex = { version = "0.4", optional = true }
 anyhow = { version = "1.0", optional = true }
 tokio = { version = "1.15", optional = true }
@@ -39,16 +45,15 @@ wildmatch = "2.1"
 linked-hash-map = "0.5"
 
 [features]
-default = ["merge"]
+default = ["merge", "application"]
 sync = [
     "chronicle-common",
-    "chronicle-storage/sync",
-    "scylla-rs",
     "anyhow",
     "tokio/full",
 ]
 merge = [
     "anyhow",
+    "chronicle-common",
     "tokio/macros",
     "tokio/fs",
     "tokio/rt-multi-thread",
@@ -60,14 +65,11 @@ merge = [
 analytic = [
     "chronicle-common",
     "anyhow",
-    "scylla-rs",
     "tokio/full",
     "futures",
 ]
 application = [
-    "chronicle-common",
     "backstage/tungstenite",
-    "scylla-rs",
     "serde_json",
     "log",
     "reqwest",
@@ -75,9 +77,6 @@ application = [
     "async-trait",
     "lru",
     "rand",
-    "bee-rest-api",
     "hex",
-    "anyhow",
-    "tokio/full",
     "sync",
 ]
