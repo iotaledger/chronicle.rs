@@ -47,35 +47,21 @@ use chronicle_common::{
     SyncRange,
 };
 use chrono::NaiveDateTime;
-use futures::{
-    StreamExt,
-    TryStreamExt,
-};
+use futures::TryStreamExt;
 use hex::FromHex;
 use mongodb::{
     bson::{
         self,
         doc,
-        Document,
     },
     options::FindOptions,
-    Collection,
     Database,
 };
 use rand::Rng;
 use rocket_dyn_templates::Template;
 use std::{
-    borrow::Borrow,
-    collections::{
-        HashSet,
-        VecDeque,
-    },
-    convert::TryInto,
-    fmt::Debug,
     io::Cursor,
-    ops::Range,
     path::PathBuf,
-    str::FromStr,
     time::SystemTime,
 };
 
@@ -96,6 +82,7 @@ pub fn construct_rocket(database: Database) -> Rocket<Build> {
                 get_message_by_index,
                 get_output_by_transaction_id,
                 // get_output,
+                get_spending_transaction,
                 get_outputs_by_address,
                 get_transaction_history_for_address,
                 get_transaction_for_message,
@@ -214,8 +201,6 @@ impl<'r> Responder<'r, 'static> for ListenerResponse {
 }
 
 type ListenerResult = Result<ListenerResponse, ListenerError>;
-
-pub const MAX_PAGE_SIZE: usize = 200_000;
 
 #[options("/<_path..>")]
 async fn options(_path: PathBuf) {}
@@ -509,16 +494,19 @@ async fn get_outputs_by_address(
 
     let pipeline = if included.unwrap_or(true) {
         vec![
-            doc! { "$unwind": { "path": "$payload.essence.outputs", "includeArrayIndex": "idx" } },
-            doc! { "$match": { "inclusion_state": LedgerInclusionState::Included as u8 as i32, "payload.essence.outputs.c_address": &address } },
+            doc! { "$match": {
+                "inclusion_state": LedgerInclusionState::Included as u8 as i32,
+                "$elemMatch": { "message.payload.essence.outputs.c_address": &address }
+            } },
+            doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
             doc! { "$sort": { "milestone_index": -1 } },
             doc! { "$skip": (page_size * page) as i64 },
             doc! { "$limit": page_size as i64 },
         ]
     } else {
         vec![
-            doc! { "$unwind": { "path": "$payload.essence.outputs", "includeArrayIndex": "idx" } },
-            doc! { "$match": { "payload.essence.outputs.c_address": &address } },
+            doc! { "$match": { "$elemMatch": { "message.payload.essence.outputs.c_address": &address } } },
+            doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
             doc! { "$sort": { "milestone_index": -1 } },
             doc! { "$skip": (page_size * page) as i64 },
             doc! { "$limit": page_size as i64 },
@@ -541,6 +529,8 @@ async fn get_outputs_by_address(
                 .into_iter()
                 .map(|record| {
                     let output_id = record
+                        .get_document("message")
+                        .unwrap()
                         .get_document("payload")
                         .unwrap()
                         .get_document("essence")
@@ -572,6 +562,8 @@ async fn get_outputs_by_address(
                 .into_iter()
                 .map(|record| {
                     record
+                        .get_document("message")
+                        .unwrap()
                         .get_document("payload")
                         .unwrap()
                         .get_document("essence")
@@ -593,13 +585,15 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
         .collection::<MessageRecord>("messages")
         .aggregate(
             vec![
-                doc! { "$unwind": { "path": "$payload.essence.outputs", "includeArrayIndex": "idx" } },
-                doc! { "$match": { "payload.c_transaction_id": &transaction_id, "payload.essence.outputs.idx": idx as i64 } },
+                doc! { "$match": { "message.payload.c_transaction_id": &transaction_id } },
+                doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
+                doc! { "$match": { "message.payload.essence.outputs.idx": idx as i64 } },
             ],
             None,
         )
         .await?
-        .try_next().await?
+        .try_next()
+        .await?
         .ok_or_else(|| ListenerError::NoResults)?;
 
     let spending_transaction = database
@@ -607,8 +601,8 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
         .find_one(
             doc! {
                 "inclusion_state": LedgerInclusionState::Included as u8 as i32,
-                "payload.essence.inputs.transaction_id": &transaction_id,
-                "payload.essence.inputs.index": idx as i64
+                "message.payload.essence.inputs.transaction_id": &transaction_id,
+                "message.payload.essence.inputs.index": idx as i64
             },
             None,
         )
@@ -620,6 +614,8 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
         output_index: idx,
         is_spent: spending_transaction.is_some(),
         output: output
+            .get_document_mut("message")
+            .unwrap()
             .get_document_mut("payload")
             .unwrap()
             .get_document_mut("essence")
@@ -643,8 +639,8 @@ async fn get_spending_transaction(database: &State<Database>, transaction_id: St
         .find_one(
             doc! {
                 "inclusion_state": LedgerInclusionState::Included as u8 as i32,
-                "payload.essence.inputs.transaction_id": &transaction_id,
-                "payload.essence.inputs.index": idx as i64
+                "message.payload.essence.inputs.transaction_id": &transaction_id,
+                "message.payload.essence.inputs.index": idx as i64
             },
             None,
         )
@@ -721,26 +717,26 @@ async fn get_transaction_history_for_address(
         .collection::<MessageRecord>("messages")
         .aggregate(vec![
             // Only outputs for this address
-            doc! { "$match": { "inclusion_state": LedgerInclusionState::Included as u8 as i32, "$elemMatch": { "payload.essence.outputs.address": &address } } },
+            doc! { "$match": { "inclusion_state": LedgerInclusionState::Included as u8 as i32, "$elemMatch": { "message.payload.essence.outputs.address": &address } } },
             // One result per output
-            doc! { "$unwind": { "path": "$payload.essence.outputs", "includeArrayIndex": "idx" } },
+            doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
             // Lookup spending inputs for each output, if they exist
             doc! { "$lookup": {
                 "from": "messages",
                 // Keep track of the output id
-                "let": { "output_id": { "transaction_id": "$payload.c_transaction_id", "index": "$payload.essence.inputs.index" } },
+                "let": { "output_id": { "transaction_id": "$message.payload.c_transaction_id", "index": "$message.payload.essence.inputs.index" } },
                 "pipeline": [
                     // Match using the output's index
                     { "$match": {
                         "$expr": {
                             "$and": [
                                 { "$eq": [ "inclusion_state", LedgerInclusionState::Included as u8 as i32 ] },
-                                { "$elemMatch": { "payload.essence.inputs": "$$output_id" } },
+                                { "$elemMatch": { "message.payload.essence.inputs": "$$output_id" } },
                             ]
                         }
                     } },
                     // One result per spending input
-                    { "$unwind": { "path": "$payload.essence.outputs", "includeArrayIndex": "idx" } },
+                    { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
                 ],
                 // Store the result
                 "as": "spending_transaction"
@@ -764,7 +760,7 @@ async fn get_transaction_history_for_address(
     let transactions = records
         .into_iter()
         .map(|rec| {
-            let payload = rec.get_document("payload").unwrap();
+            let payload = rec.get_document("message").unwrap().get_document("payload").unwrap();
             let spending_transaction = rec.get_array("spending_transaction").ok().map(|a| &a[0]);
             let output = payload
                 .get_document("essence")
@@ -845,7 +841,7 @@ async fn get_transaction_included_message(database: &State<Database>, transactio
         .find_one(
             doc! {
                 "inclusion_state": LedgerInclusionState::Included as u8 as i32,
-                "payload.c_transaction_id": &transaction_id,
+                "message.payload.c_transaction_id": &transaction_id,
             },
             None,
         )
@@ -876,7 +872,7 @@ async fn get_transaction_included_message(database: &State<Database>, transactio
 async fn get_milestone(database: &State<Database>, index: u32) -> ListenerResult {
     database
         .collection::<MessageRecord>("messages")
-        .find_one(doc! {"payload.essence.index": &index}, None)
+        .find_one(doc! {"message.payload.essence.index": &index}, None)
         .await?
         .ok_or_else(|| ListenerError::NoResults)
         .map(|rec| ListenerResponse::Milestone {
