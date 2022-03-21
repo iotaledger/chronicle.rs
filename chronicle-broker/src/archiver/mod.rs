@@ -16,13 +16,13 @@ use backstage::core::{
     UnboundedChannel,
     UnboundedHandle,
 };
-use futures::stream::StreamExt;
 use chronicle_common::types::{
     Ascending,
     CreatedBy,
     MilestoneData,
     OldMilestoneData,
 };
+use futures::stream::StreamExt;
 use std::{
     collections::BinaryHeap,
     convert::TryFrom,

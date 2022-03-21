@@ -122,10 +122,9 @@ pub(crate) enum ListenerResponse {
     /// Response of GET /api/<keyspace>/transactions/<message_id>
     Transaction(Transaction),
     /// Response of GET /api/<keyspace>/transactions/ed25519/<address>
-    Transactions {
-        transactions: Vec<Transaction>,
-    },
+    Transactions { transactions: Vec<Transaction> },
     TransactionHistory {
+        address: String,
         transactions: Vec<Transfer>,
     },
     /// Response of GET /api/<keyspace>/milestone/<index>
@@ -142,18 +141,17 @@ pub(crate) enum ListenerResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Transfer {
-    #[serde(rename = "outputId")]
-    pub output_id: String,
-    #[serde(rename = "outputType")]
-    pub output_type: String,
-    #[serde(rename = "isUsed")]
-    pub is_used: bool,
+    #[serde(rename = "transactionId")]
+    pub transaction_id: String,
+    #[serde(rename = "outputIndex")]
+    pub output_index: u16,
+    #[serde(rename = "isSpending")]
+    pub is_spending: bool,
     #[serde(rename = "inclusionState")]
     pub inclusion_state: Option<LedgerInclusionState>,
     #[serde(rename = "messageId")]
     pub message_id: String,
-    pub amount: Option<u64>,
-    pub address: String,
+    pub amount: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

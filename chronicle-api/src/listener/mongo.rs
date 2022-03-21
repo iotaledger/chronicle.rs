@@ -717,26 +717,75 @@ async fn get_transaction_history_for_address(
         return Err(ListenerError::Other(anyhow!("Invalid time range")));
     }
 
-    let outputs = database
+    let records = database
         .collection::<MessageRecord>("messages")
-        .find(
-            doc! {"payload.c_transactions.address": &address},
-            FindOptions::builder()
-                .skip((page_size * page) as u64)
-                .sort(doc! {"milestone_index": -1})
-                .limit(page_size as i64)
-                .build(),
-        )
+        .aggregate(vec![
+            // Only outputs for this address
+            doc! { "$match": { "inclusion_state": LedgerInclusionState::Included as u8 as i32, "$elemMatch": { "payload.essence.outputs.address": &address } } },
+            // One result per output
+            doc! { "$unwind": { "path": "$payload.essence.outputs", "includeArrayIndex": "idx" } },
+            // Lookup spending inputs for each output, if they exist
+            doc! { "$lookup": {
+                "from": "messages",
+                // Keep track of the output id
+                "let": { "output_id": { "transaction_id": "$payload.c_transaction_id", "index": "$payload.essence.inputs.index" } },
+                "pipeline": [
+                    // Match using the output's index
+                    { "$match": {
+                        "$expr": {
+                            "$and": [
+                                { "$eq": [ "inclusion_state", LedgerInclusionState::Included as u8 as i32 ] },
+                                { "$elemMatch": { "payload.essence.inputs": "$$output_id" } },
+                            ]
+                        }
+                    } },
+                    // One result per spending input
+                    { "$unwind": { "path": "$payload.essence.outputs", "includeArrayIndex": "idx" } },
+                ],
+                // Store the result
+                "as": "spending_transaction"
+            } },
+            // Add a null spending transaction so that unwind will create two records
+            doc! { "$project": { "spending_transaction": { "$push": "null" } } },
+            // Unwind the outputs into one or two results
+            doc! { "$unwind": { "path": "$spending_transaction", "includeArrayIndex": "idx" } },
+            // Replace the milestone index with the spending transaction's milestone index if there is one
+            doc! { "$project": { 
+                "milestone_index": { "$cond": [ { "$ne": [ { "$size": "$spending_transaction" }, 0 ] }, "spending_transaction.0.milestone_index", "milestone_index" ] } 
+            } },
+            doc! { "$sort": { "milestone_index": -1 } },
+            doc! { "$skip": (page_size * page) as i64 },
+            doc! { "$limit": page_size as i64 },
+        ], None)
         .await?
         .try_collect::<Vec<_>>()
         .await?;
 
-    todo!()
+    let transactions = records
+        .into_iter()
+        .map(|rec| {
+            let payload = rec.get_document("payload").unwrap();
+            let spending_transaction = rec.get_array("spending_transaction").ok().map(|a| &a[0]);
+            let output = payload
+                .get_document("essence")
+                .unwrap()
+                .get_document("outputs")
+                .unwrap();
+            Transfer {
+                transaction_id: payload.get_str("c_transaction_id").unwrap().to_owned(),
+                output_index: output.get_i32("idx").unwrap() as u16,
+                is_spending: spending_transaction.is_some(),
+                inclusion_state: payload
+                    .get_i32("inclusion_state")
+                    .ok()
+                    .map(|s| LedgerInclusionState::try_from(s as u8).unwrap()),
+                message_id: payload.get_str("message_id").unwrap().to_owned(),
+                amount: output.get_i64("amount").unwrap() as u64,
+            }
+        })
+        .collect();
 
-    // Ok(ListenerResponseV1::TransactionHistory {
-    //     transactions: outputs.into_iter().map(Into::into).collect(),
-    //     state,
-    // })
+    Ok(ListenerResponse::TransactionHistory { transactions, address })
 }
 
 #[get("/transactions/<message_id>")]

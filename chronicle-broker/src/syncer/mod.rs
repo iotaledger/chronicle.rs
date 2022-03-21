@@ -12,7 +12,6 @@ use super::{
     },
     *,
 };
-use futures::stream::StreamExt;
 use backstage::core::{
     AbortableUnboundedChannel,
     AbortableUnboundedHandle,
@@ -28,10 +27,8 @@ use chronicle_common::types::{
     MilestoneData,
     SyncData,
 };
-use std::{
-    ops::Deref,
-    time::Duration,
-};
+use futures::stream::StreamExt;
+use std::time::Duration;
 pub(crate) type SyncerHandle = AbortableUnboundedHandle<SyncerEvent>;
 
 #[async_trait]

@@ -1,3 +1,6 @@
+// Copyright 2021 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use anyhow::*;
 use derive_more::From;
 use pin_project_lite::pin_project;
