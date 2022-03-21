@@ -5,8 +5,6 @@ use backstage::core::{
     Channel,
     ChannelBuilder,
 };
-use bee_message::milestone::MilestoneIndex;
-
 use chronicle_common::types::*;
 use serde::Serialize;
 use std::{

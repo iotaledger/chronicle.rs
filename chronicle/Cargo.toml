@@ -15,7 +15,7 @@ required-features = ["application"]
 [dependencies]
 backstage = { git = "https://github.com/iotaledger/backstage.git", branch = "stable", features= ["paho-mqtt", "ron_config", "tungstenite", "backserver"] }
 chronicle-common = { path = "../chronicle-common" }
-#chronicle-api = { path = "../chronicle-api" }
+chronicle-api = { path = "../chronicle-api" }
 chronicle-broker = { path = "../chronicle-broker", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"

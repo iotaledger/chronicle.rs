@@ -1,7 +1,6 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    application::BrokerHandle,
     archiver::{
         ArchiverEvent,
         ArchiverHandle,
@@ -32,15 +31,10 @@ use backstage::core::{
     UnboundedChannel,
     UnboundedHandle,
 };
-
-use bee_message::{
-    milestone::MilestoneIndex,
-    MessageId,
-};
 use chronicle_common::types::{
     CreatedBy,
+    MessageId,
     MessageRecord,
-    MilestoneData,
     MilestoneDataBuilder,
     MilestoneMessage,
     Selected,
@@ -349,7 +343,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         let ms_count = self.milestones_data.len();
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
             Self::process_parents(
-                milestone_message.message().parents().as_ref(),
+                milestone_message.message().parents(),
                 milestone_data,
                 collector_handles,
                 partitioner,
@@ -390,7 +384,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         Ok(())
     }
     fn process_parents(
-        parents: &[MessageId],
+        parents: impl Iterator<Item = MessageId>,
         milestone_data: &mut MilestoneDataBuilder,
         collectors_handles: &HashMap<u8, CollectorHandle>,
         partitioner: &MessageIdPartitioner,
@@ -401,10 +395,10 @@ impl<T: FilterBuilder> Solidifier<T> {
         // Note: Some or all parents might belong to older milestone,
         // and it's the job of the collector to tell us when to close message_id
         // and remove it from pending
-        parents.iter().for_each(|parent_id| {
+        parents.for_each(|parent_id| {
             let in_messages = milestone_data.messages().contains_key(&parent_id);
             let in_pending = milestone_data.pending().contains(&parent_id);
-            let genesis = parent_id.eq(&MessageId::null());
+            let genesis = parent_id.is_null();
             // Check if parent NOT in messages nor pending
             if !in_messages && !in_pending && !genesis {
                 // Request it from collector
@@ -413,11 +407,11 @@ impl<T: FilterBuilder> Solidifier<T> {
                     partitioner,
                     solidifier_id,
                     milestone_index,
-                    *parent_id,
+                    parent_id,
                     *milestone_data.created_by(),
                 );
                 // Add it to pending
-                milestone_data.add_pending(*parent_id);
+                milestone_data.add_pending(parent_id);
             };
         });
     }
@@ -461,7 +455,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         syncer_handle: &SyncerHandle,
     ) -> ActorResult<()> {
         // check what milestone_index referenced this message
-        let milestone_index = message.milestone_index().unwrap().0;
+        let milestone_index = message.milestone_index().unwrap();
         let partitioner = &self.message_id_partitioner;
         let solidifier_id = self.partition_id;
         if let Some(milestone_data) = self.milestones_data.get_mut(&milestone_index) {
@@ -585,7 +579,7 @@ impl<T: FilterBuilder> Solidifier<T> {
         selected: Option<Selected>,
     ) {
         Self::process_parents(
-            message.parents().as_ref(),
+            message.parents(),
             milestone_data,
             collector_handles,
             partitioner,

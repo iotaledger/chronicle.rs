@@ -9,7 +9,6 @@ use crate::{
     requester::*,
     solidifier::*,
 };
-use anyhow::bail;
 use backstage::core::{
     Actor,
     ActorError,
@@ -19,16 +18,14 @@ use backstage::core::{
     UnboundedChannel,
     UnboundedHandle,
 };
-use bee_message::{
-    milestone::MilestoneIndex,
-    MessageId,
-};
 use chronicle_common::{
+    cpt2::types::responses::MessageMetadataResponse,
     metrics::CONFIRMATION_TIME_COLLECTOR,
     types::{
         CreatedBy,
         LedgerInclusionState,
         Message,
+        MessageId,
         MessageRecord,
         Selected,
     },
@@ -41,13 +38,11 @@ use std::{
     collections::HashSet,
     fmt::Debug,
     str::FromStr,
-    sync::Arc,
 };
+
 pub(crate) type CollectorId = u8;
 pub(crate) type CollectorHandle = UnboundedHandle<CollectorEvent>;
 pub(crate) type CollectorHandles = HashMap<CollectorId, CollectorHandle>;
-
-use bee_rest_api_old::types::responses::MessageMetadataResponse;
 
 /// Collector events
 #[derive(Debug)]
@@ -74,7 +69,7 @@ impl ShutdownEvent for CollectorEvent {
 /// Messages for asking the collector for missing data
 pub enum AskCollector {
     /// Solidifier(s) will use this variant, u8 is solidifier_id
-    FullMessage(u8, u32, bee_message::MessageId, CreatedBy),
+    FullMessage(u8, u32, MessageId, CreatedBy),
     /// Ask for a milestone with the given index
     MilestoneMessage(u32),
 }
@@ -92,7 +87,10 @@ impl MessageIdPartitioner {
     /// Get the partition id
     pub fn partition_id(&self, message_id: &MessageId) -> u8 {
         // partitioning based on first byte of the message_id
-        message_id.as_ref()[0] % self.count
+        match message_id {
+            MessageId::Chrysalis(id) => id.as_ref()[0] % self.count,
+            MessageId::Shimmer(id) => id.as_ref()[0] % self.count,
+        }
     }
     /// Get the partition count
     pub fn partition_count(&self) -> u8 {
@@ -111,12 +109,12 @@ where
     /// retries
     retries: u8,
     /// The estimated milestone index
-    est_ms: MilestoneIndex,
+    est_ms: u32,
     /// The referenced milestone index
-    ref_ms: MilestoneIndex,
+    ref_ms: u32,
     /// The LRU cache from message id to (milestone index, message) pair
     lru_msg: LruCache<
-        bee_message::MessageId,
+        MessageId,
         (
             Option<MessageRecord>,
             Option<MessageMetadataResponse>,
@@ -148,8 +146,8 @@ impl<T: FilterBuilder> Collector<T> {
             partition_id,
             partition_count,
             retries,
-            est_ms: MilestoneIndex(0),
-            ref_ms: MilestoneIndex(0),
+            est_ms: 0,
+            ref_ms: 0,
             requester_budget,
             requester_usage: 0,
             lru_msg: LruCache::new(lru_capacity),
@@ -270,13 +268,13 @@ where
                                     .expect("Failed to get metadata entry from the cache");
                                 let mut msg_record = MessageRecord::new(message_id, message);
 
-                                msg_record.milestone_index = Some(MilestoneIndex(
+                                msg_record.milestone_index = Some(
                                     metadata.milestone_index.unwrap_or(
                                         metadata
                                             .referenced_by_milestone_index
                                             .expect("Unable to find referenced_by_milestone_index"),
                                     ),
-                                ));
+                                );
                                 msg_record.inclusion_state =
                                     metadata.ledger_inclusion_state.clone().and_then(|l| Some(l.into()));
                                 msg_record.conflict_reason =
@@ -317,7 +315,9 @@ where
                         continue;
                     }
                     // check if the msg and metadata already in lru cache
-                    let message_id = MessageId::from_str(&metadata.message_id).unwrap();
+                    let message_id = chronicle_common::cpt2::MessageId::from_str(&metadata.message_id)
+                        .unwrap()
+                        .into();
                     // check if msg already in lru cache
                     let entry = self.lru_msg.get_mut(&message_id);
                     match entry {
@@ -556,7 +556,7 @@ where
                 .expect("Unable to find referenced milestone index");
             let mut iter = i.into_iter();
             while let Some(milestone_index) = iter.next() {
-                if ref_ms.0 != milestone_index {
+                if ref_ms != milestone_index {
                     let solidifier_id = self.solidifier_id(milestone_index);
                     solidifier_handles
                         .get(&solidifier_id)
@@ -604,10 +604,10 @@ where
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
         selected: Option<Selected>,
     ) {
-        let ref_ms = *msg_record
+        let ref_ms = msg_record
             .milestone_index()
             .expect("Failed to get milestone index within a message record");
-        let solidifier_id = self.solidifier_id(ref_ms.0);
+        let solidifier_id = self.solidifier_id(ref_ms);
         // check if the message is milestone
         if msg_record.message().is_milestone() {
             // send it as milestone only if the ledger inclusion state not conflicting

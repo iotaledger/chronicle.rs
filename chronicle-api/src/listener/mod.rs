@@ -1,13 +1,11 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-pub use self::rocket::construct_rocket;
 use super::*;
-use ::rocket::{
+use rocket::{
     http::Status,
     Rocket,
 };
-use chronicle_storage::access::*;
 use serde::{
     Deserialize,
     Serialize,
@@ -18,8 +16,13 @@ use std::{
 };
 use thiserror::Error;
 
-#[cfg(feature = "rocket_listener")]
-mod rocket;
+#[cfg(feature = "mongo_api")]
+mod mongo;
+#[cfg(feature = "mongo_api")]
+pub use self::mongo::construct_rocket;
+
+//#[cfg(feature = "scylla_api")]
+// mod scylla;
 
 #[derive(Error, Debug)]
 enum ListenerError {
@@ -57,24 +60,11 @@ impl ListenerError {
     }
 }
 
-impl From<RequestError> for ListenerError {
-    fn from(e: RequestError) -> Self {
-        anyhow::anyhow!(e).into()
+#[cfg(feature = "mongo_api")]
+impl From<mongodb::error::Error> for ListenerError {
+    fn from(e: mongodb::error::Error) -> Self {
+        Self::Other(e.into())
     }
-}
-
-/// A listener event
-pub enum Event {
-    /// Response from scylla with a payload
-    Response {
-        /// The payload.
-        giveload: Vec<u8>,
-    },
-    /// Error from scylla
-    Error {
-        /// The Error kind.
-        kind: WorkerError,
-    },
 }
 
 /// A success wrapper for API responses

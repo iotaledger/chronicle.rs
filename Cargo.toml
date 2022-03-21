@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "chronicle",
-    #"chronicle-api",
+    "chronicle-api",
     "chronicle-broker",
     #"chronicle-storage",
     #"chronicle-cli",

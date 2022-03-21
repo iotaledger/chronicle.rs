@@ -22,14 +22,15 @@ lazy_static = "1.4"
 tokio = "1.14"
 anyhow = "1.0"
 arc-swap = "1.5.0"
+derive_more = "0.99"
 
 pin-project-lite = "0.2.8"
 futures = "0.3"
 
 bee-tangle = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false }
 
-bee-message = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1"] }
-bee-message-old = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, features = ["serde"], package = "bee-message" }
+bee-message-cpt2 = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, features = ["serde"], package = "bee-message" }
+bee-rest-api-cpt2 = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, package="bee-rest-api" }
 
-bee-rest-api = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false }
-bee-rest-api-old = { git = "https://github.com/iotaledger/bee.git", branch = "mainnet-develop", default-features = false, package="bee-rest-api" }
+bee-message-shimmer = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1"], package = "bee-message" }
+bee-rest-api-shimmer = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, package="bee-rest-api" }

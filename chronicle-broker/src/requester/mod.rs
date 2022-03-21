@@ -11,7 +11,6 @@ use super::{
     },
     filter::FilterBuilder,
 };
-
 use backstage::core::{
     Actor,
     ActorError,
@@ -23,23 +22,22 @@ use backstage::core::{
     UnboundedChannel,
     UnboundedHandle,
 };
-
-use bee_rest_api_old::types::{
-    dtos::MessageDto,
-    responses::{
-        MessageMetadataResponse,
-        MilestoneResponse,
-    },
-};
-use futures::stream::StreamExt;
-
 use chronicle_common::{
+    cpt2::types::{
+        dtos::MessageDto,
+        responses::{
+            MessageMetadataResponse,
+            MilestoneResponse,
+        },
+    },
     types::{
         JsonData,
         Message,
+        MessageId,
     },
     Wrapper,
 };
+use futures::stream::StreamExt;
 use rand::{
     prelude::SliceRandom,
     thread_rng,
@@ -52,13 +50,14 @@ use std::{
     str::FromStr,
 };
 use url::Url;
+
 pub(crate) type RequesterHandle<T> = UnboundedHandle<RequesterEvent<T>>;
 
 /// Requester events
 #[derive(Debug)]
 pub enum RequesterEvent<T: FilterBuilder> {
     /// Collector requesting MessageId in order to solidify u32 MilestoneIndex
-    RequestFullMessage(CollectorId, bee_message::MessageId),
+    RequestFullMessage(CollectorId, MessageId),
     /// Requesting Milestone for u32 milestone index;
     RequestMilestone(CollectorId, u32),
     /// Subscribed backstage event
@@ -181,7 +180,7 @@ impl<T: FilterBuilder> Requester<T> {
     async fn request_full_message_with_retries(
         &mut self,
         collector_handle: &CollectorHandle,
-        message_id: bee_message::MessageId,
+        message_id: MessageId,
     ) -> ActorResult<()> {
         let mut retries = self.retries;
         loop {
@@ -280,8 +279,9 @@ impl<T: FilterBuilder> Requester<T> {
                     .map_err(|e| log::error!("Error deserializing milestone: {}\n {:#}", milestone_index, e));
                 if let Ok(milestone) = milestone {
                     let milestone = milestone.into_inner();
-                    let message_id =
-                        bee_message::MessageId::from_str(&milestone.message_id).expect("Expected message_id as string");
+                    let message_id = chronicle_common::cpt2::MessageId::from_str(&milestone.message_id)
+                        .expect("Expected message_id as string")
+                        .into();
                     return self.request_message_and_metadata(remote_url, message_id).await;
                 }
             } else {
@@ -297,7 +297,7 @@ impl<T: FilterBuilder> Requester<T> {
     async fn request_message_and_metadata(
         &mut self,
         remote_url: &Url,
-        message_id: bee_message::MessageId,
+        message_id: MessageId,
     ) -> anyhow::Result<(Message, MessageMetadataResponse)> {
         let get_message_url = remote_url.join(&format!("messages/{}", message_id)).unwrap();
         let get_metadata_url = remote_url.join(&format!("messages/{}/metadata", message_id)).unwrap();

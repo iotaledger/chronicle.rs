@@ -1,5 +1,10 @@
 use anyhow::*;
+use derive_more::From;
 use pin_project_lite::pin_project;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::{
         BTreeMap,
@@ -8,6 +13,7 @@ use std::{
         HashSet,
         VecDeque,
     },
+    fmt::Display,
     ops::{
         Deref,
         DerefMut,
@@ -19,74 +25,97 @@ use std::{
     },
 };
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, From, Hash, Ord, PartialOrd)]
+pub enum MessageId {
+    /// Chrysalis compatible message
+    Chrysalis(bee_message_cpt2::MessageId),
+    /// Shimmer compatible message
+    Shimmer(bee_message_shimmer::MessageId),
+}
+
+impl MessageId {
+    pub fn is_null(&self) -> bool {
+        match self {
+            MessageId::Chrysalis(id) => id == &bee_message_cpt2::MessageId::null(),
+            MessageId::Shimmer(id) => id == &bee_message_shimmer::MessageId::null(),
+        }
+    }
+}
+
+impl Display for MessageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Chrysalis(id) => write!(f, "{}", id),
+            Self::Shimmer(id) => write!(f, "{}", id),
+        }
+    }
+}
+
 /// Represent versioned message type.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, From)]
 pub enum Message {
     /// Chrysalis compatible message
-    Chrysalis(bee_message_old::Message),
+    Chrysalis(bee_message_cpt2::Message),
     /// Shimmer compatible message
-    Shimmer(bee_message::Message),
+    Shimmer(bee_message_shimmer::Message),
 }
 
-impl From<bee_message_old::Message> for Message {
-    fn from(chrysalis_message: bee_message_old::Message) -> Self {
-        Self::Chrysalis(chrysalis_message)
+impl Message {
+    pub fn protocol_version(&self) -> usize {
+        match self {
+            Message::Chrysalis(_) => 0,
+            Message::Shimmer(m) => m.protocol_version() as usize,
+        }
     }
 }
 
-impl From<bee_message::Message> for Message {
-    fn from(shimmer_message: bee_message::Message) -> Self {
-        Self::Shimmer(shimmer_message)
-    }
-}
-
-impl std::convert::TryFrom<bee_rest_api_old::types::dtos::MessageDto> for Message {
+impl std::convert::TryFrom<bee_rest_api_cpt2::types::dtos::MessageDto> for Message {
     type Error = anyhow::Error;
-    fn try_from(chrysalis_dto_message: bee_rest_api_old::types::dtos::MessageDto) -> Result<Self, Self::Error> {
+    fn try_from(chrysalis_dto_message: bee_rest_api_cpt2::types::dtos::MessageDto) -> Result<Self, Self::Error> {
         Ok(Self::Chrysalis(
-            bee_message_old::Message::try_from(&chrysalis_dto_message)?.into(),
+            bee_message_cpt2::Message::try_from(&chrysalis_dto_message)?.into(),
         ))
     }
 }
 
-impl std::convert::TryFrom<bee_rest_api::types::dtos::MessageDto> for Message {
+impl std::convert::TryFrom<bee_rest_api_shimmer::types::dtos::MessageDto> for Message {
     type Error = anyhow::Error;
-    fn try_from(shimmer_dto_message: bee_rest_api::types::dtos::MessageDto) -> Result<Self, Self::Error> {
+    fn try_from(shimmer_dto_message: bee_rest_api_shimmer::types::dtos::MessageDto) -> Result<Self, Self::Error> {
         Ok(Self::Shimmer(
-            bee_message::Message::try_from(&shimmer_dto_message)?.into(),
+            bee_message_shimmer::Message::try_from(&shimmer_dto_message)?.into(),
         ))
     }
 }
 
 impl Message {
     /// Returns the message id
-    pub fn id(&self) -> bee_message::MessageId {
+    pub fn id(&self) -> MessageId {
         match self {
-            Self::Chrysalis(msg) => bee_message::MessageId::new(msg.id().0.as_ref().try_into().unwrap()),
-            Self::Shimmer(msg) => msg.id(),
+            Self::Chrysalis(msg) => MessageId::Chrysalis(msg.id().0),
+            Self::Shimmer(msg) => MessageId::Shimmer(msg.id()),
         }
     }
     /// Returns the parents of the message
-    pub fn parents(&self) -> Vec<bee_message::MessageId> {
+    pub fn parents(&self) -> impl Iterator<Item = MessageId> + '_ {
         match self {
-            Self::Chrysalis(msg) => msg
-                .parents()
-                .iter()
-                .map(|p| bee_message::MessageId::new(p.as_ref().try_into().unwrap()))
-                .collect::<Vec<_>>(),
-            Self::Shimmer(msg) => msg.parents().iter().map(|p| *p).collect::<Vec<_>>(),
+            Self::Chrysalis(msg) => {
+                Box::new(msg.parents().iter().map(|p| MessageId::Chrysalis(*p))) as Box<dyn Iterator<Item = MessageId>>
+            }
+            Self::Shimmer(msg) => {
+                Box::new(msg.parents().iter().map(|p| MessageId::Shimmer(*p))) as Box<dyn Iterator<Item = MessageId>>
+            }
         }
     }
     /// Check if the message has milestone payload
     pub fn is_milestone(&self) -> bool {
         match self {
             Self::Chrysalis(msg) => {
-                if let Some(bee_message_old::payload::Payload::Milestone(_)) = msg.payload() {
+                if let Some(bee_message_cpt2::payload::Payload::Milestone(_)) = msg.payload() {
                     return true;
                 }
             }
             Self::Shimmer(msg) => {
-                if let Some(bee_message::payload::Payload::Milestone(_)) = msg.payload() {
+                if let Some(bee_message_shimmer::payload::Payload::Milestone(_)) = msg.payload() {
                     return true;
                 }
             }
@@ -97,19 +126,22 @@ impl Message {
 /// Chronicle Message record
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MessageRecord {
-    pub message_id: bee_message::MessageId,
+    pub message_id: MessageId,
+    // TODO: make use of protocol version to deserialize this
     pub message: Message,
-    pub milestone_index: Option<bee_message::milestone::MilestoneIndex>,
+    pub milestone_index: Option<u32>,
     pub inclusion_state: Option<LedgerInclusionState>,
     pub conflict_reason: Option<bee_tangle::ConflictReason>,
     pub proof: Option<Proof>,
+    pub protocol_version: usize,
 }
 
 impl MessageRecord {
     /// Create new message record
-    pub fn new(message_id: bee_message::MessageId, message: Message) -> Self {
+    pub fn new(message_id: MessageId, message: Message) -> Self {
         Self {
             message_id,
+            protocol_version: message.protocol_version(),
             message,
             milestone_index: None,
             inclusion_state: None,
@@ -118,7 +150,7 @@ impl MessageRecord {
         }
     }
     /// Return Message id of the message
-    pub fn message_id(&self) -> &bee_message::MessageId {
+    pub fn message_id(&self) -> &MessageId {
         &self.message_id
     }
     /// Return the message
@@ -126,8 +158,8 @@ impl MessageRecord {
         &self.message
     }
     /// Return referenced milestone index
-    pub fn milestone_index(&self) -> Option<&bee_message::milestone::MilestoneIndex> {
-        self.milestone_index.as_ref()
+    pub fn milestone_index(&self) -> Option<u32> {
+        self.milestone_index
     }
     /// Return inclusion_state
     pub fn inclusion_state(&self) -> Option<&LedgerInclusionState> {
@@ -140,6 +172,14 @@ impl MessageRecord {
     /// Return proof
     pub fn proof(&self) -> Option<&Proof> {
         self.proof.as_ref()
+    }
+
+    /// Get the message's nonce
+    pub fn nonce(&self) -> u64 {
+        match &self.message {
+            Message::Chrysalis(m) => m.nonce(),
+            Message::Shimmer(m) => m.nonce(),
+        }
     }
 }
 
@@ -176,14 +216,13 @@ impl PartialEq for MessageRecord {
 }
 impl Eq for MessageRecord {}
 
-impl From<(Message, bee_rest_api::types::responses::MessageMetadataResponse)> for MessageRecord {
-    fn from((message, metadata): (Message, bee_rest_api::types::responses::MessageMetadataResponse)) -> Self {
+impl From<(Message, bee_rest_api_shimmer::types::responses::MessageMetadataResponse)> for MessageRecord {
+    fn from((message, metadata): (Message, bee_rest_api_shimmer::types::responses::MessageMetadataResponse)) -> Self {
         MessageRecord {
             message_id: message.id(),
+            protocol_version: message.protocol_version(),
             message,
-            milestone_index: metadata
-                .referenced_by_milestone_index
-                .map(|i| bee_message::milestone::MilestoneIndex(i)),
+            milestone_index: metadata.referenced_by_milestone_index,
             inclusion_state: metadata.ledger_inclusion_state.map(Into::into),
             conflict_reason: metadata.conflict_reason.and_then(|c| c.try_into().ok()),
             proof: None,
@@ -191,14 +230,13 @@ impl From<(Message, bee_rest_api::types::responses::MessageMetadataResponse)> fo
     }
 }
 
-impl From<(Message, bee_rest_api_old::types::responses::MessageMetadataResponse)> for MessageRecord {
-    fn from((message, metadata): (Message, bee_rest_api_old::types::responses::MessageMetadataResponse)) -> Self {
+impl From<(Message, bee_rest_api_cpt2::types::responses::MessageMetadataResponse)> for MessageRecord {
+    fn from((message, metadata): (Message, bee_rest_api_cpt2::types::responses::MessageMetadataResponse)) -> Self {
         MessageRecord {
             message_id: message.id(),
+            protocol_version: message.protocol_version(),
             message,
-            milestone_index: metadata
-                .referenced_by_milestone_index
-                .map(|i| bee_message::milestone::MilestoneIndex(i)),
+            milestone_index: metadata.referenced_by_milestone_index,
             inclusion_state: metadata.ledger_inclusion_state.map(Into::into),
             conflict_reason: metadata.conflict_reason.and_then(|c| c.try_into().ok()),
             proof: None,
@@ -209,20 +247,20 @@ impl From<(Message, bee_rest_api_old::types::responses::MessageMetadataResponse)
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Proof {
     milestone_index: u32,
-    path: Vec<bee_message::MessageId>,
+    path: Vec<MessageId>,
 }
 
 impl Proof {
-    pub fn new(milestone_index: u32, path: Vec<bee_message::MessageId>) -> Self {
+    pub fn new(milestone_index: u32, path: Vec<MessageId>) -> Self {
         Self { milestone_index, path }
     }
     pub fn milestone_index(&self) -> u32 {
         self.milestone_index
     }
-    pub fn path(&self) -> &[bee_message::MessageId] {
+    pub fn path(&self) -> &[MessageId] {
         &self.path
     }
-    pub fn path_mut(&mut self) -> &mut Vec<bee_message::MessageId> {
+    pub fn path_mut(&mut self) -> &mut Vec<MessageId> {
         &mut self.path
     }
 }
@@ -253,11 +291,11 @@ impl MilestoneMessage {
         &self.message
     }
     /// Returns the milestone index
-    pub fn milestone_index(&self) -> bee_message::milestone::MilestoneIndex {
+    pub fn milestone_index(&self) -> bee_message_shimmer::milestone::MilestoneIndex {
         match self.message.message() {
             Message::Chrysalis(msg) => {
                 // unwrap is safe, as the milestone message cannot be created unless it contains milestone payload
-                if let bee_message_old::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
+                if let bee_message_cpt2::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
                     ms_payload.essence().index().0.into()
                 } else {
                     unreachable!("No milestone payload in milestone message")
@@ -265,7 +303,7 @@ impl MilestoneMessage {
             }
             Message::Shimmer(msg) => {
                 // unwrap is safe, as the milestone message cannot be created unless it contains milestone payload
-                if let bee_message::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
+                if let bee_message_shimmer::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
                     ms_payload.essence().index()
                 } else {
                     unreachable!("No milestone payload in milestone message")
@@ -278,7 +316,7 @@ impl MilestoneMessage {
         match self.message.message() {
             Message::Chrysalis(msg) => {
                 // unwrap is safe, as the milestone message cannot be created unless it contains milestone payload
-                if let bee_message_old::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
+                if let bee_message_cpt2::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
                     ms_payload.essence().timestamp()
                 } else {
                     unreachable!("No milestone payload in milestone message")
@@ -286,7 +324,7 @@ impl MilestoneMessage {
             }
             Message::Shimmer(msg) => {
                 // unwrap is safe, as the milestone message cannot be created unless it contains milestone payload
-                if let bee_message::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
+                if let bee_message_shimmer::payload::Payload::Milestone(ms_payload) = msg.payload().as_ref().unwrap() {
                     ms_payload.essence().timestamp()
                 } else {
                     unreachable!("No milestone payload in milestone message")
@@ -334,42 +372,42 @@ impl TryFrom<u8> for LedgerInclusionState {
     }
 }
 
-impl From<bee_rest_api_old::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
-    fn from(value: bee_rest_api_old::types::dtos::LedgerInclusionStateDto) -> Self {
+impl From<bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
+    fn from(value: bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto) -> Self {
         match value {
-            bee_rest_api_old::types::dtos::LedgerInclusionStateDto::Conflicting => Self::Conflicting,
-            bee_rest_api_old::types::dtos::LedgerInclusionStateDto::Included => Self::Included,
-            bee_rest_api_old::types::dtos::LedgerInclusionStateDto::NoTransaction => Self::NoTransaction,
+            bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto::Conflicting => Self::Conflicting,
+            bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto::Included => Self::Included,
+            bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto::NoTransaction => Self::NoTransaction,
         }
     }
 }
 
-impl Into<bee_rest_api_old::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
-    fn into(self) -> bee_rest_api_old::types::dtos::LedgerInclusionStateDto {
+impl Into<bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
+    fn into(self) -> bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto {
         match self {
-            Self::Conflicting => bee_rest_api_old::types::dtos::LedgerInclusionStateDto::Conflicting,
-            Self::Included => bee_rest_api_old::types::dtos::LedgerInclusionStateDto::Included,
-            Self::NoTransaction => bee_rest_api_old::types::dtos::LedgerInclusionStateDto::NoTransaction,
+            Self::Conflicting => bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto::Conflicting,
+            Self::Included => bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto::Included,
+            Self::NoTransaction => bee_rest_api_cpt2::types::dtos::LedgerInclusionStateDto::NoTransaction,
         }
     }
 }
 
-impl From<bee_rest_api::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
-    fn from(value: bee_rest_api::types::dtos::LedgerInclusionStateDto) -> Self {
+impl From<bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
+    fn from(value: bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto) -> Self {
         match value {
-            bee_rest_api::types::dtos::LedgerInclusionStateDto::Conflicting => Self::Conflicting,
-            bee_rest_api::types::dtos::LedgerInclusionStateDto::Included => Self::Included,
-            bee_rest_api::types::dtos::LedgerInclusionStateDto::NoTransaction => Self::NoTransaction,
+            bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto::Conflicting => Self::Conflicting,
+            bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto::Included => Self::Included,
+            bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto::NoTransaction => Self::NoTransaction,
         }
     }
 }
 
-impl Into<bee_rest_api::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
-    fn into(self) -> bee_rest_api::types::dtos::LedgerInclusionStateDto {
+impl Into<bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto> for LedgerInclusionState {
+    fn into(self) -> bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto {
         match self {
-            Self::Conflicting => bee_rest_api::types::dtos::LedgerInclusionStateDto::Conflicting,
-            Self::Included => bee_rest_api::types::dtos::LedgerInclusionStateDto::Included,
-            Self::NoTransaction => bee_rest_api::types::dtos::LedgerInclusionStateDto::NoTransaction,
+            Self::Conflicting => bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto::Conflicting,
+            Self::Included => bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto::Included,
+            Self::NoTransaction => bee_rest_api_shimmer::types::dtos::LedgerInclusionStateDto::NoTransaction,
         }
     }
 }
@@ -388,10 +426,10 @@ impl MilestoneData {
             messages: BTreeSet::new(),
         }
     }
-    pub fn message_id(&self) -> &bee_message::MessageId {
+    pub fn message_id(&self) -> &MessageId {
         self.milestone.message().message_id()
     }
-    pub fn milestone_index(&self) -> bee_message::milestone::MilestoneIndex {
+    pub fn milestone_index(&self) -> bee_message_shimmer::milestone::MilestoneIndex {
         self.milestone.milestone_index()
     }
     /// Get the milestone's messages
@@ -456,9 +494,9 @@ impl Selected {
 pub struct MilestoneDataBuilder {
     pub(crate) milestone_index: u32,
     pub(crate) milestone: Option<MilestoneMessage>,
-    pub(crate) messages: BTreeMap<bee_message::MessageId, MessageRecord>,
-    pub(crate) selected_messages: HashMap<bee_message::MessageId, Selected>,
-    pub(crate) pending: HashSet<bee_message::MessageId>,
+    pub(crate) messages: BTreeMap<MessageId, MessageRecord>,
+    pub(crate) selected_messages: HashMap<MessageId, Selected>,
+    pub(crate) pending: HashSet<MessageId>,
     pub(crate) created_by: CreatedBy,
 }
 
@@ -488,32 +526,32 @@ impl MilestoneDataBuilder {
         }
         Ok(())
     }
-    pub fn add_pending(&mut self, message_id: bee_message::MessageId) -> bool {
+    pub fn add_pending(&mut self, message_id: MessageId) -> bool {
         self.pending.insert(message_id)
     }
-    pub fn remove_pending(&mut self, message_id: bee_message::MessageId) -> bool {
+    pub fn remove_pending(&mut self, message_id: MessageId) -> bool {
         self.pending.remove(&message_id)
     }
     /// Get the milestone's messages
-    pub fn messages(&self) -> &BTreeMap<bee_message::MessageId, MessageRecord> {
+    pub fn messages(&self) -> &BTreeMap<MessageId, MessageRecord> {
         &self.messages
     }
     /// Get the pending messages
-    pub fn pending(&self) -> &HashSet<bee_message::MessageId> {
+    pub fn pending(&self) -> &HashSet<MessageId> {
         &self.pending
     }
-    pub fn selected_messages(&self) -> &HashMap<bee_message::MessageId, Selected> {
+    pub fn selected_messages(&self) -> &HashMap<MessageId, Selected> {
         &self.selected_messages
     }
     /// Get the milestone's messages
-    pub fn messages_mut(&mut self) -> &mut BTreeMap<bee_message::MessageId, MessageRecord> {
+    pub fn messages_mut(&mut self) -> &mut BTreeMap<MessageId, MessageRecord> {
         &mut self.messages
     }
     /// Get the pending messages
-    pub fn pending_mut(&mut self) -> &mut HashSet<bee_message::MessageId> {
+    pub fn pending_mut(&mut self) -> &mut HashSet<MessageId> {
         &mut self.pending
     }
-    pub fn selected_messages_mut(&mut self) -> &mut HashMap<bee_message::MessageId, Selected> {
+    pub fn selected_messages_mut(&mut self) -> &mut HashMap<MessageId, Selected> {
         &mut self.selected_messages
     }
     pub fn milestone_index(&self) -> u32 {
@@ -574,7 +612,7 @@ pin_project! {
         #[pin]
         should_be_visited: VecDeque<Proof>,
         #[pin]
-        visited: HashSet<bee_message::MessageId>,
+        visited: HashSet<MessageId>,
         budget: usize,
         counter: usize,
     }
@@ -712,6 +750,31 @@ impl std::cmp::PartialEq for Ascending<MilestoneData> {
 
 impl std::cmp::Eq for Ascending<MilestoneData> {}
 
+/// Identify theoretical nodeid which updated/set the synced_by column in sync table
+pub type SyncedBy = u8;
+/// Identify theoretical nodeid which updated/set the logged_by column in sync table.
+/// This enables the admin to locate the generated logs across cluster of chronicles
+pub type LoggedBy = u8;
+/// A 'sync' table row
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct SyncRecord {
+    pub milestone_index: u32,
+    pub synced_by: Option<SyncedBy>,
+    pub logged_by: Option<LoggedBy>,
+}
+
+impl SyncRecord {
+    /// Creates a new sync row
+    pub fn new(milestone_index: u32, synced_by: Option<SyncedBy>, logged_by: Option<LoggedBy>) -> Self {
+        Self {
+            milestone_index,
+            synced_by,
+            logged_by,
+        }
+    }
+}
+
 /// Representation of the database sync data
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct SyncData {
@@ -768,7 +831,7 @@ impl SyncData {
             None
         }
     }
-    fn get_lowest_gap_or_unlogged(&self) -> Option<&Range<u32>> {
+    pub fn get_lowest_gap_or_unlogged(&self) -> Option<&Range<u32>> {
         let lowest_gap = self.gaps.last();
         let lowest_unlogged = self.synced_but_unlogged.last();
         match (lowest_gap, lowest_unlogged) {
@@ -784,7 +847,7 @@ impl SyncData {
             _ => None,
         }
     }
-    fn process_rest(&mut self, logged_by: &Option<u8>, milestone_index: u32, pre_lb: &Option<u8>) {
+    pub fn process_rest(&mut self, logged_by: &Option<u8>, milestone_index: u32, pre_lb: &Option<u8>) {
         if logged_by.is_some() {
             // process logged
             Self::proceed(&mut self.completed, milestone_index, pre_lb.is_some());
@@ -794,7 +857,7 @@ impl SyncData {
             Self::proceed(unlogged, milestone_index, pre_lb.is_none());
         }
     }
-    fn process_gaps(&mut self, pre_ms: u32, milestone_index: u32) {
+    pub fn process_gaps(&mut self, pre_ms: u32, milestone_index: u32) {
         let gap_start = milestone_index + 1;
         if gap_start != pre_ms {
             // create missing gap
@@ -805,7 +868,7 @@ impl SyncData {
             self.gaps.push(gap);
         }
     }
-    fn proceed(ranges: &mut Vec<Range<u32>>, milestone_index: u32, check: bool) {
+    pub fn proceed(ranges: &mut Vec<Range<u32>>, milestone_index: u32, check: bool) {
         let end_ms = milestone_index + 1;
         if let Some(Range { start, .. }) = ranges.last_mut() {
             if check && *start == end_ms {
@@ -852,9 +915,9 @@ impl<T> crate::Wrapper for JsonData<T> {
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct OldMilestoneData {
     pub(crate) milestone_index: u32,
-    pub(crate) milestone: Option<Box<bee_message_old::payload::milestone::MilestonePayload>>,
-    pub(crate) messages: HashMap<bee_message::MessageId, OldFullMessage>,
-    pub(crate) pending: HashMap<bee_message::MessageId, ()>,
+    pub(crate) milestone: Option<Box<bee_message_cpt2::payload::milestone::MilestonePayload>>,
+    pub(crate) messages: HashMap<MessageId, OldFullMessage>,
+    pub(crate) pending: HashMap<MessageId, ()>,
     pub(crate) created_by: CreatedBy,
 }
 
@@ -868,7 +931,7 @@ impl TryInto<MilestoneData> for OldMilestoneData {
                 .values()
                 .find_map(|m| match m.0.payload() {
                     Some(payload) => match payload {
-                        bee_message_old::payload::Payload::Milestone(_) => {
+                        bee_message_cpt2::payload::Payload::Milestone(_) => {
                             let m: MessageRecord = m.clone().into();
                             Some(m.try_into().unwrap()) // safe to unwrap as the milestone payload check already done.
                         }
@@ -884,17 +947,15 @@ impl TryInto<MilestoneData> for OldMilestoneData {
 
 /// A "full" message payload, including both message and metadata
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct OldFullMessage(pub bee_message_old::Message, pub OldMessageMetadata);
+pub struct OldFullMessage(pub bee_message_cpt2::Message, pub OldMessageMetadata);
 
 impl Into<MessageRecord> for OldFullMessage {
     fn into(self) -> MessageRecord {
         MessageRecord {
             message_id: self.1.message_id,
+            protocol_version: 0,
             message: self.0.into(),
-            milestone_index: self
-                .1
-                .referenced_by_milestone_index
-                .map(|i| bee_message::milestone::MilestoneIndex(i)),
+            milestone_index: self.1.referenced_by_milestone_index,
             inclusion_state: self.1.ledger_inclusion_state,
             conflict_reason: None,
             proof: None,
@@ -907,9 +968,9 @@ impl Into<MessageRecord> for OldFullMessage {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct OldMessageMetadata {
     #[serde(rename = "messageId")]
-    pub message_id: bee_message::MessageId,
+    pub message_id: MessageId,
     #[serde(rename = "parentMessageIds")]
-    pub parent_message_ids: Vec<bee_message::MessageId>,
+    pub parent_message_ids: Vec<MessageId>,
     #[serde(rename = "isSolid")]
     pub is_solid: bool,
     #[serde(rename = "referencedByMilestoneIndex")]

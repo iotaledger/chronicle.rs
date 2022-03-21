@@ -17,15 +17,10 @@ use crate::{
 use anyhow::anyhow;
 use backstage::core::{
     Actor,
-    ActorError,
     ActorResult,
     NullChannel,
     Rt,
     SupHandle,
-};
-use bee_message::milestone::{
-    Milestone,
-    MilestoneIndex,
 };
 use chronicle_common::types::CreatedBy;
 use std::ops::Range;

@@ -30,7 +30,6 @@ use anyhow::{
     bail,
     Result,
 };
-
 use async_trait::async_trait;
 use backstage::{
     core::{
@@ -58,9 +57,10 @@ use backstage::{
         Responder,
     },
 };
-use chronicle_common::types::Message;
-
-use bee_rest_api_old::types::responses::MessageMetadataResponse;
+use chronicle_common::cpt2::{
+    types::responses::MessageMetadataResponse,
+    Message,
+};
 use serde::{
     Deserialize,
     Serialize,

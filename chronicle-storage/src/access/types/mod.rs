@@ -872,7 +872,7 @@ impl TryInto<MilestoneData> for OldMilestoneData {
                 .values()
                 .find_map(|m| match m.0.payload() {
                     Some(payload) => match payload {
-                        bee_message_old::payload::Payload::Milestone(_) => {
+                        bee_message_cpt2::payload::Payload::Milestone(_) => {
                             let m: MessageRecord = m.clone().into();
                             Some(m.try_into().unwrap()) // safe to unwrap as the milestone payload check already done.
                         }
@@ -888,7 +888,7 @@ impl TryInto<MilestoneData> for OldMilestoneData {
 
 /// A "full" message payload, including both message and metadata
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct OldFullMessage(pub bee_message_old::Message, pub OldMessageMetadata);
+pub struct OldFullMessage(pub bee_message_cpt2::Message, pub OldMessageMetadata);
 
 impl Into<MessageRecord> for OldFullMessage {
     fn into(self) -> MessageRecord {

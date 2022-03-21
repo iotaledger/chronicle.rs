@@ -25,10 +25,10 @@ use backstage::core::{
     SupHandle,
 };
 use bee_common::packable::Packable;
-use chronicle_common::types::Message;
-
-type MessageMetadataResponse = bee_rest_api_old::types::responses::MessageMetadataResponse;
-
+use chronicle_common::{
+    cpt2::types::responses::MessageMetadataResponse,
+    types::Message,
+};
 use futures::stream::StreamExt;
 use std::{
     str::FromStr,
@@ -124,7 +124,7 @@ impl<T: Topic> Mqtt<T> {
 }
 
 #[async_trait]
-impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
+impl<S: SupHandle<Self>> Actor<S> for Mqtt<chronicle_common::cpt2::Message> {
     type Data = CollectorHandles;
     type Channel = MqttChannel;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
@@ -135,7 +135,7 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<Message> {
         while let Some(msg_opt) = rt.inbox_mut().stream().next().await {
             if let Some(msg) = msg_opt {
                 // todo unpack based on feature
-                match bee_message_old::Message::unpack(&mut msg.payload()) {
+                match chronicle_common::cpt2::Message::unpack(&mut msg.payload()) {
                     Ok(msg) => {
                         let msg: Message = msg.into();
                         let message_id = msg.id();
@@ -169,9 +169,11 @@ impl<S: SupHandle<Self>> Actor<S> for Mqtt<MessageMetadataResponse> {
             if let Some(msg_ref) = msg_ref_opt {
                 if let Ok(msg_ref) = serde_json::from_str::<MessageMetadataResponse>(&msg_ref.payload_str()) {
                     // partitioning based on first byte of the message_id
-                    let collector_partition_id = self
-                        .partitioner
-                        .partition_id(&bee_message::MessageId::from_str(&msg_ref.message_id).unwrap());
+                    let collector_partition_id = self.partitioner.partition_id(
+                        &chronicle_common::cpt2::MessageId::from_str(&msg_ref.message_id)
+                            .unwrap()
+                            .into(),
+                    );
                     if let Some(collector_handle) = collectors_handles.get(&collector_partition_id) {
                         collector_handle.send(CollectorEvent::MessageReferenced(msg_ref)).ok();
                     }
@@ -231,7 +233,7 @@ pub trait Topic: Send + 'static {
     fn qos() -> i32;
 }
 
-impl Topic for Message {
+impl Topic for chronicle_common::cpt2::Message {
     fn name() -> &'static str {
         "messages"
     }

@@ -18,9 +18,7 @@ use std::{
 /// The Chronicle API. Defines endpoints which can be used to
 /// retrieve data from the scylla database.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
-pub struct ChronicleAPI {
-    keyspaces: HashSet<KeyspacePartitionConfig>,
-}
+pub struct ChronicleAPI {}
 
 /// A Chronicle API Event
 pub enum ChronicleAPIEvent {
@@ -46,14 +44,14 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
 
     async fn init(&mut self, rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
         log::info!("{:?} is initializing", &rt.service().directory());
-        register_metrics();
-        let rocket = backstage::prefab::rocket::RocketServer::new(
-            super::listener::construct_rocket()
-                .ignite()
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?,
-        );
-        rt.spawn("rocket".to_string(), rocket).await?;
+        // register_metrics();
+        // let rocket = backstage::prefab::rocket::RocketServer::new(
+        //     super::listener::construct_rocket(todo!("database"))
+        //         .ignite()
+        //         .await
+        //         .map_err(|e| anyhow::anyhow!(e))?,
+        // );
+        // rt.spawn("rocket".to_string(), rocket).await?;
         Ok(())
     }
 
@@ -71,30 +69,6 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
         }
         log::info!("{:?} exited its event loop", &rt.service().directory());
         Ok(())
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
-pub struct KeyspacePartitionConfig {
-    name: KeyspaceName,
-    partition_config: PartitionConfig,
-}
-
-impl Hash for KeyspacePartitionConfig {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-    }
-}
-
-impl FromIterator<KeyspacePartitionConfig> for HashMap<String, PartitionConfig> {
-    fn from_iter<I: IntoIterator<Item = KeyspacePartitionConfig>>(iter: I) -> Self {
-        let mut c = HashMap::new();
-
-        for i in iter {
-            c.insert(i.name, i.partition_config);
-        }
-
-        c
     }
 }
 

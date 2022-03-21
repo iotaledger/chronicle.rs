@@ -23,6 +23,27 @@ pub mod types;
 /// Pub send_alert
 pub use alert::send_alert;
 
+pub mod cpt2 {
+    pub use bee_message_cpt2::{
+        self,
+        *,
+    };
+    pub use bee_rest_api_cpt2::{
+        self,
+        *,
+    };
+}
+pub mod shimmer {
+    pub use bee_message_shimmer::{
+        self,
+        *,
+    };
+    pub use bee_rest_api_shimmer::{
+        self,
+        *,
+    };
+}
+
 /// Defines a range of milestone indexes to be synced
 // todo impl checked deserialize which verify the range
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
