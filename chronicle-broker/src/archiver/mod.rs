@@ -120,7 +120,7 @@ impl<Sup: SupHandle<Self>, T: FilterBuilder> Actor<Sup> for Archiver<T> {
                             self.milestones_data.push(Ascending::new(milestone_data));
                             while let Some(ms_data) = self.milestones_data.pop() {
                                 let ms_index = ms_data.milestone_index();
-                                if self.next == ms_index.0 {
+                                if self.next == ms_index {
                                     if let Err(e) = self
                                         .handle_milestone_data(ms_data.into(), created_by, opt_upper_limit)
                                         .await
@@ -130,7 +130,7 @@ impl<Sup: SupHandle<Self>, T: FilterBuilder> Actor<Sup> for Archiver<T> {
                                         return Err(ActorError::exit(e));
                                     };
                                     self.next += 1;
-                                } else if ms_index.0 > self.next {
+                                } else if ms_index > self.next {
                                     // Safety check to prevent potential rare race condition
                                     // check if we buffered too much.
                                     if self.milestones_data.len() > MAX_MILESTONE_DATA_LEN {
@@ -151,7 +151,7 @@ impl<Sup: SupHandle<Self>, T: FilterBuilder> Actor<Sup> for Archiver<T> {
                                             return Err(ActorError::exit(e));
                                         }
                                         // reset next
-                                        self.next = ms_index.0 + 1;
+                                        self.next = ms_index + 1;
                                     } else {
                                         self.milestones_data.push(ms_data);
                                         break;
