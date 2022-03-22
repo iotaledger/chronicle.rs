@@ -142,7 +142,7 @@ fn main() {
         .enable_all()
         .thread_stack_size(TOKIO_THREAD_STACK_SIZE)
         .build()
-        .expect("Expected to build tokio runtime");
+        .expect("Failed to build tokio runtime");
     runtime.block_on(chronicle());
 }
 

@@ -67,8 +67,8 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Syncer<T> {
                     // ).await.ok();
                     self.handle_skip(rt, &solidifiers, &archiver).await?;
                 }
-                SyncerEvent::MilestoneData(milestone_data) => {
-                    self.handle_milestone_data(rt, milestone_data, &solidifiers, &archiver)
+                SyncerEvent::MilestoneData(milestone_data, ms_index) => {
+                    self.handle_milestone_data(rt, milestone_data, ms_index, &solidifiers, &archiver)
                         .await?;
                 }
             }
@@ -82,7 +82,7 @@ impl<S: SupHandle<Self>, T: FilterBuilder> Actor<S> for Syncer<T> {
 #[derive(Debug)]
 pub enum SyncerEvent {
     /// Sync milestone data
-    MilestoneData(MilestoneData),
+    MilestoneData(Option<MilestoneData>, u32),
     /// Notify of an unreachable cluster
     Unreachable(u32),
 }
@@ -93,7 +93,7 @@ pub struct Syncer<T: FilterBuilder> {
     update_sync_data_every: Duration,
     parallelism: u8,
     active: Option<Active>,
-    milestones_data: BinaryHeap<Ascending<MilestoneData>>,
+    milestones_data: BinaryHeap<Ascending<(Option<MilestoneData>, u32)>>,
     pending: u32,
     next: u32,
     skip: bool,
@@ -165,11 +165,12 @@ impl<T: FilterBuilder> Syncer<T> {
     async fn handle_milestone_data<S: SupHandle<Self>>(
         &mut self,
         rt: &mut Rt<Self, S>,
-        milestone_data: MilestoneData,
+        milestone_data: Option<MilestoneData>,
+        ms_index: u32,
         solidifier_handles: &HashMap<u8, SolidifierHandle>,
         archiver_handle: &Option<ArchiverHandle>,
     ) -> ActorResult<()> {
-        self.milestones_data.push(Ascending::new(milestone_data));
+        self.milestones_data.push(Ascending::new((milestone_data, ms_index)));
         if !self.skip {
             self.pending -= 1;
             self.try_solidify_one_more(solidifier_handles);
@@ -177,16 +178,15 @@ impl<T: FilterBuilder> Syncer<T> {
             // check if we could send the next expected milestone_index
             while let Some(ms_data) = self.milestones_data.pop() {
                 let ms_index = ms_data.milestone_index();
-                if self.next == ms_index.0 {
-                    // push it to archiver
-                    archiver_handle.as_ref().and_then(|h| {
-                        h.send(ArchiverEvent::MilestoneData(
-                            ms_data.into(),
-                            CreatedBy::Syncer,
-                            upper_ms_limit,
-                        ))
-                        .ok()
-                    });
+                if self.next == ms_index {
+                    let mut ms_data: Option<MilestoneData> = ms_data.into();
+                    if let Some(ms_data) = ms_data.take() {
+                        // push it to archiver
+                        archiver_handle.as_ref().and_then(|h| {
+                            h.send(ArchiverEvent::MilestoneData(ms_data, CreatedBy::Syncer, upper_ms_limit))
+                                .ok()
+                        });
+                    }
                     self.next += 1;
                 } else {
                     // put it back and then break
@@ -213,7 +213,6 @@ impl<T: FilterBuilder> Syncer<T> {
         if self.pending.eq(&0) {
             self.skip = false;
             while let Some(d) = self.milestones_data.pop() {
-                let d: MilestoneData = d.into();
                 error!("We got milestone data for index: {}, but we're skipping it due to previous unreachable indexes within the same gap range", d.milestone_index());
             }
             if let Some(mut active) = self.active.take() {

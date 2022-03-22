@@ -54,7 +54,7 @@ impl FilterHandle for NullFilterHandle {
     async fn export_milestone_data(&self, milestone_index: u32) -> ActorResult<Option<MilestoneData>> {
         Ok(None)
     }
-    async fn process_milestone_data(&self, milestone_data: MilestoneDataBuilder) -> ActorResult<MilestoneData> {
+    async fn process_milestone_data(&self, milestone_data: MilestoneDataBuilder) -> ActorResult<Option<MilestoneData>> {
         if !milestone_data.valid() {
             return Err(ActorError::aborted_msg(
                 "Cannot process milestone data using invalid milestone data builder",
@@ -69,7 +69,7 @@ impl FilterHandle for NullFilterHandle {
             // add it to milestone data
             milestone_data.messages.insert(message);
         }
-        Ok(milestone_data)
+        Ok(Some(milestone_data))
     }
     async fn synced(&self, milestone_index: u32) -> ActorResult<()> {
         Ok(())

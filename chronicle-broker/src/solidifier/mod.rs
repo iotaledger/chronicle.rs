@@ -290,9 +290,9 @@ impl<T: FilterBuilder> Solidifier<T> {
         let created_by = *milestone_data.created_by();
         // uda process
         let milestone_index = milestone_data.milestone_index();
-        let milestone_data = self.filter_handle.process_milestone_data(milestone_data).await?;
+        let mut milestone_data = self.filter_handle.process_milestone_data(milestone_data).await?;
         self.filter_handle.synced(milestone_index.into()).await?;
-        if let Some(archiver_handle) = archive_handle.as_ref() {
+        if let (Some(archiver_handle), Some(milestone_data)) = (archive_handle.as_ref(), milestone_data.take()) {
             info!(
                 "solidifier_id: {}, is pushing the milestone data for index: {}, to Archiver",
                 self.partition_id, milestone_index
@@ -324,7 +324,7 @@ impl<T: FilterBuilder> Solidifier<T> {
             self.partition_id, milestone_index
         );
         self.filter_handle.synced(milestone_index.into()).await?;
-        let syncer_event = SyncerEvent::MilestoneData(milestone_data);
+        let syncer_event = SyncerEvent::MilestoneData(milestone_data, milestone_index);
         syncer_handle.send(syncer_event).ok();
         Ok(())
     }

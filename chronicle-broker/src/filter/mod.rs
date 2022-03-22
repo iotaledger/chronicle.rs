@@ -34,7 +34,7 @@ pub trait FilterHandle: Clone + Send + 'static + Sync {
     /// Filter the message, used by Collector(s)
     async fn filter_message(&self, message: &MessageRecord) -> ActorResult<Option<Selected>>;
     /// Process milestone data, used by Solidifier(s) and Importer(s)
-    async fn process_milestone_data(&self, milestone_data: MilestoneDataBuilder) -> ActorResult<MilestoneData>;
+    async fn process_milestone_data(&self, milestone_data: MilestoneDataBuilder) -> ActorResult<Option<MilestoneData>>;
     /// Export milestone data, used by Exporter
     async fn export_milestone_data(&self, milestone_index: u32) -> ActorResult<Option<MilestoneData>>;
     /// Inserts Sync record highlighting a synced milestone data, used by solidifier(s) and Importer(s)

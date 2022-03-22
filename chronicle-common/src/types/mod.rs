@@ -722,10 +722,28 @@ impl std::convert::Into<MilestoneData> for Ascending<MilestoneData> {
     }
 }
 
+impl<T> Ascending<T> {
+    /// Wrap inner with ASC ordering
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+impl Ascending<(Option<MilestoneData>, u32)> {
+    /// Returns the milestone index
+    pub fn milestone_index(&self) -> u32 {
+        self.1
+    }
+}
+
 impl Ascending<MilestoneData> {
-    /// Wrap milestone data with ASC ordering
-    pub fn new(milestone_data: MilestoneData) -> Self {
-        Self { inner: milestone_data }
+    /// Returns the milestone index
+    pub fn milestone_index(&self) -> u32 {
+        self.inner.milestone_index().0
+    }
+}
+impl std::convert::Into<Option<MilestoneData>> for Ascending<(Option<MilestoneData>, u32)> {
+    fn into(self) -> Option<MilestoneData> {
+        self.inner.0
     }
 }
 
@@ -752,6 +770,30 @@ impl std::cmp::PartialEq for Ascending<MilestoneData> {
 }
 
 impl std::cmp::Eq for Ascending<MilestoneData> {}
+
+impl std::cmp::Ord for Ascending<(Option<MilestoneData>, u32)> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.inner.1.cmp(&self.inner.1)
+    }
+}
+
+impl std::cmp::PartialOrd for Ascending<(Option<MilestoneData>, u32)> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(other.inner.1.cmp(&self.inner.1))
+    }
+}
+
+impl std::cmp::PartialEq for Ascending<(Option<MilestoneData>, u32)> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.inner.1 == other.inner.1 {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl std::cmp::Eq for Ascending<(Option<MilestoneData>, u32)> {}
 
 /// Identify theoretical nodeid which updated/set the synced_by column in sync table
 pub type SyncedBy = u8;
