@@ -17,6 +17,8 @@ use std::{
 use thiserror::Error;
 
 #[cfg(feature = "mongo_api")]
+use chronicle_common::mongodb;
+#[cfg(feature = "mongo_api")]
 mod mongo;
 #[cfg(feature = "mongo_api")]
 pub use self::mongo::construct_rocket;

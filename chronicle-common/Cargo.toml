@@ -23,6 +23,8 @@ tokio = "1.14"
 anyhow = "1.0"
 arc-swap = "1.5.0"
 derive_more = "0.99"
+cfg-if = { version = "1.0", optional = true }
+mongodb = { version = "2.1", optional = true }
 
 pin-project-lite = "0.2.8"
 futures = "0.3"
@@ -34,3 +36,6 @@ bee-rest-api-cpt2 = { git = "https://github.com/iotaledger/bee.git", branch = "m
 
 bee-message-shimmer = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, features = ["std", "serde1"], package = "bee-message" }
 bee-rest-api-shimmer = { git = "https://github.com/iotaledger/bee.git", branch = "shimmer-develop", default-features = false, package="bee-rest-api" }
+
+[features]
+mongo = ["mongodb", "cfg-if"]

@@ -44,6 +44,9 @@ pub mod shimmer {
     };
 }
 
+#[cfg(feature = "mongo")]
+pub use mongodb;
+
 /// Defines a range of milestone indexes to be synced
 // todo impl checked deserialize which verify the range
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]

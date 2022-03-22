@@ -2,23 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use chronicle_common::config::PartitionConfig;
-use std::{
-    collections::{
-        HashMap,
-        HashSet,
-    },
-    hash::{
-        Hash,
-        Hasher,
-    },
-    iter::FromIterator,
+use chronicle_common::mongodb::{
+    options::ClientOptions,
+    Client,
 };
 
 /// The Chronicle API. Defines endpoints which can be used to
 /// retrieve data from the scylla database.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
-pub struct ChronicleAPI {}
+#[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
+pub struct ChronicleAPI {
+    #[cfg(feature = "mongo_api")]
+    mongo_config: chronicle_common::config::mongo::MongoConfig,
+}
 
 /// A Chronicle API Event
 pub enum ChronicleAPIEvent {
@@ -44,14 +39,16 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
 
     async fn init(&mut self, rt: &mut Rt<Self, Sup>) -> ActorResult<Self::Data> {
         log::info!("{:?} is initializing", &rt.service().directory());
-        // register_metrics();
-        // let rocket = backstage::prefab::rocket::RocketServer::new(
-        //     super::listener::construct_rocket(todo!("database"))
-        //         .ignite()
-        //         .await
-        //         .map_err(|e| anyhow::anyhow!(e))?,
-        // );
-        // rt.spawn("rocket".to_string(), rocket).await?;
+        register_metrics();
+        let client_opts: ClientOptions = self.mongo_config.clone().into();
+        let client = Client::with_options(client_opts).map_err(|e| anyhow::anyhow!(e))?;
+        let rocket = backstage::prefab::rocket::RocketServer::new(
+            super::listener::construct_rocket(client.database("permanode"))
+                .ignite()
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?,
+        );
+        rt.spawn("rocket".to_string(), rocket).await?;
         Ok(())
     }
 

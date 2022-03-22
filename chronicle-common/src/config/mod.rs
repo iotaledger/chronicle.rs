@@ -3,8 +3,9 @@
 
 use super::*;
 pub use alert::*;
-pub use storage::*;
 
 /// Alert config mod
 pub mod alert;
-mod storage;
+#[cfg(feature = "mongodb")]
+/// Mongo DB config
+pub mod mongo;

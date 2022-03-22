@@ -37,6 +37,14 @@ use chronicle_common::{
         RESPONSE_CODE_COLLECTOR,
         RESPONSE_TIME_COLLECTOR,
     },
+    mongodb::{
+        bson::{
+            self,
+            doc,
+        },
+        options::FindOptions,
+        Database,
+    },
     types::{
         LedgerInclusionState,
         Message,
@@ -49,14 +57,6 @@ use chronicle_common::{
 use chrono::NaiveDateTime;
 use futures::TryStreamExt;
 use hex::FromHex;
-use mongodb::{
-    bson::{
-        self,
-        doc,
-    },
-    options::FindOptions,
-    Database,
-};
 use rand::Rng;
 use rocket_dyn_templates::Template;
 use std::{
@@ -967,7 +967,7 @@ mod tests {
             LocalResponse,
         },
     };
-    use mongodb::options::ClientOptions;
+    use chronicle_common::mongodb::options::ClientOptions;
     use serde_json::Value;
 
     fn check_cors_headers(res: &LocalResponse) {
@@ -990,8 +990,10 @@ mod tests {
     }
 
     async fn construct_client() -> Client {
-        let client =
-            mongodb::Client::with_options(ClientOptions::parse("mongodb://localhost:27017").await.unwrap()).unwrap();
+        let client = chronicle_common::mongodb::Client::with_options(
+            ClientOptions::parse("mongodb://localhost:27017").await.unwrap(),
+        )
+        .unwrap();
         let rocket = construct_rocket(client.database("permanode"));
         Client::tracked(rocket).await.expect("Invalid rocket instance!")
     }
