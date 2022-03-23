@@ -25,6 +25,7 @@ use std::{
         DerefMut,
         Range,
     },
+    str::FromStr,
     task::{
         Context,
         Poll,
@@ -57,6 +58,16 @@ impl Display for MessageId {
     }
 }
 
+impl FromStr for MessageId {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(bee_message_shimmer::MessageId::from_str(s)
+            .map(Self::Shimmer)
+            .or_else(|_| bee_message_cpt2::MessageId::from_str(s).map(Self::Chrysalis))?)
+    }
+}
+
 /// Represent versioned message type.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, From)]
 pub enum Message {
@@ -67,10 +78,10 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn protocol_version(&self) -> usize {
+    pub fn protocol_version(&self) -> u8 {
         match self {
             Message::Chrysalis(_) => 0,
-            Message::Shimmer(m) => m.protocol_version() as usize,
+            Message::Shimmer(m) => m.protocol_version(),
         }
     }
 }
@@ -139,7 +150,7 @@ pub struct MessageRecord {
     pub inclusion_state: Option<LedgerInclusionState>,
     pub conflict_reason: Option<bee_tangle::ConflictReason>,
     pub proof: Option<Proof>,
-    pub protocol_version: usize,
+    pub protocol_version: u8,
 }
 
 impl MessageRecord {
