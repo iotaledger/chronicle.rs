@@ -89,6 +89,24 @@ pub(crate) enum ListenerResponse {
         #[serde(rename = "messageIds")]
         message_ids: Vec<Record>,
     },
+    /// Response of GET /api/<keyspace>/messages?<index>
+    MessagesForTag {
+        tag: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "messageIds")]
+        message_ids: Vec<String>,
+    },
+    /// Response of GET /api/<keyspace>/messages?<index>[&expanded=true]
+    MessagesForTagExpanded {
+        tag: String,
+        #[serde(rename = "maxResults")]
+        max_results: usize,
+        count: usize,
+        #[serde(rename = "messageIds")]
+        message_ids: Vec<Record>,
+    },
     /// Response of GET /api/<keyspace>/addresses/<address>/outputs
     OutputsForAddress {
         address: String,

@@ -39,8 +39,8 @@ use chronicle_common::{
     },
     mongodb::{
         bson::{
-            self,
             doc,
+            Document,
         },
         options::FindOptions,
         Database,
@@ -48,6 +48,7 @@ use chronicle_common::{
     types::{
         LedgerInclusionState,
         Message,
+        MessageId,
         MessageRecord,
         SyncData,
         SyncRecord,
@@ -62,6 +63,7 @@ use rocket_dyn_templates::Template;
 use std::{
     io::Cursor,
     path::PathBuf,
+    str::FromStr,
     time::SystemTime,
 };
 
@@ -80,6 +82,7 @@ pub fn construct_rocket(database: Database) -> Rocket<Build> {
                 get_message_metadata,
                 get_message_children,
                 get_message_by_index,
+                get_message_by_tag,
                 get_output_by_transaction_id,
                 // get_output,
                 get_spending_transaction,
@@ -293,11 +296,14 @@ async fn sync(database: &State<Database>) -> Result<Json<SyncData>, ListenerErro
 
 #[get("/messages/<message_id>")]
 async fn get_message(database: &State<Database>, message_id: String) -> ListenerResult {
-    let rec = database
-        .collection::<MessageRecord>("messages")
-        .find_one(doc! {"message_id": &message_id}, None)
-        .await?
-        .ok_or_else(|| ListenerError::NoResults)?;
+    MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let rec = MessageRecord::try_from(
+        &database
+            .collection::<Document>("messages")
+            .find_one(doc! {"message_id": &message_id}, None)
+            .await?
+            .ok_or_else(|| ListenerError::NoResults)?,
+    )?;
     Ok(ListenerResponse::Message {
         network_id: match &rec.message {
             Message::Chrysalis(m) => Some(m.network_id()),
@@ -320,11 +326,14 @@ async fn get_message(database: &State<Database>, message_id: String) -> Listener
 
 #[get("/messages/<message_id>/metadata")]
 async fn get_message_metadata(database: &State<Database>, message_id: String) -> ListenerResult {
-    let rec = database
-        .collection::<MessageRecord>("messages")
-        .find_one(doc! {"message_id": &message_id}, None)
-        .await?
-        .ok_or_else(|| ListenerError::NoResults)?;
+    MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
+    let rec = MessageRecord::try_from(
+        &database
+            .collection::<Document>("messages")
+            .find_one(doc! {"message_id": &message_id}, None)
+            .await?
+            .ok_or_else(|| ListenerError::NoResults)?,
+    )?;
 
     Ok(ListenerResponse::MessageMetadata {
         message_id: rec.message_id().to_string(),
@@ -347,11 +356,12 @@ async fn get_message_children(
     page: Option<usize>,
     expanded: Option<bool>,
 ) -> ListenerResult {
+    MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     let page_size = page_size.unwrap_or(100);
     let page = page.unwrap_or(0);
 
     let messages = database
-        .collection::<MessageRecord>("messages")
+        .collection::<Document>("messages")
         .find(
             doc! {"message.parents": &message_id},
             FindOptions::builder()
@@ -362,7 +372,10 @@ async fn get_message_children(
         )
         .await?
         .try_collect::<Vec<_>>()
-        .await?;
+        .await?
+        .iter()
+        .map(|d| MessageRecord::try_from(d))
+        .collect::<Result<Vec<_>, _>>()?;
 
     if let Some(true) = expanded {
         Ok(ListenerResponse::MessageChildrenExpanded {
@@ -391,7 +404,7 @@ async fn get_message_children(
     }
 }
 
-#[get("/messages?<index>&<page_size>&<page>&<utf8>&<expanded>&<start_timestamp>&<end_timestamp>")]
+#[get("/messages/cpt2?<index>&<page_size>&<page>&<utf8>&<expanded>&<start_timestamp>&<end_timestamp>")]
 async fn get_message_by_index(
     database: &State<Database>,
     mut index: String,
@@ -426,9 +439,9 @@ async fn get_message_by_index(
     let page = page.unwrap_or(0);
 
     let messages = database
-        .collection::<MessageRecord>("messages")
+        .collection::<Document>("messages")
         .find(
-            doc! {"message.payload.index": bson::to_bson(&index_bytes).unwrap()},
+            doc! {"message.payload.index": &index},
             FindOptions::builder()
                 .skip((page_size * page) as u64)
                 .sort(doc! {"milestone_index": -1})
@@ -437,7 +450,10 @@ async fn get_message_by_index(
         )
         .await?
         .try_collect::<Vec<_>>()
-        .await?;
+        .await?
+        .iter()
+        .map(|d| MessageRecord::try_from(d))
+        .collect::<Result<Vec<_>, _>>()?;
 
     if let Some(true) = expanded {
         Ok(ListenerResponse::MessagesForIndexExpanded {
@@ -456,6 +472,84 @@ async fn get_message_by_index(
     } else {
         Ok(ListenerResponse::MessagesForIndex {
             index,
+            max_results: page_size,
+            count: messages.len(),
+            message_ids: messages
+                .into_iter()
+                .map(|record| record.message_id().to_string())
+                .collect(),
+        })
+    }
+}
+
+#[get("/messages/shimmer?<tag>&<page_size>&<page>&<utf8>&<expanded>&<start_timestamp>&<end_timestamp>")]
+async fn get_message_by_tag(
+    database: &State<Database>,
+    mut tag: String,
+    page_size: Option<usize>,
+    page: Option<usize>,
+    utf8: Option<bool>,
+    expanded: Option<bool>,
+    start_timestamp: Option<u64>,
+    end_timestamp: Option<u64>,
+) -> ListenerResult {
+    if let Some(true) = utf8 {
+        tag = hex::encode(tag);
+    }
+    let tag_bytes = Vec::<u8>::from_hex(tag.clone()).map_err(|_| ListenerError::InvalidHex)?;
+    if tag_bytes.len() > 64 {
+        return Err(ListenerError::TagTooLarge);
+    }
+
+    let (start_timestamp, end_timestamp) = (
+        start_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(chrono::naive::MIN_DATETIME),
+        end_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(chrono::naive::MAX_DATETIME),
+    );
+    if end_timestamp < start_timestamp {
+        return Err(ListenerError::Other(anyhow!("Invalid time range")));
+    }
+
+    let page_size = page_size.unwrap_or(1000);
+    let page = page.unwrap_or(0);
+
+    let messages = database
+        .collection::<Document>("messages")
+        .find(
+            doc! {"message.payload.tag": &tag},
+            FindOptions::builder()
+                .skip((page_size * page) as u64)
+                .sort(doc! {"milestone_index": -1})
+                .limit(page_size as i64)
+                .build(),
+        )
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?
+        .iter()
+        .map(|d| MessageRecord::try_from(d))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if let Some(true) = expanded {
+        Ok(ListenerResponse::MessagesForTagExpanded {
+            tag,
+            max_results: page_size,
+            count: messages.len(),
+            message_ids: messages
+                .into_iter()
+                .map(|record| Record {
+                    id: record.message_id().to_string(),
+                    inclusion_state: record.inclusion_state,
+                    milestone_index: record.milestone_index,
+                })
+                .collect(),
+        })
+    } else {
+        Ok(ListenerResponse::MessagesForTag {
+            tag,
             max_results: page_size,
             count: messages.len(),
             message_ids: messages
@@ -492,29 +586,28 @@ async fn get_outputs_by_address(
         return Err(ListenerError::Other(anyhow!("Invalid time range")));
     }
 
-    let pipeline = if included.unwrap_or(true) {
-        vec![
-            doc! { "$match": {
-                "inclusion_state": LedgerInclusionState::Included as u8 as i32,
-                "$elemMatch": { "message.payload.essence.outputs.c_address": &address }
-            } },
-            doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
-            doc! { "$sort": { "milestone_index": -1 } },
-            doc! { "$skip": (page_size * page) as i64 },
-            doc! { "$limit": page_size as i64 },
-        ]
-    } else {
-        vec![
-            doc! { "$match": { "$elemMatch": { "message.payload.essence.outputs.c_address": &address } } },
-            doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
-            doc! { "$sort": { "milestone_index": -1 } },
-            doc! { "$skip": (page_size * page) as i64 },
-            doc! { "$limit": page_size as i64 },
-        ]
-    };
+    let mut pipeline = vec![
+        doc! { "$match": { "message.payload.essence.outputs.address.data": &address } },
+        doc! { "$addFields": {
+            "message.payload.essence.outputs": {
+                "$filter": {
+                    "input": "$message.payload.essence.outputs",
+                    "as": "output",
+                    "cond": { "$eq": [ "$$output.address.data", &address ] }
+                }
+            }
+        } },
+        doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "message.payload.essence.outputs.idx" } },
+        doc! { "$sort": { "milestone_index": -1 } },
+        doc! { "$skip": (page_size * page) as i64 },
+        doc! { "$limit": page_size as i64 },
+    ];
+    if included.unwrap_or(true) {
+        pipeline[0].insert("inclusion_state", LedgerInclusionState::Included as u8 as i32);
+    }
 
     let outputs = database
-        .collection::<MessageRecord>("messages")
+        .collection::<Document>("messages")
         .aggregate(pipeline, None)
         .await?
         .try_collect::<Vec<_>>()
@@ -528,25 +621,26 @@ async fn get_outputs_by_address(
             output_ids: outputs
                 .into_iter()
                 .map(|record| {
-                    let output_id = record
-                        .get_document("message")
-                        .unwrap()
-                        .get_document("payload")
-                        .unwrap()
+                    let payload = record.get_document("message").unwrap().get_document("payload").unwrap();
+                    let transaction_id = chronicle_common::cpt2::prelude::TransactionId::from_str(
+                        payload.get_str("transaction_id").unwrap(),
+                    )
+                    .unwrap();
+                    let idx = payload
                         .get_document("essence")
                         .unwrap()
                         .get_document("outputs")
                         .unwrap()
-                        .get_str("c_output_id")
-                        .unwrap()
-                        .to_owned();
+                        .get_i32("idx")
+                        .unwrap() as u16;
+                    let output_id = chronicle_common::cpt2::prelude::OutputId::new(transaction_id, idx).unwrap();
                     let inclusion_state = record
                         .get_i32("inclusion_state")
                         .ok()
                         .map(|s| LedgerInclusionState::try_from(s as u8).unwrap());
                     let milestone_index = record.get_i32("milestone_index").ok().map(|m| m as u32);
                     Record {
-                        id: output_id,
+                        id: output_id.to_string(),
                         inclusion_state,
                         milestone_index,
                     }
@@ -561,18 +655,21 @@ async fn get_outputs_by_address(
             output_ids: outputs
                 .into_iter()
                 .map(|record| {
-                    record
-                        .get_document("message")
-                        .unwrap()
-                        .get_document("payload")
-                        .unwrap()
+                    let payload = record.get_document("message").unwrap().get_document("payload").unwrap();
+                    let transaction_id = chronicle_common::cpt2::prelude::TransactionId::from_str(
+                        payload.get_str("transaction_id").unwrap(),
+                    )
+                    .unwrap();
+                    let idx = payload
                         .get_document("essence")
                         .unwrap()
                         .get_document("outputs")
                         .unwrap()
-                        .get_str("c_output_id")
+                        .get_i32("idx")
+                        .unwrap() as u16;
+                    chronicle_common::cpt2::prelude::OutputId::new(transaction_id, idx)
                         .unwrap()
-                        .to_owned()
+                        .to_string()
                 })
                 .collect(),
         })
@@ -582,11 +679,11 @@ async fn get_outputs_by_address(
 #[get("/outputs/<transaction_id>/<idx>")]
 async fn get_output_by_transaction_id(database: &State<Database>, transaction_id: String, idx: u16) -> ListenerResult {
     let mut output = database
-        .collection::<MessageRecord>("messages")
+        .collection::<Document>("messages")
         .aggregate(
             vec![
-                doc! { "$match": { "message.payload.c_transaction_id": &transaction_id } },
-                doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
+                doc! { "$match": { "message.payload.transaction_id": &transaction_id } },
+                doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "message.payload.essence.outputs.idx" } },
                 doc! { "$match": { "message.payload.essence.outputs.idx": idx as i64 } },
             ],
             None,
@@ -597,7 +694,7 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
         .ok_or_else(|| ListenerError::NoResults)?;
 
     let spending_transaction = database
-        .collection::<MessageRecord>("messages")
+        .collection::<Document>("messages")
         .find_one(
             doc! {
                 "inclusion_state": LedgerInclusionState::Included as u8 as i32,
@@ -606,7 +703,9 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
             },
             None,
         )
-        .await?;
+        .await?
+        .map(|d| MessageRecord::try_from(&d))
+        .transpose()?;
 
     Ok(ListenerResponse::Output {
         message_id: output.get_str("message_id").unwrap().to_owned(),
@@ -634,18 +733,20 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
 
 #[get("/outputs/<transaction_id>/<idx>")]
 async fn get_spending_transaction(database: &State<Database>, transaction_id: String, idx: u16) -> ListenerResult {
-    let transaction = database
-        .collection::<MessageRecord>("messages")
-        .find_one(
-            doc! {
-                "inclusion_state": LedgerInclusionState::Included as u8 as i32,
-                "message.payload.essence.inputs.transaction_id": &transaction_id,
-                "message.payload.essence.inputs.index": idx as i64
-            },
-            None,
-        )
-        .await?
-        .ok_or_else(|| ListenerError::NoResults)?;
+    let transaction = MessageRecord::try_from(
+        &database
+            .collection::<Document>("messages")
+            .find_one(
+                doc! {
+                    "inclusion_state": LedgerInclusionState::Included as u8 as i32,
+                    "message.payload.essence.inputs.transaction_id": &transaction_id,
+                    "message.payload.essence.inputs.index": idx as i64
+                },
+                None,
+            )
+            .await?
+            .ok_or_else(|| ListenerError::NoResults)?,
+    )?;
 
     Ok(ListenerResponse::Transaction(Transaction {
         message_id: transaction.message_id.to_string(),
@@ -714,40 +815,58 @@ async fn get_transaction_history_for_address(
     }
 
     let records = database
-        .collection::<MessageRecord>("messages")
+        .collection::<Document>("messages")
         .aggregate(vec![
             // Only outputs for this address
-            doc! { "$match": { "inclusion_state": LedgerInclusionState::Included as u8 as i32, "$elemMatch": { "message.payload.essence.outputs.address": &address } } },
+            doc! { "$match": { "inclusion_state": LedgerInclusionState::Included as u8 as i32, "message.payload.essence.outputs.address.data": &address } },
+            doc! { "$addFields": {
+                "message.payload.essence.outputs": {
+                    "$filter": {
+                        "input": "$message.payload.essence.outputs",
+                        "as": "output",
+                        "cond": { "$eq": [ "$$output.address.data", &address ] }
+                    }
+                }
+            } },
             // One result per output
-            doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
+            doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "message.payload.essence.outputs.idx" } },
             // Lookup spending inputs for each output, if they exist
             doc! { "$lookup": {
                 "from": "messages",
                 // Keep track of the output id
-                "let": { "output_id": { "transaction_id": "$message.payload.c_transaction_id", "index": "$message.payload.essence.inputs.index" } },
+                "let": { "transaction_id": "$message.payload.transaction_id", "index": "$message.payload.essence.inputs.index" },
                 "pipeline": [
                     // Match using the output's index
-                    { "$match": {
-                        "$expr": {
-                            "$and": [
-                                { "$eq": [ "inclusion_state", LedgerInclusionState::Included as u8 as i32 ] },
-                                { "$elemMatch": { "message.payload.essence.inputs": "$$output_id" } },
-                            ]
+                    { "$match": { 
+                        "inclusion_state": LedgerInclusionState::Included as u8 as i32, 
+                        "message.payload.essence.inputs.transaction_id": "$$transaction_id",
+                        "message.payload.essence.inputs.index": "$$index"
+                    } },
+                    { "$addFields": {
+                        "message.payload.essence.inputs": {
+                            "$filter": {
+                                "input": "$message.payload.essence.inputs",
+                                "as": "input",
+                                "cond": { "$and": {
+                                    "$eq": [ "$$input.transaction_id", "$$transaction_id" ],
+                                    "$eq": [ "$$input.index", "$$index" ],
+                                } }
+                            }
                         }
                     } },
                     // One result per spending input
-                    { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "idx" } },
+                    { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "message.payload.essence.outputs.idx" } },
                 ],
                 // Store the result
                 "as": "spending_transaction"
             } },
             // Add a null spending transaction so that unwind will create two records
-            doc! { "$project": { "spending_transaction": { "$push": "null" } } },
+            doc! { "$addFields": { "spending_transaction": { "$concatArrays": [ "$spending_transaction", [ null ] ] } } },
             // Unwind the outputs into one or two results
-            doc! { "$unwind": { "path": "$spending_transaction", "includeArrayIndex": "idx" } },
+            doc! { "$unwind": { "path": "$spending_transaction", "preserveNullAndEmptyArrays": true } },
             // Replace the milestone index with the spending transaction's milestone index if there is one
-            doc! { "$project": { 
-                "milestone_index": { "$cond": [ { "$ne": [ { "$size": "$spending_transaction" }, 0 ] }, "spending_transaction.0.milestone_index", "milestone_index" ] } 
+            doc! { "$addFields": { 
+                "milestone_index": { "$cond": [ { "$not": [ "$spending_transaction" ] }, "$milestone_index", "$spending_transaction.0.milestone_index" ] } 
             } },
             doc! { "$sort": { "milestone_index": -1 } },
             doc! { "$skip": (page_size * page) as i64 },
@@ -768,7 +887,7 @@ async fn get_transaction_history_for_address(
                 .get_document("outputs")
                 .unwrap();
             Transfer {
-                transaction_id: payload.get_str("c_transaction_id").unwrap().to_owned(),
+                transaction_id: payload.get_str("transaction_id").unwrap().to_owned(),
                 output_index: output.get_i32("idx").unwrap() as u16,
                 is_spending: spending_transaction.is_some(),
                 inclusion_state: payload
@@ -786,11 +905,13 @@ async fn get_transaction_history_for_address(
 
 #[get("/transactions/<message_id>")]
 async fn get_transaction_for_message(database: &State<Database>, message_id: String) -> ListenerResult {
-    let transaction = database
-        .collection::<MessageRecord>("messages")
-        .find_one(doc! {"message_id": &message_id}, None)
-        .await?
-        .ok_or_else(|| ListenerError::NoResults)?;
+    let transaction = MessageRecord::try_from(
+        &database
+            .collection::<Document>("messages")
+            .find_one(doc! {"message_id": &message_id}, None)
+            .await?
+            .ok_or_else(|| ListenerError::NoResults)?,
+    )?;
 
     Ok(ListenerResponse::Transaction(Transaction {
         message_id,
@@ -836,17 +957,19 @@ async fn get_transaction_for_message(database: &State<Database>, message_id: Str
 
 #[get("/transactions/<transaction_id>/included-message")]
 async fn get_transaction_included_message(database: &State<Database>, transaction_id: String) -> ListenerResult {
-    let rec = database
-        .collection::<MessageRecord>("messages")
-        .find_one(
-            doc! {
-                "inclusion_state": LedgerInclusionState::Included as u8 as i32,
-                "message.payload.c_transaction_id": &transaction_id,
-            },
-            None,
-        )
-        .await?
-        .ok_or_else(|| ListenerError::NoResults)?;
+    let rec = MessageRecord::try_from(
+        &database
+            .collection::<Document>("messages")
+            .find_one(
+                doc! {
+                    "inclusion_state": LedgerInclusionState::Included as u8 as i32,
+                    "message.payload.transaction_id": &transaction_id,
+                },
+                None,
+            )
+            .await?
+            .ok_or_else(|| ListenerError::NoResults)?,
+    )?;
 
     Ok(ListenerResponse::Message {
         network_id: match &rec.message {
@@ -871,29 +994,32 @@ async fn get_transaction_included_message(database: &State<Database>, transactio
 #[get("/milestones/<index>")]
 async fn get_milestone(database: &State<Database>, index: u32) -> ListenerResult {
     database
-        .collection::<MessageRecord>("messages")
+        .collection::<Document>("messages")
         .find_one(doc! {"message.payload.essence.index": &index}, None)
         .await?
         .ok_or_else(|| ListenerError::NoResults)
-        .map(|rec| ListenerResponse::Milestone {
-            milestone_index: index,
-            message_id: rec.message_id.to_string(),
-            timestamp: match &rec.message {
-                Message::Chrysalis(m) => {
-                    if let Some(chronicle_common::cpt2::payload::Payload::Milestone(m)) = m.payload() {
-                        m.essence().timestamp()
-                    } else {
-                        unreachable!()
+        .and_then(|d| {
+            let rec = MessageRecord::try_from(&d)?;
+            Ok(ListenerResponse::Milestone {
+                milestone_index: index,
+                message_id: rec.message_id.to_string(),
+                timestamp: match &rec.message {
+                    Message::Chrysalis(m) => {
+                        if let Some(chronicle_common::cpt2::payload::Payload::Milestone(m)) = m.payload() {
+                            m.essence().timestamp()
+                        } else {
+                            unreachable!()
+                        }
                     }
-                }
-                Message::Shimmer(m) => {
-                    if let Some(chronicle_common::shimmer::payload::Payload::Milestone(m)) = m.payload() {
-                        m.essence().timestamp()
-                    } else {
-                        unreachable!()
+                    Message::Shimmer(m) => {
+                        if let Some(chronicle_common::shimmer::payload::Payload::Milestone(m)) = m.payload() {
+                            m.essence().timestamp()
+                        } else {
+                            unreachable!()
+                        }
                     }
-                }
-            },
+                },
+            })
         })
 }
 

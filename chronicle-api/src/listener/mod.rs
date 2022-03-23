@@ -34,6 +34,8 @@ enum ListenerError {
     NoResponseError,
     #[error("Provided index is too large! (Max 64 bytes)")]
     IndexTooLarge,
+    #[error("Provided tag is too large! (Max 64 bytes)")]
+    TagTooLarge,
     #[error("Invalid hexidecimal encoding!")]
     InvalidHex,
     #[error("Specified keyspace ({0}) is not configured!")]
