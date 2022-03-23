@@ -11,7 +11,7 @@ impl Into<Bson> for &Message {
     fn into(self) -> Bson {
         match self {
             Message::Chrysalis(m) => cpt2::message_to_bson(m),
-            Message::Shimmer(m) => todo!(),
+            Message::Shimmer(m) => shimmer::message_to_bson(m),
         }
     }
 }
