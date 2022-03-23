@@ -280,7 +280,9 @@ fn output_to_bson(output: &crate::shimmer::output::Output) -> Bson {
 fn address_to_bson(address: &crate::shimmer::address::Address) -> Bson {
     use crate::shimmer::address::{
         Address,
+        AliasAddress,
         Ed25519Address,
+        NftAddress,
     };
     let mut doc = Document::new();
     match address {
@@ -288,8 +290,14 @@ fn address_to_bson(address: &crate::shimmer::address::Address) -> Bson {
             doc.insert("kind", Ed25519Address::KIND as i32);
             doc.insert("data", a.to_string());
         }
-        Address::Alias(_) => todo!(),
-        Address::Nft(_) => todo!(),
+        Address::Alias(a) => {
+            doc.insert("kind", AliasAddress::KIND as i32);
+            doc.insert("data", a.alias_id().to_string());
+        }
+        Address::Nft(n) => {
+            doc.insert("kind", NftAddress::KIND as i32);
+            doc.insert("data", n.nft_id().to_string());
+        }
     }
     Bson::Document(doc)
 }
