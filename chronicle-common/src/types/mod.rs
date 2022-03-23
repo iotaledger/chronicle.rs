@@ -1,6 +1,9 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(feature = "mongo")]
+mod mongo;
+
 use anyhow::*;
 use derive_more::From;
 use pin_project_lite::pin_project;

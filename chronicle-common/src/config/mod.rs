@@ -6,6 +6,6 @@ pub use alert::*;
 
 /// Alert config mod
 pub mod alert;
-#[cfg(feature = "mongodb")]
+#[cfg(feature = "mongo")]
 /// Mongo DB config
 pub mod mongo;
