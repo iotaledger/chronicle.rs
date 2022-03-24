@@ -396,12 +396,14 @@ fn output_to_bson(output: &crate::shimmer::output::Output) -> Bson {
         Output::Basic(b) => {
             doc.insert("kind", BasicOutput::KIND as i32);
             doc.insert("amount", b.amount() as i64);
+            doc.insert("address", address_to_bson(b.address()));
             doc.insert("native_tokens", to_bson(b.native_tokens()).unwrap());
             doc.insert("unlock_conditions", to_bson(b.unlock_conditions()).unwrap());
             doc.insert("feature_blocks", to_bson(b.feature_blocks()).unwrap());
         }
         Output::Alias(a) => {
             doc.insert("kind", AliasOutput::KIND as i32);
+            doc.insert("alias_id", a.alias_id().to_string());
             doc.insert("amount", a.amount() as i64);
             doc.insert("native_tokens", to_bson(a.native_tokens()).unwrap());
             doc.insert("alias_id", a.alias_id().to_string());
@@ -417,6 +419,7 @@ fn output_to_bson(output: &crate::shimmer::output::Output) -> Bson {
         }
         Output::Foundry(f) => {
             doc.insert("kind", FoundryOutput::KIND as i32);
+            doc.insert("foundry_id", f.id().to_string());
             doc.insert("amount", f.amount() as i64);
             doc.insert("native_tokens", to_bson(f.native_tokens()).unwrap());
             doc.insert("serial_number", f.serial_number() as i32);
@@ -434,7 +437,9 @@ fn output_to_bson(output: &crate::shimmer::output::Output) -> Bson {
         }
         Output::Nft(n) => {
             doc.insert("kind", NftOutput::KIND as i32);
+            doc.insert("nft_id", n.nft_id().to_string());
             doc.insert("amount", n.amount() as i64);
+            doc.insert("address", address_to_bson(n.address()));
             doc.insert("native_tokens", to_bson(n.native_tokens()).unwrap());
             doc.insert("nft_id", n.nft_id().to_string());
             doc.insert("unlock_conditions", to_bson(n.unlock_conditions()).unwrap());
