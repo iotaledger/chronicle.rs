@@ -153,8 +153,15 @@ pub(crate) enum ListenerResponse {
         message_id: String,
         timestamp: u64,
     },
-    // /// Response of GET /api/<keyspace>/analytics[?start=<u32>&end=<u32>]
-    // Analytics { ranges: Vec<MsAnalyticsRecord> },
+    /// Response of GET /analytics/addresses[?start_timestamp=<u32>&end_timestamp=<u32>]
+    AddressAnalytics {
+        #[serde(rename = "totalAddresses")]
+        total_addresses: u64,
+        #[serde(rename = "receivingAddresses")]
+        recv_addresses: u64,
+        #[serde(rename = "sendingAddresses")]
+        send_addresses: u64,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

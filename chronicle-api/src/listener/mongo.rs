@@ -55,7 +55,11 @@ use chronicle_common::{
     },
     SyncRange,
 };
-use chrono::NaiveDateTime;
+use chrono::{
+    Duration,
+    NaiveDateTime,
+    Utc,
+};
 use futures::TryStreamExt;
 use hex::FromHex;
 use rand::Rng;
@@ -91,7 +95,7 @@ pub fn construct_rocket(database: Database) -> Rocket<Build> {
                 get_transaction_for_message,
                 get_transaction_included_message,
                 get_milestone,
-                get_analytics,
+                get_address_analytics,
                 active_addresses_graph
             ],
         )
@@ -588,7 +592,7 @@ async fn get_outputs_by_address(
 
     let mut pipeline = vec![
         doc! { "$match": { "message.payload.essence.outputs.address.data": &address } },
-        doc! { "$addFields": {
+        doc! { "$set": {
             "message.payload.essence.outputs": {
                 "$filter": {
                     "input": "$message.payload.essence.outputs",
@@ -819,7 +823,7 @@ async fn get_transaction_history_for_address(
         .aggregate(vec![
             // Only outputs for this address
             doc! { "$match": { "inclusion_state": LedgerInclusionState::Included as u8 as i32, "message.payload.essence.outputs.address.data": &address } },
-            doc! { "$addFields": {
+            doc! { "$set": {
                 "message.payload.essence.outputs": {
                     "$filter": {
                         "input": "$message.payload.essence.outputs",
@@ -834,7 +838,7 @@ async fn get_transaction_history_for_address(
             doc! { "$lookup": {
                 "from": "messages",
                 // Keep track of the output id
-                "let": { "transaction_id": "$message.payload.transaction_id", "index": "$message.payload.essence.inputs.index" },
+                "let": { "transaction_id": "$message.payload.transaction_id", "index": "$message.payload.essence.outputs.idx" },
                 "pipeline": [
                     // Match using the output's index
                     { "$match": { 
@@ -842,7 +846,7 @@ async fn get_transaction_history_for_address(
                         "message.payload.essence.inputs.transaction_id": "$$transaction_id",
                         "message.payload.essence.inputs.index": "$$index"
                     } },
-                    { "$addFields": {
+                    { "$set": {
                         "message.payload.essence.inputs": {
                             "$filter": {
                                 "input": "$message.payload.essence.inputs",
@@ -861,11 +865,11 @@ async fn get_transaction_history_for_address(
                 "as": "spending_transaction"
             } },
             // Add a null spending transaction so that unwind will create two records
-            doc! { "$addFields": { "spending_transaction": { "$concatArrays": [ "$spending_transaction", [ null ] ] } } },
+            doc! { "$set": { "spending_transaction": { "$concatArrays": [ "$spending_transaction", [ null ] ] } } },
             // Unwind the outputs into one or two results
             doc! { "$unwind": { "path": "$spending_transaction", "preserveNullAndEmptyArrays": true } },
             // Replace the milestone index with the spending transaction's milestone index if there is one
-            doc! { "$addFields": { 
+            doc! { "$set": { 
                 "milestone_index": { "$cond": [ { "$not": [ "$spending_transaction" ] }, "$milestone_index", "$spending_transaction.0.milestone_index" ] } 
             } },
             doc! { "$sort": { "milestone_index": -1 } },
@@ -1023,14 +1027,156 @@ async fn get_milestone(database: &State<Database>, index: u32) -> ListenerResult
         })
 }
 
-#[get("/analytics?<start>&<end>")]
-async fn get_analytics(database: &State<Database>, start: Option<u32>, end: Option<u32>) -> ListenerResult {
-    todo!()
+async fn start_milestone(database: &Database, start_timestamp: NaiveDateTime) -> anyhow::Result<i32> {
+    database
+        .collection::<Document>("messages")
+        .find(
+            doc! {"message.payload.essence.timestamp": { "$gte": start_timestamp.timestamp() }},
+            FindOptions::builder()
+                .sort(doc! {"milestone_index": 1})
+                .limit(1)
+                .build(),
+        )
+        .await?
+        .try_next()
+        .await?
+        .map(|mut d| {
+            d.get_document_mut("message")
+                .unwrap()
+                .get_document_mut("payload")
+                .unwrap()
+                .get_document_mut("essence")
+                .unwrap()
+                .remove("index")
+                .unwrap()
+                .as_i32()
+                .unwrap()
+        })
+        .ok_or_else(|| anyhow::anyhow!("No milestones found in time range"))
+}
 
-    // let range = start.unwrap_or(1)..end.unwrap_or(i32::MAX as u32);
-    // let range = SyncRange::try_from(range).map_err(|e| ListenerError::BadParse(e))?;
-    // let ranges = AnalyticsData::try_fetch(&keyspace, &range, 1, 5000).await?.analytics;
-    // Ok(ListenerResponseV1::Analytics { ranges })
+async fn end_milestone(database: &Database, end_timestamp: NaiveDateTime) -> anyhow::Result<i32> {
+    database
+        .collection::<Document>("messages")
+        .find(
+            doc! {"message.payload.essence.timestamp": { "$lte": end_timestamp.timestamp() }},
+            FindOptions::builder()
+                .sort(doc! {"milestone_index": -1})
+                .limit(1)
+                .build(),
+        )
+        .await?
+        .try_next()
+        .await?
+        .map(|mut d| {
+            d.get_document_mut("message")
+                .unwrap()
+                .get_document_mut("payload")
+                .unwrap()
+                .get_document_mut("essence")
+                .unwrap()
+                .remove("index")
+                .unwrap()
+                .as_i32()
+                .unwrap()
+        })
+        .ok_or_else(|| anyhow::anyhow!("No milestones found in time range"))
+}
+
+#[get("/analytics/addresses?<start_timestamp>&<end_timestamp>")]
+async fn get_address_analytics(
+    database: &State<Database>,
+    start_timestamp: Option<u64>,
+    end_timestamp: Option<u64>,
+) -> ListenerResult {
+    let (start_timestamp, end_timestamp) = (
+        start_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(Utc::now().naive_utc() - Duration::days(30)),
+        end_timestamp
+            .map(|t| NaiveDateTime::from_timestamp(t as i64, 0))
+            .unwrap_or(Utc::now().naive_utc()),
+    );
+    if end_timestamp < start_timestamp {
+        return Err(ListenerError::Other(anyhow!("Invalid time range")));
+    }
+
+    let start_milestone = start_milestone(database, start_timestamp).await?;
+    let end_milestone = end_milestone(database, end_timestamp).await?;
+
+    if end_milestone < start_milestone {
+        return Err(ListenerError::Other(anyhow!("Invalid time range")));
+    }
+
+    let res = database
+        .collection::<Document>("messages")
+        .aggregate(
+            vec![
+                doc! { "$match": {
+                    "inclusion_state": LedgerInclusionState::Included as u8 as i32,
+                    "milestone_index": { "$gt": start_milestone, "$lt": end_milestone },
+                    "message.payload.kind": chronicle_common::cpt2::payload::transaction::TransactionPayload::KIND as i32,
+                } },
+                doc! { "$unwind": { "path": "$message.payload.essence.inputs", "includeArrayIndex": "message.payload.essence.inputs.idx" } },
+                doc! { "$lookup": {
+                    "from": "messages",
+                    "let": { "transaction_id": "$message.payload.essence.inputs.transaction_id", "index": "$message.payload.essence.inputs.index" },
+                    "pipeline": [
+                        { "$match": { 
+                            "inclusion_state": LedgerInclusionState::Included as u8 as i32, 
+                            "message.payload.transaction_id": "$$transaction_id",
+                        } },
+                        { "$set": {
+                            "message.payload.essence.outputs": {
+                                "$arrayElemAt": [
+                                    "$message.payload.essence.outputs",
+                                    "$$index"
+                                ]
+                            }
+                        } },
+                    ],
+                    "as": "spent_transaction"
+                } },
+                doc! { "$set": { "send_address": "$spent_transaction.message.payload.essence.outputs.address.data" } },
+                doc! { "$unwind": { "path": "$message.payload.essence.outputs", "includeArrayIndex": "message.payload.essence.outputs.idx" } },
+                doc! { "$set": { "recv_address": "$message.payload.essence.outputs.address.data" } },
+                doc! { "$facet": {
+                    "total": [
+                        { "$set": { "address": ["$send_address", "$recv_address"] } },
+                        { "$unwind": { "path": "$address" } },
+                        { "$group" : {
+                            "_id": "$address",
+                            "addresses": { "$count": { } }
+                        }},
+                    ],
+                    "recv": [
+                        { "$group" : {
+                            "_id": "$recv_address",
+                            "addresses": { "$count": { } }
+                        }},
+                    ],
+                    "send": [
+                        { "$group" : {
+                            "_id": "$send_address",
+                            "addresses": { "$count": { } }
+                        }},
+                    ],
+                } },
+                doc! { "$project": {
+                    "total_addresses": { "$arrayElemAt": ["$total.addresses", 0] },
+                    "recv_addresses": { "$arrayElemAt": ["$recv.addresses", 0] },
+                    "send_addresses": { "$arrayElemAt": ["$send.addresses", 0] },
+                } },
+            ],
+            None,
+        )
+        .await?.try_next().await?.ok_or_else(|| anyhow::anyhow!("No transactions found in time range"))?;
+
+    Ok(ListenerResponse::AddressAnalytics {
+        total_addresses: res.get_i64("total_addresses").unwrap() as u64,
+        recv_addresses: res.get_i64("recv_addresses").unwrap() as u64,
+        send_addresses: res.get_i64("send_addresses").unwrap() as u64,
+    })
 }
 
 #[derive(Serialize)]
