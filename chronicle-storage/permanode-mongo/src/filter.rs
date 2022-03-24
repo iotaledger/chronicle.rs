@@ -59,9 +59,15 @@ impl FilterBuilder for PermanodeMongoConfig {
     }
     async fn handle(&self, _handle: AbortableUnboundedHandle<()>) -> ActorResult<Self::Handle> {
         let client_opts: ClientOptions = self.mongo_config.clone().into();
+        let database = mongodb::Client::with_options(client_opts.clone())
+            .map_err(|e| ActorError::restart(e, Some(Duration::from_secs(360))))?
+            .database(&self.database_name)
+            .run_command(mongodb::bson::doc! {"ping": 1u32}, None)
+            .await
+            .map_err(|e| ActorError::restart(e, Some(Duration::from_secs(360))))?;
         let database = mongodb::Client::with_options(client_opts)
             .map_err(|e| ActorError::restart(e, Some(Duration::from_secs(360))))?
-            .database("permanode");
+            .database(&self.database_name);
         Ok(PermanodeMongoHandle { database })
     }
 }
@@ -86,10 +92,11 @@ impl FilterHandle for PermanodeMongoHandle {
         let mut milestone_data_search: MilestoneDataSearch = milestone_data.try_into()?;
         let mut milestone_data = MilestoneData::new(milestone);
         while let Some(message) = milestone_data_search.next().await {
+            let bson: chronicle_common::mongodb::bson::Bson = message.message().into();
             // insert into mongo
             self.database
-                .collection::<MessageRecord>("messages")
-                .insert_one(&message, None)
+                .collection::<chronicle_common::mongodb::bson::Bson>("messages")
+                .insert_one(bson, None)
                 .await
                 .map_err(|e| ActorError::restart(e, Some(Duration::from_secs(360))))?;
             // add it to milestone data
@@ -106,7 +113,7 @@ impl FilterHandle for PermanodeMongoHandle {
         Ok(())
     }
     async fn sync_data(&self, _range: Option<Range<u32>>) -> ActorResult<SyncData> {
-        // todo retrieve sync record for the provided range
+        // todo retrieve sync records for the provided range
         Ok(SyncData::default())
     }
 }

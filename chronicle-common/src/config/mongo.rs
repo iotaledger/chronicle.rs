@@ -221,6 +221,7 @@ impl Into<ClientOptions> for MongoConfig {
 /// Currently this just supports addresses that can be connected to over TCP, but alternative
 /// address types may be supported in the future (e.g. Unix Domain Socket paths).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum ServerAddress {
     /// A TCP/IP host and port combination.
     Tcp {

@@ -899,7 +899,10 @@ impl<T: FilterBuilder> ChronicleBroker<T> {
         // spawn selective_actor
         let (uda_handle, _) = rt.spawn(T::NAME.to_string(), uda_actor).await?;
         // build the filter handle
-        let filter_handle = self.filter_builder.handle(uda_handle).await?;
+        let filter_handle = self.filter_builder.handle(uda_handle).await.map_err(|e| {
+            log::error!("Unable to build the filter handle, error: {}", e);
+            e
+        })?;
         // -- (optional) start archiver
         if let Some(dir_path) = self.logs_dir.as_ref() {
             let max_log_size = self.max_log_size;

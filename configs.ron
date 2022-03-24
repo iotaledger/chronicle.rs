@@ -11,18 +11,24 @@
             retries: 5,
             logs_dir: Some("chronicle/logs/"),
             max_log_size: Some(4294967295),
-            mqtt_brokers: [],
+            mqtt_brokers: [
+            "tcp://mqtt.lb-1.h.chrysalis-mainnet.iotaledger.net:1883"
+
+            ],
             cache_capacity: 10000,
             requester_budget: 10,
-            api_endpoints: [],
+            api_endpoints: [
+            "http://chrysalis-nodes.iota.org/api/v1/"
+
+            ],
             request_timeout_secs: 5,
             filter_builder: (
-                database_name: "",
+                database_name: "permanode",
                 mongo_config: (
                     hosts: [
-                        Tcp(
-                            host: "localhost",
-                            port: None,
+                        (
+                            host: "172.17.0.2",
+                            port: Some(27017),
                         ),
                     ],
                     app_name: None,
@@ -42,7 +48,7 @@
                     retry_writes: None,
                     selection_criteria: None,
                     server_api: None,
-                    server_selection_timeout: None,
+                    server_selection_timeout: Some((secs: 2, nanos: 0)),
                     default_database: None,
                     tls: None,
                     write_concern: None,

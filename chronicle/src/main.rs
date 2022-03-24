@@ -5,7 +5,7 @@
 //! # Chronicle
 use async_trait::async_trait;
 use backstage::core::*;
-// use chronicle_api::application::*;
+use chronicle_api::application::*;
 
 #[cfg(feature = "null")]
 use chronicle_broker::application::null::NullConfig;
@@ -34,8 +34,8 @@ pub struct Chronicle {
     /// Permanode application
     #[cfg(all(feature = "mongo"))]
     broker: ChronicleBroker<PermanodeMongoConfig>,
-    // // The Api application
-    // api: ChronicleAPI,
+    /// The Api application
+    api: ChronicleAPI,
     /// Alert config
     alert: AlertConfig,
 }
@@ -43,7 +43,7 @@ pub struct Chronicle {
 /// Chronicle event type
 pub enum ChronicleEvent {
     // Get up to date -api copy
-    // Api(Event<ChronicleAPI>),
+    Api(Event<ChronicleAPI>),
     /// Get up to date -broker copy
     #[cfg(all(feature = "null", not(feature = "mongo")))]
     Broker(Event<ChronicleBroker<NullConfig>>),
@@ -79,6 +79,7 @@ impl From<Event<ChronicleBroker<NullConfig>>> for ChronicleEvent {
         Self::Broker(e)
     }
 }
+
 #[cfg(all(feature = "mongo", not(feature = "null")))]
 impl From<Event<ChronicleBroker<PermanodeMongoConfig>>> for ChronicleEvent {
     fn from(e: Event<ChronicleBroker<PermanodeMongoConfig>>) -> Self {
@@ -86,6 +87,11 @@ impl From<Event<ChronicleBroker<PermanodeMongoConfig>>> for ChronicleEvent {
     }
 }
 
+impl From<Event<ChronicleAPI>> for ChronicleEvent {
+    fn from(e: Event<ChronicleAPI>) -> Self {
+        Self::Api(e)
+    }
+}
 /// Chronicle system actor implementation
 #[async_trait]
 impl<S> Actor<S> for Chronicle
@@ -108,12 +114,28 @@ where
                 }
             }
         }
+        {
+            let api = self.api.clone();
+            let api_scope_id = rt.start("api".to_string(), api).await?.scope_id();
+            if let Some(api) = rt.subscribe(api_scope_id, "api".to_string()).await? {
+                if self.api != api {
+                    self.api = api;
+                    rt.publish(self.api.clone()).await;
+                }
+            }
+        }
         log::info!("Chronicle Started Broker");
         Ok(())
     }
     async fn run(&mut self, rt: &mut Rt<Self, S>, _data: Self::Data) -> ActorResult<Self::Data> {
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
+                ChronicleEvent::Api(api_event) => {
+                    if let Event::Published(_, _, api) = api_event {
+                        self.api = api;
+                        rt.publish(self.api.clone()).await;
+                    }
+                }
                 #[cfg(any(feature = "null", feature = "mongo"))]
                 ChronicleEvent::Broker(broker_event) => {
                     if let Event::Published(_, _, broker) = broker_event {

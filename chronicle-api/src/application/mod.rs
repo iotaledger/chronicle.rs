@@ -41,12 +41,18 @@ impl<Sup: SupHandle<Self>> Actor<Sup> for ChronicleAPI {
         log::info!("{:?} is initializing", &rt.service().directory());
         register_metrics();
         let client_opts: ClientOptions = self.mongo_config.clone().into();
-        let client = Client::with_options(client_opts).map_err(|e| anyhow::anyhow!(e))?;
+        let client = Client::with_options(client_opts).map_err(|e| {
+            log::error!("Unable to create client from options, error: {}", e);
+            anyhow::anyhow!(e)
+        })?;
         let rocket = backstage::prefab::rocket::RocketServer::new(
             super::listener::construct_rocket(client.database("permanode"))
                 .ignite()
                 .await
-                .map_err(|e| anyhow::anyhow!(e))?,
+                .map_err(|e| {
+                    log::error!("Unable to construct rocket, error: {}", e);
+                    anyhow::anyhow!(e)
+                })?,
         );
         rt.spawn("rocket".to_string(), rocket).await?;
         Ok(())
