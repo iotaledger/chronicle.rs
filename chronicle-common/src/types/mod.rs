@@ -5,6 +5,7 @@
 mod mongo;
 
 use anyhow::*;
+use bee_message_shimmer::semantic::ConflictReason;
 use derive_more::From;
 use pin_project_lite::pin_project;
 use serde::{
@@ -148,7 +149,7 @@ pub struct MessageRecord {
     pub message: Message,
     pub milestone_index: Option<u32>,
     pub inclusion_state: Option<LedgerInclusionState>,
-    pub conflict_reason: Option<bee_tangle::ConflictReason>,
+    pub conflict_reason: Option<ConflictReason>,
     pub proof: Option<Proof>,
     pub protocol_version: u8,
 }
@@ -183,7 +184,7 @@ impl MessageRecord {
         self.inclusion_state.as_ref()
     }
     /// Return conflict_reason
-    pub fn conflict_reason(&self) -> Option<&bee_tangle::ConflictReason> {
+    pub fn conflict_reason(&self) -> Option<&ConflictReason> {
         self.conflict_reason.as_ref()
     }
     /// Return proof

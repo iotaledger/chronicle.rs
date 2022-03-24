@@ -153,7 +153,7 @@ fn receipt_payload_to_bson(payload: &crate::shimmer::payload::receipt::ReceiptPa
             })
             .collect::<Vec<_>>(),
     );
-    doc.insert("transaction", payload_to_bson(payload.transaction()));
+    doc.insert("transaction", treasury_payload_to_bson(payload.transaction()));
     doc.insert("amount", payload.amount() as i64);
     Bson::Document(doc)
 }
@@ -163,7 +163,7 @@ fn receipt_payload_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::pa
         "migrated_at": doc.get_i32("migrated_at")?,
         "last": doc.get_bool("last")?,
         "funds": doc.get_array("funds")?.iter().map(|f| migrated_funds_entry_from_bson(f)).collect::<Result<Vec<_>,_>>()?,
-        "transaction": payload_from_doc(doc.get_document("transaction")?)?,
+        "transaction": treasury_payload_from_doc(doc.get_document("transaction")?)?,
         "amount": doc.get_i64("amount")?,
     }))?)
 }
@@ -174,8 +174,8 @@ fn treasury_payload_to_bson(
     use crate::shimmer::payload::treasury_transaction::TreasuryTransactionPayload;
     let mut doc = Document::new();
     doc.insert("kind", TreasuryTransactionPayload::KIND as i32);
-    doc.insert("input", input_to_bson(payload.input()));
-    doc.insert("output", output_to_bson(payload.output()));
+    doc.insert("input", treasury_input_to_bson(payload.input()));
+    doc.insert("output", treasury_output_to_bson(payload.output()));
     Bson::Document(doc)
 }
 
@@ -183,8 +183,8 @@ fn treasury_payload_from_doc(
     doc: &Document,
 ) -> anyhow::Result<crate::shimmer::payload::treasury_transaction::TreasuryTransactionPayload> {
     Ok(serde_json::from_value(json!({
-        "input": input_from_doc(doc.get_document("input")?)?,
-        "output": output_from_doc(doc.get_document("output")?)?,
+        "input": treasury_input_from_doc(doc.get_document("input")?)?,
+        "output": treasury_output_from_doc(doc.get_document("output")?)?,
     }))?)
 }
 
@@ -378,6 +378,21 @@ fn input_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::input::Input
     })
 }
 
+fn treasury_input_to_bson(input: &crate::shimmer::input::TreasuryInput) -> Bson {
+    use crate::shimmer::input::TreasuryInput;
+    let mut doc = Document::new();
+    doc.insert("kind", TreasuryInput::KIND as i32);
+    doc.insert("milestone_id", input.milestone_id().to_string());
+    Bson::Document(doc)
+}
+
+fn treasury_input_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::input::TreasuryInput> {
+    Ok(serde_json::from_value(json!({
+        "type": "Treasury",
+        "milestone_id": doc.get_str("milestone_id")?.to_string(),
+    }))?)
+}
+
 fn output_to_bson(output: &crate::shimmer::output::Output) -> Bson {
     use crate::shimmer::output::{
         AliasOutput,
@@ -525,6 +540,20 @@ fn output_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::output::Out
         }))?,
         _ => bail!("Invalid output"),
     })
+}
+
+fn treasury_output_to_bson(o: &crate::shimmer::output::TreasuryOutput) -> Bson {
+    use crate::shimmer::output::TreasuryOutput;
+    let mut doc = Document::new();
+    doc.insert("kind", TreasuryOutput::KIND as i32);
+    doc.insert("amount", o.amount() as i64);
+    Bson::Document(doc)
+}
+
+fn treasury_output_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::output::TreasuryOutput> {
+    use crate::shimmer::output::TreasuryOutput;
+    let amount = doc.get_i64("amount")?;
+    Ok(TreasuryOutput::new(amount as u64)?)
 }
 
 fn address_to_bson(address: &crate::shimmer::address::Address) -> Bson {
