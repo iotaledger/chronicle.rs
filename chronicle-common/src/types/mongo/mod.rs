@@ -12,7 +12,9 @@ use super::{
     MessageRecord,
 };
 use mongodb::bson::{
+    doc,
     from_document,
+    to_bson,
     Bson,
     Document,
 };
@@ -22,6 +24,20 @@ impl Into<Bson> for &Message {
         match self {
             Message::Chrysalis(m) => cpt2::message_to_bson(m),
             Message::Shimmer(m) => shimmer::message_to_bson(m),
+        }
+    }
+}
+
+impl Into<Document> for MessageRecord {
+    fn into(self) -> Document {
+        doc! {
+            "message_id": self.message_id.to_string(),
+            "message": Into::<Bson>::into(&self.message),
+            "milestone_index": self.milestone_index,
+            "inclusion_state": self.inclusion_state.map(|i| i as u8 as i32),
+            "conflict_reason": self.conflict_reason.map(|i| i as u8 as i32),
+            "proof": to_bson(&self.proof).unwrap(),
+            "protocol_version": self.protocol_version as i32,
         }
     }
 }
