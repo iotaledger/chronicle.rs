@@ -8,7 +8,6 @@ use mongodb::{
         ClientOptions,
         ReadConcern,
         ReadPreferenceOptions,
-        ServerAddress,
         ServerApi,
         WriteConcern,
     },
@@ -191,7 +190,7 @@ impl Default for MongoConfig {
 impl Into<ClientOptions> for MongoConfig {
     fn into(self) -> ClientOptions {
         let builder = ClientOptions::builder()
-            .hosts(self.hosts)
+            .hosts(self.hosts.into_iter().map(Into::into).collect::<Vec<_>>())
             .app_name(self.app_name)
             .compressors(self.compressors.map(|v| v.into_iter().map(Into::into).collect()))
             .connect_timeout(self.connect_timeout)
@@ -214,6 +213,41 @@ impl Into<ClientOptions> for MongoConfig {
             .tls(self.tls.map(Into::into))
             .write_concern(self.write_concern);
         builder.build()
+    }
+}
+
+/// An enum representing the address of a MongoDB server.
+///
+/// Currently this just supports addresses that can be connected to over TCP, but alternative
+/// address types may be supported in the future (e.g. Unix Domain Socket paths).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServerAddress {
+    /// A TCP/IP host and port combination.
+    Tcp {
+        /// The hostname or IP address where the MongoDB server can be found.
+        host: String,
+
+        /// The TCP port that the MongoDB server is listening on.
+        ///
+        /// The default is 27017.
+        port: Option<u16>,
+    },
+}
+
+impl Default for ServerAddress {
+    fn default() -> Self {
+        Self::Tcp {
+            host: "localhost".to_string(),
+            port: Some(27017),
+        }
+    }
+}
+
+impl Into<mongodb::options::ServerAddress> for ServerAddress {
+    fn into(self) -> mongodb::options::ServerAddress {
+        match self {
+            ServerAddress::Tcp { host, port } => mongodb::options::ServerAddress::Tcp { host, port },
+        }
     }
 }
 
