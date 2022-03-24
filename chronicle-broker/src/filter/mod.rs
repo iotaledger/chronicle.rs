@@ -17,7 +17,7 @@ use std::{
 
 #[async_trait::async_trait]
 pub trait FilterBuilder:
-    'static + Debug + PartialEq + Eq + Sized + Send + Clone + Serialize + Sync + std::default::Default
+    'static + Debug + PartialEq + Sized + Send + Clone + Serialize + Sync + std::default::Default
 {
     type Actor: Actor<BrokerHandle> + ChannelBuilder<<Self::Actor as Actor<BrokerHandle>>::Channel>;
     type Handle: FilterHandle;
