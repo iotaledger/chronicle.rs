@@ -6,10 +6,14 @@
 use async_trait::async_trait;
 use backstage::core::*;
 // use chronicle_api::application::*;
-use chronicle_broker::application::{
-    null::NullConfig,
-    ChronicleBroker,
-};
+
+#[cfg(feature = "null")]
+use chronicle_broker::application::null::NullConfig;
+#[cfg(feature = "mongo")]
+use permanode_mongo::PermanodeMongoConfig;
+
+use chronicle_broker::application::ChronicleBroker;
+
 use chronicle_common::{
     alert,
     config::AlertConfig,
@@ -22,11 +26,14 @@ use serde::{
 const TOKIO_THREAD_STACK_SIZE: usize = 4 * 4 * 1024 * 1024;
 
 /// Chronicle system struct
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
 pub struct Chronicle {
     /// Permanode application
     #[cfg(all(feature = "null"))]
     broker: ChronicleBroker<NullConfig>,
+    /// Permanode application
+    #[cfg(all(feature = "mongo"))]
+    broker: ChronicleBroker<PermanodeMongoConfig>,
     // // The Api application
     // api: ChronicleAPI,
     /// Alert config
@@ -38,8 +45,10 @@ pub enum ChronicleEvent {
     // Get up to date -api copy
     // Api(Event<ChronicleAPI>),
     /// Get up to date -broker copy
-    #[cfg(all(feature = "null"))]
+    #[cfg(all(feature = "null", not(feature = "mongo")))]
     Broker(Event<ChronicleBroker<NullConfig>>),
+    #[cfg(all(feature = "mongo", not(feature = "null")))]
+    Broker(Event<ChronicleBroker<PermanodeMongoConfig>>),
     /// Report and Eol variant used by children
     MicroService(ScopeId, Service, Option<ActorResult<()>>),
     /// Shutdown chronicle variant
@@ -64,9 +73,15 @@ impl<T> EolEvent<T> for ChronicleEvent {
     }
 }
 
-#[cfg(all(feature = "null"))]
+#[cfg(all(feature = "null", not(feature = "mongo")))]
 impl From<Event<ChronicleBroker<NullConfig>>> for ChronicleEvent {
     fn from(e: Event<ChronicleBroker<NullConfig>>) -> Self {
+        Self::Broker(e)
+    }
+}
+#[cfg(all(feature = "mongo", not(feature = "null")))]
+impl From<Event<ChronicleBroker<PermanodeMongoConfig>>> for ChronicleEvent {
+    fn from(e: Event<ChronicleBroker<PermanodeMongoConfig>>) -> Self {
         Self::Broker(e)
     }
 }
@@ -82,7 +97,7 @@ where
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
         // init the alert
         alert::init(self.alert.clone());
-        #[cfg(any(feature = "null"))]
+        #[cfg(any(feature = "null", feature = "mongo"))]
         {
             let broker = self.broker.clone();
             let broker_scope_id = rt.start("broker".to_string(), broker).await?.scope_id();
@@ -99,7 +114,7 @@ where
     async fn run(&mut self, rt: &mut Rt<Self, S>, _data: Self::Data) -> ActorResult<Self::Data> {
         while let Some(event) = rt.inbox_mut().next().await {
             match event {
-                #[cfg(any(feature = "null"))]
+                #[cfg(any(feature = "null", feature = "mongo"))]
                 ChronicleEvent::Broker(broker_event) => {
                     if let Event::Published(_, _, broker) = broker_event {
                         self.broker = broker;

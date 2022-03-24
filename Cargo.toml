@@ -3,7 +3,7 @@ members = [
     "chronicle",
     "chronicle-api",
     "chronicle-broker",
-    "chronicle-storage/permanode-mongodb",
+    "chronicle-storage/permanode-mongo",
     #"chronicle-cli",
     #"chronicle-analytics", //todo uncomment
     "chronicle-common"
