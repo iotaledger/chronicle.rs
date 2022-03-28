@@ -735,7 +735,7 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
 //     get_output_by_transaction_id(database, output_id.transaction_id().to_string(), output_id.index()).await
 // }
 
-#[get("/outputs/<transaction_id>/<idx>")]
+#[get("/outputs/spending_transaction/<transaction_id>/<idx>")]
 async fn get_spending_transaction(database: &State<Database>, transaction_id: String, idx: u16) -> ListenerResult {
     let transaction = MessageRecord::try_from(
         &database
