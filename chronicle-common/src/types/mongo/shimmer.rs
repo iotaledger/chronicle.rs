@@ -3,6 +3,72 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::shimmer::{
+    address::{
+        Address,
+        AliasAddress,
+        Ed25519Address,
+        NftAddress,
+    },
+    input::{
+        Input,
+        TreasuryInput,
+        UtxoInput,
+    },
+    milestone::MilestoneIndex,
+    output::{
+        AliasId,
+        AliasOutput,
+        BasicOutput,
+        FeatureBlocks,
+        FoundryId,
+        FoundryOutput,
+        NativeTokens,
+        NftId,
+        NftOutput,
+        Output,
+        TokenTag,
+        TreasuryOutput,
+        UnlockConditions,
+    },
+    parent::Parents,
+    payload::{
+        milestone::{
+            MilestoneEssence,
+            MilestoneId,
+            MilestonePayload,
+        },
+        receipt::{
+            MigratedFundsEntry,
+            ReceiptPayload,
+            TailTransactionHash,
+        },
+        tagged_data::TaggedDataPayload,
+        transaction::{
+            RegularTransactionEssence,
+            TransactionEssence,
+            TransactionId,
+            TransactionPayload,
+        },
+        treasury_transaction::TreasuryTransactionPayload,
+        Payload,
+    },
+    signature::{
+        Ed25519Signature,
+        Signature,
+    },
+    unlock_block::{
+        AliasUnlockBlock,
+        NftUnlockBlock,
+        ReferenceUnlockBlock,
+        SignatureUnlockBlock,
+        UnlockBlock,
+        UnlockBlocks,
+    },
+    Message,
+    MessageBuilder,
+    MessageId,
+};
 use anyhow::{
     anyhow,
     bail,
@@ -18,7 +84,7 @@ use primitive_types::U256;
 use serde_json::json;
 use std::str::FromStr;
 
-pub fn message_to_bson(message: &crate::shimmer::Message) -> Bson {
+pub fn message_to_bson(message: &Message) -> Bson {
     let mut doc = Document::new();
     doc.insert("protocol_version", message.protocol_version() as i32);
     doc.insert(
@@ -30,18 +96,27 @@ pub fn message_to_bson(message: &crate::shimmer::Message) -> Bson {
     Bson::Document(doc)
 }
 
-pub fn message_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::Message> {
-    let value = json!({
-        "protocol_version": doc.get_i32("protocol_version")?,
-        "parents": doc.get_array("parents")?.iter().map(|p| message_id_from_bson(p)).collect::<Result<Vec<_>,_>>()?,
-        "payload": payload_from_doc(doc.get_document("payload")?)?,
-        "nonce": doc.get_str("nonce")?.parse::<u64>()?,
-    });
-    Ok(serde_json::from_value(value)?)
+pub fn message_from_doc(doc: &Document) -> anyhow::Result<Message> {
+    let mut builder = MessageBuilder::new(Parents::new(
+        doc.get_array("parents")?
+            .iter()
+            .map(|p| message_id_from_bson(p))
+            .collect::<Result<Vec<_>, _>>()?,
+    )?)
+    .with_protocol_version(doc.get_i32("protocol_version")? as u8)
+    .with_nonce_provider(doc.get_str("nonce")?.parse::<u64>()?, 0.0);
+    if let Some(payload) = doc
+        .get_document("payload")
+        .ok()
+        .map(|r| payload_from_doc(&r))
+        .transpose()?
+    {
+        builder = builder.with_payload(payload);
+    }
+    Ok(builder.finish()?)
 }
 
-fn payload_to_bson(payload: &crate::shimmer::payload::Payload) -> Bson {
-    use crate::shimmer::payload::Payload;
+fn payload_to_bson(payload: &Payload) -> Bson {
     match payload {
         Payload::Transaction(t) => transaction_payload_to_bson(&**t),
         Payload::Milestone(m) => milestone_payload_to_bson(&**m),
@@ -51,15 +126,7 @@ fn payload_to_bson(payload: &crate::shimmer::payload::Payload) -> Bson {
     }
 }
 
-pub fn payload_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::payload::Payload> {
-    use crate::shimmer::payload::{
-        milestone::MilestonePayload,
-        receipt::ReceiptPayload,
-        tagged_data::TaggedDataPayload,
-        transaction::TransactionPayload,
-        treasury_transaction::TreasuryTransactionPayload,
-        Payload,
-    };
+pub fn payload_from_doc(doc: &Document) -> anyhow::Result<Payload> {
     let kind = doc.get_i32("kind")? as u32;
     Ok(match kind {
         TransactionPayload::KIND => Payload::Transaction(Box::new(transaction_payload_from_doc(doc)?)),
@@ -71,8 +138,7 @@ pub fn payload_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::payloa
     })
 }
 
-fn transaction_payload_to_bson(payload: &crate::shimmer::payload::transaction::TransactionPayload) -> Bson {
-    use crate::shimmer::payload::transaction::TransactionPayload;
+fn transaction_payload_to_bson(payload: &TransactionPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", TransactionPayload::KIND as i32);
     doc.insert("transaction_id", payload.id().to_string());
@@ -88,17 +154,19 @@ fn transaction_payload_to_bson(payload: &crate::shimmer::payload::transaction::T
     Bson::Document(doc)
 }
 
-fn transaction_payload_from_doc(
-    doc: &Document,
-) -> anyhow::Result<crate::shimmer::payload::transaction::TransactionPayload> {
-    Ok(serde_json::from_value(json!({
-        "essence": transaction_essence_from_doc(doc.get_document("essence")?)?,
-        "unlock_blocks": doc.get_array("unlock_blocks")?.iter().map(|u| unlock_block_from_bson(u)).collect::<Result<Vec<_>,_>>()?,
-    }))?)
+fn transaction_payload_from_doc(doc: &Document) -> anyhow::Result<TransactionPayload> {
+    Ok(TransactionPayload::new(
+        transaction_essence_from_doc(doc.get_document("essence")?)?,
+        UnlockBlocks::new(
+            doc.get_array("unlock_blocks")?
+                .iter()
+                .map(|u| unlock_block_from_bson(u))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?,
+    )?)
 }
 
-fn milestone_payload_to_bson(payload: &crate::shimmer::payload::milestone::MilestonePayload) -> Bson {
-    use crate::shimmer::payload::milestone::MilestonePayload;
+fn milestone_payload_to_bson(payload: &MilestonePayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", MilestonePayload::KIND as i32);
     doc.insert("milestone_id", payload.id().to_string());
@@ -110,15 +178,17 @@ fn milestone_payload_to_bson(payload: &crate::shimmer::payload::milestone::Miles
     Bson::Document(doc)
 }
 
-fn milestone_payload_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::payload::milestone::MilestonePayload> {
-    Ok(serde_json::from_value(json!({
-        "essence": milestone_essence_from_doc(doc.get_document("essence")?)?,
-        "signatures": doc.get_array("signatures")?.iter().map(|u| bytes_from_bson(u)).collect::<Result<Vec<_>,_>>()?,
-    }))?)
+fn milestone_payload_from_doc(doc: &Document) -> anyhow::Result<MilestonePayload> {
+    Ok(MilestonePayload::new(
+        milestone_essence_from_doc(doc.get_document("essence")?)?,
+        doc.get_array("signatures")?
+            .iter()
+            .map(|u| bytes_from_bson(u).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
+            .collect::<Result<Vec<_>, _>>()?,
+    )?)
 }
 
-fn tag_payload_to_bson(payload: &crate::shimmer::payload::tagged_data::TaggedDataPayload) -> Bson {
-    use crate::shimmer::payload::tagged_data::TaggedDataPayload;
+fn tag_payload_to_bson(payload: &TaggedDataPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", TaggedDataPayload::KIND as i32);
     doc.insert("tag", hex::encode(payload.tag()));
@@ -126,15 +196,14 @@ fn tag_payload_to_bson(payload: &crate::shimmer::payload::tagged_data::TaggedDat
     Bson::Document(doc)
 }
 
-fn tag_payload_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::payload::tagged_data::TaggedDataPayload> {
-    Ok(serde_json::from_value(json!({
-        "tag": hex::decode(doc.get_str("tag")?)?,
-        "data": hex::decode(doc.get_str("data")?)?,
-    }))?)
+fn tag_payload_from_doc(doc: &Document) -> anyhow::Result<TaggedDataPayload> {
+    Ok(TaggedDataPayload::new(
+        hex::decode(doc.get_str("tag")?)?,
+        hex::decode(doc.get_str("data")?)?,
+    )?)
 }
 
-fn receipt_payload_to_bson(payload: &crate::shimmer::payload::receipt::ReceiptPayload) -> Bson {
-    use crate::shimmer::payload::receipt::ReceiptPayload;
+fn receipt_payload_to_bson(payload: &ReceiptPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", ReceiptPayload::KIND as i32);
     doc.insert("migrated_at", payload.migrated_at().0 as i32);
@@ -158,20 +227,19 @@ fn receipt_payload_to_bson(payload: &crate::shimmer::payload::receipt::ReceiptPa
     Bson::Document(doc)
 }
 
-fn receipt_payload_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::payload::receipt::ReceiptPayload> {
-    Ok(serde_json::from_value(json!({
-        "migrated_at": doc.get_i32("migrated_at")?,
-        "last": doc.get_bool("last")?,
-        "funds": doc.get_array("funds")?.iter().map(|f| migrated_funds_entry_from_bson(f)).collect::<Result<Vec<_>,_>>()?,
-        "transaction": treasury_payload_from_doc(doc.get_document("transaction")?)?,
-        "amount": doc.get_i64("amount")?,
-    }))?)
+fn receipt_payload_from_doc(doc: &Document) -> anyhow::Result<ReceiptPayload> {
+    Ok(ReceiptPayload::new(
+        MilestoneIndex(doc.get_i32("migrated_at")? as u32),
+        doc.get_bool("last")?,
+        doc.get_array("funds")?
+            .iter()
+            .map(|f| migrated_funds_entry_from_bson(f))
+            .collect::<Result<Vec<_>, _>>()?,
+        treasury_payload_from_doc(doc.get_document("transaction")?)?,
+    )?)
 }
 
-fn treasury_payload_to_bson(
-    payload: &crate::shimmer::payload::treasury_transaction::TreasuryTransactionPayload,
-) -> Bson {
-    use crate::shimmer::payload::treasury_transaction::TreasuryTransactionPayload;
+fn treasury_payload_to_bson(payload: &TreasuryTransactionPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", TreasuryTransactionPayload::KIND as i32);
     doc.insert("input", treasury_input_to_bson(payload.input()));
@@ -179,17 +247,14 @@ fn treasury_payload_to_bson(
     Bson::Document(doc)
 }
 
-fn treasury_payload_from_doc(
-    doc: &Document,
-) -> anyhow::Result<crate::shimmer::payload::treasury_transaction::TreasuryTransactionPayload> {
-    Ok(serde_json::from_value(json!({
-        "input": treasury_input_from_doc(doc.get_document("input")?)?,
-        "output": treasury_output_from_doc(doc.get_document("output")?)?,
-    }))?)
+fn treasury_payload_from_doc(doc: &Document) -> anyhow::Result<TreasuryTransactionPayload> {
+    Ok(TreasuryTransactionPayload::new(
+        treasury_input_from_doc(doc.get_document("input")?)?,
+        treasury_output_from_doc(doc.get_document("output")?)?,
+    )?)
 }
 
-fn transaction_essence_to_bson(essence: &crate::shimmer::payload::transaction::TransactionEssence) -> Bson {
-    use crate::shimmer::payload::transaction::TransactionEssence;
+fn transaction_essence_to_bson(essence: &TransactionEssence) -> Bson {
     let mut doc = Document::new();
     match essence {
         TransactionEssence::Regular(r) => {
@@ -209,18 +274,35 @@ fn transaction_essence_to_bson(essence: &crate::shimmer::payload::transaction::T
     Bson::Document(doc)
 }
 
-fn transaction_essence_from_doc(
-    doc: &Document,
-) -> anyhow::Result<crate::shimmer::payload::transaction::TransactionEssence> {
-    Ok(serde_json::from_value(json!({
-        "network_id": doc.get_i64("network_id")?,
-        "inputs": doc.get_array("inputs")?.iter().map(|i| input_from_bson(i)).collect::<Result<Vec<_>,_>>()?,
-        "outputs": doc.get_array("outputs")?.iter().map(|o| output_from_bson(o)).collect::<Result<Vec<_>,_>>()?,
-        "payload": payload_from_doc(doc.get_document("payload")?)?
-    }))?)
+fn transaction_essence_from_doc(doc: &Document) -> anyhow::Result<TransactionEssence> {
+    let mut builder = RegularTransactionEssence::builder(
+        doc.get_i64("network_id")? as u64,
+        hex::decode(doc.get_str("inputs_commitment")?)?.as_slice().try_into()?,
+    )
+    .with_inputs(
+        doc.get_array("inputs")?
+            .iter()
+            .map(|i| input_from_bson(i))
+            .collect::<Result<Vec<_>, _>>()?,
+    )
+    .with_outputs(
+        doc.get_array("outputs")?
+            .iter()
+            .map(|o| output_from_bson(o))
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    if let Some(payload) = doc
+        .get_document("payload")
+        .ok()
+        .map(|r| payload_from_doc(&r))
+        .transpose()?
+    {
+        builder = builder.with_payload(payload);
+    }
+    Ok(builder.finish()?.into())
 }
 
-fn milestone_essence_to_bson(essence: &crate::shimmer::payload::milestone::MilestoneEssence) -> Bson {
+fn milestone_essence_to_bson(essence: &MilestoneEssence) -> Bson {
     let mut doc = Document::new();
     doc.insert("index", essence.index().0 as i32);
     doc.insert("timestamp", DateTime::from_millis(essence.timestamp() as i64));
@@ -242,30 +324,31 @@ fn milestone_essence_to_bson(essence: &crate::shimmer::payload::milestone::Miles
     Bson::Document(doc)
 }
 
-fn milestone_essence_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::payload::milestone::MilestoneEssence> {
-    Ok(serde_json::from_value(json!({
-        "index": doc.get_i32("index")?,
-        "timestamp": doc.get_datetime("timestamp")?.timestamp_millis(),
-        "parents": doc.get_array("parents")?.iter().map(|p| message_id_from_bson(p)).collect::<Result<Vec<_>,_>>()?,
-        "merkle_proof": hex::decode(doc.get_str("merkle_proof")?)?,
-        "next_pow_score": doc.get_i64("next_pow_score")?,
-        "next_pow_score_milestone_index": doc.get_i32("next_pow_score_milestone_index")?,
-        "public_keys": doc.get_array("public_keys")?.iter().map(|p| bytes_from_bson(p)).collect::<Result<Vec<_>,_>>()?,
-        "receipt": doc.get_document("receipt").ok().map(|r| payload_from_doc(&r)).transpose()?
-    }))?)
+fn milestone_essence_from_doc(doc: &Document) -> anyhow::Result<MilestoneEssence> {
+    Ok(MilestoneEssence::new(
+        MilestoneIndex(doc.get_i32("index")? as u32),
+        doc.get_datetime("timestamp")?.timestamp_millis() as u64,
+        Parents::new(
+            doc.get_array("parents")?
+                .iter()
+                .map(|p| message_id_from_bson(p))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?,
+        hex::decode(doc.get_str("merkle_proof")?)?.as_slice().try_into()?,
+        doc.get_i64("next_pow_score")? as u32,
+        doc.get_i32("next_pow_score_milestone_index")? as u32,
+        doc.get_array("public_keys")?
+            .iter()
+            .map(|p| bytes_from_bson(p).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
+            .collect::<Result<Vec<_>, _>>()?,
+        doc.get_document("receipt")
+            .ok()
+            .map(|r| payload_from_doc(&r))
+            .transpose()?,
+    )?)
 }
 
-fn unlock_block_to_bson(unlock_block: &crate::shimmer::unlock_block::UnlockBlock) -> Bson {
-    use crate::shimmer::{
-        signature::Signature,
-        unlock_block::{
-            AliasUnlockBlock,
-            NftUnlockBlock,
-            ReferenceUnlockBlock,
-            SignatureUnlockBlock,
-            UnlockBlock,
-        },
-    };
+fn unlock_block_to_bson(unlock_block: &UnlockBlock) -> Bson {
     let mut doc = Document::new();
     match unlock_block {
         UnlockBlock::Signature(s) => match s.signature() {
@@ -291,54 +374,24 @@ fn unlock_block_to_bson(unlock_block: &crate::shimmer::unlock_block::UnlockBlock
     Bson::Document(doc)
 }
 
-fn unlock_block_from_bson(bson: &Bson) -> anyhow::Result<crate::shimmer::unlock_block::UnlockBlock> {
-    use crate::shimmer::unlock_block::{
-        AliasUnlockBlock,
-        NftUnlockBlock,
-        ReferenceUnlockBlock,
-        SignatureUnlockBlock,
-    };
+fn unlock_block_from_bson(bson: &Bson) -> anyhow::Result<UnlockBlock> {
     let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid unlock block"))?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        SignatureUnlockBlock::KIND => serde_json::from_value(json!({
-            "type": "Signature",
-            "data": {
-                "type": "Ed25519",
-                "data": {
-                    "public_key": hex::decode(doc.get_str("public_key")?)?,
-                    "signature": hex::decode(doc.get_str("signature")?)?,
-                }
-            }
-        }))?,
-        ReferenceUnlockBlock::KIND => serde_json::from_value(json!({
-            "type": "Reference",
-            "data": {
-                "index": doc.get_i32("index")?
-            }
-        }))?,
-        AliasUnlockBlock::KIND => serde_json::from_value(json!({
-            "type": "Alias",
-            "data": {
-                "index": doc.get_i32("index")?
-            }
-        }))?,
-        NftUnlockBlock::KIND => serde_json::from_value(json!({
-            "type": "Nft",
-            "data": {
-                "index": doc.get_i32("index")?
-            }
-        }))?,
+        SignatureUnlockBlock::KIND => {
+            UnlockBlock::Signature(SignatureUnlockBlock::new(Signature::Ed25519(Ed25519Signature::new(
+                hex::decode(doc.get_str("public_key")?)?.as_slice().try_into()?,
+                hex::decode(doc.get_str("signature")?)?.as_slice().try_into()?,
+            ))))
+        }
+        ReferenceUnlockBlock::KIND => UnlockBlock::Reference(ReferenceUnlockBlock::new(doc.get_i32("index")? as u16)?),
+        AliasUnlockBlock::KIND => UnlockBlock::Alias(AliasUnlockBlock::new(doc.get_i32("index")? as u16)?),
+        NftUnlockBlock::KIND => UnlockBlock::Nft(NftUnlockBlock::new(doc.get_i32("index")? as u16)?),
         _ => bail!("Invalid unlock block"),
     })
 }
 
-fn input_to_bson(input: &crate::shimmer::input::Input) -> Bson {
-    use crate::shimmer::input::{
-        Input,
-        TreasuryInput,
-        UtxoInput,
-    };
+fn input_to_bson(input: &Input) -> Bson {
     let mut doc = Document::new();
     match input {
         Input::Utxo(u) => {
@@ -354,54 +407,36 @@ fn input_to_bson(input: &crate::shimmer::input::Input) -> Bson {
     Bson::Document(doc)
 }
 
-fn input_from_bson(bson: &Bson) -> anyhow::Result<crate::shimmer::input::Input> {
+fn input_from_bson(bson: &Bson) -> anyhow::Result<Input> {
     input_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid input"))?)
 }
 
-fn input_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::input::Input> {
-    use crate::shimmer::input::{
-        TreasuryInput,
-        UtxoInput,
-    };
+fn input_from_doc(doc: &Document) -> anyhow::Result<Input> {
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        UtxoInput::KIND => serde_json::from_value(json!({
-            "type": "Utxo",
-            "transaction_id": doc.get_str("transaction_id")?.to_string(),
-            "index": doc.get_i32("index")?
-        }))?,
-        TreasuryInput::KIND => serde_json::from_value(json!({
-            "type": "Treasury",
-            "milestone_id": doc.get_str("milestone_id")?.to_string(),
-        }))?,
+        UtxoInput::KIND => Input::Utxo(UtxoInput::new(
+            TransactionId::from_str(doc.get_str("transaction_id")?)?,
+            doc.get_i32("index")? as u16,
+        )?),
+        TreasuryInput::KIND => {
+            Input::Treasury(TreasuryInput::new(MilestoneId::from_str(doc.get_str("milestone_id")?)?))
+        }
         _ => bail!("Invalid input"),
     })
 }
 
-fn treasury_input_to_bson(input: &crate::shimmer::input::TreasuryInput) -> Bson {
-    use crate::shimmer::input::TreasuryInput;
+fn treasury_input_to_bson(input: &TreasuryInput) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", TreasuryInput::KIND as i32);
     doc.insert("milestone_id", input.milestone_id().to_string());
     Bson::Document(doc)
 }
 
-fn treasury_input_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::input::TreasuryInput> {
-    Ok(serde_json::from_value(json!({
-        "type": "Treasury",
-        "milestone_id": doc.get_str("milestone_id")?.to_string(),
-    }))?)
+fn treasury_input_from_doc(doc: &Document) -> anyhow::Result<TreasuryInput> {
+    Ok(TreasuryInput::new(MilestoneId::from_str(doc.get_str("milestone_id")?)?))
 }
 
-fn output_to_bson(output: &crate::shimmer::output::Output) -> Bson {
-    use crate::shimmer::output::{
-        AliasOutput,
-        BasicOutput,
-        FoundryOutput,
-        NftOutput,
-        Output,
-        TreasuryOutput,
-    };
+fn output_to_bson(output: &Output) -> Bson {
     let mut doc = Document::new();
     match output {
         Output::Treasury(t) => {
@@ -468,18 +503,124 @@ fn output_to_bson(output: &crate::shimmer::output::Output) -> Bson {
     Bson::Document(doc)
 }
 
-fn output_from_bson(bson: &Bson) -> anyhow::Result<crate::shimmer::output::Output> {
+fn output_from_bson(bson: &Bson) -> anyhow::Result<Output> {
     output_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid output"))?)
 }
 
-fn output_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::output::Output> {
-    use crate::shimmer::output::{
-        AliasOutput,
-        BasicOutput,
-        FoundryOutput,
-        NftOutput,
-        TreasuryOutput,
-    };
+// fn output_from_doc(doc: &Document) -> anyhow::Result<Output> {
+//     let kind = doc.get_i32("kind")? as u8;
+//     Ok(match kind {
+//         TreasuryOutput::KIND => Output::Treasury(TreasuryOutput::new(doc.get_i64("amount")? as u64)?),
+//         BasicOutput::KIND => Output::Basic(
+//             BasicOutput::build(doc.get_i64("amount")? as u64)?
+//                 .with_native_tokens(from_bson::<NativeTokens>(
+//                     doc.get("native_tokens")
+//                         .ok_or_else(|| anyhow!("Missing native tokens"))?
+//                         .clone(),
+//                 )?)
+//                 .with_unlock_conditions(from_bson::<UnlockConditions>(
+//                     doc.get("unlock_conditions")
+//                         .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+//                         .clone(),
+//                 )?)
+//                 .with_feature_blocks(from_bson::<FeatureBlocks>(
+//                     doc.get("feature_blocks")
+//                         .ok_or_else(|| anyhow!("Missing feature blocks"))?
+//                         .clone(),
+//                 )?)
+//                 .finish()?,
+//         ),
+//         AliasOutput::KIND => Output::Alias(
+//             AliasOutput::build(
+//                 doc.get_i64("amount")? as u64,
+//                 AliasId::from_str(doc.get_str("alias_id")?)?,
+//             )?
+//             .with_native_tokens(from_bson::<NativeTokens>(
+//                 doc.get("native_tokens")
+//                     .ok_or_else(|| anyhow!("Missing native tokens"))?
+//                     .clone(),
+//             )?)
+//             .with_state_index(doc.get_i32("state_index")? as u32)
+//             .with_state_metadata(hex::decode(doc.get_str("state_metadata")?)?)
+//             .with_foundry_counter(doc.get_i32("foundry_counter")? as u32)
+//             .with_unlock_conditions(from_bson::<UnlockConditions>(
+//                 doc.get("unlock_conditions")
+//                     .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+//                     .clone(),
+//             )?)
+//             .with_feature_blocks(from_bson::<FeatureBlocks>(
+//                 doc.get("feature_blocks")
+//                     .ok_or_else(|| anyhow!("Missing feature blocks"))?
+//                     .clone(),
+//             )?)
+//             .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
+//                 doc.get("immutable_feature_blocks")
+//                     .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
+//                     .clone(),
+//             )?)
+//             .finish()?,
+//         ),
+//         FoundryOutput::KIND => Output::Foundry(
+//             FoundryOutput::build(
+//                 doc.get_i64("amount")? as u64,
+//                 doc.get_i32("serial_number")? as u32,
+//                 TokenTag::from_str(doc.get_str("token_tag")?)?,
+//                 doc.get_str("minted_tokens")?.parse::<U256>()?,
+//                 doc.get_str("melted_tokens")?.parse::<U256>()?,
+//                 doc.get_str("maximum_supply")?.parse::<U256>()?,
+//                 (doc.get_i32("token_scheme")? as u8).try_into()?,
+//             )?
+//             .with_native_tokens(from_bson::<NativeTokens>(
+//                 doc.get("native_tokens")
+//                     .ok_or_else(|| anyhow!("Missing native tokens"))?
+//                     .clone(),
+//             )?)
+//             .with_unlock_conditions(from_bson::<UnlockConditions>(
+//                 doc.get("unlock_conditions")
+//                     .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+//                     .clone(),
+//             )?)
+//             .with_feature_blocks(from_bson::<FeatureBlocks>(
+//                 doc.get("feature_blocks")
+//                     .ok_or_else(|| anyhow!("Missing feature blocks"))?
+//                     .clone(),
+//             )?)
+//             .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
+//                 doc.get("immutable_feature_blocks")
+//                     .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
+//                     .clone(),
+//             )?)
+//             .finish()?,
+//         ),
+//         NftOutput::KIND => Output::Nft(
+//             NftOutput::build(doc.get_i64("amount")? as u64, NftId::from_str(doc.get_str("nft_id")?)?)?
+//                 .with_native_tokens(from_bson::<NativeTokens>(
+//                     doc.get("native_tokens")
+//                         .ok_or_else(|| anyhow!("Missing native tokens"))?
+//                         .clone(),
+//                 )?)
+//                 .with_unlock_conditions(from_bson::<UnlockConditions>(
+//                     doc.get("unlock_conditions")
+//                         .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+//                         .clone(),
+//                 )?)
+//                 .with_feature_blocks(from_bson::<FeatureBlocks>(
+//                     doc.get("feature_blocks")
+//                         .ok_or_else(|| anyhow!("Missing feature blocks"))?
+//                         .clone(),
+//                 )?)
+//                 .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
+//                     doc.get("immutable_feature_blocks")
+//                         .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
+//                         .clone(),
+//                 )?)
+//                 .finish()?,
+//         ),
+//         _ => bail!("Invalid output"),
+//     })
+// }
+
+fn output_from_doc(doc: &Document) -> anyhow::Result<Output> {
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         TreasuryOutput::KIND => serde_json::from_value(json!({
@@ -542,27 +683,19 @@ fn output_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::output::Out
     })
 }
 
-fn treasury_output_to_bson(o: &crate::shimmer::output::TreasuryOutput) -> Bson {
-    use crate::shimmer::output::TreasuryOutput;
+fn treasury_output_to_bson(o: &TreasuryOutput) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", TreasuryOutput::KIND as i32);
     doc.insert("amount", o.amount() as i64);
     Bson::Document(doc)
 }
 
-fn treasury_output_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::output::TreasuryOutput> {
-    use crate::shimmer::output::TreasuryOutput;
+fn treasury_output_from_doc(doc: &Document) -> anyhow::Result<TreasuryOutput> {
     let amount = doc.get_i64("amount")?;
     Ok(TreasuryOutput::new(amount as u64)?)
 }
 
-fn address_to_bson(address: &crate::shimmer::address::Address) -> Bson {
-    use crate::shimmer::address::{
-        Address,
-        AliasAddress,
-        Ed25519Address,
-        NftAddress,
-    };
+fn address_to_bson(address: &Address) -> Bson {
     let mut doc = Document::new();
     match address {
         Address::Ed25519(a) => {
@@ -581,30 +714,16 @@ fn address_to_bson(address: &crate::shimmer::address::Address) -> Bson {
     Bson::Document(doc)
 }
 
-fn address_from_bson(bson: &Bson) -> anyhow::Result<crate::shimmer::address::Address> {
+fn address_from_bson(bson: &Bson) -> anyhow::Result<Address> {
     address_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid address"))?)
 }
 
-fn address_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::address::Address> {
-    use crate::shimmer::address::{
-        AliasAddress,
-        Ed25519Address,
-        NftAddress,
-    };
+fn address_from_doc(doc: &Document) -> anyhow::Result<Address> {
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        Ed25519Address::KIND => serde_json::from_value(json!({
-            "type": "Ed25519",
-            "data": doc.get_str("data")?.to_string()
-        }))?,
-        AliasAddress::KIND => serde_json::from_value(json!({
-            "type": "Alias",
-            "data": doc.get_str("data")?.to_string()
-        }))?,
-        NftAddress::KIND => serde_json::from_value(json!({
-            "type": "Nft",
-            "data": doc.get_str("data")?.to_string()
-        }))?,
+        Ed25519Address::KIND => Address::Ed25519(Ed25519Address::from_str(doc.get_str("data")?)?),
+        AliasAddress::KIND => Address::Alias(AliasAddress::from_str(doc.get_str("data")?)?),
+        NftAddress::KIND => Address::Nft(NftAddress::from_str(doc.get_str("data")?)?),
         _ => bail!("Invalid address"),
     })
 }
@@ -614,16 +733,20 @@ fn bytes_from_bson(bson: &Bson) -> anyhow::Result<Vec<u8>> {
     Ok(hex::decode(hex)?)
 }
 
-fn message_id_from_bson(bson: &Bson) -> anyhow::Result<crate::shimmer::MessageId> {
+fn message_id_from_bson(bson: &Bson) -> anyhow::Result<MessageId> {
     let s = bson.as_str().ok_or_else(|| anyhow!("Invalid message id"))?;
-    Ok(crate::shimmer::MessageId::from_str(s)?)
+    Ok(MessageId::from_str(s)?)
 }
 
-fn migrated_funds_entry_from_bson(bson: &Bson) -> anyhow::Result<crate::shimmer::payload::receipt::MigratedFundsEntry> {
+fn migrated_funds_entry_from_bson(bson: &Bson) -> anyhow::Result<MigratedFundsEntry> {
     let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid funds"))?;
-    Ok(serde_json::from_value(json!({
-        "tail_transaction_hash": hex::decode(doc.get_str("tail_transaction_hash")?)?,
-        "address": address_from_bson(doc.get("address").ok_or_else(|| anyhow!("Missing address"))?)?,
-        "amount": doc.get_i64("amount")?,
-    }))?)
+    Ok(MigratedFundsEntry::new(
+        TailTransactionHash::new(
+            hex::decode(doc.get_str("tail_transaction_hash")?)?
+                .as_slice()
+                .try_into()?,
+        )?,
+        address_from_bson(doc.get("address").ok_or_else(|| anyhow!("Missing address"))?)?,
+        doc.get_i64("amount")? as u64,
+    )?)
 }

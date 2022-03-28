@@ -710,15 +710,13 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
             },
             None,
         )
-        .await?
-        .map(|d| MessageRecord::try_from(&d))
-        .transpose()?;
+        .await?;
 
     Ok(ListenerResponse::Output {
         message_id: output.get_str("message_id").unwrap().to_owned(),
         transaction_id,
         output_index: idx,
-        is_spent: spending_transaction.is_some(),
+        spending_transaction: spending_transaction.map(|mut d| d.remove("message").unwrap().into()),
         output: output
             .get_document_mut("message")
             .unwrap()

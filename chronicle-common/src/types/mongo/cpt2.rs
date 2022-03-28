@@ -1,6 +1,10 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::cpt2::{
+    prelude::*,
+    Message,
+};
 use anyhow::{
     anyhow,
     bail,
@@ -11,10 +15,9 @@ use mongodb::bson::{
     DateTime,
     Document,
 };
-use serde_json::json;
 use std::str::FromStr;
 
-pub fn message_to_bson(message: &crate::cpt2::Message) -> Bson {
+pub fn message_to_bson(message: &Message) -> Bson {
     let mut doc = Document::new();
     doc.insert("protocol_version", 0);
     doc.insert("network_id", message.network_id() as i64);
@@ -27,18 +30,28 @@ pub fn message_to_bson(message: &crate::cpt2::Message) -> Bson {
     Bson::Document(doc)
 }
 
-pub fn message_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::Message> {
-    let value = json!({
-        "network_id": doc.get_i64("network_id")?,
-        "parents": doc.get_array("parents")?.iter().map(|p| message_id_from_bson(p)).collect::<Result<Vec<_>,_>>()?,
-        "payload": payload_from_doc(doc.get_document("payload")?)?,
-        "nonce": doc.get_str("nonce")?.parse::<u64>()?,
-    });
-    Ok(serde_json::from_value(value)?)
+pub fn message_from_doc(doc: &Document) -> anyhow::Result<Message> {
+    let mut builder = MessageBuilder::default()
+        .with_network_id(doc.get_i64("network_id")? as u64)
+        .with_parents(Parents::new(
+            doc.get_array("parents")?
+                .iter()
+                .map(|p| message_id_from_bson(p))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?)
+        .with_nonce_provider(doc.get_str("nonce")?.parse::<u64>()?, 0.0);
+    if let Some(payload) = doc
+        .get_document("payload")
+        .ok()
+        .map(|r| payload_from_doc(&r))
+        .transpose()?
+    {
+        builder = builder.with_payload(payload);
+    }
+    Ok(builder.finish()?)
 }
 
-fn payload_to_bson(payload: &crate::cpt2::payload::Payload) -> Bson {
-    use crate::cpt2::payload::Payload;
+fn payload_to_bson(payload: &Payload) -> Bson {
     match payload {
         Payload::Transaction(t) => transaction_payload_to_bson(&**t),
         Payload::Milestone(m) => milestone_payload_to_bson(&**m),
@@ -48,15 +61,7 @@ fn payload_to_bson(payload: &crate::cpt2::payload::Payload) -> Bson {
     }
 }
 
-pub fn payload_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::payload::Payload> {
-    use crate::cpt2::payload::{
-        indexation::IndexationPayload,
-        milestone::MilestonePayload,
-        receipt::ReceiptPayload,
-        transaction::TransactionPayload,
-        treasury::TreasuryTransactionPayload,
-        Payload,
-    };
+pub fn payload_from_doc(doc: &Document) -> anyhow::Result<Payload> {
     let kind = doc.get_i32("kind")? as u32;
     Ok(match kind {
         TransactionPayload::KIND => Payload::Transaction(Box::new(transaction_payload_from_doc(doc)?)),
@@ -68,8 +73,7 @@ pub fn payload_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::payload::
     })
 }
 
-fn transaction_payload_to_bson(payload: &crate::cpt2::payload::transaction::TransactionPayload) -> Bson {
-    use crate::cpt2::payload::transaction::TransactionPayload;
+fn transaction_payload_to_bson(payload: &TransactionPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", TransactionPayload::KIND as i32);
     doc.insert("transaction_id", payload.id().to_string());
@@ -85,17 +89,19 @@ fn transaction_payload_to_bson(payload: &crate::cpt2::payload::transaction::Tran
     Bson::Document(doc)
 }
 
-fn transaction_payload_from_doc(
-    doc: &Document,
-) -> anyhow::Result<crate::cpt2::payload::transaction::TransactionPayload> {
-    Ok(serde_json::from_value(json!({
-        "essence": transaction_essence_from_doc(doc.get_document("essence")?)?,
-        "unlock_blocks": doc.get_array("unlock_blocks")?.iter().map(|u| unlock_block_from_bson(u)).collect::<Result<Vec<_>,_>>()?,
-    }))?)
+fn transaction_payload_from_doc(doc: &Document) -> anyhow::Result<TransactionPayload> {
+    Ok(TransactionPayload::builder()
+        .with_essence(transaction_essence_from_doc(doc.get_document("essence")?)?)
+        .with_unlock_blocks(UnlockBlocks::new(
+            doc.get_array("unlock_blocks")?
+                .iter()
+                .map(|u| unlock_block_from_bson(u))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?)
+        .finish()?)
 }
 
-fn milestone_payload_to_bson(payload: &crate::cpt2::payload::milestone::MilestonePayload) -> Bson {
-    use crate::cpt2::payload::milestone::MilestonePayload;
+fn milestone_payload_to_bson(payload: &MilestonePayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", MilestonePayload::KIND as i32);
     doc.insert("milestone_id", payload.id().to_string());
@@ -107,15 +113,17 @@ fn milestone_payload_to_bson(payload: &crate::cpt2::payload::milestone::Mileston
     Bson::Document(doc)
 }
 
-fn milestone_payload_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::payload::milestone::MilestonePayload> {
-    Ok(serde_json::from_value(json!({
-        "essence": milestone_essence_from_doc(doc.get_document("essence")?)?,
-        "signatures": doc.get_array("signatures")?.iter().map(|u| bytes_from_bson(u)).collect::<Result<Vec<_>,_>>()?,
-    }))?)
+fn milestone_payload_from_doc(doc: &Document) -> anyhow::Result<MilestonePayload> {
+    Ok(MilestonePayload::new(
+        milestone_essence_from_doc(doc.get_document("essence")?)?,
+        doc.get_array("signatures")?
+            .iter()
+            .map(|u| bytes_from_bson(u).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
+            .collect::<Result<Vec<_>, _>>()?,
+    )?)
 }
 
-fn indexation_payload_to_bson(payload: &crate::cpt2::payload::indexation::IndexationPayload) -> Bson {
-    use crate::cpt2::payload::indexation::IndexationPayload;
+fn indexation_payload_to_bson(payload: &IndexationPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", IndexationPayload::KIND as i32);
     doc.insert("index", hex::encode(payload.index()));
@@ -123,18 +131,14 @@ fn indexation_payload_to_bson(payload: &crate::cpt2::payload::indexation::Indexa
     Bson::Document(doc)
 }
 
-fn indexation_payload_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::payload::indexation::IndexationPayload> {
-    Ok(serde_json::from_value(json!({
-        "index": hex::decode(doc.get_str("index")?)?,
-        "data": hex::decode(doc.get_str("data")?)?,
-    }))?)
+fn indexation_payload_from_doc(doc: &Document) -> anyhow::Result<IndexationPayload> {
+    Ok(IndexationPayload::new(
+        hex::decode(doc.get_str("index")?)?.as_slice(),
+        hex::decode(doc.get_str("data")?)?.as_slice(),
+    )?)
 }
 
-fn receipt_payload_to_bson(payload: &crate::cpt2::payload::receipt::ReceiptPayload) -> Bson {
-    use crate::cpt2::{
-        output::SignatureLockedSingleOutput,
-        payload::receipt::ReceiptPayload,
-    };
+fn receipt_payload_to_bson(payload: &ReceiptPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", ReceiptPayload::KIND as i32);
     doc.insert("migrated_at", payload.migrated_at().0 as i32);
@@ -164,18 +168,19 @@ fn receipt_payload_to_bson(payload: &crate::cpt2::payload::receipt::ReceiptPaylo
     Bson::Document(doc)
 }
 
-fn receipt_payload_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::payload::receipt::ReceiptPayload> {
-    Ok(serde_json::from_value(json!({
-        "migrated_at": doc.get_i32("migrated_at")?,
-        "last": doc.get_bool("last")?,
-        "funds": doc.get_array("funds")?.iter().map(|f| migrated_funds_entry_from_bson(f)).collect::<Result<Vec<_>,_>>()?,
-        "transaction": payload_from_doc(doc.get_document("transaction")?)?,
-        "amount": doc.get_i64("amount")?,
-    }))?)
+fn receipt_payload_from_doc(doc: &Document) -> anyhow::Result<ReceiptPayload> {
+    Ok(ReceiptPayload::new(
+        MilestoneIndex(doc.get_i32("migrated_at")? as u32),
+        doc.get_bool("last")?,
+        doc.get_array("funds")?
+            .iter()
+            .map(|f| migrated_funds_entry_from_bson(f))
+            .collect::<Result<Vec<_>, _>>()?,
+        payload_from_doc(doc.get_document("transaction")?)?,
+    )?)
 }
 
-fn treasury_payload_to_bson(payload: &crate::cpt2::payload::treasury::TreasuryTransactionPayload) -> Bson {
-    use crate::cpt2::payload::treasury::TreasuryTransactionPayload;
+fn treasury_payload_to_bson(payload: &TreasuryTransactionPayload) -> Bson {
     let mut doc = Document::new();
     doc.insert("kind", TreasuryTransactionPayload::KIND as i32);
     doc.insert("input", input_to_bson(payload.input()));
@@ -183,17 +188,14 @@ fn treasury_payload_to_bson(payload: &crate::cpt2::payload::treasury::TreasuryTr
     Bson::Document(doc)
 }
 
-fn treasury_payload_from_doc(
-    doc: &Document,
-) -> anyhow::Result<crate::cpt2::payload::treasury::TreasuryTransactionPayload> {
-    Ok(serde_json::from_value(json!({
-        "input": input_from_doc(doc.get_document("input")?)?,
-        "output": output_from_doc(doc.get_document("output")?)?,
-    }))?)
+fn treasury_payload_from_doc(doc: &Document) -> anyhow::Result<TreasuryTransactionPayload> {
+    Ok(TreasuryTransactionPayload::new(
+        input_from_doc(doc.get_document("input")?)?,
+        output_from_doc(doc.get_document("output")?)?,
+    )?)
 }
 
-fn transaction_essence_to_bson(essence: &crate::cpt2::payload::transaction::Essence) -> Bson {
-    use crate::cpt2::payload::transaction::Essence;
+fn transaction_essence_to_bson(essence: &Essence) -> Bson {
     let mut doc = Document::new();
     match essence {
         Essence::Regular(r) => {
@@ -211,15 +213,32 @@ fn transaction_essence_to_bson(essence: &crate::cpt2::payload::transaction::Esse
     Bson::Document(doc)
 }
 
-fn transaction_essence_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::payload::transaction::Essence> {
-    Ok(serde_json::from_value(json!({
-        "inputs": doc.get_array("inputs")?.iter().map(|i| input_from_bson(i)).collect::<Result<Vec<_>,_>>()?,
-        "outputs": doc.get_array("outputs")?.iter().map(|o| output_from_bson(o)).collect::<Result<Vec<_>,_>>()?,
-        "payload": payload_from_doc(doc.get_document("payload")?)?
-    }))?)
+fn transaction_essence_from_doc(doc: &Document) -> anyhow::Result<Essence> {
+    let mut builder = RegularEssence::builder()
+        .with_inputs(
+            doc.get_array("inputs")?
+                .iter()
+                .map(|i| input_from_bson(i))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+        .with_outputs(
+            doc.get_array("outputs")?
+                .iter()
+                .map(|o| output_from_bson(o))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    if let Some(payload) = doc
+        .get_document("payload")
+        .ok()
+        .map(|r| payload_from_doc(&r))
+        .transpose()?
+    {
+        builder = builder.with_payload(payload);
+    }
+    Ok(builder.finish()?.into())
 }
 
-fn milestone_essence_to_bson(essence: &crate::cpt2::payload::milestone::MilestonePayloadEssence) -> Bson {
+fn milestone_essence_to_bson(essence: &MilestonePayloadEssence) -> Bson {
     let mut doc = Document::new();
     doc.insert("index", essence.index().0 as i32);
     doc.insert("timestamp", DateTime::from_millis(essence.timestamp() as i64));
@@ -241,29 +260,31 @@ fn milestone_essence_to_bson(essence: &crate::cpt2::payload::milestone::Mileston
     Bson::Document(doc)
 }
 
-fn milestone_essence_from_doc(
-    doc: &Document,
-) -> anyhow::Result<crate::cpt2::payload::milestone::MilestonePayloadEssence> {
-    Ok(serde_json::from_value(json!({
-        "index": doc.get_i32("index")?,
-        "timestamp": doc.get_datetime("timestamp")?.timestamp_millis(),
-        "parents": doc.get_array("parents")?.iter().map(|p| message_id_from_bson(p)).collect::<Result<Vec<_>,_>>()?,
-        "merkle_proof": hex::decode(doc.get_str("merkle_proof")?)?,
-        "next_pow_score": doc.get_i64("next_pow_score")?,
-        "next_pow_score_milestone_index": doc.get_i32("next_pow_score_milestone_index")?,
-        "public_keys": doc.get_array("public_keys")?.iter().map(|p| bytes_from_bson(p)).collect::<Result<Vec<_>,_>>()?,
-        "receipt": doc.get_document("receipt").ok().map(|r| payload_from_doc(&r)).transpose()?
-    }))?)
+fn milestone_essence_from_doc(doc: &Document) -> anyhow::Result<MilestonePayloadEssence> {
+    Ok(MilestonePayloadEssence::new(
+        MilestoneIndex(doc.get_i32("index")? as u32),
+        doc.get_datetime("timestamp")?.timestamp_millis() as u64,
+        Parents::new(
+            doc.get_array("parents")?
+                .iter()
+                .map(|p| message_id_from_bson(p))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?,
+        hex::decode(doc.get_str("merkle_proof")?)?.as_slice().try_into()?,
+        doc.get_i64("next_pow_score")? as u32,
+        doc.get_i32("next_pow_score_milestone_index")? as u32,
+        doc.get_array("public_keys")?
+            .iter()
+            .map(|p| bytes_from_bson(p).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
+            .collect::<Result<Vec<_>, _>>()?,
+        doc.get_document("receipt")
+            .ok()
+            .map(|r| payload_from_doc(&r))
+            .transpose()?,
+    )?)
 }
 
-fn unlock_block_to_bson(unlock_block: &crate::cpt2::unlock::UnlockBlock) -> Bson {
-    use crate::cpt2::{
-        signature::SignatureUnlock,
-        unlock::{
-            ReferenceUnlock,
-            UnlockBlock,
-        },
-    };
+fn unlock_block_to_bson(unlock_block: &UnlockBlock) -> Bson {
     let mut doc = Document::new();
     match unlock_block {
         UnlockBlock::Signature(s) => match s {
@@ -281,40 +302,20 @@ fn unlock_block_to_bson(unlock_block: &crate::cpt2::unlock::UnlockBlock) -> Bson
     Bson::Document(doc)
 }
 
-fn unlock_block_from_bson(bson: &Bson) -> anyhow::Result<crate::cpt2::unlock::UnlockBlock> {
-    use crate::cpt2::{
-        signature::SignatureUnlock,
-        unlock::ReferenceUnlock,
-    };
+fn unlock_block_from_bson(bson: &Bson) -> anyhow::Result<UnlockBlock> {
     let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid unlock block"))?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        SignatureUnlock::KIND => serde_json::from_value(json!({
-            "type": "Signature",
-            "data": {
-                "type": "Ed25519",
-                "data": {
-                    "public_key": hex::decode(doc.get_str("public_key")?)?,
-                    "signature": hex::decode(doc.get_str("signature")?)?,
-                }
-            }
-        }))?,
-        ReferenceUnlock::KIND => serde_json::from_value(json!({
-            "type": "Reference",
-            "data": {
-                "index": doc.get_i32("index")?
-            }
-        }))?,
+        SignatureUnlock::KIND => UnlockBlock::Signature(SignatureUnlock::Ed25519(Ed25519Signature::new(
+            hex::decode(doc.get_str("public_key")?)?.as_slice().try_into()?,
+            hex::decode(doc.get_str("signature")?)?.as_slice().try_into()?,
+        ))),
+        ReferenceUnlock::KIND => UnlockBlock::Reference(ReferenceUnlock::new(doc.get_i32("index")? as u16)?),
         _ => bail!("Invalid unlock block"),
     })
 }
 
 fn input_to_bson(input: &crate::cpt2::input::Input) -> Bson {
-    use crate::cpt2::input::{
-        Input,
-        TreasuryInput,
-        UtxoInput,
-    };
     let mut doc = Document::new();
     match input {
         Input::Utxo(u) => {
@@ -334,33 +335,21 @@ fn input_from_bson(bson: &Bson) -> anyhow::Result<crate::cpt2::input::Input> {
     input_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid input"))?)
 }
 
-fn input_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::input::Input> {
-    use crate::cpt2::input::{
-        TreasuryInput,
-        UtxoInput,
-    };
+fn input_from_doc(doc: &Document) -> anyhow::Result<Input> {
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        UtxoInput::KIND => serde_json::from_value(json!({
-            "type": "Utxo",
-            "transaction_id": doc.get_str("transaction_id")?.to_string(),
-            "index": doc.get_i32("index")?
-        }))?,
-        TreasuryInput::KIND => serde_json::from_value(json!({
-            "type": "Treasury",
-            "milestone_id": doc.get_str("milestone_id")?.to_string(),
-        }))?,
+        UtxoInput::KIND => Input::Utxo(UtxoInput::new(
+            TransactionId::from_str(doc.get_str("transaction_id")?)?,
+            doc.get_i32("index")? as u16,
+        )?),
+        TreasuryInput::KIND => {
+            Input::Treasury(TreasuryInput::new(MilestoneId::from_str(doc.get_str("milestone_id")?)?))
+        }
         _ => bail!("Invalid input"),
     })
 }
 
-fn output_to_bson(output: &crate::cpt2::output::Output) -> Bson {
-    use crate::cpt2::output::{
-        Output,
-        SignatureLockedDustAllowanceOutput,
-        SignatureLockedSingleOutput,
-        TreasuryOutput,
-    };
+fn output_to_bson(output: &Output) -> Bson {
     let mut doc = Document::new();
     match output {
         Output::SignatureLockedSingle(s) => {
@@ -381,47 +370,29 @@ fn output_to_bson(output: &crate::cpt2::output::Output) -> Bson {
     Bson::Document(doc)
 }
 
-fn output_from_bson(bson: &Bson) -> anyhow::Result<crate::cpt2::output::Output> {
+fn output_from_bson(bson: &Bson) -> anyhow::Result<Output> {
     output_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid output"))?)
 }
 
-fn output_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::output::Output> {
-    use crate::cpt2::output::{
-        SignatureLockedDustAllowanceOutput,
-        SignatureLockedSingleOutput,
-        TreasuryOutput,
-    };
+fn output_from_doc(doc: &Document) -> anyhow::Result<Output> {
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        SignatureLockedSingleOutput::KIND => serde_json::from_value(json!({
-            "type": "SignatureLockedSingle",
-            "data": {
-                "address": address_from_doc(doc.get_document("address")?)?,
-                "amount": doc.get_i64("amount")?
-            }
-        }))?,
-        SignatureLockedDustAllowanceOutput::KIND => serde_json::from_value(json!({
-            "type": "SignatureLockedDustAllowance",
-            "data": {
-                "address": address_from_doc(doc.get_document("address")?)?,
-                "amount": doc.get_i64("amount")?
-            }
-        }))?,
-        TreasuryOutput::KIND => serde_json::from_value(json!({
-            "type": "Treasury",
-            "data": {
-                "amount": doc.get_i64("amount")?
-            }
-        }))?,
+        SignatureLockedSingleOutput::KIND => Output::SignatureLockedSingle(SignatureLockedSingleOutput::new(
+            address_from_doc(doc.get_document("address")?)?,
+            doc.get_i64("amount")? as u64,
+        )?),
+        SignatureLockedDustAllowanceOutput::KIND => {
+            Output::SignatureLockedDustAllowance(SignatureLockedDustAllowanceOutput::new(
+                address_from_doc(doc.get_document("address")?)?,
+                doc.get_i64("amount")? as u64,
+            )?)
+        }
+        TreasuryOutput::KIND => Output::Treasury(TreasuryOutput::new(doc.get_i64("amount")? as u64)?),
         _ => bail!("Invalid output"),
     })
 }
 
-fn address_to_bson(address: &crate::cpt2::address::Address) -> Bson {
-    use crate::cpt2::address::{
-        Address,
-        Ed25519Address,
-    };
+fn address_to_bson(address: &Address) -> Bson {
     let mut doc = Document::new();
     match address {
         Address::Ed25519(a) => {
@@ -432,14 +403,14 @@ fn address_to_bson(address: &crate::cpt2::address::Address) -> Bson {
     Bson::Document(doc)
 }
 
-fn address_from_doc(doc: &Document) -> anyhow::Result<crate::cpt2::address::Address> {
-    use crate::cpt2::address::Ed25519Address;
+fn address_from_bson(bson: &Bson) -> anyhow::Result<Address> {
+    address_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid address"))?)
+}
+
+fn address_from_doc(doc: &Document) -> anyhow::Result<Address> {
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        Ed25519Address::KIND => serde_json::from_value(json!({
-            "type": "Ed25519",
-            "data": doc.get_str("data")?.to_string()
-        }))?,
+        Ed25519Address::KIND => Address::Ed25519(Ed25519Address::from_str(doc.get_str("data")?)?),
         _ => bail!("Invalid address"),
     })
 }
@@ -449,19 +420,23 @@ fn bytes_from_bson(bson: &Bson) -> anyhow::Result<Vec<u8>> {
     Ok(hex::decode(hex)?)
 }
 
-fn message_id_from_bson(bson: &Bson) -> anyhow::Result<crate::cpt2::MessageId> {
+fn message_id_from_bson(bson: &Bson) -> anyhow::Result<MessageId> {
     let s = bson.as_str().ok_or_else(|| anyhow!("Invalid message id"))?;
-    Ok(crate::cpt2::MessageId::from_str(s)?)
+    Ok(MessageId::from_str(s)?)
 }
 
-fn migrated_funds_entry_from_bson(bson: &Bson) -> anyhow::Result<crate::cpt2::payload::receipt::MigratedFundsEntry> {
+fn migrated_funds_entry_from_bson(bson: &Bson) -> anyhow::Result<MigratedFundsEntry> {
     let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid funds"))?;
     let output = doc.get_document("output")?;
-    Ok(serde_json::from_value(json!({
-        "tail_transaction_hash": hex::decode(doc.get_str("tail_transaction_hash")?)?,
-        "output": {
-            "address": output.get_str("address")?,
-            "amount": output.get_str("amount")?,
-        }
-    }))?)
+    Ok(MigratedFundsEntry::new(
+        TailTransactionHash::new(
+            hex::decode(doc.get_str("tail_transaction_hash")?)?
+                .as_slice()
+                .try_into()?,
+        )?,
+        SignatureLockedSingleOutput::new(
+            address_from_bson(output.get("address").ok_or_else(|| anyhow!("Missing address"))?)?,
+            output.get_i64("amount")? as u64,
+        )?,
+    )?)
 }

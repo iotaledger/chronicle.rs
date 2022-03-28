@@ -133,8 +133,8 @@ pub(crate) enum ListenerResponse {
         transaction_id: String,
         #[serde(rename = "outputIndex")]
         output_index: u16,
-        #[serde(rename = "isSpent")]
-        is_spent: bool,
+        #[serde(rename = "spendingTransaction")]
+        spending_transaction: Option<Value>,
         output: Value,
     },
     /// Response of GET /api/<keyspace>/transactions/<message_id>
