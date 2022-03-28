@@ -7,18 +7,22 @@ use async_trait::async_trait;
 use backstage::core::*;
 use chronicle_api::application::*;
 
-#[cfg(feature = "null")]
+#[cfg(not(any(feature = "mongo",)))]
 use chronicle_broker::application::null::NullConfig;
 #[cfg(feature = "mongo")]
 use permanode_mongo::PermanodeMongoConfig;
 
-use chronicle_broker::application::ChronicleBroker;
+use chronicle_broker::{
+    application::ChronicleBroker,
+    filter::FilterBuilder,
+};
 
 use chronicle_common::{
     alert,
     config::AlertConfig,
 };
 use serde::{
+    de::DeserializeOwned,
     Deserialize,
     Serialize,
 };
@@ -27,13 +31,9 @@ const TOKIO_THREAD_STACK_SIZE: usize = 4 * 4 * 1024 * 1024;
 
 /// Chronicle system struct
 #[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
-pub struct Chronicle {
-    /// Permanode application
-    #[cfg(all(feature = "null"))]
-    broker: ChronicleBroker<NullConfig>,
-    /// Permanode application
-    #[cfg(all(feature = "mongo"))]
-    broker: ChronicleBroker<PermanodeMongoConfig>,
+pub struct Chronicle<B: FilterBuilder> {
+    /// Broker application
+    broker: ChronicleBroker<B>,
     /// The Api application
     api: ChronicleAPI,
     /// Alert config
@@ -41,89 +41,74 @@ pub struct Chronicle {
 }
 
 /// Chronicle event type
-pub enum ChronicleEvent {
-    // Get up to date -api copy
+pub enum ChronicleEvent<B: FilterBuilder> {
+    /// Get up to date -api copy
     Api(Event<ChronicleAPI>),
     /// Get up to date -broker copy
-    #[cfg(all(feature = "null", not(feature = "mongo")))]
-    Broker(Event<ChronicleBroker<NullConfig>>),
-    #[cfg(all(feature = "mongo", not(feature = "null")))]
-    Broker(Event<ChronicleBroker<PermanodeMongoConfig>>),
+    Broker(Event<ChronicleBroker<B>>),
     /// Report and Eol variant used by children
     MicroService(ScopeId, Service, Option<ActorResult<()>>),
     /// Shutdown chronicle variant
     Shutdown,
 }
 
-impl ShutdownEvent for ChronicleEvent {
+impl<B: FilterBuilder> ShutdownEvent for ChronicleEvent<B> {
     fn shutdown_event() -> Self {
         Self::Shutdown
     }
 }
 
-impl<T> ReportEvent<T> for ChronicleEvent {
+impl<T, B: FilterBuilder> ReportEvent<T> for ChronicleEvent<B> {
     fn report_event(scope_id: ScopeId, service: Service) -> Self {
         Self::MicroService(scope_id, service, None)
     }
 }
 
-impl<T> EolEvent<T> for ChronicleEvent {
+impl<T, B: FilterBuilder> EolEvent<T> for ChronicleEvent<B> {
     fn eol_event(scope_id: ScopeId, service: Service, _actor: T, r: ActorResult<()>) -> Self {
         Self::MicroService(scope_id, service, Some(r))
     }
 }
 
-#[cfg(all(feature = "null", not(feature = "mongo")))]
-impl From<Event<ChronicleBroker<NullConfig>>> for ChronicleEvent {
-    fn from(e: Event<ChronicleBroker<NullConfig>>) -> Self {
+impl<B: FilterBuilder> From<Event<ChronicleBroker<B>>> for ChronicleEvent<B> {
+    fn from(e: Event<ChronicleBroker<B>>) -> Self {
         Self::Broker(e)
     }
 }
 
-#[cfg(all(feature = "mongo", not(feature = "null")))]
-impl From<Event<ChronicleBroker<PermanodeMongoConfig>>> for ChronicleEvent {
-    fn from(e: Event<ChronicleBroker<PermanodeMongoConfig>>) -> Self {
-        Self::Broker(e)
-    }
-}
-
-impl From<Event<ChronicleAPI>> for ChronicleEvent {
+impl<B: FilterBuilder> From<Event<ChronicleAPI>> for ChronicleEvent<B> {
     fn from(e: Event<ChronicleAPI>) -> Self {
         Self::Api(e)
     }
 }
 /// Chronicle system actor implementation
 #[async_trait]
-impl<S> Actor<S> for Chronicle
+impl<S, B: FilterBuilder> Actor<S> for Chronicle<B>
 where
     S: SupHandle<Self>,
 {
     type Data = ();
-    type Channel = UnboundedChannel<ChronicleEvent>;
+    type Channel = UnboundedChannel<ChronicleEvent<B>>;
     async fn init(&mut self, rt: &mut Rt<Self, S>) -> ActorResult<Self::Data> {
         // init the alert
         alert::init(self.alert.clone());
-        #[cfg(any(feature = "null", feature = "mongo"))]
-        {
-            let broker = self.broker.clone();
-            let broker_scope_id = rt.start("broker".to_string(), broker).await?.scope_id();
-            if let Some(broker) = rt.subscribe(broker_scope_id, "broker".to_string()).await? {
-                if self.broker != broker {
-                    self.broker = broker;
-                    rt.publish(self.broker.clone()).await;
-                }
+        let broker = self.broker.clone();
+        let broker_scope_id = rt.start("broker".to_string(), broker).await?.scope_id();
+        if let Some(broker) = rt.subscribe(broker_scope_id, "broker".to_string()).await? {
+            if self.broker != broker {
+                self.broker = broker;
+                rt.publish(self.broker.clone()).await;
             }
         }
-        {
-            let api = self.api.clone();
-            let api_scope_id = rt.start("api".to_string(), api).await?.scope_id();
-            if let Some(api) = rt.subscribe(api_scope_id, "api".to_string()).await? {
-                if self.api != api {
-                    self.api = api;
-                    rt.publish(self.api.clone()).await;
-                }
+        let api = self.api.clone();
+        let api_scope_id = rt.start("api".to_string(), api).await?.scope_id();
+        if let Some(api) = rt.subscribe(api_scope_id, "api".to_string()).await? {
+            if self.api != api {
+                self.api = api;
+                rt.publish(self.api.clone()).await;
             }
         }
+
         log::info!("Chronicle Started Broker");
         Ok(())
     }
@@ -180,10 +165,13 @@ fn main() {
         .thread_stack_size(TOKIO_THREAD_STACK_SIZE)
         .build()
         .expect("Failed to build tokio runtime");
-    runtime.block_on(chronicle());
+    #[cfg(not(any(feature = "mongo",)))]
+    runtime.block_on(chronicle::<NullConfig>());
+    #[cfg(feature = "mongo")]
+    runtime.block_on(chronicle::<PermanodeMongoConfig>());
 }
 
-async fn chronicle() {
+async fn chronicle<B: FilterBuilder + DeserializeOwned>() {
     let backserver_addr: std::net::SocketAddr = std::env::var("BACKSERVER_ADDR").map_or_else(
         |_| ([127, 0, 0, 1], 9999).into(),
         |n| {
@@ -191,7 +179,7 @@ async fn chronicle() {
                 .expect("Invalid BACKSERVER_ADDR env, use this format '127.0.0.1:9999' ")
         },
     );
-    Runtime::from_config::<Chronicle>()
+    Runtime::from_config::<Chronicle<B>>()
         .await
         .expect("Failed to run chronicle system")
         .backserver(backserver_addr)

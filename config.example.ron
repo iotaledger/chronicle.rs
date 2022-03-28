@@ -29,7 +29,10 @@
                     app_name: None,
                     compressors: None,
                     connect_timeout: None,
-                    credential: None,
+                    credential: Some((
+                        username: Some("root"),
+                        password: Some("root"),
+                    )),
                     direct_connection: None,
                     driver_info: None,
                     heartbeat_freq: None,
@@ -61,7 +64,10 @@
                 app_name: None,
                 compressors: None,
                 connect_timeout: None,
-                credential: None,
+                credential: Some((
+                    username: Some("root"),
+                    password: Some("root"),
+                )),
                 direct_connection: None,
                 driver_info: None,
                 heartbeat_freq: None,

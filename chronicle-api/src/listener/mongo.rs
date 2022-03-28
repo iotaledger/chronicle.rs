@@ -607,7 +607,10 @@ async fn get_outputs_by_address(
         doc! { "$limit": page_size as i64 },
     ];
     if included.unwrap_or(true) {
-        pipeline[0].insert("inclusion_state", LedgerInclusionState::Included as u8 as i32);
+        pipeline[0]
+            .get_document_mut("$match")
+            .unwrap()
+            .insert("inclusion_state", LedgerInclusionState::Included as u8 as i32);
     }
 
     let outputs = database
@@ -635,7 +638,7 @@ async fn get_outputs_by_address(
                         .unwrap()
                         .get_document("outputs")
                         .unwrap()
-                        .get_i32("idx")
+                        .get_i64("idx")
                         .unwrap() as u16;
                     let output_id = chronicle_common::cpt2::prelude::OutputId::new(transaction_id, idx).unwrap();
                     let inclusion_state = record
@@ -669,7 +672,7 @@ async fn get_outputs_by_address(
                         .unwrap()
                         .get_document("outputs")
                         .unwrap()
-                        .get_i32("idx")
+                        .get_i64("idx")
                         .unwrap() as u16;
                     chronicle_common::cpt2::prelude::OutputId::new(transaction_id, idx)
                         .unwrap()
@@ -892,7 +895,7 @@ async fn get_transaction_history_for_address(
                 .unwrap();
             Transfer {
                 transaction_id: payload.get_str("transaction_id").unwrap().to_owned(),
-                output_index: output.get_i32("idx").unwrap() as u16,
+                output_index: output.get_i64("idx").unwrap() as u16,
                 is_spending: spending_transaction.is_some(),
                 inclusion_state: payload
                     .get_i32("inclusion_state")

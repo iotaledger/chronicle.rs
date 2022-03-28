@@ -36,37 +36,44 @@ pub struct MongoConfig {
     /// The application name that the Client will send to the server as part of the handshake. This
     /// can be used in combination with the server logs to determine which Client is connected to a
     /// server.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub app_name: Option<String>,
 
     /// The compressors that the Client is willing to use in the order they are specified
     /// in the configuration.  The Client sends this list of compressors to the server.
     /// The server responds with the intersection of its supported list of compressors.
     /// The order of compressors indicates preference of compressors.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub compressors: Option<Vec<Compressor>>,
 
     /// The connect timeout passed to each underlying TcpStream when attempting to connect to the
     /// server.
     ///
     /// The default value is 10 seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub connect_timeout: Option<Duration>,
 
     /// The credential to use for authenticating connections made by this client.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub credential: Option<Credential>,
 
     /// Specifies whether the Client should directly connect to a single host rather than
     /// autodiscover all servers in the cluster.
     ///
     /// The default value is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub direct_connection: Option<bool>,
 
     /// Extra information to append to the driver version in the metadata of the handshake with the
     /// server. This should be used by libraries wrapping the driver, e.g. ODMs.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub driver_info: Option<DriverInfo>,
 
     /// The amount of time each monitoring thread should wait between sending an isMaster command
     /// to its respective server.
     ///
     /// The default value is 10 seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub heartbeat_freq: Option<Duration>,
 
     /// When running a read operation with a ReadPreference that allows selecting secondaries,
@@ -80,12 +87,14 @@ pub struct MongoConfig {
     /// lowest average round trip time is eligible.
     ///
     /// The default value is 15 ms.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub local_threshold: Option<Duration>,
 
     /// The amount of time that a connection can remain idle in a connection pool before being
     /// closed. A value of zero indicates that connections should not be closed due to being idle.
     ///
     /// By default, connections will not be closed due to being idle.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_idle_time: Option<Duration>,
 
     /// The maximum amount of connections that the Client should allow to be created in a
@@ -94,6 +103,7 @@ pub struct MongoConfig {
     /// operation finishes and its connection is checked back into the pool.
     ///
     /// The default value is 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_pool_size: Option<u32>,
 
     /// The minimum number of connections that should be available in a server's connection pool at
@@ -101,27 +111,33 @@ pub struct MongoConfig {
     /// be added to the pool in the background until `min_pool_size` is reached.
     ///
     /// The default value is 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_pool_size: Option<u32>,
 
     /// Specifies the default read concern for operations performed on the Client. See the
     /// ReadConcern type documentation for more details.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub read_concern: Option<ReadConcern>,
 
     /// The name of the replica set that the Client should connect to.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repl_set_name: Option<String>,
 
     /// Whether or not the client should retry a read operation if the operation fails.
     ///
     /// The default value is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_reads: Option<bool>,
 
     /// Whether or not the client should retry a write operation if the operation fails.
     ///
     /// The default value is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_writes: Option<bool>,
 
     /// The default selection criteria for operations performed on the Client. See the
     /// SelectionCriteria type documentation for more details.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub selection_criteria: Option<ReadPreference>,
 
     /// The declared API version for this client.
@@ -135,26 +151,31 @@ pub struct MongoConfig {
     ///
     /// For more information, see the [Versioned API](
     /// https://docs.mongodb.com/v5.0/reference/versioned-api/) manual page.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub server_api: Option<ServerApi>,
 
     /// The amount of time the Client should attempt to select a server for an operation before
     /// timing outs
     ///
     /// The default value is 30 seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub server_selection_timeout: Option<Duration>,
 
     /// Default database for this client.
     ///
     /// By default, no default database is specified.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_database: Option<String>,
 
     /// The TLS configuration for the Client to use in its connections with the server.
     ///
     /// By default, TLS is disabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tls: Option<Tls>,
 
     /// Specifies the default write concern for operations performed on the Client. See the
     /// WriteConcern type documentation for more details.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub write_concern: Option<WriteConcern>,
 }
 
@@ -354,17 +375,20 @@ pub struct TlsOptions {
     /// production; it should only be used for testing.
     ///
     /// The default value is to error when the server presents an invalid certificate.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_invalid_certificates: Option<bool>,
 
     /// The path to the CA file that the [`Client`](../struct.Client.html) should use for TLS. If
     /// none is specified, then the driver will use the Mozilla root certificates from the
     /// `webpki-roots` crate.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ca_file_path: Option<PathBuf>,
 
     /// The path to the certificate file that the [`Client`](../struct.Client.html) should present
     /// to the server to verify its identify. If none is specified, then the
     /// [`Client`](../struct.Client.html) will not attempt to verify its identity to the
     /// server.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cert_key_file_path: Option<PathBuf>,
 }
 
@@ -438,9 +462,11 @@ pub struct DriverInfo {
     pub name: String,
 
     /// The version of the library wrapping the driver.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
 
     /// Optional platform information for the wrapping driver.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
 }
 
@@ -462,21 +488,26 @@ impl Into<mongodb::options::DriverInfo> for DriverInfo {
 pub struct Credential {
     /// The username to authenticate with. This applies to all mechanisms but may be omitted when
     /// authenticating via MONGODB-X509.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
 
     /// The database used to authenticate. This applies to all mechanisms and defaults to "admin"
     /// in SCRAM authentication mechanisms, "$external" for GSSAPI and MONGODB-X509, and the
     /// database name or "$external" for PLAIN.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 
     /// The password to authenticate with. This does not apply to all mechanisms.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
 
     /// Which authentication mechanism to use. If not provided, one will be negotiated with the
     /// server.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mechanism: Option<AuthMechanism>,
 
     /// Additional properties for the given mechanism.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mechanism_properties: Option<Document>,
 }
 

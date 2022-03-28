@@ -28,7 +28,7 @@ impl Into<Bson> for &Message {
     }
 }
 
-impl Into<Document> for MessageRecord {
+impl Into<Document> for &MessageRecord {
     fn into(self) -> Document {
         doc! {
             "message_id": self.message_id.to_string(),

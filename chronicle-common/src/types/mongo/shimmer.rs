@@ -251,7 +251,7 @@ fn milestone_essence_from_doc(doc: &Document) -> anyhow::Result<crate::shimmer::
         "next_pow_score": doc.get_i64("next_pow_score")?,
         "next_pow_score_milestone_index": doc.get_i32("next_pow_score_milestone_index")?,
         "public_keys": doc.get_array("public_keys")?.iter().map(|p| bytes_from_bson(p)).collect::<Result<Vec<_>,_>>()?,
-        "receipt": payload_from_doc(doc.get_document("receipt")?)?
+        "receipt": doc.get_document("receipt").ok().map(|r| payload_from_doc(&r)).transpose()?
     }))?)
 }
 

@@ -31,7 +31,7 @@ anyhow = "1.0"
 tokio = "1.15"
 
 [features]
-default = ["application"]
+default = ["application", "mongo"]
 application = ["chronicle-broker/application"]
 null = []
 mongo = ["chronicle-common/mongo", "permanode-mongo"]
