@@ -3,6 +3,10 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use super::{
+    BsonExt,
+    DocExt,
+};
 use crate::shimmer::{
     address::{
         Address,
@@ -21,7 +25,6 @@ use crate::shimmer::{
         AliasOutput,
         BasicOutput,
         FeatureBlocks,
-        FoundryId,
         FoundryOutput,
         NativeTokens,
         NftId,
@@ -80,8 +83,6 @@ use mongodb::bson::{
     DateTime,
     Document,
 };
-use primitive_types::U256;
-use serde_json::json;
 use std::str::FromStr;
 
 pub fn message_to_bson(message: &Message) -> Bson {
@@ -96,21 +97,21 @@ pub fn message_to_bson(message: &Message) -> Bson {
     Bson::Document(doc)
 }
 
-pub fn message_from_doc(doc: &Document) -> anyhow::Result<Message> {
+pub fn message_from_bson(bson: Bson) -> anyhow::Result<Message> {
+    let doc = bson.to_document()?;
+    message_from_doc(doc)
+}
+
+pub fn message_from_doc(mut doc: Document) -> anyhow::Result<Message> {
     let mut builder = MessageBuilder::new(Parents::new(
-        doc.get_array("parents")?
-            .iter()
+        doc.take_array("parents")?
+            .into_iter()
             .map(|p| message_id_from_bson(p))
             .collect::<Result<Vec<_>, _>>()?,
     )?)
     .with_protocol_version(doc.get_i32("protocol_version")? as u8)
     .with_nonce_provider(doc.get_str("nonce")?.parse::<u64>()?, 0.0);
-    if let Some(payload) = doc
-        .get_document("payload")
-        .ok()
-        .map(|r| payload_from_doc(&r))
-        .transpose()?
-    {
+    if let Some(payload) = doc.take("payload").ok().map(|r| payload_from_bson(r)).transpose()? {
         builder = builder.with_payload(payload);
     }
     Ok(builder.finish()?)
@@ -126,14 +127,17 @@ fn payload_to_bson(payload: &Payload) -> Bson {
     }
 }
 
-pub fn payload_from_doc(doc: &Document) -> anyhow::Result<Payload> {
-    let kind = doc.get_i32("kind")? as u32;
+pub fn payload_from_bson(bson: Bson) -> anyhow::Result<Payload> {
+    let kind = bson
+        .as_document()
+        .ok_or_else(|| anyhow!("Invalid payload"))?
+        .get_i32("kind")? as u32;
     Ok(match kind {
-        TransactionPayload::KIND => Payload::Transaction(Box::new(transaction_payload_from_doc(doc)?)),
-        MilestonePayload::KIND => Payload::Milestone(Box::new(milestone_payload_from_doc(doc)?)),
-        TaggedDataPayload::KIND => Payload::TaggedData(Box::new(tag_payload_from_doc(doc)?)),
-        ReceiptPayload::KIND => Payload::Receipt(Box::new(receipt_payload_from_doc(doc)?)),
-        TreasuryTransactionPayload::KIND => Payload::TreasuryTransaction(Box::new(treasury_payload_from_doc(doc)?)),
+        TransactionPayload::KIND => Payload::Transaction(Box::new(transaction_payload_from_bson(bson)?)),
+        MilestonePayload::KIND => Payload::Milestone(Box::new(milestone_payload_from_bson(bson)?)),
+        TaggedDataPayload::KIND => Payload::TaggedData(Box::new(tag_payload_from_bson(bson)?)),
+        ReceiptPayload::KIND => Payload::Receipt(Box::new(receipt_payload_from_bson(bson)?)),
+        TreasuryTransactionPayload::KIND => Payload::TreasuryTransaction(Box::new(treasury_payload_from_bson(bson)?)),
         _ => bail!("Unknown payload kind: {}", kind),
     })
 }
@@ -154,12 +158,13 @@ fn transaction_payload_to_bson(payload: &TransactionPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn transaction_payload_from_doc(doc: &Document) -> anyhow::Result<TransactionPayload> {
+fn transaction_payload_from_bson(bson: Bson) -> anyhow::Result<TransactionPayload> {
+    let mut doc = bson.to_document()?;
     Ok(TransactionPayload::new(
-        transaction_essence_from_doc(doc.get_document("essence")?)?,
+        transaction_essence_from_bson(doc.take("essence")?)?,
         UnlockBlocks::new(
-            doc.get_array("unlock_blocks")?
-                .iter()
+            doc.take_array("unlock_blocks")?
+                .into_iter()
                 .map(|u| unlock_block_from_bson(u))
                 .collect::<Result<Vec<_>, _>>()?,
         )?,
@@ -178,11 +183,12 @@ fn milestone_payload_to_bson(payload: &MilestonePayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn milestone_payload_from_doc(doc: &Document) -> anyhow::Result<MilestonePayload> {
+fn milestone_payload_from_bson(bson: Bson) -> anyhow::Result<MilestonePayload> {
+    let mut doc = bson.to_document()?;
     Ok(MilestonePayload::new(
-        milestone_essence_from_doc(doc.get_document("essence")?)?,
-        doc.get_array("signatures")?
-            .iter()
+        milestone_essence_from_bson(doc.take("essence")?)?,
+        doc.take_array("signatures")?
+            .into_iter()
             .map(|u| bytes_from_bson(u).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
             .collect::<Result<Vec<_>, _>>()?,
     )?)
@@ -196,7 +202,8 @@ fn tag_payload_to_bson(payload: &TaggedDataPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn tag_payload_from_doc(doc: &Document) -> anyhow::Result<TaggedDataPayload> {
+fn tag_payload_from_bson(bson: Bson) -> anyhow::Result<TaggedDataPayload> {
+    let doc = bson.to_document()?;
     Ok(TaggedDataPayload::new(
         hex::decode(doc.get_str("tag")?)?,
         hex::decode(doc.get_str("data")?)?,
@@ -227,15 +234,16 @@ fn receipt_payload_to_bson(payload: &ReceiptPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn receipt_payload_from_doc(doc: &Document) -> anyhow::Result<ReceiptPayload> {
+fn receipt_payload_from_bson(bson: Bson) -> anyhow::Result<ReceiptPayload> {
+    let mut doc = bson.to_document()?;
     Ok(ReceiptPayload::new(
         MilestoneIndex(doc.get_i32("migrated_at")? as u32),
         doc.get_bool("last")?,
-        doc.get_array("funds")?
-            .iter()
+        doc.take_array("funds")?
+            .into_iter()
             .map(|f| migrated_funds_entry_from_bson(f))
             .collect::<Result<Vec<_>, _>>()?,
-        treasury_payload_from_doc(doc.get_document("transaction")?)?,
+        treasury_payload_from_bson(doc.take("transaction")?)?,
     )?)
 }
 
@@ -247,10 +255,11 @@ fn treasury_payload_to_bson(payload: &TreasuryTransactionPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn treasury_payload_from_doc(doc: &Document) -> anyhow::Result<TreasuryTransactionPayload> {
+fn treasury_payload_from_bson(bson: Bson) -> anyhow::Result<TreasuryTransactionPayload> {
+    let mut doc = bson.to_document()?;
     Ok(TreasuryTransactionPayload::new(
-        treasury_input_from_doc(doc.get_document("input")?)?,
-        treasury_output_from_doc(doc.get_document("output")?)?,
+        treasury_input_from_bson(doc.take("input")?)?,
+        treasury_output_from_bson(doc.take("output")?)?,
     )?)
 }
 
@@ -274,29 +283,25 @@ fn transaction_essence_to_bson(essence: &TransactionEssence) -> Bson {
     Bson::Document(doc)
 }
 
-fn transaction_essence_from_doc(doc: &Document) -> anyhow::Result<TransactionEssence> {
+fn transaction_essence_from_bson(bson: Bson) -> anyhow::Result<TransactionEssence> {
+    let mut doc = bson.to_document()?;
     let mut builder = RegularTransactionEssence::builder(
         doc.get_i64("network_id")? as u64,
         hex::decode(doc.get_str("inputs_commitment")?)?.as_slice().try_into()?,
     )
     .with_inputs(
-        doc.get_array("inputs")?
-            .iter()
+        doc.take_array("inputs")?
+            .into_iter()
             .map(|i| input_from_bson(i))
             .collect::<Result<Vec<_>, _>>()?,
     )
     .with_outputs(
-        doc.get_array("outputs")?
-            .iter()
+        doc.take_array("outputs")?
+            .into_iter()
             .map(|o| output_from_bson(o))
             .collect::<Result<Vec<_>, _>>()?,
     );
-    if let Some(payload) = doc
-        .get_document("payload")
-        .ok()
-        .map(|r| payload_from_doc(&r))
-        .transpose()?
-    {
+    if let Some(payload) = doc.take("payload").ok().map(|r| payload_from_bson(r)).transpose()? {
         builder = builder.with_payload(payload);
     }
     Ok(builder.finish()?.into())
@@ -305,7 +310,7 @@ fn transaction_essence_from_doc(doc: &Document) -> anyhow::Result<TransactionEss
 fn milestone_essence_to_bson(essence: &MilestoneEssence) -> Bson {
     let mut doc = Document::new();
     doc.insert("index", essence.index().0 as i32);
-    doc.insert("timestamp", DateTime::from_millis(essence.timestamp() as i64));
+    doc.insert("timestamp", DateTime::from_millis(essence.timestamp() as i64 * 1000));
     doc.insert(
         "parents",
         essence.parents().iter().map(|p| p.to_string()).collect::<Vec<_>>(),
@@ -324,27 +329,25 @@ fn milestone_essence_to_bson(essence: &MilestoneEssence) -> Bson {
     Bson::Document(doc)
 }
 
-fn milestone_essence_from_doc(doc: &Document) -> anyhow::Result<MilestoneEssence> {
+fn milestone_essence_from_bson(bson: Bson) -> anyhow::Result<MilestoneEssence> {
+    let mut doc = bson.to_document()?;
     Ok(MilestoneEssence::new(
         MilestoneIndex(doc.get_i32("index")? as u32),
-        doc.get_datetime("timestamp")?.timestamp_millis() as u64,
+        (doc.get_datetime("timestamp")?.timestamp_millis() as u64) / 1000,
         Parents::new(
-            doc.get_array("parents")?
-                .iter()
+            doc.take_array("parents")?
+                .into_iter()
                 .map(|p| message_id_from_bson(p))
                 .collect::<Result<Vec<_>, _>>()?,
         )?,
         hex::decode(doc.get_str("merkle_proof")?)?.as_slice().try_into()?,
         doc.get_i64("next_pow_score")? as u32,
         doc.get_i32("next_pow_score_milestone_index")? as u32,
-        doc.get_array("public_keys")?
-            .iter()
+        doc.take_array("public_keys")?
+            .into_iter()
             .map(|p| bytes_from_bson(p).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
             .collect::<Result<Vec<_>, _>>()?,
-        doc.get_document("receipt")
-            .ok()
-            .map(|r| payload_from_doc(&r))
-            .transpose()?,
+        doc.take("receipt").ok().map(|r| payload_from_bson(r)).transpose()?,
     )?)
 }
 
@@ -374,8 +377,8 @@ fn unlock_block_to_bson(unlock_block: &UnlockBlock) -> Bson {
     Bson::Document(doc)
 }
 
-fn unlock_block_from_bson(bson: &Bson) -> anyhow::Result<UnlockBlock> {
-    let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid unlock block"))?;
+fn unlock_block_from_bson(bson: Bson) -> anyhow::Result<UnlockBlock> {
+    let doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         SignatureUnlockBlock::KIND => {
@@ -407,11 +410,8 @@ fn input_to_bson(input: &Input) -> Bson {
     Bson::Document(doc)
 }
 
-fn input_from_bson(bson: &Bson) -> anyhow::Result<Input> {
-    input_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid input"))?)
-}
-
-fn input_from_doc(doc: &Document) -> anyhow::Result<Input> {
+fn input_from_bson(bson: Bson) -> anyhow::Result<Input> {
+    let doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         UtxoInput::KIND => Input::Utxo(UtxoInput::new(
@@ -432,7 +432,8 @@ fn treasury_input_to_bson(input: &TreasuryInput) -> Bson {
     Bson::Document(doc)
 }
 
-fn treasury_input_from_doc(doc: &Document) -> anyhow::Result<TreasuryInput> {
+fn treasury_input_from_bson(bson: Bson) -> anyhow::Result<TreasuryInput> {
+    let doc = bson.to_document()?;
     Ok(TreasuryInput::new(MilestoneId::from_str(doc.get_str("milestone_id")?)?))
 }
 
@@ -474,10 +475,7 @@ fn output_to_bson(output: &Output) -> Bson {
             doc.insert("native_tokens", to_bson(f.native_tokens()).unwrap());
             doc.insert("serial_number", f.serial_number() as i32);
             doc.insert("token_tag", f.token_tag().to_string());
-            doc.insert("minted_tokens", f.minted_tokens().to_string());
-            doc.insert("melted_tokens", f.melted_tokens().to_string());
-            doc.insert("maximum_supply", f.maximum_supply().to_string());
-            doc.insert("token_scheme", f.token_scheme() as u8 as i32);
+            doc.insert("token_scheme", to_bson(f.token_scheme()).unwrap());
             doc.insert("unlock_conditions", to_bson(f.unlock_conditions()).unwrap());
             doc.insert("feature_blocks", to_bson(f.feature_blocks()).unwrap());
             doc.insert(
@@ -503,182 +501,117 @@ fn output_to_bson(output: &Output) -> Bson {
     Bson::Document(doc)
 }
 
-fn output_from_bson(bson: &Bson) -> anyhow::Result<Output> {
-    output_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid output"))?)
-}
-
-// fn output_from_doc(doc: &Document) -> anyhow::Result<Output> {
-//     let kind = doc.get_i32("kind")? as u8;
-//     Ok(match kind {
-//         TreasuryOutput::KIND => Output::Treasury(TreasuryOutput::new(doc.get_i64("amount")? as u64)?),
-//         BasicOutput::KIND => Output::Basic(
-//             BasicOutput::build(doc.get_i64("amount")? as u64)?
-//                 .with_native_tokens(from_bson::<NativeTokens>(
-//                     doc.get("native_tokens")
-//                         .ok_or_else(|| anyhow!("Missing native tokens"))?
-//                         .clone(),
-//                 )?)
-//                 .with_unlock_conditions(from_bson::<UnlockConditions>(
-//                     doc.get("unlock_conditions")
-//                         .ok_or_else(|| anyhow!("Missing unlock conditions"))?
-//                         .clone(),
-//                 )?)
-//                 .with_feature_blocks(from_bson::<FeatureBlocks>(
-//                     doc.get("feature_blocks")
-//                         .ok_or_else(|| anyhow!("Missing feature blocks"))?
-//                         .clone(),
-//                 )?)
-//                 .finish()?,
-//         ),
-//         AliasOutput::KIND => Output::Alias(
-//             AliasOutput::build(
-//                 doc.get_i64("amount")? as u64,
-//                 AliasId::from_str(doc.get_str("alias_id")?)?,
-//             )?
-//             .with_native_tokens(from_bson::<NativeTokens>(
-//                 doc.get("native_tokens")
-//                     .ok_or_else(|| anyhow!("Missing native tokens"))?
-//                     .clone(),
-//             )?)
-//             .with_state_index(doc.get_i32("state_index")? as u32)
-//             .with_state_metadata(hex::decode(doc.get_str("state_metadata")?)?)
-//             .with_foundry_counter(doc.get_i32("foundry_counter")? as u32)
-//             .with_unlock_conditions(from_bson::<UnlockConditions>(
-//                 doc.get("unlock_conditions")
-//                     .ok_or_else(|| anyhow!("Missing unlock conditions"))?
-//                     .clone(),
-//             )?)
-//             .with_feature_blocks(from_bson::<FeatureBlocks>(
-//                 doc.get("feature_blocks")
-//                     .ok_or_else(|| anyhow!("Missing feature blocks"))?
-//                     .clone(),
-//             )?)
-//             .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
-//                 doc.get("immutable_feature_blocks")
-//                     .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
-//                     .clone(),
-//             )?)
-//             .finish()?,
-//         ),
-//         FoundryOutput::KIND => Output::Foundry(
-//             FoundryOutput::build(
-//                 doc.get_i64("amount")? as u64,
-//                 doc.get_i32("serial_number")? as u32,
-//                 TokenTag::from_str(doc.get_str("token_tag")?)?,
-//                 doc.get_str("minted_tokens")?.parse::<U256>()?,
-//                 doc.get_str("melted_tokens")?.parse::<U256>()?,
-//                 doc.get_str("maximum_supply")?.parse::<U256>()?,
-//                 (doc.get_i32("token_scheme")? as u8).try_into()?,
-//             )?
-//             .with_native_tokens(from_bson::<NativeTokens>(
-//                 doc.get("native_tokens")
-//                     .ok_or_else(|| anyhow!("Missing native tokens"))?
-//                     .clone(),
-//             )?)
-//             .with_unlock_conditions(from_bson::<UnlockConditions>(
-//                 doc.get("unlock_conditions")
-//                     .ok_or_else(|| anyhow!("Missing unlock conditions"))?
-//                     .clone(),
-//             )?)
-//             .with_feature_blocks(from_bson::<FeatureBlocks>(
-//                 doc.get("feature_blocks")
-//                     .ok_or_else(|| anyhow!("Missing feature blocks"))?
-//                     .clone(),
-//             )?)
-//             .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
-//                 doc.get("immutable_feature_blocks")
-//                     .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
-//                     .clone(),
-//             )?)
-//             .finish()?,
-//         ),
-//         NftOutput::KIND => Output::Nft(
-//             NftOutput::build(doc.get_i64("amount")? as u64, NftId::from_str(doc.get_str("nft_id")?)?)?
-//                 .with_native_tokens(from_bson::<NativeTokens>(
-//                     doc.get("native_tokens")
-//                         .ok_or_else(|| anyhow!("Missing native tokens"))?
-//                         .clone(),
-//                 )?)
-//                 .with_unlock_conditions(from_bson::<UnlockConditions>(
-//                     doc.get("unlock_conditions")
-//                         .ok_or_else(|| anyhow!("Missing unlock conditions"))?
-//                         .clone(),
-//                 )?)
-//                 .with_feature_blocks(from_bson::<FeatureBlocks>(
-//                     doc.get("feature_blocks")
-//                         .ok_or_else(|| anyhow!("Missing feature blocks"))?
-//                         .clone(),
-//                 )?)
-//                 .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
-//                     doc.get("immutable_feature_blocks")
-//                         .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
-//                         .clone(),
-//                 )?)
-//                 .finish()?,
-//         ),
-//         _ => bail!("Invalid output"),
-//     })
-// }
-
-fn output_from_doc(doc: &Document) -> anyhow::Result<Output> {
+fn output_from_bson(bson: Bson) -> anyhow::Result<Output> {
+    let doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
-        TreasuryOutput::KIND => serde_json::from_value(json!({
-            "type": "Treasury",
-            "data": {
-                "amount": doc.get_i64("amount")?
-            }
-        }))?,
-        BasicOutput::KIND => serde_json::from_value(json!({
-            "type": "Basic",
-            "data": {
-                "amount": doc.get_i64("amount")?,
-                "native_tokens": from_bson(doc.get("native_tokens").ok_or_else(|| anyhow!("Missing native tokens"))?.clone())?,
-                "unlock_conditions": from_bson(doc.get("unlock_conditions").ok_or_else(|| anyhow!("Missing unlock conditions"))?.clone())?,
-                "feature_blocks": from_bson(doc.get("feature_blocks").ok_or_else(|| anyhow!("Missing feature blocks"))?.clone())?,
-            }
-        }))?,
-        AliasOutput::KIND => serde_json::from_value(json!({
-            "type": "Alias",
-            "data": {
-                "amount": doc.get_i64("amount")?,
-                "native_tokens": from_bson(doc.get("native_tokens").ok_or_else(|| anyhow!("Missing native tokens"))?.clone())?,
-                "alias_id": doc.get_str("alias_id")?,
-                "state_index": doc.get_i32("state_index")?,
-                "state_metadata": hex::decode(doc.get_str("state_metadata")?)?,
-                "foundry_counter": doc.get_i32("foundry_counter")?,
-                "unlock_conditions": from_bson(doc.get("unlock_conditions").ok_or_else(|| anyhow!("Missing unlock conditions"))?.clone())?,
-                "feature_blocks": from_bson(doc.get("feature_blocks").ok_or_else(|| anyhow!("Missing feature blocks"))?.clone())?,
-                "immutable_feature_blocks": from_bson(doc.get("immutable_feature_blocks").ok_or_else(|| anyhow!("Missing immutable feature blocks"))?.clone())?,
-            }
-        }))?,
-        FoundryOutput::KIND => serde_json::from_value(json!({
-            "type": "Foundry",
-            "data": {
-                "amount": doc.get_i64("amount")?,
-                "native_tokens": from_bson(doc.get("native_tokens").ok_or_else(|| anyhow!("Missing native tokens"))?.clone())?,
-                "serial_number": doc.get_i32("serial_number")?,
-                "token_tag": doc.get_str("token_tag")?,
-                "minted_tokens": doc.get_str("minted_tokens")?.parse::<U256>()?,
-                "melted_tokens": doc.get_str("melted_tokens")?.parse::<U256>()?,
-                "maximum_supply": doc.get_str("maximum_supply")?.parse::<U256>()?,
-                "token_scheme": doc.get_i32("token_scheme")? as u8,
-                "unlock_conditions": from_bson(doc.get("unlock_conditions").ok_or_else(|| anyhow!("Missing unlock conditions"))?.clone())?,
-                "feature_blocks": from_bson(doc.get("feature_blocks").ok_or_else(|| anyhow!("Missing feature blocks"))?.clone())?,
-                "immutable_feature_blocks": from_bson(doc.get("immutable_feature_blocks").ok_or_else(|| anyhow!("Missing immutable feature blocks"))?.clone())?,
-            }
-        }))?,
-        NftOutput::KIND => serde_json::from_value(json!({
-            "type": "Nft",
-            "data": {
-                "amount": doc.get_i64("amount")?,
-                "native_tokens": from_bson(doc.get("native_tokens").ok_or_else(|| anyhow!("Missing native tokens"))?.clone())?,
-                "nft_id": doc.get_str("nft_id")?,
-                "unlock_conditions": from_bson(doc.get("unlock_conditions").ok_or_else(|| anyhow!("Missing unlock conditions"))?.clone())?,
-                "feature_blocks": from_bson(doc.get("feature_blocks").ok_or_else(|| anyhow!("Missing feature blocks"))?.clone())?,
-                "immutable_feature_blocks": from_bson(doc.get("immutable_feature_blocks").ok_or_else(|| anyhow!("Missing immutable feature blocks"))?.clone())?,
-            }
-        }))?,
+        TreasuryOutput::KIND => Output::Treasury(TreasuryOutput::new(doc.get_i64("amount")? as u64)?),
+        BasicOutput::KIND => Output::Basic(
+            BasicOutput::build(doc.get_i64("amount")? as u64)?
+                .with_native_tokens(from_bson::<NativeTokens>(
+                    doc.get("native_tokens")
+                        .ok_or_else(|| anyhow!("Missing native tokens"))?
+                        .clone(),
+                )?)
+                .with_unlock_conditions(from_bson::<UnlockConditions>(
+                    doc.get("unlock_conditions")
+                        .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+                        .clone(),
+                )?)
+                .with_feature_blocks(from_bson::<FeatureBlocks>(
+                    doc.get("feature_blocks")
+                        .ok_or_else(|| anyhow!("Missing feature blocks"))?
+                        .clone(),
+                )?)
+                .finish()?,
+        ),
+        AliasOutput::KIND => Output::Alias(
+            AliasOutput::build(
+                doc.get_i64("amount")? as u64,
+                AliasId::from_str(doc.get_str("alias_id")?)?,
+            )?
+            .with_native_tokens(from_bson::<NativeTokens>(
+                doc.get("native_tokens")
+                    .ok_or_else(|| anyhow!("Missing native tokens"))?
+                    .clone(),
+            )?)
+            .with_state_index(doc.get_i32("state_index")? as u32)
+            .with_state_metadata(hex::decode(doc.get_str("state_metadata")?)?)
+            .with_foundry_counter(doc.get_i32("foundry_counter")? as u32)
+            .with_unlock_conditions(from_bson::<UnlockConditions>(
+                doc.get("unlock_conditions")
+                    .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+                    .clone(),
+            )?)
+            .with_feature_blocks(from_bson::<FeatureBlocks>(
+                doc.get("feature_blocks")
+                    .ok_or_else(|| anyhow!("Missing feature blocks"))?
+                    .clone(),
+            )?)
+            .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
+                doc.get("immutable_feature_blocks")
+                    .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
+                    .clone(),
+            )?)
+            .finish()?,
+        ),
+        FoundryOutput::KIND => Output::Foundry(
+            FoundryOutput::build(
+                doc.get_i64("amount")? as u64,
+                doc.get_i32("serial_number")? as u32,
+                TokenTag::from_str(doc.get_str("token_tag")?)?,
+                from_bson(
+                    doc.get("token_scheme")
+                        .ok_or_else(|| anyhow!("Missing token scheme"))?
+                        .clone(),
+                )?,
+            )?
+            .with_native_tokens(from_bson::<NativeTokens>(
+                doc.get("native_tokens")
+                    .ok_or_else(|| anyhow!("Missing native tokens"))?
+                    .clone(),
+            )?)
+            .with_unlock_conditions(from_bson::<UnlockConditions>(
+                doc.get("unlock_conditions")
+                    .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+                    .clone(),
+            )?)
+            .with_feature_blocks(from_bson::<FeatureBlocks>(
+                doc.get("feature_blocks")
+                    .ok_or_else(|| anyhow!("Missing feature blocks"))?
+                    .clone(),
+            )?)
+            .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
+                doc.get("immutable_feature_blocks")
+                    .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
+                    .clone(),
+            )?)
+            .finish()?,
+        ),
+        NftOutput::KIND => Output::Nft(
+            NftOutput::build(doc.get_i64("amount")? as u64, NftId::from_str(doc.get_str("nft_id")?)?)?
+                .with_native_tokens(from_bson::<NativeTokens>(
+                    doc.get("native_tokens")
+                        .ok_or_else(|| anyhow!("Missing native tokens"))?
+                        .clone(),
+                )?)
+                .with_unlock_conditions(from_bson::<UnlockConditions>(
+                    doc.get("unlock_conditions")
+                        .ok_or_else(|| anyhow!("Missing unlock conditions"))?
+                        .clone(),
+                )?)
+                .with_feature_blocks(from_bson::<FeatureBlocks>(
+                    doc.get("feature_blocks")
+                        .ok_or_else(|| anyhow!("Missing feature blocks"))?
+                        .clone(),
+                )?)
+                .with_immutable_feature_blocks(from_bson::<FeatureBlocks>(
+                    doc.get("immutable_feature_blocks")
+                        .ok_or_else(|| anyhow!("Missing immutable feature blocks"))?
+                        .clone(),
+                )?)
+                .finish()?,
+        ),
         _ => bail!("Invalid output"),
     })
 }
@@ -690,7 +623,8 @@ fn treasury_output_to_bson(o: &TreasuryOutput) -> Bson {
     Bson::Document(doc)
 }
 
-fn treasury_output_from_doc(doc: &Document) -> anyhow::Result<TreasuryOutput> {
+fn treasury_output_from_bson(bson: Bson) -> anyhow::Result<TreasuryOutput> {
+    let doc = bson.to_document()?;
     let amount = doc.get_i64("amount")?;
     Ok(TreasuryOutput::new(amount as u64)?)
 }
@@ -714,11 +648,8 @@ fn address_to_bson(address: &Address) -> Bson {
     Bson::Document(doc)
 }
 
-fn address_from_bson(bson: &Bson) -> anyhow::Result<Address> {
-    address_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid address"))?)
-}
-
-fn address_from_doc(doc: &Document) -> anyhow::Result<Address> {
+fn address_from_bson(bson: Bson) -> anyhow::Result<Address> {
+    let doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         Ed25519Address::KIND => Address::Ed25519(Ed25519Address::from_str(doc.get_str("data")?)?),
@@ -728,25 +659,25 @@ fn address_from_doc(doc: &Document) -> anyhow::Result<Address> {
     })
 }
 
-fn bytes_from_bson(bson: &Bson) -> anyhow::Result<Vec<u8>> {
+fn bytes_from_bson(bson: Bson) -> anyhow::Result<Vec<u8>> {
     let hex = bson.as_str().ok_or_else(|| anyhow!("Invalid bytes hex"))?;
     Ok(hex::decode(hex)?)
 }
 
-fn message_id_from_bson(bson: &Bson) -> anyhow::Result<MessageId> {
+fn message_id_from_bson(bson: Bson) -> anyhow::Result<MessageId> {
     let s = bson.as_str().ok_or_else(|| anyhow!("Invalid message id"))?;
     Ok(MessageId::from_str(s)?)
 }
 
-fn migrated_funds_entry_from_bson(bson: &Bson) -> anyhow::Result<MigratedFundsEntry> {
-    let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid funds"))?;
+fn migrated_funds_entry_from_bson(bson: Bson) -> anyhow::Result<MigratedFundsEntry> {
+    let mut doc = bson.to_document()?;
     Ok(MigratedFundsEntry::new(
         TailTransactionHash::new(
             hex::decode(doc.get_str("tail_transaction_hash")?)?
                 .as_slice()
                 .try_into()?,
         )?,
-        address_from_bson(doc.get("address").ok_or_else(|| anyhow!("Missing address"))?)?,
+        address_from_bson(doc.take("address")?)?,
         doc.get_i64("amount")? as u64,
     )?)
 }

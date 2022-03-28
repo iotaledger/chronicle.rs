@@ -40,12 +40,14 @@ use chronicle_common::{
     mongodb::{
         bson::{
             doc,
+            DateTime,
             Document,
         },
         options::FindOptions,
         Database,
     },
     types::{
+        BsonExt,
         LedgerInclusionState,
         Message,
         MessageId,
@@ -302,7 +304,7 @@ async fn sync(database: &State<Database>) -> Result<Json<SyncData>, ListenerErro
 async fn get_message(database: &State<Database>, message_id: String) -> ListenerResult {
     MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     let rec = MessageRecord::try_from(
-        &database
+        database
             .collection::<Document>("messages")
             .find_one(doc! {"message_id": &message_id}, None)
             .await?
@@ -332,7 +334,7 @@ async fn get_message(database: &State<Database>, message_id: String) -> Listener
 async fn get_message_metadata(database: &State<Database>, message_id: String) -> ListenerResult {
     MessageId::from_str(&message_id).map_err(|e| ListenerError::BadParse(e.into()))?;
     let rec = MessageRecord::try_from(
-        &database
+        database
             .collection::<Document>("messages")
             .find_one(doc! {"message_id": &message_id}, None)
             .await?
@@ -377,7 +379,7 @@ async fn get_message_children(
         .await?
         .try_collect::<Vec<_>>()
         .await?
-        .iter()
+        .into_iter()
         .map(|d| MessageRecord::try_from(d))
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -455,7 +457,7 @@ async fn get_message_by_index(
         .await?
         .try_collect::<Vec<_>>()
         .await?
-        .iter()
+        .into_iter()
         .map(|d| MessageRecord::try_from(d))
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -533,7 +535,7 @@ async fn get_message_by_tag(
         .await?
         .try_collect::<Vec<_>>()
         .await?
-        .iter()
+        .into_iter()
         .map(|d| MessageRecord::try_from(d))
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -638,8 +640,10 @@ async fn get_outputs_by_address(
                         .unwrap()
                         .get_document("outputs")
                         .unwrap()
-                        .get_i64("idx")
-                        .unwrap() as u16;
+                        .get("idx")
+                        .unwrap()
+                        .as_u16()
+                        .unwrap();
                     let output_id = chronicle_common::cpt2::prelude::OutputId::new(transaction_id, idx).unwrap();
                     let inclusion_state = record
                         .get_i32("inclusion_state")
@@ -672,8 +676,10 @@ async fn get_outputs_by_address(
                         .unwrap()
                         .get_document("outputs")
                         .unwrap()
-                        .get_i64("idx")
-                        .unwrap() as u16;
+                        .get("idx")
+                        .unwrap()
+                        .as_u16()
+                        .unwrap();
                     chronicle_common::cpt2::prelude::OutputId::new(transaction_id, idx)
                         .unwrap()
                         .to_string()
@@ -739,7 +745,7 @@ async fn get_output_by_transaction_id(database: &State<Database>, transaction_id
 #[get("/outputs/spending_transaction/<transaction_id>/<idx>")]
 async fn get_spending_transaction(database: &State<Database>, transaction_id: String, idx: u16) -> ListenerResult {
     let transaction = MessageRecord::try_from(
-        &database
+        database
             .collection::<Document>("messages")
             .find_one(
                 doc! {
@@ -885,7 +891,7 @@ async fn get_transaction_history_for_address(
         .into_iter()
         .map(|rec| {
             let payload = rec.get_document("message").unwrap().get_document("payload").unwrap();
-            let spending_transaction = rec.get_array("spending_transaction").ok().map(|a| &a[0]);
+            let spending_transaction = rec.get_document("spending_transaction").ok();
             let output = payload
                 .get_document("essence")
                 .unwrap()
@@ -893,13 +899,13 @@ async fn get_transaction_history_for_address(
                 .unwrap();
             Transfer {
                 transaction_id: payload.get_str("transaction_id").unwrap().to_owned(),
-                output_index: output.get_i64("idx").unwrap() as u16,
+                output_index: output.get("idx").unwrap().as_u16().unwrap(),
                 is_spending: spending_transaction.is_some(),
-                inclusion_state: payload
+                inclusion_state: rec
                     .get_i32("inclusion_state")
                     .ok()
                     .map(|s| LedgerInclusionState::try_from(s as u8).unwrap()),
-                message_id: payload.get_str("message_id").unwrap().to_owned(),
+                message_id: rec.get_str("message_id").unwrap().to_owned(),
                 amount: output.get_i64("amount").unwrap() as u64,
             }
         })
@@ -911,7 +917,7 @@ async fn get_transaction_history_for_address(
 #[get("/transactions/<message_id>")]
 async fn get_transaction_for_message(database: &State<Database>, message_id: String) -> ListenerResult {
     let transaction = MessageRecord::try_from(
-        &database
+        database
             .collection::<Document>("messages")
             .find_one(doc! {"message_id": &message_id}, None)
             .await?
@@ -963,7 +969,7 @@ async fn get_transaction_for_message(database: &State<Database>, message_id: Str
 #[get("/transactions/<transaction_id>/included-message")]
 async fn get_transaction_included_message(database: &State<Database>, transaction_id: String) -> ListenerResult {
     let rec = MessageRecord::try_from(
-        &database
+        database
             .collection::<Document>("messages")
             .find_one(
                 doc! {
@@ -1004,7 +1010,7 @@ async fn get_milestone(database: &State<Database>, index: u32) -> ListenerResult
         .await?
         .ok_or_else(|| ListenerError::NoResults)
         .and_then(|d| {
-            let rec = MessageRecord::try_from(&d)?;
+            let rec = MessageRecord::try_from(d)?;
             Ok(ListenerResponse::Milestone {
                 milestone_index: index,
                 message_id: rec.message_id.to_string(),
@@ -1032,7 +1038,7 @@ async fn start_milestone(database: &Database, start_timestamp: NaiveDateTime) ->
     database
         .collection::<Document>("messages")
         .find(
-            doc! {"message.payload.essence.timestamp": { "$gte": start_timestamp.timestamp() }},
+            doc! {"message.payload.essence.timestamp": { "$gte": DateTime::from_millis(start_timestamp.timestamp_millis()) }},
             FindOptions::builder()
                 .sort(doc! {"milestone_index": 1})
                 .limit(1)
@@ -1060,7 +1066,7 @@ async fn end_milestone(database: &Database, end_timestamp: NaiveDateTime) -> any
     database
         .collection::<Document>("messages")
         .find(
-            doc! {"message.payload.essence.timestamp": { "$lte": end_timestamp.timestamp() }},
+            doc! {"message.payload.essence.timestamp": { "$lte": DateTime::from_millis(end_timestamp.timestamp_millis()) }},
             FindOptions::builder()
                 .sort(doc! {"milestone_index": -1})
                 .limit(1)
@@ -1174,9 +1180,9 @@ async fn get_address_analytics(
         .await?.try_next().await?.ok_or_else(|| anyhow::anyhow!("No transactions found in time range"))?;
 
     Ok(ListenerResponse::AddressAnalytics {
-        total_addresses: res.get_i64("total_addresses").unwrap() as u64,
-        recv_addresses: res.get_i64("recv_addresses").unwrap() as u64,
-        send_addresses: res.get_i64("send_addresses").unwrap() as u64,
+        total_addresses: res.get("total_addresses").unwrap().as_u64().unwrap(),
+        recv_addresses: res.get("recv_addresses").unwrap().as_u64().unwrap(),
+        send_addresses: res.get("send_addresses").unwrap().as_u64().unwrap(),
     })
 }
 

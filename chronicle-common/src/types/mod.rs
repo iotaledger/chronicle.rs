@@ -7,6 +7,10 @@ mod mongo;
 use anyhow::*;
 use bee_message_shimmer::semantic::ConflictReason;
 use derive_more::From;
+pub use mongo::{
+    BsonExt,
+    DocExt,
+};
 use pin_project_lite::pin_project;
 use serde::{
     Deserialize,

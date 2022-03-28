@@ -1,6 +1,10 @@
 // Copyright 2021 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use super::{
+    BsonExt,
+    DocExt,
+};
 use crate::cpt2::{
     prelude::*,
     Message,
@@ -30,22 +34,22 @@ pub fn message_to_bson(message: &Message) -> Bson {
     Bson::Document(doc)
 }
 
-pub fn message_from_doc(doc: &Document) -> anyhow::Result<Message> {
+pub fn message_from_bson(bson: Bson) -> anyhow::Result<Message> {
+    let doc = bson.to_document()?;
+    message_from_doc(doc)
+}
+
+pub fn message_from_doc(mut doc: Document) -> anyhow::Result<Message> {
     let mut builder = MessageBuilder::default()
         .with_network_id(doc.get_i64("network_id")? as u64)
         .with_parents(Parents::new(
-            doc.get_array("parents")?
-                .iter()
+            doc.take_array("parents")?
+                .into_iter()
                 .map(|p| message_id_from_bson(p))
                 .collect::<Result<Vec<_>, _>>()?,
         )?)
         .with_nonce_provider(doc.get_str("nonce")?.parse::<u64>()?, 0.0);
-    if let Some(payload) = doc
-        .get_document("payload")
-        .ok()
-        .map(|r| payload_from_doc(&r))
-        .transpose()?
-    {
+    if let Some(payload) = doc.take("payload").ok().map(|r| payload_from_bson(r)).transpose()? {
         builder = builder.with_payload(payload);
     }
     Ok(builder.finish()?)
@@ -61,14 +65,17 @@ fn payload_to_bson(payload: &Payload) -> Bson {
     }
 }
 
-pub fn payload_from_doc(doc: &Document) -> anyhow::Result<Payload> {
-    let kind = doc.get_i32("kind")? as u32;
+pub fn payload_from_bson(bson: Bson) -> anyhow::Result<Payload> {
+    let kind = bson
+        .as_document()
+        .ok_or_else(|| anyhow!("Invalid payload"))?
+        .get_i32("kind")? as u32;
     Ok(match kind {
-        TransactionPayload::KIND => Payload::Transaction(Box::new(transaction_payload_from_doc(doc)?)),
-        MilestonePayload::KIND => Payload::Milestone(Box::new(milestone_payload_from_doc(doc)?)),
-        IndexationPayload::KIND => Payload::Indexation(Box::new(indexation_payload_from_doc(doc)?)),
-        ReceiptPayload::KIND => Payload::Receipt(Box::new(receipt_payload_from_doc(doc)?)),
-        TreasuryTransactionPayload::KIND => Payload::TreasuryTransaction(Box::new(treasury_payload_from_doc(doc)?)),
+        TransactionPayload::KIND => Payload::Transaction(Box::new(transaction_payload_from_bson(bson)?)),
+        MilestonePayload::KIND => Payload::Milestone(Box::new(milestone_payload_from_bson(bson)?)),
+        IndexationPayload::KIND => Payload::Indexation(Box::new(indexation_payload_from_bson(bson)?)),
+        ReceiptPayload::KIND => Payload::Receipt(Box::new(receipt_payload_from_bson(bson)?)),
+        TreasuryTransactionPayload::KIND => Payload::TreasuryTransaction(Box::new(treasury_payload_from_bson(bson)?)),
         _ => bail!("Unknown payload kind: {}", kind),
     })
 }
@@ -89,12 +96,13 @@ fn transaction_payload_to_bson(payload: &TransactionPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn transaction_payload_from_doc(doc: &Document) -> anyhow::Result<TransactionPayload> {
+fn transaction_payload_from_bson(bson: Bson) -> anyhow::Result<TransactionPayload> {
+    let mut doc = bson.to_document()?;
     Ok(TransactionPayload::builder()
-        .with_essence(transaction_essence_from_doc(doc.get_document("essence")?)?)
+        .with_essence(transaction_essence_from_bson(doc.take("essence")?)?)
         .with_unlock_blocks(UnlockBlocks::new(
-            doc.get_array("unlock_blocks")?
-                .iter()
+            doc.take_array("unlock_blocks")?
+                .into_iter()
                 .map(|u| unlock_block_from_bson(u))
                 .collect::<Result<Vec<_>, _>>()?,
         )?)
@@ -113,11 +121,12 @@ fn milestone_payload_to_bson(payload: &MilestonePayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn milestone_payload_from_doc(doc: &Document) -> anyhow::Result<MilestonePayload> {
+fn milestone_payload_from_bson(bson: Bson) -> anyhow::Result<MilestonePayload> {
+    let mut doc = bson.to_document()?;
     Ok(MilestonePayload::new(
-        milestone_essence_from_doc(doc.get_document("essence")?)?,
-        doc.get_array("signatures")?
-            .iter()
+        milestone_essence_from_bson(doc.take("essence")?)?,
+        doc.take_array("signatures")?
+            .into_iter()
             .map(|u| bytes_from_bson(u).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
             .collect::<Result<Vec<_>, _>>()?,
     )?)
@@ -131,7 +140,8 @@ fn indexation_payload_to_bson(payload: &IndexationPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn indexation_payload_from_doc(doc: &Document) -> anyhow::Result<IndexationPayload> {
+fn indexation_payload_from_bson(bson: Bson) -> anyhow::Result<IndexationPayload> {
+    let doc = bson.to_document()?;
     Ok(IndexationPayload::new(
         hex::decode(doc.get_str("index")?)?.as_slice(),
         hex::decode(doc.get_str("data")?)?.as_slice(),
@@ -168,15 +178,16 @@ fn receipt_payload_to_bson(payload: &ReceiptPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn receipt_payload_from_doc(doc: &Document) -> anyhow::Result<ReceiptPayload> {
+fn receipt_payload_from_bson(bson: Bson) -> anyhow::Result<ReceiptPayload> {
+    let mut doc = bson.to_document()?;
     Ok(ReceiptPayload::new(
         MilestoneIndex(doc.get_i32("migrated_at")? as u32),
         doc.get_bool("last")?,
-        doc.get_array("funds")?
-            .iter()
+        doc.take_array("funds")?
+            .into_iter()
             .map(|f| migrated_funds_entry_from_bson(f))
             .collect::<Result<Vec<_>, _>>()?,
-        payload_from_doc(doc.get_document("transaction")?)?,
+        payload_from_bson(doc.take("transaction")?)?,
     )?)
 }
 
@@ -188,10 +199,11 @@ fn treasury_payload_to_bson(payload: &TreasuryTransactionPayload) -> Bson {
     Bson::Document(doc)
 }
 
-fn treasury_payload_from_doc(doc: &Document) -> anyhow::Result<TreasuryTransactionPayload> {
+fn treasury_payload_from_bson(bson: Bson) -> anyhow::Result<TreasuryTransactionPayload> {
+    let mut doc = bson.to_document()?;
     Ok(TreasuryTransactionPayload::new(
-        input_from_doc(doc.get_document("input")?)?,
-        output_from_doc(doc.get_document("output")?)?,
+        input_from_bson(doc.take("input")?)?,
+        output_from_bson(doc.take("output")?)?,
     )?)
 }
 
@@ -213,26 +225,22 @@ fn transaction_essence_to_bson(essence: &Essence) -> Bson {
     Bson::Document(doc)
 }
 
-fn transaction_essence_from_doc(doc: &Document) -> anyhow::Result<Essence> {
+fn transaction_essence_from_bson(bson: Bson) -> anyhow::Result<Essence> {
+    let mut doc = bson.to_document()?;
     let mut builder = RegularEssence::builder()
         .with_inputs(
-            doc.get_array("inputs")?
-                .iter()
+            doc.take_array("inputs")?
+                .into_iter()
                 .map(|i| input_from_bson(i))
                 .collect::<Result<Vec<_>, _>>()?,
         )
         .with_outputs(
-            doc.get_array("outputs")?
-                .iter()
+            doc.take_array("outputs")?
+                .into_iter()
                 .map(|o| output_from_bson(o))
                 .collect::<Result<Vec<_>, _>>()?,
         );
-    if let Some(payload) = doc
-        .get_document("payload")
-        .ok()
-        .map(|r| payload_from_doc(&r))
-        .transpose()?
-    {
+    if let Some(payload) = doc.take("payload").ok().map(|r| payload_from_bson(r)).transpose()? {
         builder = builder.with_payload(payload);
     }
     Ok(builder.finish()?.into())
@@ -241,7 +249,7 @@ fn transaction_essence_from_doc(doc: &Document) -> anyhow::Result<Essence> {
 fn milestone_essence_to_bson(essence: &MilestonePayloadEssence) -> Bson {
     let mut doc = Document::new();
     doc.insert("index", essence.index().0 as i32);
-    doc.insert("timestamp", DateTime::from_millis(essence.timestamp() as i64));
+    doc.insert("timestamp", DateTime::from_millis(essence.timestamp() as i64 * 1000));
     doc.insert(
         "parents",
         essence.parents().iter().map(|p| p.to_string()).collect::<Vec<_>>(),
@@ -260,27 +268,25 @@ fn milestone_essence_to_bson(essence: &MilestonePayloadEssence) -> Bson {
     Bson::Document(doc)
 }
 
-fn milestone_essence_from_doc(doc: &Document) -> anyhow::Result<MilestonePayloadEssence> {
+fn milestone_essence_from_bson(bson: Bson) -> anyhow::Result<MilestonePayloadEssence> {
+    let mut doc = bson.to_document()?;
     Ok(MilestonePayloadEssence::new(
         MilestoneIndex(doc.get_i32("index")? as u32),
-        doc.get_datetime("timestamp")?.timestamp_millis() as u64,
+        (doc.get_datetime("timestamp")?.timestamp_millis() as u64) / 1000,
         Parents::new(
-            doc.get_array("parents")?
-                .iter()
+            doc.take_array("parents")?
+                .into_iter()
                 .map(|p| message_id_from_bson(p))
                 .collect::<Result<Vec<_>, _>>()?,
         )?,
         hex::decode(doc.get_str("merkle_proof")?)?.as_slice().try_into()?,
         doc.get_i64("next_pow_score")? as u32,
         doc.get_i32("next_pow_score_milestone_index")? as u32,
-        doc.get_array("public_keys")?
-            .iter()
+        doc.take_array("public_keys")?
+            .into_iter()
             .map(|p| bytes_from_bson(p).and_then(|v| v.as_slice().try_into().map_err(|e| anyhow!("{}", e))))
             .collect::<Result<Vec<_>, _>>()?,
-        doc.get_document("receipt")
-            .ok()
-            .map(|r| payload_from_doc(&r))
-            .transpose()?,
+        doc.take("receipt").ok().map(|r| payload_from_bson(r)).transpose()?,
     )?)
 }
 
@@ -302,8 +308,8 @@ fn unlock_block_to_bson(unlock_block: &UnlockBlock) -> Bson {
     Bson::Document(doc)
 }
 
-fn unlock_block_from_bson(bson: &Bson) -> anyhow::Result<UnlockBlock> {
-    let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid unlock block"))?;
+fn unlock_block_from_bson(bson: Bson) -> anyhow::Result<UnlockBlock> {
+    let doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         SignatureUnlock::KIND => UnlockBlock::Signature(SignatureUnlock::Ed25519(Ed25519Signature::new(
@@ -331,11 +337,8 @@ fn input_to_bson(input: &crate::cpt2::input::Input) -> Bson {
     Bson::Document(doc)
 }
 
-fn input_from_bson(bson: &Bson) -> anyhow::Result<crate::cpt2::input::Input> {
-    input_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid input"))?)
-}
-
-fn input_from_doc(doc: &Document) -> anyhow::Result<Input> {
+fn input_from_bson(bson: Bson) -> anyhow::Result<Input> {
+    let doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         UtxoInput::KIND => Input::Utxo(UtxoInput::new(
@@ -370,20 +373,17 @@ fn output_to_bson(output: &Output) -> Bson {
     Bson::Document(doc)
 }
 
-fn output_from_bson(bson: &Bson) -> anyhow::Result<Output> {
-    output_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid output"))?)
-}
-
-fn output_from_doc(doc: &Document) -> anyhow::Result<Output> {
+fn output_from_bson(bson: Bson) -> anyhow::Result<Output> {
+    let mut doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         SignatureLockedSingleOutput::KIND => Output::SignatureLockedSingle(SignatureLockedSingleOutput::new(
-            address_from_doc(doc.get_document("address")?)?,
+            address_from_bson(doc.take("address")?)?,
             doc.get_i64("amount")? as u64,
         )?),
         SignatureLockedDustAllowanceOutput::KIND => {
             Output::SignatureLockedDustAllowance(SignatureLockedDustAllowanceOutput::new(
-                address_from_doc(doc.get_document("address")?)?,
+                address_from_bson(doc.take("address")?)?,
                 doc.get_i64("amount")? as u64,
             )?)
         }
@@ -403,11 +403,8 @@ fn address_to_bson(address: &Address) -> Bson {
     Bson::Document(doc)
 }
 
-fn address_from_bson(bson: &Bson) -> anyhow::Result<Address> {
-    address_from_doc(bson.as_document().ok_or_else(|| anyhow!("Invalid address"))?)
-}
-
-fn address_from_doc(doc: &Document) -> anyhow::Result<Address> {
+fn address_from_bson(bson: Bson) -> anyhow::Result<Address> {
+    let doc = bson.to_document()?;
     let kind = doc.get_i32("kind")? as u8;
     Ok(match kind {
         Ed25519Address::KIND => Address::Ed25519(Ed25519Address::from_str(doc.get_str("data")?)?),
@@ -415,19 +412,19 @@ fn address_from_doc(doc: &Document) -> anyhow::Result<Address> {
     })
 }
 
-fn bytes_from_bson(bson: &Bson) -> anyhow::Result<Vec<u8>> {
+fn bytes_from_bson(bson: Bson) -> anyhow::Result<Vec<u8>> {
     let hex = bson.as_str().ok_or_else(|| anyhow!("Invalid bytes hex"))?;
     Ok(hex::decode(hex)?)
 }
 
-fn message_id_from_bson(bson: &Bson) -> anyhow::Result<MessageId> {
+fn message_id_from_bson(bson: Bson) -> anyhow::Result<MessageId> {
     let s = bson.as_str().ok_or_else(|| anyhow!("Invalid message id"))?;
     Ok(MessageId::from_str(s)?)
 }
 
-fn migrated_funds_entry_from_bson(bson: &Bson) -> anyhow::Result<MigratedFundsEntry> {
-    let doc = bson.as_document().ok_or_else(|| anyhow!("Invalid funds"))?;
-    let output = doc.get_document("output")?;
+fn migrated_funds_entry_from_bson(bson: Bson) -> anyhow::Result<MigratedFundsEntry> {
+    let mut doc = bson.to_document()?;
+    let mut output = doc.take_document("output")?;
     Ok(MigratedFundsEntry::new(
         TailTransactionHash::new(
             hex::decode(doc.get_str("tail_transaction_hash")?)?
@@ -435,7 +432,7 @@ fn migrated_funds_entry_from_bson(bson: &Bson) -> anyhow::Result<MigratedFundsEn
                 .try_into()?,
         )?,
         SignatureLockedSingleOutput::new(
-            address_from_bson(output.get("address").ok_or_else(|| anyhow!("Missing address"))?)?,
+            address_from_bson(output.take("address")?)?,
             output.get_i64("amount")? as u64,
         )?,
     )?)
