@@ -3,8 +3,6 @@
 ## `storage_config`
 
 ### `keyspaces: Vec<KeyspaceConfig>`
-See [KeyspaceConfig](chronicle-storage/src/config.rs#KeyspaceConfig)
-
 Multiple keyspaces can be configured in order to filter incoming messages. If the `filter` feature is not used, *only the first configured keyspace will be considered* or the default (`chronicle`) if none is provided.
 
 In addition to the keyspace name, each requires a map of datacenters (name -> replication factor). See [here](https://university.scylladb.com/courses/scylla-essentials-overview/lessons/architecture/topic/datacenter/) for more information about datacenters in ScyllaDB.
@@ -22,15 +20,13 @@ The number of reporters Scylla will spawn.
 The Scylla local datacenter.
 
 ### `partition_config`
-See [PartitionConfig](chronicle-storage/src/config.rs#PartitionConfig)
-
 Specifies the number of partitions to use in the database, as well as the number of milestones to use as chunks.
 
 NOTICE: You can't change `partition_config` in future without migration.
 
 ## `api_config`
 
-Nothing at the moment, please refer to [.env](.env).
+Nothing at the moment, please refer to [.env](https://github.com/iotaledger/chronicle.rs/blob/main/.env).
 
 ## `broker_config`
 
