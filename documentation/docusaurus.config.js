@@ -1,19 +1,6 @@
 const path = require('path');
 
 module.exports = {
-    title: 'Chronicle',
-    url: '/',
-    baseUrl: '/',
-    themes: ['@docusaurus/theme-classic'],
-    themeConfig: {
-        navbar: {
-            // Workaround to disable broken logo href on test build
-            logo: {
-                src: 'img/chronicle_icon.png',
-                href: 'https://wiki.iota.org/',
-            },
-        },
-    },
     plugins: [
         [
             '@docusaurus/plugin-content-docs',
