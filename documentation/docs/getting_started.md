@@ -55,7 +55,7 @@ git clone https://github.com/iotaledger/chronicle.rs
 cargo build --release
 ```
 
-If you wish to use the filter functionality, enable the `filter` feature in [chronicle](chronicle/Cargo.toml)
+If you wish to use the filter functionality, enable the `filter` feature in [chronicle](https://github.com/iotaledger/chronicle.rs/blob/main/chronicle/Cargo.toml)
 
 ```bash
 cargo build --release --features filter
@@ -63,7 +63,7 @@ cargo build --release --features filter
 
 ### Configuring Chronicle
 
-Chronicle uses a [RON](https://github.com/ron-rs/ron) file to store configuration parameters, called `config.ron`. An example is provided as [config.example.ron](config.example.ron) with default values. See <a href="#config-reference">Config Reference</a> for more details about the config file.
+Chronicle uses a [RON](https://github.com/ron-rs/ron) file to store configuration parameters, called `config.ron`. An example is provided as [config.example.ron](https://github.com/iotaledger/chronicle.rs/blob/main/config.example.ron) with default values. See <a href="#config-reference">Config Reference</a> for more details about the config file.
 
 ### Running Chronicle
 
